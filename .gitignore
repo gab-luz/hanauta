@@ -19,7 +19,7 @@ build/
 .mypy_cache/
 .ruff_cache/
 .uv/
-
+idea.html
 # IDEs
 .idea/
 .vscode/

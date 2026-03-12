@@ -102,6 +102,10 @@ for_window [class="CyberBar"] resize set 1920 40
 for_window [title="CyberBar"] resize set 1920 40
 for_window [class="CyberBar"] exec --no-startup-id xdotool getactivewindow set_window_strut top 40 0 0 0
 
+# Hotkeys overlay window rules
+for_window [class="HanautaHotkeys"] floating enable, border pixel 0, sticky enable
+for_window [title="Hanauta Hotkeys"] floating enable, border pixel 0, sticky enable
+
 # Basic i3 controls (minimal, adjust to taste)
 # Start a terminal
 bindsym $mod+Return exec --no-startup-id kitty
@@ -109,6 +113,8 @@ bindsym $mod+Return exec --no-startup-id kitty
 bindsym --release Print exec --no-startup-id flameshot gui
 # Window switcher (ALT+TAB)
 bindsym Mod1+Tab exec --no-startup-id ukui-window-switch
+# Open hotkeys overlay
+bindsym Mod1+F1 exec --no-startup-id sh -c '"$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/widget-hotkeys-overlay/hotkeys_overlay.py"'
 # Openapps launcher (from bspwm)
 bindsym $mod+space exec --no-startup-id sh -c '"$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/launcher/launcher.py"'
 # Desktop menu (right click)

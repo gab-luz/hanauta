@@ -24,6 +24,25 @@ This project is intentionally focused on an X11 / XLibre desktop stack. The goal
 - Live VS Code / VSCodium workbench theming from the same wallpaper palette
 - Installer support for the desktop setup plus optional editor extension-only installs
 
+## Hotkeys
+
+- `Super+Return`: open `kitty`
+- `Super+Space`: open the PyQt launcher
+- `Alt+F1`: open the hotkeys overlay
+- `Alt+Tab`: open the window switcher
+- `Print`: open Flameshot screenshot UI
+- `Super+Q`: close the focused window
+- `Super+H/J/K/Right`: focus windows
+- `Super+Shift+H/J/K/L`: move windows
+- `Super+1..5`: switch workspaces
+- `Super+Shift+1..5`: move the focused window to a workspace
+- `Super+V`: vertical split
+- `Super+B`: horizontal split
+- `Super+F`: toggle fullscreen
+- `Super+L`: lock the session
+- `Super+Shift+C`: reload i3
+- `Super+Shift+R`: restart i3
+
 ## Core Components
 
 - Bar: `hanauta/src/pyqt/bar/ui_bar.py`
