@@ -1,0 +1,13 @@
+* {
+  all: unset;
+}
+
+@import "colors.scss";
+@import "bar/bar.scss";
+@import "date/date.scss";
+@import "actions/actions.scss";
+@import "settings/settings.scss";
+@import "dock/dock.scss";
+@import "powermenu/powermenu.scss";
+@import "notifications.scss";
+//@import "dashboard/dashboard.scss";

@@ -1,0 +1,135 @@
+# i3 config generated from a prior bspwm setup on 2026-03-03
+
+set $mod Mod4
+font pango:DejaVu Sans Mono 10
+floating_modifier $mod
+
+# Workspaces
+set $ws1 "1"
+set $ws2 "2"
+set $ws3 "3"
+set $ws4 "4"
+set $ws5 "5"
+
+bindsym $mod+1 workspace $ws1
+bindsym $mod+2 workspace $ws2
+bindsym $mod+3 workspace $ws3
+bindsym $mod+4 workspace $ws4
+bindsym $mod+5 workspace $ws5
+bindsym $mod+Shift+1 move container to workspace $ws1
+bindsym $mod+Shift+2 move container to workspace $ws2
+bindsym $mod+Shift+3 move container to workspace $ws3
+bindsym $mod+Shift+4 move container to workspace $ws4
+bindsym $mod+Shift+5 move container to workspace $ws5
+# Gaps/borders (requires i3-gaps)
+# bspwm: border_width=0, window_gap=20, border_radius=15 (no i3 equivalent)
+# If you are on vanilla i3, comment out the gaps lines.
+set $gap 1
+
+
+default_border pixel 0
+default_floating_border pixel 0
+gaps inner $gap
+gaps outer $gap
+# this gap is the gap between window and things like hanauta bar or the hanauta dock
+gaps top 5
+# Colors (mapped from bspwm colors)
+# format: client.<state> border background text indicator child_border
+client.focused          #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
+client.focused_inactive #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
+client.unfocused        #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
+client.urgent           #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
+client.placeholder      #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
+client.background       #c0caf5
+
+# Startup (from bspwmrc)
+exec_always --no-startup-id xsetroot -cursor_name left_ptr
+
+
+# Notifications (deadd-notification-center)
+exec_always --no-startup-id sh -c 'command -v deadd-notification-center >/dev/null 2>&1 && deadd-notification-center || { [ -x "$HOME/.config/i3/bin/deadd-notification-center" ] && "$HOME/.config/i3/bin/deadd-notification-center"; }'
+
+# Startup apps (run once per i3 start)
+exec --no-startup-id sh -c 'sleep 10 && "$HOME/.config/i3/scripts/bspfloat" floating 5 > "$HOME/.log.bspfloat.txt" 2>&1'
+# exec --no-startup-id sh -c "$HOME/.config/conky/Auva/start.sh"
+exec --no-startup-id lxqt-policykit-agent
+exec --no-startup-id xfce4-power-manager
+exec --no-startup-id clipit
+exec --no-startup-id ukui-window-switch
+exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x picom 2>/dev/null; picom --config "$HOME/.config/i3/picom.conf" --daemon'
+# Eww (restart on reload)
+# I need to load the startup file from this folder
+exec_always --no-startup-id ~/.config/i3/startup.sh
+
+# CyberDock (PyQt6 dock)
+exec_always --no-startup-id sh -c 'pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"'
+
+# CyberBar (PyQt6 top bar)
+exec_always --no-startup-id sh -c 'pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"'
+# Eww startup removed; PyQt bar and dock are the active shell UI
+
+# Window rules (translated from bspwm rules)
+for_window [class=Peek] floating enable
+# for_window [class=kitty] floating enable
+for_window [class=conky-manager2] floating enable
+for_window [class=Kupfer.py] focus
+# Screenkey was unmanaged in bspwm; best-effort here: 
+for_window [class=Screenkey] floating enable, border pixel 0
+
+for_window [class="mpv"] floating enable, resize set 1090 615, move position center
+for_window [class=Rofi] floating enable
+# for_window [class=Ferdium] floating enable, move position center
+for_window [class="com-abdownloadmanager-desktop-AppKt"] floating enable, move position center
+for_window [class="copyq"] floating enable, resize set 550 410, move position center
+for_window [class="Audacious"] floating enable, resize set 550 410, move position center
+# GLava: best-effort translation of layer/sticky/geometry
+for_window [class=GLava] floating enable, sticky enable, border pixel 0
+for_window [class=GLava] move position 0 0
+for_window [class=GLava] resize set 1920 1080
+
+# External rules command in bspwm has no i3 equivalent.
+
+# CyberDock window rules
+for_window [class="CyberDock"] floating enable, border pixel 0, sticky enable
+# Dock placement is handled by dock.py so it can anchor to the bottom center reliably.
+
+# CyberBar window rules
+for_window [class="CyberBar"] floating enable, border pixel 0, sticky enable
+for_window [title="CyberBar"] floating enable, border pixel 0, sticky enable
+for_window [class="CyberBar"] move position 0 0
+for_window [title="CyberBar"] move position 0 0
+for_window [class="CyberBar"] resize set 1920 40
+for_window [title="CyberBar"] resize set 1920 40
+for_window [class="CyberBar"] exec --no-startup-id xdotool getactivewindow set_window_strut top 40 0 0 0
+
+# Basic i3 controls (minimal, adjust to taste)
+# Start a terminal
+bindsym $mod+Return exec --no-startup-id kitty
+# Screenshot with Flameshot on PrintScreen
+bindsym --release Print exec --no-startup-id flameshot gui
+# Window switcher (ALT+TAB)
+bindsym Mod1+Tab exec --no-startup-id ukui-window-switch
+# Openapps launcher (from bspwm)
+bindsym $mod+space exec --no-startup-id "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/launcher/launcher.py"
+# Desktop menu (right click)
+# Close focused window
+bindsym $mod+q kill
+# Focus and move
+bindsym $mod+h focus left
+bindsym $mod+j focus down
+bindsym $mod+k focus up
+bindsym $mod+Right focus right
+bindsym $mod+Shift+h move left
+bindsym $mod+Shift+j move down
+bindsym $mod+Shift+k move up
+bindsym $mod+Shift+l move right
+# Lock screen
+bindsym $mod+l exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/lock"
+# Split
+bindsym $mod+v split v
+bindsym $mod+b split h
+# Fullscreen
+bindsym $mod+f fullscreen toggle
+# Reload/Restart
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+r restart

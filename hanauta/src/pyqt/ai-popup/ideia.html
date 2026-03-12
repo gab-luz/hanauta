@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Extracted Chat Component</title>
+    
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+    
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#d0bcff",
+              secondary: "#ccc2dc",
+              tertiary: "#efb8c8",
+              "background-light": "#fffbff",
+              "background-dark": "#13111c",
+              "surface-dark": "#1e1b2e",
+              "surface-light": "#f3edf7",
+              "outline-dark": "#938f99",
+            },
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+              display: ["Outfit", "sans-serif"],
+            },
+            borderRadius: {
+              DEFAULT: "0.5rem",
+              'window': "1.5rem",
+              'pill': "9999px",
+            },
+          },
+        },
+      };
+    </script>
+
+    <style type="text/tailwindcss">
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4a4458; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #625b71; 
+        }
+        .glass-panel {
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        .material-icon {
+            font-family: 'Material Symbols Rounded';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 20px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+        }
+    </style>
+</head>
+
+<body class="dark font-sans h-screen w-screen overflow-hidden selection:bg-primary selection:text-[#381e72]">
+    
+    <div class="h-full w-full bg-gradient-to-br from-[#2a2538] via-[#141218] to-[#1e1b2e] p-8 flex justify-center items-center text-[#e6e1e5]">
+        
+        <div class="w-[340px] h-[600px] flex flex-col">
+            
+            <div class="flex-1 bg-surface-light dark:bg-[#1e1b2e]/90 glass-panel rounded-window border border-white/5 shadow-2xl flex flex-col overflow-hidden relative">
+                <div class="p-4 flex gap-2 border-b border-white/5">
+                    <button class="flex-1 bg-white/5 hover:bg-white/10 rounded-lg py-2 text-sm font-medium flex items-center justify-center gap-2 transition">
+                        <span class="material-icon text-lg">psychology</span> Intelligence
+                    </button>
+                    <button class="flex-1 hover:bg-white/5 rounded-lg py-2 text-sm font-medium text-white/50 transition">
+                        <span class="material-icon text-lg">movie</span> Anime
+                    </button>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto p-4 space-y-6 text-sm">
+                    <div class="flex flex-col items-end gap-1">
+                        <div class="bg-white/10 px-3 py-1 text-xs rounded-t-lg rounded-bl-lg text-white/60 flex items-center gap-2 w-fit">
+                            <span class="material-icon text-xs">key</span>
+                            <span class="material-icon text-xs">thermostat</span>
+                            <span>1.0</span>
+                            <span class="material-icon text-xs">token</span>
+                            <span>884</span>
+                        </div>
+                        <div class="bg-white/10 px-4 py-3 rounded-2xl rounded-tr-sm max-w-[90%] border border-white/5">
+                            <div class="flex items-center justify-between gap-4 mb-2 border-b border-white/10 pb-1">
+                                <span class="flex items-center gap-2 text-xs font-bold text-white/80">
+                                    <span class="material-icon text-sm">person</span> end
+                                </span>
+                                <div class="flex gap-2 opacity-50 text-[10px]">
+                                    <span class="material-icon text-xs cursor-pointer">content_copy</span>
+                                    <span class="material-icon text-xs cursor-pointer">edit</span>
+                                    <span class="material-icon text-xs cursor-pointer">code</span>
+                                </div>
+                            </div>
+                            <p class="leading-relaxed">what's the capital city of russia?</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-col items-start gap-1">
+                        <div class="bg-[#2d293b] px-4 py-3 rounded-2xl rounded-tl-sm w-full border border-white/5 shadow-lg">
+                            <div class="flex items-center justify-between gap-4 mb-3 border-b border-white/10 pb-2">
+                                <span class="flex items-center gap-2 text-xs font-bold text-primary">
+                                    <span class="material-icon text-sm">sparkles</span> Gemini 2.5 Flash
+                                </span>
+                                <div class="flex gap-2 opacity-50 text-[10px]">
+                                    <span class="material-icon text-xs cursor-pointer">refresh</span>
+                                    <span class="material-icon text-xs cursor-pointer">content_copy</span>
+                                    <span class="material-icon text-xs cursor-pointer">edit</span>
+                                    <span class="material-icon text-xs cursor-pointer">code</span>
+                                </div>
+                            </div>
+                            <div class="prose prose-invert prose-sm max-w-none">
+                                <p class="text-white/80 mb-2">Hey there!<br/>The capital city of Russia is <strong>Moscow</strong>.</p>
+                                <h4 class="flex items-center gap-2 text-base font-semibold mt-4 mb-2">
+                                    <span>🇷🇺</span> More about Moscow
+                                </h4>
+                                <ul class="list-disc pl-4 space-y-1 text-white/70 text-xs leading-5">
+                                    <li>It's not just the capital, but also the <strong class="text-white/90">largest city in Russia</strong> and the most populous metropolitan area in Europe.</li>
+                                    <li>Moscow sits on the <strong class="text-white/90">Moskva River</strong> in Central Russia.</li>
+                                    <li>It's a huge hub for <strong class="text-white/90">politics, economics, culture, and science</strong>.</li>
+                                    <li>While Moscow has been the capital for much of history, the capital moved to <strong class="text-white/90">Saint Petersburg</strong> in the 18th century before returning in 1918.</li>
+                                </ul>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-4 pt-3 border-t border-white/5">
+                                <span class="flex items-center gap-1 bg-white/5 hover:bg-white/10 px-2 py-1 rounded-md text-[10px] cursor-pointer transition">
+                                    <span class="w-3 h-3 bg-white rounded-full flex items-center justify-center text-black font-bold text-[8px]">W</span> wikipedia.org
+                                </span>
+                                <span class="flex items-center gap-1 bg-white/5 hover:bg-white/10 px-2 py-1 rounded-md text-[10px] cursor-pointer transition">
+                                    <span class="w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-[8px]">B</span> britannica.com
+                                </span>
+                            </div>
+                            <div class="mt-2 flex items-center gap-2 bg-black/20 px-3 py-1.5 rounded-lg text-xs text-white/70">
+                                <span class="material-icon text-sm opacity-50">search</span>
+                                capital city of russia
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="p-3 bg-[#23202e] border-t border-white/5">
+                    <div class="relative">
+                        <input class="w-full bg-[#141218] border-none rounded-xl py-3 pl-4 pr-10 text-sm text-white focus:ring-1 focus:ring-primary/50 placeholder-white/20" placeholder='Message the model... "/" for commands' type="text"/>
+                        <button class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-white/40 hover:text-primary transition">
+                            <span class="material-icon">arrow_upward</span>
+                        </button>
+                    </div>
+                    <div class="flex justify-between items-center mt-2 px-1">
+                        <div class="flex gap-3 text-[10px] text-white/40 font-mono">
+                            <span class="flex items-center gap-1 hover:text-primary cursor-pointer"><span class="material-icon text-xs">auto_awesome</span> Gemini 2.5 Flash</span>
+                            <span class="flex items-center gap-1 hover:text-primary cursor-pointer"><span class="material-icon text-xs">folder</span> Search</span>
+                        </div>
+                        <div class="flex gap-2 text-[10px] text-white/40 font-mono">
+                            <span>/</span>
+                            <span>/clear</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+    </div>
+</body>
+</html>

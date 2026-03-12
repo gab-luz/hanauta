@@ -1,0 +1,5 @@
+#!/bin/bash
+# Close window under mouse cursor
+
+WINDOW_ID=$(xdo id -m -a)
+[ -n "$WINDOW_ID" ] && bspc node "$WINDOW_ID" -c

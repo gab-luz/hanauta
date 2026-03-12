@@ -1,0 +1,40 @@
+[dock]
+auto_hide = false
+width = 60
+width_unit = "%"
+height = 64
+icons_left = false
+
+position = "center"
+
+transparency = 60
+
+[pinned]
+apps = [
+  "librewolf.desktop",
+  "kitty.desktop",
+  "thunar.desktop",
+  "codium.desktop"
+]
+
+[blacklist]
+wm_class = [
+  "Plank Eww *polybar* *conky* *deadd* *screenkey* *ukui* *xfce4-power-manager* *notification_center* *stalonetray*"
+]
+
+desktop_id = [
+  "plank.desktop"
+]
+
+window_name = [
+  "*Picture-in-Picture*",
+  "*Event Tester*",
+  "CyberDock",
+  "CyberBar",
+  "Dock Settings",
+  "stalonetray",
+  "zuluCrypt",
+  "i3",
+  "zuluCrypt-gui 2>&1 | sed -n '1,120p'",
+  "Hanauta Settings"
+]

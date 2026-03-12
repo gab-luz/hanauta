@@ -1,0 +1,10 @@
+#!/bin/bash
+
+PID=$(LSOF_HIDE_TRACEFS_WARNING=1 lsof -t /dev/snd/pcm*c 2>/dev/null | wc -l)
+
+if [[ $PID -eq 0 ]]
+then
+  echo ""
+else
+  echo ""
+fi

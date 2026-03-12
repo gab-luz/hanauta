@@ -1,0 +1,231 @@
+(defwidget launcher []
+  (button :class "launcherbox"
+    :onclick "~/.config/i3/scripts/openapps --launcher"
+    (box :class "content"
+      :orientation "h"
+      :space-evenly false
+      :valign "center"
+      (label :text "♪" :class "icon")
+      (label :text "hanauta" :class "placeholder")
+    )
+  )
+)
+
+(defwidget systraybox []
+  (box :class "systraybox"
+    :orientation "h"
+    :space-evenly false
+    :valign "center"
+    (systray :class "systray"
+      :orientation "h"
+      :spacing 8
+      :icon-size 18
+      :prepend-new true)
+    (button :class "tray-collapse"
+      :onclick "eww -c ~/.config/i3/hanauta/src/eww update show_systray=false"
+      "")
+))
+
+(defwidget update []
+  (button :class "update"
+    :onrightclick "openapps --update"
+    :onclick "openapps --checkupdates"
+    :tooltip "updates"
+    (box :class "suupdate"
+      :orientation "h"
+      :space-evenly false
+      :valign "center"
+      (label :text "󰚰" :class "iconss")
+      get_updates
+    )
+  )
+)
+
+(defwidget clip []
+  (button :class "clipboard"
+    :onclick "openapps --clip"
+    :tooltip "clipboard"
+    ""
+  )
+)
+
+(defwidget traytoggle []
+  (button :class "tray"
+    :onclick "eww -c ~/.config/i3/hanauta/src/eww update show_systray=true"
+    :tooltip "system tray"
+    ""
+  )
+)
+
+(defwidget traywrap []
+  (box :orientation "h" :space-evenly false :valign "center"
+    (traytoggle)
+    (box :visible show_systray
+      (systraybox)
+    )
+  )
+)
+
+(defwidget kill []
+  (button :style "background-image: none;"
+    :class "trayicon"
+    :onclick "i3-msg kill"
+    :tooltip "close app"
+    "✕"
+  )
+)
+
+(defwidget workspaces []
+  (box :class "workspacesbox"
+    :orientation "h"
+    :space-evenly false
+    :valign "center"
+    (literal :content "${workspaces}")
+  )
+)
+
+(defwidget bardate []
+  (box :class "bardatebox"
+    :orientation "h"
+    :space-evenly false
+    :valign "center"
+    (button :onclick "~/.config/i3/hanauta/src/eww/scripts/toggle_notification_center.sh"
+      (box :orientation "h" :space-evenly false :spacing 10
+        (revealer :transition "slideright"
+                  :reveal {media_status == "Playing"}
+          (box :class "bar-media-chip"
+               :orientation "h"
+               :space-evenly false
+               :spacing 6
+            (label :class "bar-media-icon" :text "󰎈")
+            (label :class "bar-media-label"
+                   :limit-width 28
+                   :text "${artist} • ${title}")))
+        (label :text "${weather_icon}" :visible {weather_icon != ""} :class "weather-icon")
+        (label :class "bar-time-label" :text "${timeku}")
+      )
+    )
+  )
+)
+
+(defwidget powerbutton []
+  (button :class "powerbutton"
+    :onclick "eww -c ~/.config/i3/hanauta/src/eww open-many --toggle powermenu-clickhandler powermenu"
+    "⏻"
+  )
+)
+
+(defwidget actionsbox []
+  (button :class "actionsbox" :onclick "eww -c ~/.config/i3/hanauta/src/eww open --toggle actions"
+    :onrightclick "networkmanager_dmenu"
+    (box :orientation "h"
+      :space-evenly false
+      :valign "center"
+      :spacing 8
+      (box :class "status-chip wifi"
+        (label :class "status-chip-icon" :text "${network_icon}"))
+      (box :class "status-chip radio"
+        (label :class "status-chip-icon" :text "${network_radio == 'on' ? '' : ''}"))
+      (box :class "status-chip volume"
+        (label :class "status-chip-icon" :text "${volume_icon}"))
+      (box :class "status-chip bluetooth"
+        (label :class "status-chip-icon" :text "${bluetooth_state == 'on' ? '' : ''}"))
+      (box :class "status-chip mic"
+        (label :class "status-chip-icon" :text "${mic_status == 'yes' ? '' : ''}"))
+    )
+  )
+)
+
+(defwidget caffeinebar []
+  (button :class "caffeine"
+    :visible {caffeine_status == "on"}
+    :onclick "~/.config/i3/hanauta/src/eww/scripts/caffeine.sh toggle"
+    caffeine_icon
+  )
+)
+
+(defwidget gamemodebar []
+  (button :class "gamemode"
+    :visible {gamemode_status == "on"}
+    :onclick "~/.config/i3/hanauta/src/eww/scripts/gamemode.sh toggle"
+    "󰊖"
+  )
+)
+
+(defwidget pomodorobar []
+  (button :class "pomodoro"
+    :visible {pomodoro_status == "on"}
+    :onclick "~/.config/i3/hanauta/src/eww/scripts/pomodoro.sh --toggle"
+    :style "font-family: 'Pomicons'; font-size: 16px;"
+    pomodoro_icon
+  )
+)
+
+(defwidget ailaunch []
+  (button :class "ai-launch"
+          :tooltip "AI Chat"
+          :onclick "~/.config/i3/hanauta/src/eww/scripts/ai_chat_toggle.sh"
+    (label :class "ai-launch-icon" :text "󱚥")
+  )
+)
+
+(defwidget left []
+  (box :class "left"
+    :orientation "h"
+    :space-evenly false
+    :halign "start"
+    :spacing 4
+    (ailaunch)
+    (launcher)
+    (workspaces)
+  )
+)
+
+(defwidget center []
+  (box :class "center"
+    :orientation "h"
+    :space-evenly false
+    :halign "center"
+    (bardate)
+  )
+)
+
+(defwidget right []
+  (box :class "right"
+    :orientation "h"
+    :space-evenly false
+    :halign "end"
+    :spacing 4
+    (traywrap)
+    (clip)
+    (update)
+    (caffeinebar)
+    (pomodorobar)
+    (gamemodebar)
+    (actionsbox)
+    (powerbutton)
+  )
+)
+
+(defwidget bar []
+  (box :class "bar"
+    :orientation "h"
+    :space-evenly true
+    (left)
+    (center)
+    (right)
+  )
+)
+
+(defwindow bar
+  :monitor 0
+  :geometry (geometry :x "0px"
+    :y "8px"
+    :width "96%"
+    :height "40px"
+  :anchor "center top")
+  :windowtype "dock"
+  :wm-ignore false
+  :reserve (struts :distance "52px" :side "top")
+  (bar)
+)

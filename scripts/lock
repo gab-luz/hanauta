@@ -1,0 +1,59 @@
+#!/bin/bash
+
+fg=c0caf5
+wrong=db4b4b
+highlight=565f89
+date=7aa2f7
+verify=9ece6a
+
+slowfade () {
+    dis=$(echo -n "$DISPLAY" | tr -c '[:alnum:]' _)
+    ifc='com.github.chjj.compton'
+    obj='/com/github/chjj/compton'
+    if [[ "$1" == "start" ]]; then
+        dbus-send --dest=$ifc.$dis \
+            $obj $ifc.opts_set string:fade_in_step double:0.02
+        dbus-send --dest=$ifc.$dis \
+            $obj $ifc.opts_set string:fade_out_step double:0.02
+    else
+        dbus-send --dest=$ifc.$dis \
+            $obj $ifc.opts_set string:fade_in_step double:0.1
+        dbus-send --dest=$ifc.$dis \
+            $obj $ifc.opts_set string:fade_out_step double:0.1
+    fi
+}
+
+pkill -u "$USER" -USR1 dunst
+slowfade start
+if command -v mpc >/dev/null 2>&1 && mpc status >/dev/null 2>&1; then
+    mpc pause >/dev/null 2>&1
+fi
+
+wallpaper=""
+for candidate in \
+    "$HOME/.config/i3/hanauta/walls/ryan-3.png" \
+    "$HOME/.config/i3/hanauta/walls/ryan-4.png" \
+    "$HOME/.config/i3/hanauta/walls/ryan-6.png" \
+    "$HOME/.config/i3/hanauta/walls/ryan-7.png" \
+    "$HOME/.config/i3/hanauta/walls/ryan-8.png" \
+    "$HOME/.config/i3/hanauta/walls/"*.png \
+    "$HOME/.config/i3/hanauta/walls/"*.jpg \
+    "$HOME/.config/i3/hanauta/walls/"*.jpeg
+do
+    if [[ -f "$candidate" ]]; then
+        wallpaper="$candidate"
+        break
+    fi
+done
+
+locker="$HOME/.config/i3/bin/i3lock"
+if ! "$locker" --help >/dev/null 2>&1; then
+    locker="$(command -v i3lock)"
+fi
+
+if [[ "$locker" == "$HOME/.config/i3/bin/i3lock" ]]; then
+    "$locker" -n --force-clock -i "$wallpaper" -e --indicator --radius=20 --ring-width=40 --inside-color=$fg --ring-color=$fg --insidever-color=$verify --ringver-color=$verify --insidewrong-color=$wrong --ringwrong-color=$wrong --line-uses-inside --keyhl-color=$verify --separator-color=$verify --bshl-color=$verify --time-str="%H:%M" --time-size=100 --date-str="%a, %d %b" --date-size=40 --verif-text="Verifying Password..." --wrong-text="Wrong Password!" --noinput-text="" --greeter-text="Type the password to Unlock" --ind-pos="160:600" --time-font="Roboto:style=Bold" --date-font="Roboto" --verif-font="Roboto" --greeter-font="Roboto" --wrong-font="Roboto" --verif-size=16 --greeter-size=16 --wrong-size=16 --time-pos="160:190" --date-pos="160:250" --greeter-pos="160:400" --wrong-pos="160:500" --verif-pos="160:450" --date-color=$date --time-color=$date --greeter-color=$fg --wrong-color=$wrong --verif-color=$verify --verif-pos="160:470" --pointer=default --refresh-rate=0 --pass-media-keys --pass-volume-keys
+else
+    "$locker" -n -e -i "$wallpaper" -p default
+fi
+slowfade end 

@@ -1,0 +1,19 @@
+#!/bin/bash
+
+if [[ $1 == "--toggle" ]]; then
+        if pgrep tint2; then
+                pkill tint2
+                echo "󰁢" > $HOME/.config/i3/hanauta/scripts/tray-status
+                exit 1
+        else
+                tint2 &
+                echo "󰁊" > $HOME/.config/i3/hanauta/scripts/tray-status
+        fi
+        exit
+fi
+
+if [[ $1 == "--kill" ]]; then
+        pkill tint2
+        echo "󰁢" > $HOME/.config/i3/hanauta/scripts/tray-status
+        exit 1
+fi

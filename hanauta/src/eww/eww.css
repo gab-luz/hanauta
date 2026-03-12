@@ -1,0 +1,1595 @@
+* {
+  all: unset;
+}
+
+/* MD3 Standard Transition */
+/* The Main Bar Container */
+.bar {
+  background-color: #1C1B1F;
+  color: #E6E1E5;
+  /* MD3 Floating Surface */
+  border-radius: 28px;
+}
+
+/* MD3 "Chip" Base Styling 
+  Applied to most bar modules for a uniform, expressive pill shape
+*/
+.systraybox, .launcherbox, .update, .caffeine, .gamemode, .works, .actionsbox, .powerbutton {
+  background-color: #2B2930;
+  /* Pill shape */
+  border-radius: 100px;
+  /* Uniform vertical and horizontal breathing room */
+  padding: 4px 14px;
+  /* Space between chips */
+  margin: 6px 4px;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.systraybox:hover, .launcherbox:hover, .update:hover, .caffeine:hover, .gamemode:hover, .works:hover, .actionsbox:hover, .powerbutton:hover {
+  background-color: #1C1B1F;
+}
+
+.systraybox:active, .launcherbox:active, .update:active, .caffeine:active, .gamemode:active, .works:active, .actionsbox:active, .powerbutton:active {
+  background-color: #161519;
+}
+
+/* Icon Resets to ensure perfect centering in MD3 */
+.launcherbox .content .icon,
+.update .suupdate .iconss,
+.clipboard, .closebutton, .tray,
+.works, .workspace-dot, .status-chip-icon,
+.actionsbox {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  letter-spacing: 0;
+}
+
+/* Specific Adjustments */
+.systraybox {
+  padding: 4px 10px;
+}
+
+.tray-collapse {
+  color: #CAC4D0;
+  font-family: "Material Symbols Rounded";
+  padding: 0px 6px;
+  font-weight: normal;
+}
+
+.systray button {
+  background: transparent;
+  border-radius: 50%;
+  /* Make tray icons circular */
+  padding: 0px 4px;
+}
+
+.launcherbox .content .placeholder {
+  color: #A8C7FA;
+  font-family: Product Sans;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+
+.launcherbox .content .icon {
+  margin-right: 10px;
+  color: #A8C7FA;
+  font-size: 16px;
+}
+
+.trayicon {
+  background-repeat: no-repeat;
+  background-size: 17px;
+  min-height: 10px;
+  min-width: 25px;
+  margin: 11px 0px 0px 0px;
+}
+
+/* Standalone icon buttons */
+.clipboard, .closebutton, .tray {
+  background-color: transparent;
+  margin: 6px 2px;
+  padding: 4px 8px;
+  font-size: 18px;
+  border-radius: 50%;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.clipboard:hover, .closebutton:hover, .tray:hover {
+  background-color: #2B2930;
+}
+
+.clipboard:active, .closebutton:active, .tray:active {
+  background-color: #161519;
+}
+
+.clipboard {
+  color: #A8C7FA;
+}
+
+.closebutton {
+  color: #C4EDD7;
+}
+
+.tray {
+  color: #A8C7FA;
+}
+
+.update {
+  color: #C4EDD7;
+  font-family: Product Sans;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.update .suupdate .iconss {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.caffeine {
+  color: #FFB784;
+  font-size: 16px;
+}
+
+.gamemode {
+  color: #C4EDD7;
+  font-size: 16px;
+}
+
+/* Workspaces */
+.works {
+  padding: 8px 5px;
+}
+
+.workspace-dot {
+  background-color: rgba(168, 199, 250, 0.16);
+  border-radius: 999px;
+  min-width: 5px;
+  min-height: 5px;
+  padding: 0;
+  transition: all 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.workspace-dot:hover {
+  background-color: rgba(208, 188, 255, 0.45);
+}
+
+.workspace-dot.empty {
+  background-color: rgba(230, 225, 229, 0.18);
+}
+
+.workspace-dot.occupied {
+  background-color: rgba(208, 188, 255, 0.62);
+}
+
+.workspace-dot.focused {
+  background-color: #A8C7FA;
+  min-width: 24px;
+  box-shadow: 0 0 0 4px rgba(168, 199, 250, 0.14);
+}
+
+/* Center Date */
+.bardatebox {
+  margin: 6px 8px;
+  padding: 4px 16px;
+  font-family: Product Sans;
+  font-weight: 500;
+  /* MD3 Title Medium */
+  font-size: 15px;
+  letter-spacing: 0.1px;
+  color: #FFFFFF;
+  border-radius: 100px;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.bardatebox:hover {
+  background-color: #1C1B1F;
+}
+
+.bardatebox:active {
+  background-color: #161519;
+}
+
+.bar-time-label {
+  color: #FFFFFF;
+  font-family: Product Sans;
+  font-weight: 600;
+}
+
+.bar-media-chip {
+  background-color: rgba(208, 188, 255, 0.18);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.ai-launch {
+  background-color: rgba(208, 188, 255, 0.16);
+  border-radius: 999px;
+  padding: 4px 10px;
+  transition: all 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ai-launch:hover {
+  background-color: rgba(208, 188, 255, 0.28);
+}
+
+.ai-launch:active {
+  background-color: rgba(208, 188, 255, 0.2);
+}
+
+.ai-launch-icon {
+  color: #D0BCFF;
+  font-family: "Material Symbols Rounded";
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.bar-media-icon {
+  color: #D0BCFF;
+  font-family: "Material Symbols Rounded";
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.bar-media-label {
+  color: #E6E1E5;
+  font-family: Product Sans;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.searchbutton {
+  background-color: #161519;
+  margin: 6px 4px;
+  padding: 4px 16px;
+  border-radius: 100px;
+  /* Pill */
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+  font-family: Product Sans;
+  font-weight: 500;
+}
+
+.searchbutton .content .placeholder {
+  color: #3A3740;
+}
+
+.searchbutton .content .icon {
+  font-family: "Material Symbols Rounded";
+  margin-right: 12px;
+  color: #A8C7FA;
+  font-weight: normal;
+}
+
+.searchbutton:hover {
+  background-color: #1C1B1F;
+}
+
+.searchbutton:active {
+  background-color: #161519;
+}
+
+.actionsbox {
+  background-color: rgba(208, 188, 255, 0.18);
+  color: #D0BCFF;
+  padding: 4px 10px;
+  font-size: 16px;
+}
+
+.status-chip {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.status-chip-icon {
+  font-size: 15px;
+}
+
+.status-chip.wifi {
+  color: #cbb7ff;
+}
+
+.status-chip.radio {
+  color: #b5d4ff;
+}
+
+.status-chip.volume {
+  color: #f3c6ff;
+}
+
+.status-chip.bluetooth {
+  color: #c2bbff;
+}
+
+.status-chip.mic {
+  color: #ddb8ff;
+}
+
+/* Power Button as a prominent FAB */
+.powerbutton {
+  color: #FF897D;
+  padding: 4px 14px;
+  font-size: 18px;
+  background-color: #1C1B1F;
+  /* Slightly darker to stand out */
+}
+
+.date {
+  background-color: #1C1B1F;
+  color: #E6E1E5;
+  border-radius: 16px;
+}
+
+.timebox {
+  margin: 30px 0px;
+}
+
+.timebox .time-container .content {
+  font-family: Product Sans;
+  font-weight: bolder;
+  font-size: 60px;
+}
+
+.timebox .time-container .divider {
+  margin: 8px 15px;
+  padding: 0px 1px;
+  background: linear-gradient(#FFB4AB, #E8DEF8, #A8C7FA, #94F0F0);
+}
+
+.timebox .date-container {
+  font-family: Product Sans;
+  margin-top: 2px;
+}
+
+.cal-box {
+  font-family: Product Sans;
+  background-color: #1C1B1F;
+  border-radius: 16px;
+  padding: 0 1rem .2rem;
+  color: #C4EDD7;
+  background-color: #211F26;
+  margin: 0px 12px 12px 12px;
+}
+
+.cal-box .cal {
+  background-color: inherit;
+  padding: .5rem .10rem 0rem;
+  margin-left: 10px;
+}
+
+.cal-box .cal > * {
+  border: solid 0px transparent;
+}
+
+.cal-box .cal.highlight {
+  padding: 10rem;
+}
+
+calendar:selected {
+  color: #FFB784;
+}
+
+calendar.header {
+  color: #FFB784;
+  font-weight: bold;
+}
+
+calendar.button {
+  color: #FFB784;
+}
+
+calendar.highlight {
+  color: #C4EDD7;
+  font-weight: bold;
+}
+
+calendar:indeterminate {
+  color: #3A3740;
+}
+
+/* ==========================================
+   BASE STYLES & TRANSITIONS
+   ========================================== */
+.actions {
+  background-color: #1C1B1F;
+  /* MD3 Large Dialog Container */
+  border-radius: 28px;
+  padding: 24px;
+  color: #E6E1E5;
+  font-family: 'Roboto', 'Product Sans', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================
+   1. USER INFO
+   ========================================== */
+.userinfobox .time {
+  font-size: 45px;
+  font-weight: 400;
+  letter-spacing: -0.25px;
+}
+
+.userinfobox .pfp {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  border-radius: 50%;
+  min-width: 56px;
+  min-height: 56px;
+}
+
+.userinfobox .daybox {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+
+.userinfobox .user {
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.userinfobox .time-settings {
+  font-family: "Material Symbols Rounded";
+  font-size: 18px;
+  background: transparent;
+  color: #938F99;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.userinfobox .time-settings:hover {
+  background-color: #2B2930;
+  color: #E6E1E5;
+}
+
+/* ==========================================
+   2. QUICK SETTINGS (SYSBUTTONS)
+   ========================================== */
+.sysbuttonsbox .block-container {
+  /* Active State Styling */
+}
+
+.sysbuttonsbox .block-container .block {
+  background-color: #211F26;
+  /* MD3 Expressive Pill Shape */
+  border-radius: 100px;
+  padding: 4px;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.sysbuttonsbox .block-container .block .iconbox .icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 18px;
+  padding: 8px 12px;
+  font-weight: normal;
+}
+
+.sysbuttonsbox .block-container .block .sepbox .sep {
+  background-color: #161519;
+  margin: 0px 4px;
+  padding: 0px 1px;
+}
+
+.sysbuttonsbox .block-container .block .gearbox .gearbtn {
+  background: transparent;
+  font-family: "Material Symbols Rounded";
+  font-size: 16px;
+  color: #938F99;
+  padding: 8px 14px;
+  border-radius: 100px;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.sysbuttonsbox .block-container .block .gearbox .gearbtn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #E6E1E5;
+}
+
+.sysbuttonsbox .block-container .block .gearbox .gearbtn.disabled {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.sysbuttonsbox .block-container .block .gearbox .gearbtn.disabled:hover {
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.sysbuttonsbox .block-container .block.active {
+  background-color: #938F99;
+}
+
+.sysbuttonsbox .block-container .block.active .iconbox .icon {
+  color: #1C1B1F;
+}
+
+.sysbuttonsbox .block-container .block.active .sepbox .sep {
+  background-color: #2B2930;
+}
+
+.sysbuttonsbox .block-container .block.active .gearbox .gearbtn {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.sysbuttonsbox .block-container .block.active .gearbox .gearbtn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+  color: #1C1B1F;
+}
+
+.sysbuttonsbox .block-container .block.active .gearbox .gearbtn.disabled {
+  color: rgba(0, 0, 0, 0.3);
+}
+
+.sysbuttonsbox .block-container .block.active:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.sysbuttonsbox .block-container .label {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+  margin-top: 6px;
+  color: #E6E1E5;
+}
+
+/* ==========================================
+   3. KDE CONNECT
+   ========================================== */
+.kdeconnect-box {
+  background-color: #211F26;
+  border-radius: 24px;
+  padding: 16px;
+}
+
+.kdeconnect-box .phone-header .phone-icon-box {
+  background-color: rgba(66, 133, 244, 0.1);
+  border-radius: 50%;
+  padding: 10px 12px;
+  margin-right: 24px;
+}
+
+.kdeconnect-box .phone-header .phone-icon-box .phone-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 24px;
+  font-weight: normal;
+  color: #A8C7FA;
+}
+
+.kdeconnect-box .phone-header .phone-info .phone-name {
+  font-size: 16px;
+  font-weight: 500;
+  color: #E6E1E5;
+}
+
+.kdeconnect-box .phone-header .phone-info .phone-status {
+  font-size: 13px;
+  font-weight: 400;
+  color: #938F99;
+  margin-top: 2px;
+}
+
+.kdeconnect-box .phone-header .phone-header-controls .phone-btn-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 20px;
+  font-weight: normal;
+  color: #938F99;
+  background: transparent;
+  padding: 6px;
+  border-radius: 50%;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.kdeconnect-box .phone-header .phone-header-controls .phone-btn-icon:hover {
+  background-color: #2B2930;
+  color: #E6E1E5;
+}
+
+.kdeconnect-box .phone-header .phone-header-controls .switch {
+  margin-right: 4px;
+}
+
+.kdeconnect-box .phone-actions .phone-btn {
+  background-color: #2B2930;
+  border-radius: 16px;
+  padding: 8px;
+  color: #E6E1E5;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.kdeconnect-box .phone-actions .phone-btn .btn-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 16px;
+  font-weight: normal;
+}
+
+.kdeconnect-box .phone-actions .phone-btn .btn-text {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.kdeconnect-box .phone-actions .phone-btn:hover {
+  background-color: #938F99;
+  color: #1C1B1F;
+}
+
+.kdeconnect-box .phone-actions .phone-btn:active {
+  background-color: rgba(168, 199, 250, 0.85);
+  color: #1C1B1F;
+}
+
+.kdeconnect-box .phone-actions .phone-btn.active {
+  background-color: #A8C7FA;
+  color: #1C1B1F;
+}
+
+/* ==========================================
+   4. MEDIA PLAYER
+   ========================================== */
+.musicaction-container {
+  border-radius: 24px;
+  padding: 0;
+  /* Fixed Nesting Here */
+}
+
+.musicaction-container .musicaction-inner {
+  background-color: rgba(0, 0, 0, 0.4);
+  border-radius: 24px;
+  padding: 16px;
+}
+
+.musicaction-container .pic-con {
+  padding: 0px;
+}
+
+.musicaction-container .pic-con .picimg {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  min-height: 120px;
+  min-width: 240px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+}
+
+.musicaction-container .pic-con .left .song {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.musicaction-container .pic-con .left .artist {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.musicaction-container .lasttmo {
+  padding: 0px 8px;
+  background-color: transparent;
+}
+
+.musicaction-container .lasttmo .musiccontrol {
+  font-size: 26px;
+  font-family: "Material Symbols Rounded";
+  color: #ffffff;
+}
+
+.musicaction-container .lasttmo .musiccontrol button {
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  border-radius: 50%;
+  color: #ffffff;
+}
+
+.musicaction-container .lasttmo .musiccontrol button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.musicaction-container .lasttmo .musiccontrol button:active {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.musicaction-container .lasttmo .musiccontrol button.next, .musicaction-container .lasttmo .musiccontrol button.back {
+  padding: 12px;
+}
+
+.musicaction-container .lasttmo .musiccontrol button.playpause {
+  font-size: 24px;
+  padding: 12px;
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ==========================================
+   5. SLIDERS & SENSORS
+   ========================================== */
+.controlsbox {
+  background-color: #211F26;
+  border-radius: 24px;
+  padding: 16px 20px;
+}
+
+.controlsbox .stats-section .stats-header {
+  margin-bottom: 4px;
+}
+
+.controlsbox .stats-section .stats-header .stats-title {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: #938F99;
+}
+
+.controlsbox .stats-section .stats-header .pin-btn {
+  font-family: "Material Symbols Rounded";
+  font-size: 16px;
+  font-weight: normal;
+  padding: 6px;
+  background-color: #2B2930;
+  border-radius: 50%;
+  color: #938F99;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.controlsbox .stats-section .stats-header .pin-btn:hover {
+  background-color: #A8C7FA;
+  color: #1C1B1F;
+}
+
+.controlsbox .stats-section .stats-header .pin-btn:active {
+  background-color: rgba(168, 199, 250, 0.85);
+  color: #1C1B1F;
+}
+
+.controlsbox .vol-slider .vol-label, .controlsbox .vol-slider .br-label, .controlsbox .vol-slider .mic-label, .controlsbox .vol-slider .stats-icon-cpu, .controlsbox .vol-slider .stats-icon-ram, .controlsbox .vol-slider .stats-icon-fs, .controlsbox .vol-slider .stats-icon-temp, .controlsbox .br-slider .vol-label, .controlsbox .br-slider .br-label, .controlsbox .br-slider .mic-label, .controlsbox .br-slider .stats-icon-cpu, .controlsbox .br-slider .stats-icon-ram, .controlsbox .br-slider .stats-icon-fs, .controlsbox .br-slider .stats-icon-temp, .controlsbox .br-mic .vol-label, .controlsbox .br-mic .br-label, .controlsbox .br-mic .mic-label, .controlsbox .br-mic .stats-icon-cpu, .controlsbox .br-mic .stats-icon-ram, .controlsbox .br-mic .stats-icon-fs, .controlsbox .br-mic .stats-icon-temp, .controlsbox .stats .vol-label, .controlsbox .stats .br-label, .controlsbox .stats .mic-label, .controlsbox .stats .stats-icon-cpu, .controlsbox .stats .stats-icon-ram, .controlsbox .stats .stats-icon-fs, .controlsbox .stats .stats-icon-temp {
+  font-size: 22px;
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  letter-spacing: 0;
+  margin-right: 18px;
+}
+
+.controlsbox .vol-slider .vol-label, .controlsbox .br-slider .vol-label, .controlsbox .br-mic .vol-label, .controlsbox .stats .vol-label {
+  color: #938F99;
+}
+
+.controlsbox .vol-slider .br-label, .controlsbox .br-slider .br-label, .controlsbox .br-mic .br-label, .controlsbox .stats .br-label {
+  color: #FFB784;
+}
+
+.controlsbox .vol-slider .mic-label, .controlsbox .br-slider .mic-label, .controlsbox .br-mic .mic-label, .controlsbox .stats .mic-label {
+  color: #D0BCFF;
+}
+
+.controlsbox .vol-slider .stats-icon-cpu, .controlsbox .br-slider .stats-icon-cpu, .controlsbox .br-mic .stats-icon-cpu, .controlsbox .stats .stats-icon-cpu {
+  color: #FFB4AB;
+}
+
+.controlsbox .vol-slider .stats-icon-ram, .controlsbox .br-slider .stats-icon-ram, .controlsbox .br-mic .stats-icon-ram, .controlsbox .stats .stats-icon-ram {
+  color: #C4EDD7;
+}
+
+.controlsbox .vol-slider .stats-icon-fs, .controlsbox .br-slider .stats-icon-fs, .controlsbox .br-mic .stats-icon-fs, .controlsbox .stats .stats-icon-fs {
+  color: #D0BCFF;
+}
+
+.controlsbox .vol-slider .stats-icon-temp, .controlsbox .br-slider .stats-icon-temp, .controlsbox .br-mic .stats-icon-temp, .controlsbox .stats .stats-icon-temp {
+  color: #A8C7FA;
+}
+
+.controlsbox .vol-slider scale trough, .controlsbox .br-slider scale trough, .controlsbox .br-mic scale trough, .controlsbox .stats scale trough {
+  all: unset;
+  border-radius: 100px;
+  background-color: #161519;
+  border: none;
+  min-height: 16px;
+  min-width: 250px;
+  margin-left: 3px;
+}
+
+.controlsbox .vol-slider scale trough highlight, .controlsbox .br-slider scale trough highlight, .controlsbox .br-mic scale trough highlight, .controlsbox .stats scale trough highlight {
+  all: unset;
+  border-radius: 100px;
+  color: #000000;
+}
+
+.controlsbox .vol-slider scale slider, .controlsbox .br-slider scale slider, .controlsbox .br-mic scale slider, .controlsbox .stats scale slider {
+  all: unset;
+  background-color: #ffffff;
+  border-radius: 100px;
+  min-width: 16px;
+  min-height: 24px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  margin-top: -4px;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.controlsbox .vol-slider scale trough highlight {
+  background: linear-gradient(to right, #938F99, #A8C7FA);
+}
+
+.controlsbox .br-slider scale trough highlight {
+  background: linear-gradient(to right, #FFB784, #FFB4AB);
+}
+
+.controlsbox .scale-cpu, .controlsbox .scale-ram, .controlsbox .scale-fs, .controlsbox .scale-temp {
+  margin-left: 10px;
+}
+
+.controlsbox .scale-cpu trough highlight {
+  background: linear-gradient(to right, #FFB4AB, #FFB4AB);
+}
+
+.controlsbox .scale-ram trough highlight {
+  background: linear-gradient(to right, #C4EDD7, #C4EDD7);
+}
+
+.controlsbox .scale-fs trough highlight {
+  background: linear-gradient(to right, #D0BCFF, #E8DEF8);
+}
+
+.controlsbox .scale-temp trough highlight {
+  background: linear-gradient(to right, #A8C7FA, #94F0F0);
+}
+
+/* ==========================================
+   6. POWER ACTIONS & UPTIME
+   ========================================== */
+.poweractionsbox .buttons {
+  font-family: "Material Symbols Rounded";
+  font-size: 20px;
+}
+
+.poweractionsbox .buttons button {
+  padding: 12px 14px;
+  background-color: #2B2930;
+  border-radius: 50%;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.poweractionsbox .buttons button:hover {
+  background-color: #332F3A;
+}
+
+.poweractionsbox .buttons button:active {
+  background-color: #1C1B1F;
+}
+
+.poweractionsbox .buttons button.browser {
+  color: #FFB4AB;
+}
+
+.poweractionsbox .buttons button.filemanager {
+  color: #FFB784;
+}
+
+.poweractionsbox .buttons button.terminal {
+  color: #FFB784;
+}
+
+.poweractionsbox .buttons button.texteditor {
+  color: #A8C7FA;
+}
+
+.poweractionsbox .buttons button.musik {
+  color: #C4EDD7;
+}
+
+.poweractionsbox .buttons button.telegram {
+  color: #D0BCFF;
+}
+
+.box .info {
+  font-size: 14px;
+}
+
+.box .buton {
+  font-size: 14px;
+}
+
+.box .buton .user {
+  margin-top: 5px;
+  font-size: 10px;
+}
+
+.box .buton .username {
+  font-weight: 500;
+}
+
+.settings-shell {
+  background-color: rgba(24, 22, 29, 0.9);
+  color: #E6E1E5;
+  border-radius: 28px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-topbar-kicker,
+.settings-sidebar-kicker,
+.settings-eyebrow,
+.settings-stat-title,
+.settings-section-subtitle,
+.settings-input-subtitle,
+.settings-hero-subtitle {
+  color: #938F99;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.settings-topbar-title,
+.settings-sidebar-title,
+.settings-section-title {
+  color: #E6E1E5;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.settings-topbar {
+  margin-bottom: 2px;
+}
+
+.settings-close-button {
+  background-color: rgba(255, 255, 255, 0.92);
+  color: #1C1B1F;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-close-button:hover {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+.settings-close-button:active {
+  background-color: rgba(255, 255, 255, 0.68);
+}
+
+.settings-sidebar {
+  background-color: rgba(33, 30, 40, 0.95);
+  border-radius: 24px;
+  padding: 16px;
+  min-width: 220px;
+}
+
+.settings-sidebar-head {
+  margin-bottom: 6px;
+}
+
+.settings-tab-button {
+  background-color: rgba(43, 41, 48, 0.9);
+  color: #938F99;
+  padding: 10px 12px;
+  border-radius: 16px;
+}
+
+.settings-tab-button:hover {
+  background-color: rgba(57, 53, 65, 0.96);
+  color: #E6E1E5;
+}
+
+.settings-tab-button.active {
+  background-color: #A8C7FA;
+  color: #1C1B1F;
+}
+
+.settings-tab-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 18px;
+  font-weight: normal;
+}
+
+.settings-tab-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-scroll {
+  min-width: 820px;
+  min-height: 620px;
+}
+
+.settings-body {
+  padding: 2px 2px 2px 0;
+}
+
+.settings-page {
+  min-width: 820px;
+}
+
+.settings-hero {
+  background-image: linear-gradient(135deg, rgba(103, 80, 164, 0.94), rgba(127, 103, 190, 0.9));
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.settings-avatar-button {
+  background-color: transparent;
+  border-radius: 999px;
+  padding: 0;
+}
+
+.settings-avatar {
+  min-width: 56px;
+  min-height: 56px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.26);
+  background-image: url("");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+.settings-hero-title {
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.settings-hero-copy,
+.settings-copy,
+.settings-stat-meta {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+}
+
+.settings-value-block {
+  background-color: rgba(25, 23, 30, 0.2);
+  border-radius: 16px;
+  padding: 10px 12px;
+  min-width: 130px;
+}
+
+.settings-value {
+  color: #E6E1E5;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-card,
+.settings-input-card {
+  background-color: rgba(43, 41, 48, 0.92);
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.settings-card-wide {
+  min-width: 392px;
+}
+
+.settings-stat-card {
+  border-radius: 20px;
+  padding: 14px;
+  min-width: 185px;
+}
+
+.settings-stat-card.bitcoin {
+  background-image: linear-gradient(135deg, rgba(53, 44, 32, 0.92), rgba(43, 41, 48, 0.92));
+}
+
+.settings-stat-card.bank {
+  background-image: linear-gradient(135deg, rgba(30, 53, 45, 0.92), rgba(43, 41, 48, 0.92));
+}
+
+.settings-stat-card.sleep {
+  background-image: linear-gradient(135deg, rgba(43, 32, 62, 0.92), rgba(43, 41, 48, 0.92));
+}
+
+.settings-stat-icon {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.settings-stat-value {
+  color: #E6E1E5;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.settings-section-title {
+  font-size: 20px;
+}
+
+.settings-input-title {
+  color: #E6E1E5;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.settings-input {
+  background-color: rgba(20, 18, 24, 0.72);
+  color: #E6E1E5;
+  padding: 8px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.settings-action-button,
+.settings-chip-button {
+  background-color: rgba(33, 30, 40, 0.96);
+  color: #E6E1E5;
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-action-button:hover,
+.settings-chip-button:hover {
+  background-color: rgba(58, 54, 67, 0.96);
+}
+
+.settings-action-button.primary {
+  background-color: #A8C7FA;
+  color: #1C1B1F;
+}
+
+.settings-action-button.primary:hover {
+  background-color: #c2dcff;
+}
+
+.settings-service-card {
+  background-color: rgba(43, 41, 48, 0.92);
+  color: #E6E1E5;
+  border-radius: 20px;
+  padding: 14px;
+  min-width: 220px;
+}
+
+.settings-service-card:hover {
+  background-color: rgba(58, 54, 67, 0.96);
+}
+
+.settings-service-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 18px;
+  font-weight: normal;
+}
+
+.settings-service-title {
+  color: #E6E1E5;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.settings-service-copy {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+}
+
+.settings-pill {
+  background-color: rgba(20, 18, 24, 0.6);
+  color: #938F99;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-pill.active {
+  background-color: rgba(168, 199, 250, 0.18);
+  color: #A8C7FA;
+}
+
+.dock-centerbox {
+  padding: 6px 14px;
+}
+
+.dock-surface {
+  background: rgba(10, 10, 12, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 20px;
+  padding: 4px 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.dock-item {
+  background: transparent;
+  border-radius: 14px;
+  padding: 4px 6px;
+  transition: 140ms ease;
+}
+
+.dock-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dock-item.is-focused {
+  background: rgba(192, 202, 245, 0.16);
+  border: 1px solid rgba(192, 202, 245, 0.18);
+}
+
+.dock-icon {
+  min-width: 36px;
+  min-height: 36px;
+  transition: 140ms ease;
+  /* GTK-friendly "zoom" */
+  -gtk-icon-transform: scale(1);
+}
+
+.dock-item:hover .dock-icon {
+  -gtk-icon-transform: scale(1.12);
+}
+
+.dock-item.is-focused .dock-icon {
+  -gtk-icon-transform: scale(1.06);
+}
+
+.dock-indicators {
+  min-height: 10px;
+  padding-bottom: 2px;
+}
+
+.dock-dot {
+  min-width: 6px;
+  min-height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.dock-badge {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+}
+
+.powermenu {
+  background-color: #1C1B1F;
+  color: #E6E1E5;
+  padding: 20px;
+  font-family: "Material Symbols Rounded";
+  font-size: 70px;
+  border-radius: 16px;
+}
+
+.powermenu button {
+  border-radius: 12px;
+  transition: all ease .2s;
+}
+
+.powermenu button:hover {
+  background-color: #2B2930;
+}
+
+.powermenu button:active {
+  background-color: #1C1B1F;
+}
+
+.powermenu button .content {
+  border-radius: 4px;
+  padding: 0px 4px 0px 4px;
+}
+
+.powermenu .shutdown {
+  color: #FFB4AB;
+}
+
+.powermenu .reboot {
+  color: #E8DEF8;
+}
+
+.powermenu .logout {
+  color: #FFB784;
+}
+
+.powermenu .lock {
+  color: #C4EDD7;
+}
+
+.powermenu .suspend {
+  color: #A8C7FA;
+}
+
+.powermenu-clickhandler {
+  background-color: transparent;
+}
+
+.notification-center-root {
+  background-color: rgba(0, 0, 0, 0);
+  padding: 10px;
+}
+
+.notification-center-shell {
+  background-color: rgba(21, 19, 26, 0.72);
+  color: #f2ecf4;
+  border-radius: 30px;
+  padding: 18px;
+  border: 1px solid rgba(255, 248, 252, 0.08);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+}
+
+.notification-rail {
+  background-color: rgba(29, 26, 34, 0.82);
+  border-radius: 26px;
+  padding: 16px;
+  min-width: 320px;
+  min-height: 680px;
+  border: 1px solid rgba(255, 248, 252, 0.06);
+}
+
+.notification-content {
+  min-width: 720px;
+}
+
+.panel-header {
+  margin-bottom: 2px;
+}
+
+.panel-header-kicker,
+.surface-card-kicker,
+.news-card-eyebrow,
+.info-chip-title,
+.hero-eyebrow,
+.hero-subtle,
+.hero-stat-label {
+  color: #cbbfd2;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.panel-header-title {
+  color: #fffbff;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.panel-header-button {
+  background-color: #2a2530;
+  color: #f2ecf4;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.panel-header-button:hover {
+  background-color: #38303f;
+}
+
+.panel-header-button:active {
+  background-color: #201c26;
+}
+
+.rail-strip {
+  margin-bottom: 2px;
+}
+
+.info-chip {
+  background-color: rgba(39, 34, 45, 0.86);
+  border-radius: 18px;
+  padding: 10px 12px;
+  min-width: 132px;
+}
+
+.info-chip-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 20px;
+  font-weight: normal;
+}
+
+.accent-blue {
+  color: #9fc9ff;
+}
+
+.accent-orange {
+  color: #ffb87b;
+}
+
+.info-chip-value {
+  color: #fff8fc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notification-scroll {
+  margin-top: 4px;
+}
+
+.notification-stream {
+  padding-top: 2px;
+}
+
+.notification-empty {
+  background-color: rgba(35, 31, 41, 0.88);
+  border-radius: 22px;
+  padding: 24px 18px;
+  margin-top: 72px;
+}
+
+.notification-empty-icon {
+  font-family: "Material Symbols Rounded";
+  font-size: 46px;
+  color: #a9c8ff;
+}
+
+.notification-empty-title {
+  color: #fff8fc;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.notification-empty-copy {
+  color: #cbbfd2;
+  font-size: 12px;
+}
+
+.notification-item {
+  background-color: rgba(35, 31, 41, 0.88);
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.notification-item-app {
+  color: #cbbfd2;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.notification-item-close {
+  background-color: transparent;
+  color: #cbbfd2;
+  font-family: "Material Symbols Rounded";
+  font-size: 16px;
+  padding: 2px 4px;
+  border-radius: 999px;
+}
+
+.notification-item-close:hover {
+  background-color: #312a38;
+  color: #fff8fc;
+}
+
+.notification-item-close:active {
+  background-color: #201c26;
+}
+
+.notification-item-summary {
+  color: #fff8fc;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.notification-item-body {
+  color: #d6cadb;
+  font-size: 12px;
+}
+
+.hero-banner {
+  background-image: linear-gradient(135deg, rgba(35, 48, 79, 0.92), rgba(79, 36, 68, 0.9), rgba(29, 40, 53, 0.9));
+  border-radius: 28px;
+  padding: 18px 20px;
+  min-height: 180px;
+  border: 1px solid rgba(255, 248, 252, 0.08);
+}
+
+.hero-pill,
+.tiny-pill {
+  background-color: rgba(255, 248, 252, 0.14);
+  color: #fff8fc;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hero-title {
+  color: #fff8fc;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.hero-copy,
+.surface-card-copy,
+.btc-note,
+.news-card-meta,
+.agenda-item {
+  color: #e1d7e6;
+  font-size: 12px;
+}
+
+.hero-stat-row {
+  margin-top: 4px;
+}
+
+.hero-stat {
+  background-color: rgba(20, 18, 24, 0.28);
+  border-radius: 18px;
+  padding: 10px 12px;
+  min-width: 150px;
+}
+
+.hero-stat-value,
+.btc-price,
+.focus-title {
+  color: #fff8fc;
+  font-weight: 800;
+}
+
+.hero-stat-value {
+  font-size: 16px;
+}
+
+.surface-card {
+  background-color: rgba(29, 26, 34, 0.82);
+  border-radius: 24px;
+  padding: 16px;
+  border: 1px solid rgba(255, 248, 252, 0.06);
+}
+
+.btc-card {
+  background-image: linear-gradient(160deg, rgba(45, 34, 24, 0.88), rgba(29, 26, 34, 0.82));
+}
+
+.btc-price {
+  font-size: 28px;
+}
+
+.btc-delta {
+  color: #9ad49a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.focus-card {
+  background-image: linear-gradient(160deg, rgba(34, 29, 46, 0.88), rgba(29, 26, 34, 0.82));
+}
+
+.focus-title {
+  font-size: 20px;
+}
+
+.news-stack {
+  background-image: linear-gradient(160deg, rgba(25, 31, 40, 0.88), rgba(29, 26, 34, 0.82));
+}
+
+.news-card {
+  border-radius: 18px;
+  padding: 12px;
+}
+
+.news-blue {
+  background-color: rgba(159, 201, 255, 0.12);
+}
+
+.news-orange {
+  background-color: rgba(255, 184, 123, 0.14);
+}
+
+.news-green {
+  background-color: rgba(161, 219, 172, 0.12);
+}
+
+.news-card-headline {
+  color: #fff8fc;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.agenda-card {
+  background-image: linear-gradient(160deg, rgba(33, 29, 39, 0.88), rgba(29, 26, 34, 0.82));
+}
+
+.cal {
+  background-color: rgba(39, 34, 45, 0.82);
+  border-radius: 18px;
+  padding: 10px;
+}
+
+.agenda-list {
+  margin-top: 4px;
+}
+
+.agenda-item {
+  background-color: rgba(39, 34, 45, 0.82);
+  border-radius: 14px;
+  padding: 8px 10px;
+}

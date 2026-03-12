@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Top Bar Extracted</title>
+    
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+    
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#D0BCFF", 
+                        "on-primary": "#381E72",
+                        "secondary": "#CCC2DC",
+                        "on-secondary": "#332D41",
+                        "tertiary": "#EFB8C8",
+                        "background-light": "#FDF8FD",
+                        "background-dark": "#141218",
+                        "surface-light": "#F3EDF7",
+                        "surface-dark": "#1D1B20", 
+                        "surface-dim-dark": "#141218",
+                        "surface-bright-dark": "#2B2930",
+                        "outline-dark": "#938F99",
+                        "outline-light": "#79747E",
+                        "surface-variant-dark": "#49454F",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                        mono: ["JetBrains Mono", "monospace"],
+                    }
+                },
+            },
+        };
+    </script>
+</head>
+<body class="font-display bg-background-dark text-gray-100 h-screen overflow-hidden selection:bg-primary selection:text-on-primary">
+    
+    <header class="fixed top-0 left-0 w-full h-10 px-3 flex items-center justify-between z-50 bg-surface-dark/80 backdrop-blur-md border-b border-white/10 text-xs font-medium">
+        
+        <div class="flex items-center gap-3">
+            <span class="material-icons-round text-lg text-primary">trip_origin</span>
+            <span class="opacity-70">Workspace 1</span>
+        </div>
+        
+        <div class="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
+            <div class="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full">
+                <span class="material-icons-round text-sm">music_note</span>
+                <span>MDK - Press Start</span>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="hidden md:block">6:46 pm • Mon, 03/11</div>
+            <div class="flex items-center gap-2 cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition">
+                <span class="material-icons-round text-sm">wifi</span>
+                <span class="material-icons-round text-sm">battery_full</span>
+                <span class="bg-primary text-on-primary px-1.5 rounded text-[10px] font-bold">93</span>
+            </div>
+        </div>
+        
+    </header>
+
+</body>
+</html>

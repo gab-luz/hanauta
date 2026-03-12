@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# A script to toggle between various desktop layouts for bspwm, intended to be used for my polybar module.
+
+CURRENT=$(cat $HOME/.config/i3/script/current-layout)
+
+# Switch layouts
+
+# Tiled
+if [[ $CURRENT == "󰍲" ]]; then
+        bsp-layout set tiled
+        echo "󰙀" > $HOME/.config/i3/script/current-layout
+fi
+
+# Monocle
+if [[ $CURRENT == "󰙀" ]]; then
+        bsp-layout set monocle
+        echo "󰨤" > $HOME/.config/i3/script/current-layout
+fi
+
+# Grid
+if [[ $CURRENT == "󰨤" ]]; then
+        bsp-layout set tall
+        echo "󰕮" > $HOME/.config/i3/script/current-layout
+fi
+
+# Wide
+if [[ $CURRENT == "󰕮" ]]; then
+        bsp-layout set wide
+        echo "󰕪" > $HOME/.config/i3/script/current-layout
+fi
+
+# Even
+if [[ $CURRENT == "󰕪" ]]; then
+        bsp-layout set even
+        echo "󰍲" > $HOME/.config/i3/script/current-layout
+fi

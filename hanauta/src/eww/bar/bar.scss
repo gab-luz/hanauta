@@ -1,0 +1,278 @@
+/* MD3 Standard Transition */
+$md3-ease: cubic-bezier(0.2, 0, 0, 1);
+
+/* The Main Bar Container */
+.bar {
+  background-color: $bg;
+  color: $fg;
+  /* MD3 Floating Surface */
+  border-radius: 28px; 
+}
+
+/* MD3 "Chip" Base Styling 
+  Applied to most bar modules for a uniform, expressive pill shape
+*/
+.systraybox, .launcherbox, .update, .caffeine, .gamemode, .works, .actionsbox, .powerbutton {
+  background-color: $bg-alt;
+  /* Pill shape */
+  border-radius: 100px;
+  /* Uniform vertical and horizontal breathing room */
+  padding: 4px 14px; 
+  /* Space between chips */
+  margin: 6px 4px; 
+  transition: all 0.25s $md3-ease;
+
+  &:hover {
+    background-color: $dimblack;
+  }
+  &:active {
+    background-color: $black;
+  }
+}
+
+/* Icon Resets to ensure perfect centering in MD3 */
+.launcherbox .content .icon, 
+.update .suupdate .iconss,
+.clipboard, .closebutton, .tray, 
+.works, .workspace-dot, .status-chip-icon,
+.actionsbox {
+  font-family: $font-icon;
+  font-weight: normal;
+  letter-spacing: 0;
+}
+
+/* Specific Adjustments */
+.systraybox {
+  padding: 4px 10px;
+}
+
+.tray-collapse {
+  color: $foregroundDim;
+  font-family: $font-icon;
+  padding: 0px 6px;
+  font-weight: normal;
+}
+
+.systray button {
+  background: transparent;
+  border-radius: 50%; /* Make tray icons circular */
+  padding: 0px 4px;
+}
+
+.launcherbox {
+  .content {
+    .placeholder {
+      color: $blue;
+      font-family: Product Sans;
+      font-weight: 500;
+      letter-spacing: 0.1px;
+    }
+    .icon {
+      margin-right: 10px;
+      color: $blue;
+      font-size: 16px;
+    }
+  }
+}
+
+.trayicon {
+  background-repeat: no-repeat;
+  background-size: 17px;
+  min-height: 10px;
+  min-width: 25px;
+  margin: 11px 0px 0px 0px;
+}
+
+/* Standalone icon buttons */
+.clipboard, .closebutton, .tray {
+  background-color: transparent;
+  margin: 6px 2px;
+  padding: 4px 8px;
+  font-size: 18px;
+  border-radius: 50%;
+  transition: all 0.2s $md3-ease;
+  
+  &:hover { background-color: $bg-alt; }
+  &:active { background-color: $black; }
+}
+
+.clipboard { color: $blue; }
+.closebutton { color: $green; }
+.tray { color: $blue; }
+
+.update {
+  color: $green;
+  font-family: Product Sans;
+  font-size: 14px;
+  font-weight: 500;
+  .suupdate .iconss {
+    margin-right: 8px;
+    font-size: 16px;
+  }
+}
+
+.caffeine { color: $yellow; font-size: 16px; }
+.gamemode { color: $green; font-size: 16px; }
+
+/* Workspaces */
+.works {
+  padding: 8px 5px;
+}
+
+.workspace-dot {
+  background-color: rgba(168, 199, 250, 0.16);
+  border-radius: 999px;
+  min-width: 5px;
+  min-height: 5px;
+  padding: 0;
+  transition: all 0.22s $md3-ease;
+}
+
+.workspace-dot:hover {
+  background-color: rgba(208, 188, 255, 0.45);
+}
+
+.workspace-dot.empty {
+  background-color: rgba(230, 225, 229, 0.18);
+}
+
+.workspace-dot.occupied {
+  background-color: rgba(208, 188, 255, 0.62);
+}
+
+.workspace-dot.focused {
+  background-color: $blue;
+  min-width: 24px;
+  box-shadow: 0 0 0 4px rgba(168, 199, 250, 0.14);
+}
+
+/* Center Date */
+.bardatebox {
+  margin: 6px 8px;
+  padding: 4px 16px;
+  font-family: Product Sans;
+  font-weight: 500; /* MD3 Title Medium */
+  font-size: 15px;
+  letter-spacing: 0.1px;
+  color: $putih;
+  border-radius: 100px;
+  transition: all 0.25s $md3-ease;
+  
+  &:hover { background-color: $dimblack; }
+  &:active { background-color: $black; }
+}
+
+.bar-time-label {
+  color: $putih;
+  font-family: Product Sans;
+  font-weight: 600;
+}
+
+.bar-media-chip {
+  background-color: rgba(208, 188, 255, 0.18);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.ai-launch {
+  background-color: rgba(208, 188, 255, 0.16);
+  border-radius: 999px;
+  padding: 4px 10px;
+  transition: all 0.22s $md3-ease;
+
+  &:hover {
+    background-color: rgba(208, 188, 255, 0.28);
+  }
+
+  &:active {
+    background-color: rgba(208, 188, 255, 0.20);
+  }
+}
+
+.ai-launch-icon {
+  color: $purple;
+  font-family: $font-icon;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.bar-media-icon {
+  color: $purple;
+  font-family: $font-icon;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.bar-media-label {
+  color: $fg;
+  font-family: Product Sans;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.searchbutton {
+  background-color: $black;
+  margin: 6px 4px;
+  padding: 4px 16px;
+  border-radius: 100px; /* Pill */
+  transition: all 0.25s $md3-ease;
+  font-family: Product Sans;
+  font-weight: 500;
+  
+  .content {
+    .placeholder { color: $lightblack; }
+    .icon {
+      font-family: $font-icon;
+      margin-right: 12px;
+      color: $blue;
+      font-weight: normal;
+    }
+  }
+  &:hover { background-color: $dimblack; }
+  &:active { background-color: $black; }
+}
+
+.actionsbox {
+  background-color: rgba(208, 188, 255, 0.18);
+  color: $purple2;
+  padding: 4px 10px;
+  font-size: 16px;
+}
+
+.status-chip {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.status-chip-icon {
+  font-size: 15px;
+}
+
+.status-chip.wifi {
+  color: #cbb7ff;
+}
+
+.status-chip.radio {
+  color: #b5d4ff;
+}
+
+.status-chip.volume {
+  color: #f3c6ff;
+}
+
+.status-chip.bluetooth {
+  color: #c2bbff;
+}
+
+.status-chip.mic {
+  color: #ddb8ff;
+}
+
+/* Power Button as a prominent FAB */
+.powerbutton {
+  color: $watermelon;
+  padding: 4px 14px;
+  font-size: 18px;
+  background-color: $dimblack; /* Slightly darker to stand out */
+}

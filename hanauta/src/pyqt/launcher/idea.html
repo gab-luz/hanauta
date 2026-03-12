@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Extracted Launcher Component</title>
+    
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#D0BCFF",
+                        "primary-dark": "#381E72",
+                        "background-light": "#F3F0F5",
+                        "background-dark": "#1C1B1F",
+                        "surface-dark": "#2B2930",
+                        "surface-variant": "#49454F",
+                        "on-surface-variant": "#CAC4D0",
+                        "outline": "#938F99",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                        mono: ["JetBrains Mono", "monospace"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.75rem",
+                        'xl': "1rem",
+                        '2xl': "1.5rem",
+                        '3xl': "2rem",
+                    },
+                    boxShadow: {
+                        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.5)',
+                    }
+                },
+            },
+        };
+    </script>
+
+    <style>
+        /* Background added to body purely to demonstrate the glass effect */
+        body {
+            background-color: #141218;
+            background-image: 
+                radial-gradient(at 10% 10%, #2D2A35 0%, transparent 40%),
+                radial-gradient(at 90% 10%, #36343B 0%, transparent 40%),
+                radial-gradient(at 50% 50%, #1C1B1F 0%, transparent 50%),
+                radial-gradient(at 85% 85%, #3F3C45 0%, transparent 40%),
+                radial-gradient(at 15% 85%, #2B2930 0%, transparent 40%);
+            background-size: cover;
+            background-attachment: fixed;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin: 0;
+        }
+
+        /* Essential component styles */
+        .glass-panel {
+            background: rgba(30, 29, 33, 0.95);
+            border: 1px solid rgba(147, 143, 153, 0.15);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(147, 143, 153, 0.3);
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(147, 143, 153, 0.5);
+        }
+    </style>
+</head>
+<body class="text-white font-display antialiased select-none dark">
+
+    <div class="w-[800px] h-[550px] glass-panel rounded-2xl shadow-glass flex overflow-hidden">
+        
+        <div class="w-48 bg-surface-dark/30 border-r border-white/5 flex flex-col p-4 gap-2">
+            <div class="mb-4 px-3 py-2 flex items-center gap-3 text-primary">
+                <span class="material-icons-round text-xl">apps</span>
+                <span class="font-semibold tracking-wide">Launcher</span>
+            </div>
+            <button class="w-full text-left px-4 py-3 rounded-xl bg-primary text-primary-dark font-medium text-sm flex items-center gap-3 transition-all">
+                <span class="material-icons-round text-lg">grid_view</span> All Apps
+            </button>
+            <button class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-sm flex items-center gap-3 transition-all">
+                <span class="material-icons-round text-lg">public</span> Internet
+            </button>
+            <button class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-sm flex items-center gap-3 transition-all">
+                <span class="material-icons-round text-lg">settings</span> System
+            </button>
+            <button class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-sm flex items-center gap-3 transition-all">
+                <span class="material-icons-round text-lg">sports_esports</span> Games
+            </button>
+            <button class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-sm flex items-center gap-3 transition-all">
+                <span class="material-icons-round text-lg">brush</span> Graphics
+            </button>
+            <button class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-sm flex items-center gap-3 transition-all">
+                <span class="material-icons-round text-lg">movie</span> Multimedia
+            </button>
+            <div class="mt-auto flex items-center gap-3 px-4 py-3 text-gray-500 text-xs font-mono">
+                <span class="material-icons-round text-sm">power_settings_new</span>
+                <span>Session...</span>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col bg-[#1C1B1F]/90">
+            <div class="p-6 pb-2">
+                <div class="relative group">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-primary material-icons-round">search</span>
+                    <input autofocus="" class="w-full bg-surface-dark border-none rounded-xl py-4 pl-12 pr-4 text-base text-white placeholder-gray-500 focus:ring-1 focus:ring-primary/50 transition-all shadow-md" placeholder="Type to search..." type="text"/>
+                    <div class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-2">
+                        <kbd class="hidden group-focus-within:inline-flex items-center gap-1 px-2 py-1 bg-surface-variant/50 rounded text-[10px] text-gray-300 font-mono border border-white/5">ESC</kbd>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-1 pr-2">
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-[#A8C7FA]">
+                        <span class="material-icons-round text-2xl">terminal</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">Alacritty</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">Terminal Emulator</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[Enter]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5 bg-white/[0.02]">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-[#E8DEF8]">
+                        <span class="material-icons-round text-2xl">public</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">Firefox</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">Web Browser</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[1]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-[#F2B8B5]">
+                        <span class="material-icons-round text-2xl">folder</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">Thunar</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">File Manager</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[2]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-[#94F0F0]">
+                        <span class="material-icons-round text-2xl">code</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">VS Code</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">Code Editor</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[3]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-[#C4EDD7]">
+                        <span class="material-icons-round text-2xl">forum</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">Discord</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">Communication</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[4]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-[#F9DEDC]">
+                        <span class="material-icons-round text-2xl">music_note</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">Spotify</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">Music Player</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[5]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-gray-400">
+                        <span class="material-icons-round text-2xl">calculate</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">Calculator</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">System Tool</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[6]</span>
+                </div>
+                
+                <div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-[#303030] flex items-center justify-center text-gray-400">
+                        <span class="material-icons-round text-2xl">photo_camera</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-200 group-hover:text-white">OBS Studio</span>
+                        <span class="text-xs text-gray-500 group-hover:text-gray-400">Video Recorder</span>
+                    </div>
+                    <span class="ml-auto text-xs text-gray-500 font-mono group-hover:text-primary transition-colors">[7]</span>
+                </div>
+            </div>
+
+            <div class="h-10 border-t border-white/5 flex items-center justify-between px-6 bg-surface-dark/50 text-[10px] text-gray-500 font-mono">
+                <span>Total: 48 applications</span>
+                <div class="flex gap-4">
+                    <span><strong class="text-primary">Shift+Enter</strong> to run as root</span>
+                    <span><strong class="text-primary">Alt+1</strong> context menu</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    </body>
+</html>

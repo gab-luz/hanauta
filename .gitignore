@@ -1,0 +1,63 @@
+# Python
+.venv/
+venv/
+env/
+.cache-src
+uv.lock
+__pycache__/
+.venv-build
+hanauta_lock.build
+.nuitka-cache
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local config (machine-specific)
+backups/
+*.backup
+*.bak
+*.local
+
+# Temp files
+*.tmp
+*.log
+*.cache/
+*.qmlc
+*.jsc
+*.metainfo
+
+# Binaries that may be generated
+bin/
+.local/
+
+# CMake / native builds
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+Makefile
+*.cmake.user
+*.ninja
+.ninja_*
+
+# Specific configs that might differ per machine
+TODO.md
+NOTES.md

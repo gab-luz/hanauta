@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+EWW_DIR="$HOME/.config/i3/hanauta/src/eww"
+EWW="eww -c $EWW_DIR"
+LOG="$HOME/.cache/eww-i3-start.log"
+
+mkdir -p "$(dirname "$LOG")"
+{
+  echo "== $(date) start-eww-ui =="
+
+  # Wait until i3 IPC is ready
+  for i in $(seq 1 80); do
+    i3-msg -t get_version >/dev/null 2>&1 && break
+    sleep 0.05
+  done
+
+  # Small delay: monitor/compositor/feh/etc
+  sleep 1.2
+
+  $EWW daemon || true
+
+  # Tries to open a few times (first boot, sometimes it fails)
+  for i in $(seq 1 10); do
+    $EWW open bar >/dev/null 2>&1 && break || true
+    sleep 0.2
+  done
+
+  for i in $(seq 1 10); do
+    $EWW open dock >/dev/null 2>&1 && break || true
+    sleep 0.2
+  done
+
+  echo "opened bar + dock"
+} >>"$LOG" 2>&1

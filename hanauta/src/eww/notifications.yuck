@@ -1,0 +1,231 @@
+(defpoll notifications_json :interval "8s" :initial "[]" "~/.config/i3/hanauta/src/eww/scripts/notifications-json.sh")
+
+(defvar notif_mock_headline_1 "Market shrugs off macro jitters as AI names lift late trading")
+(defvar notif_mock_headline_2 "Bitcoin miners rotate into efficiency plays ahead of next difficulty jump")
+(defvar notif_mock_headline_3 "Steam spring backlog festival starts Friday with story-rich RPG discounts")
+(defvar notif_mock_btc_price "$91,482.22")
+(defvar notif_mock_btc_delta "+3.84% today")
+(defvar notif_mock_btc_note "Range: $88.1k to $92.0k")
+(defvar notif_mock_steam_game "Cyberpunk 2077")
+(defvar notif_mock_steam_status "Night City Session")
+(defvar notif_mock_steam_progress "60% completed")
+(defvar notif_mock_steam_hours "100.4 hours played")
+(defvar notif_mock_steam_last "Last launch: 23:40")
+(defvar notif_mock_focus_title "Evening Focus")
+(defvar notif_mock_focus_body "Two priority threads left: finish Eww polish and review tomorrow's notes.")
+(defvar notif_mock_weather "18C  Light rain")
+(defvar notif_mock_city "Sao Paulo")
+
+(defwidget info_chip [icon title value class_name]
+  (box :class "info-chip"
+       :orientation "h"
+       :space-evenly false
+       :spacing 8
+    (label :class "info-chip-icon ${class_name}" :text icon)
+    (box :orientation "v" :space-evenly false :spacing 2
+      (label :class "info-chip-title" :text title :halign "start")
+      (label :class "info-chip-value" :text value :halign "start")
+    )
+  )
+)
+
+(defwidget news_card [eyebrow headline meta accent]
+  (box :class "news-card ${accent}"
+       :orientation "v"
+       :space-evenly false
+       :spacing 6
+    (label :class "news-card-eyebrow" :text eyebrow :halign "start")
+    (label :class "news-card-headline" :text headline :halign "start" :xalign 0 :wrap true :justify "left")
+    (label :class "news-card-meta" :text meta :halign "start")
+  )
+)
+
+(defwidget mock_notifications_empty []
+  (box :class "notification-empty"
+       :orientation "v"
+       :space-evenly false
+       :spacing 10
+       :valign "center"
+       :halign "center"
+    (label :class "notification-empty-icon" :text "󰂚")
+    (label :class "notification-empty-title" :text "No active notifications")
+    (label :class "notification-empty-copy" :text "This space will fill with Dunst history, alerts, and quick actions." :wrap true :justify "center")
+  )
+)
+
+(defwidget notification_item [notification]
+  (box :class "notification-item"
+       :orientation "v"
+       :space-evenly false
+       :spacing 8
+    (box :orientation "h" :space-evenly false :spacing 8
+      (label :class "notification-item-app" :text {notification.appname} :halign "start")
+      (box :hexpand true)
+      (button :class "notification-item-close" :onclick "dunstctl close ${notification.id}" "󰅖")
+    )
+    (label :class "notification-item-summary" :text {notification.summary} :halign "start" :xalign 0 :wrap true :justify "left")
+    (label :class "notification-item-body" :text {notification.body} :halign "start" :xalign 0 :wrap true :justify "left")
+  )
+)
+
+(defwidget notification_stream []
+  (box :class "notification-stream"
+       :orientation "v"
+       :space-evenly false
+       :spacing 10
+    (revealer
+      :transition "slidedown"
+      :reveal {arraylength(notifications_json) == 0}
+      (mock_notifications_empty))
+    (revealer
+      :transition "slidedown"
+      :reveal {arraylength(notifications_json) > 0}
+      (box :orientation "v"
+           :space-evenly false
+           :spacing 10
+        (for item in {notifications_json}
+          (notification_item :notification item))
+      ))
+  )
+)
+
+(defwidget notification_center_panel []
+  (box :class "notification-center-root"
+       :orientation "v"
+       :space-evenly false
+    (revealer :transition "slidedown"
+              :reveal notification_center_ready
+      (box :class "notification-center-shell"
+         :orientation "h"
+         :space-evenly false
+         :spacing 18
+      (box :class "notification-rail"
+           :orientation "v"
+           :space-evenly false
+           :spacing 14
+           :valign "fill"
+        (box :class "panel-header"
+             :orientation "h"
+             :space-evenly false
+          (box :orientation "v" :space-evenly false :spacing 3
+            (label :class "panel-header-kicker" :text "Material You Hub")
+            (label :class "panel-header-title" :text "Notification Center"))
+          (box :hexpand true)
+          (button :class "panel-header-button" :onclick "dunstctl history-clear" "Clear"))
+        (box :class "rail-strip"
+             :orientation "h"
+             :space-evenly false
+             :spacing 10
+          (info_chip :icon "󰃰" :title "Unread" :value "${arraylength(notifications_json)}" :class_name "accent-blue")
+          (info_chip :icon "󰥔" :title "Weather" :value "${notif_mock_weather}" :class_name "accent-orange"))
+        (scroll :class "notification-scroll"
+                :vscroll true
+                :hscroll false
+                :vexpand true
+          (notification_stream))
+      )
+      (box :class "notification-content"
+           :orientation "v"
+           :space-evenly false
+           :spacing 16
+           :hexpand true
+        (box :class "hero-banner"
+             :orientation "v"
+             :space-evenly false
+             :spacing 12
+          (box :orientation "h" :space-evenly false :spacing 10
+            (label :class "hero-eyebrow" :text "Player Status")
+            (label :class "hero-pill" :text "${notif_mock_steam_status}")
+            (box :hexpand true)
+            (label :class "hero-subtle" :text "${notif_mock_steam_last}"))
+          (label :class "hero-title" :text "${notif_mock_steam_game}" :halign "start")
+          (label :class "hero-copy" :text "Night City dashboard with project pace, current playthrough, and session highlights." :wrap true :justify "left")
+          (box :class "hero-stat-row"
+               :orientation "h"
+               :space-evenly false
+               :spacing 12
+            (box :class "hero-stat"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 2
+              (label :class "hero-stat-value" :text "${notif_mock_steam_progress}")
+              (label :class "hero-stat-label" :text "Story arc"))
+            (box :class "hero-stat"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 2
+              (label :class "hero-stat-value" :text "${notif_mock_steam_hours}")
+              (label :class "hero-stat-label" :text "Total time"))
+            (box :class "hero-stat"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 2
+              (label :class "hero-stat-value" :text "3 active gigs")
+              (label :class "hero-stat-label" :text "Open quests"))
+          )
+        )
+        (box :orientation "h" :space-evenly false :spacing 16
+          (box :class "content-column"
+               :orientation "v"
+               :space-evenly false
+               :spacing 16
+               :hexpand true
+            (box :class "surface-card btc-card"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 8
+              (label :class "surface-card-kicker" :text "Bitcoin Snapshot")
+              (label :class "btc-price" :text "${notif_mock_btc_price}")
+              (box :orientation "h" :space-evenly false :spacing 8
+                (label :class "btc-delta" :text "${notif_mock_btc_delta}")
+                (label :class "btc-note" :text "${notif_mock_btc_note}"))
+              (label :class "surface-card-copy" :text "Mock market tile for later API wiring." :wrap true :justify "left"))
+            (box :class "surface-card focus-card"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 8
+              (label :class "surface-card-kicker" :text "Daily Pulse")
+              (label :class "focus-title" :text "${notif_mock_focus_title}")
+              (label :class "surface-card-copy" :text "${notif_mock_focus_body}" :wrap true :justify "left")
+              (box :orientation "h" :space-evenly false :spacing 8
+                (label :class "tiny-pill" :text "${notif_mock_city}")
+                (label :class "tiny-pill" :text "2 reminders pending")
+                (label :class "tiny-pill" :text "Calm mode")))
+          )
+          (box :class "content-column"
+               :orientation "v"
+               :space-evenly false
+               :spacing 16
+               :hexpand true
+            (box :class "surface-card news-stack"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 10
+              (label :class "surface-card-kicker" :text "Latest News")
+              (news_card :eyebrow "Markets" :headline "${notif_mock_headline_1}" :meta "2 min ago" :accent "news-blue")
+              (news_card :eyebrow "Crypto" :headline "${notif_mock_headline_2}" :meta "12 min ago" :accent "news-orange")
+              (news_card :eyebrow "Steam" :headline "${notif_mock_headline_3}" :meta "Fresh drop" :accent "news-green"))
+            (box :class "surface-card agenda-card"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 10
+              (label :class "surface-card-kicker" :text "Agenda")
+              (calendar :class "cal")
+              (box :class "agenda-list"
+                   :orientation "v"
+                   :space-evenly false
+                   :spacing 6
+                (label :class "agenda-item" :text "19:30  Review Eww widgets")
+                (label :class "agenda-item" :text "21:00  Read market recap")
+                (label :class "agenda-item" :text "22:15  Queue tomorrow's playlist"))))
+        )
+      ))
+  )
+))
+
+(defwindow notification_center
+  :geometry (geometry :x "0px" :y "58px" :width "1120px" :height "760px" :anchor "top center")
+  :wm-ignore false
+  :windowtype "dialog"
+  (notification_center_panel)
+)

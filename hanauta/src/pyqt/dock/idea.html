@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Extracted Dock Component</title>
+    
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#D0BCFF",
+                        "primary-dark": "#381E72",
+                        "background-light": "#F3F0F5",
+                        "background-dark": "#1C1B1F",
+                        "surface-dark": "#2B2930",
+                        "surface-variant": "#49454F",
+                        "on-surface-variant": "#CAC4D0",
+                        "outline": "#938F99",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                        mono: ["JetBrains Mono", "monospace"],
+                    }
+                },
+            },
+        };
+    </script>
+
+    <style>
+        /* Added background to make the dock's transparency and colors visible */
+        body {
+            background-color: #141218;
+            background-image: 
+                radial-gradient(at 10% 10%, #2D2A35 0%, transparent 40%),
+                radial-gradient(at 90% 10%, #36343B 0%, transparent 40%),
+                radial-gradient(at 50% 50%, #1C1B1F 0%, transparent 50%),
+                radial-gradient(at 85% 85%, #3F3C45 0%, transparent 40%),
+                radial-gradient(at 15% 85%, #2B2930 0%, transparent 40%);
+            background-size: cover;
+            background-attachment: fixed;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="text-white font-display antialiased select-none dark">
+
+    <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+        <div class="flex items-center px-4 py-3 rounded-[2rem] bg-[#1C1B1F]/90 backdrop-blur-xl border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.6)] gap-4 transition-all duration-300 hover:scale-[1.01]">
+            
+            <button class="group relative p-3 rounded-2xl bg-surface-variant/30 hover:bg-primary hover:text-primary-dark transition-all duration-300 ease-out">
+                <span class="material-icons-round text-xl group-hover:scale-110 transition-transform">apps</span>
+            </button>
+            
+            <div class="w-[1px] h-8 bg-white/10 mx-1"></div>
+            
+            <div class="flex items-center gap-3">
+                <button class="group relative p-3 rounded-2xl hover:bg-white/10 text-gray-300 hover:text-white transition-all">
+                    <span class="material-icons-round text-xl text-[#A8C7FA]">terminal</span>
+                </button>
+                <button class="group relative p-3 rounded-2xl bg-primary/20 text-primary transition-all shadow-inner border border-primary/30">
+                    <span class="material-symbols-outlined text-xl">smart_toy</span>
+                    <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-primary rounded-full"></div>
+                </button>
+                <button class="group relative p-3 rounded-2xl hover:bg-white/10 text-gray-300 hover:text-white transition-all">
+                    <span class="material-icons-round text-xl text-[#F2B8B5]">folder</span>
+                </button>
+                <button class="group relative p-3 rounded-2xl hover:bg-white/10 text-gray-300 hover:text-white transition-all">
+                    <span class="material-icons-round text-xl text-primary">settings</span>
+                </button>
+            </div>
+            
+            <div class="w-[1px] h-8 bg-white/10 mx-1"></div>
+            
+            <div class="flex items-center gap-3">
+                <button class="group relative p-3 rounded-2xl hover:bg-white/10 text-gray-300 hover:text-white transition-all">
+                    <span class="material-icons-round text-xl text-[#C4EDD7]">forum</span>
+                </button>
+                <div class="relative group">
+                    <button class="p-3 rounded-2xl hover:bg-white/10 text-gray-300 hover:text-white transition-all">
+                        <span class="material-icons-round text-xl">bluetooth</span>
+                    </button>
+                </div>
+                <div class="relative group">
+                    <button class="p-3 rounded-2xl hover:bg-white/10 text-gray-300 hover:text-white transition-all">
+                        <span class="material-icons-round text-xl">volume_up</span>
+                    </button>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    </body>
+</html>

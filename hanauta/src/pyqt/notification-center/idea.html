@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Extracted Glass Panel</title>
+    
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#D0BCFF", 
+                        "on-primary": "#381E72",
+                        "secondary": "#CCC2DC",
+                        "on-secondary": "#332D41",
+                        "tertiary": "#EFB8C8",
+                        "background-dark": "#141218",
+                        "surface-variant-dark": "#49454F",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                        mono: ["JetBrains Mono", "monospace"],
+                    },
+                    boxShadow: {
+                        'glass': '0 8px 32px rgba(0, 0, 0, 0.4)',
+                    }
+                },
+            },
+        };
+    </script>
+    <style type="text/tailwindcss">
+        /* Custom Scrollbar for the overflow-y-auto */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #49454F;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #D0BCFF;
+        }
+
+        /* Glass Panel Effect */
+        .glass-panel {
+            background: rgba(29, 27, 32, 0.65);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* Material Icons setup */
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .filled {
+            font-variation-settings: 'FILL' 1;
+        }
+
+        /* Custom Sliders (Brightness/Volume) */
+        input[type="range"] {
+            -webkit-appearance: none;
+            height: 44px;
+            background: transparent;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 44px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 22px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 44px;
+            width: 50%;
+            border-radius: 22px;
+            background: theme('colors.primary');
+            cursor: pointer;
+            box-shadow: none;
+        }
+        .slider-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .slider-icon {
+            position: absolute;
+            left: 16px;
+            pointer-events: none;
+            color: theme('colors.on-primary');
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="font-display bg-background-dark text-gray-100 h-screen p-6 flex justify-center selection:bg-primary selection:text-on-primary">
+    
+    <section class="glass-panel w-[400px] flex flex-col rounded-3xl shadow-glass flex-shrink-0 p-6 self-start mt-4 h-[calc(100vh-80px)] overflow-y-auto">
+        
+        <div class="flex items-center justify-between mb-8">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-tertiary flex items-center justify-center shadow-lg">
+                    <span class="material-symbols-outlined text-on-primary filled">person</span>
+                </div>
+                <div>
+                    <h2 class="font-bold text-lg leading-tight">User</h2>
+                    <p class="text-xs opacity-50 font-mono">up 4 hours, 12 mins</p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition">
+                    <span class="material-symbols-outlined text-sm">settings</span>
+                </button>
+                <button class="w-10 h-10 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 flex items-center justify-center transition">
+                    <span class="material-symbols-outlined text-sm">power_settings_new</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-8">
+            <button class="flex items-center gap-3 p-4 rounded-2xl bg-primary text-on-primary shadow-md transition-transform active:scale-95 group">
+                <span class="material-symbols-outlined filled">wifi</span>
+                <div class="text-left">
+                    <p class="text-xs font-bold">Wi-Fi</p>
+                    <p class="text-[10px] opacity-70">Starlight-5G</p>
+                </div>
+            </button>
+            <button class="flex items-center gap-3 p-4 rounded-2xl bg-primary text-on-primary shadow-md transition-transform active:scale-95">
+                <span class="material-symbols-outlined filled">bluetooth</span>
+                <div class="text-left">
+                    <p class="text-xs font-bold">Bluetooth</p>
+                    <p class="text-[10px] opacity-70">WH-1000XM4</p>
+                </div>
+            </button>
+            <button class="flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 text-white/70 transition-transform active:scale-95">
+                <span class="material-symbols-outlined">do_not_disturb_on</span>
+                <div class="text-left">
+                    <p class="text-xs font-bold">DND</p>
+                    <p class="text-[10px] opacity-50">Off</p>
+                </div>
+            </button>
+            <button class="flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 text-white/70 transition-transform active:scale-95">
+                <span class="material-symbols-outlined">airplanemode_active</span>
+                <div class="text-left">
+                    <p class="text-xs font-bold">Airplane</p>
+                    <p class="text-[10px] opacity-50">Off</p>
+                </div>
+            </button>
+            <button class="flex items-center gap-3 p-4 rounded-2xl bg-secondary text-on-secondary shadow-sm transition-transform active:scale-95">
+                <span class="material-symbols-outlined filled">nightlight</span>
+                <div class="text-left">
+                    <p class="text-xs font-bold">Night Light</p>
+                    <p class="text-[10px] opacity-70">On</p>
+                </div>
+            </button>
+            <button class="flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 text-white/70 transition-transform active:scale-95">
+                <span class="material-symbols-outlined">flashlight_on</span>
+                <div class="text-left">
+                    <p class="text-xs font-bold">Flashlight</p>
+                    <p class="text-[10px] opacity-50">Off</p>
+                </div>
+            </button>
+        </div>
+
+        <div class="space-y-4 mb-8">
+            <div class="slider-container">
+                <span class="material-symbols-outlined slider-icon">brightness_medium</span>
+                <input class="w-full" max="100" min="0" type="range" value="67"/>
+            </div>
+            <div class="slider-container">
+                <span class="material-symbols-outlined slider-icon">volume_up</span>
+                <input class="w-full" max="100" min="0" type="range" value="82"/>
+            </div>
+        </div>
+
+        <div class="bg-surface-variant-dark/40 border border-white/5 rounded-2xl p-4 mt-auto">
+            <div class="flex items-center gap-4 mb-4">
+                <div class="w-14 h-14 rounded-xl bg-gray-800 flex-shrink-0 overflow-hidden shadow-lg border border-white/10">
+                    <img alt="Album Art" class="w-full h-full object-cover opacity-80" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAft7Seca1JShROR9pOfBLGmMI3P0oHs4ZsC2gIjD4Z-NwIM7DXJZPMioN5zLoU7dqMnqnCVjMaZIpL2AGDBlRu9PpiuZxlBCYmiIwvksoYKoVS97GKgfP5z4PH0-I56USXdiaDelGhqMy9hkRKIziICXw5Oag38jmEQrpOjF-EnfuEXH0O0A3hoJS0fm7WY5OmQHNYBc1EzlTiPR6zDW-6O7MoDBvj5gIP3PTJS59ANLPTvsIdEqMpPS2LMzujqbYClzDkYGgmRuo"/>
+                </div>
+                <div class="flex-1 overflow-hidden">
+                    <h3 class="font-bold text-sm truncate">Press Start</h3>
+                    <p class="text-xs text-primary truncate">MDK</p>
+                </div>
+            </div>
+            <div class="flex flex-col gap-3">
+                <div class="w-full h-1 bg-white/10 rounded-full relative">
+                    <div class="absolute top-0 left-0 h-full w-2/3 bg-primary rounded-full"></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-[10px] opacity-50 font-mono">1:42</span>
+                    <div class="flex items-center gap-6">
+                        <button class="text-white/70 hover:text-primary transition">
+                            <span class="material-symbols-outlined filled">skip_previous</span>
+                        </button>
+                        <button class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg hover:scale-105 transition active:scale-95">
+                            <span class="material-symbols-outlined filled">pause</span>
+                        </button>
+                        <button class="text-white/70 hover:text-primary transition">
+                            <span class="material-symbols-outlined filled">skip_next</span>
+                        </button>
+                    </div>
+                    <span class="text-[10px] opacity-50 font-mono">3:15</span>
+                </div>
+            </div>
+        </div>
+
+    </section>
+</body>
+</html>
