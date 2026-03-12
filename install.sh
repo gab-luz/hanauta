@@ -63,7 +63,7 @@ install_editor_extension_dir() {
   mkdir -p "$target_root"
   rm -rf "$target_dir"
   mkdir -p "$target_dir"
-  rsync -a --delete "$VSCODE_EXTENSION_SRC/" "$target_dir/"
+  cp -a "$VSCODE_EXTENSION_SRC/." "$target_dir/"
   success "$label extension installed to $target_dir"
 }
 
@@ -129,11 +129,11 @@ EOF
 print_banner() {
   echo -e "${MAGENTA}${BOLD}"
   cat << 'EOF'
-   ____ ____  _  __      __  __
-  / ___|  _ \| |/ /     |  \/  |
- | |   | |_) | ' / _____| |\/| |
- | |___|  _/| . \| |_____| |  | |
-  \____|_|   |_|\_\      |_|  |_|
+♫  _                                _
+  | |__   __ _ _ __   __ _ _   _| |_ __ _
+  | '_ \ / _` | '_ \ / _` | | | | __/ _` |
+  | | | | (_| | | | | (_| | |_| | || (_| |
+  |_| |_|\__,_|_| |_|\__,_|\__,_|\__\__,_|
 
       Desktop Installer
 EOF
@@ -179,74 +179,127 @@ setup_python_venv() {
   success "Python environment ready"
 }
 
+apt_has_package() {
+  apt-cache show "$1" >/dev/null 2>&1
+}
+
+pacman_has_package() {
+  pacman -Si "$1" >/dev/null 2>&1
+}
+
+install_apt_group() {
+  local label="$1"
+  shift
+  local -a available=()
+  local -a missing=()
+
+  for pkg in "$@"; do
+    if apt_has_package "$pkg"; then
+      available+=("$pkg")
+    else
+      missing+=("$pkg")
+    fi
+  done
+
+  if [ ${#available[@]} -gt 0 ]; then
+    info "Installing Debian packages ($label): ${available[*]}"
+    sudo apt-get install -y "${available[@]}"
+  fi
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    warn "Skipping unavailable Debian packages ($label): ${missing[*]}"
+  fi
+}
+
+install_pacman_group() {
+  local label="$1"
+  shift
+  local -a available=()
+  local -a missing=()
+
+  for pkg in "$@"; do
+    if pacman_has_package "$pkg"; then
+      available+=("$pkg")
+    else
+      missing+=("$pkg")
+    fi
+  done
+
+  if [ ${#available[@]} -gt 0 ]; then
+    info "Installing Arch packages ($label): ${available[*]}"
+    sudo pacman -S --needed --noconfirm "${available[@]}"
+  fi
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    warn "Skipping unavailable Arch packages ($label): ${missing[*]}"
+  fi
+}
+
 install_packages_debian() {
-  local -a pkgs=(
-    bspwm sxhkd rofi feh picom
+  local -a core_pkgs=(
+    i3-wm rofi feh picom
     x11-xserver-utils x11-utils xdotool xclip
-    jq curl ffmpeg
-    flameshot
-    scrot maim
-    playerctl
-    brightnessctl
+    jq curl ffmpeg rsync
+    flameshot scrot maim
+    playerctl brightnessctl
     pulseaudio-utils pamixer
     network-manager wireless-tools
     i3lock
-    clipit plank
-    xfce4-power-manager policykit-1 polkit-gnome
+    xfce4-power-manager lxqt-policykit
     libnotify-bin dunst
     kitty
     bluez
     cava
-    python3-pip
+    python3 python3-pip python3-venv
     libxkbcommon-x11-0
     libxcb-cursor0
+    sassc
+    xdg-user-dirs
+    libgtk-3-bin
+  )
+  local -a optional_pkgs=(
+    copyq clipit plank ukui-window-switch
+    kdeconnect qt6-tools-dev-tools policykit-1-gnome
   )
 
   echo -e "${CYAN}[*]${NC} Updating package lists..."
   sudo apt-get update -qq
 
-  echo -e "${CYAN}[*]${NC} Installing packages..."
-  sudo apt-get install -y "${pkgs[@]}" 2>/dev/null || true
-
-  local missing=()
-  for pkg in "${pkgs[@]}"; do
-    if ! dpkg -l "$pkg" >/dev/null 2>&1; then
-      missing+=("$pkg")
-    fi
-  done
-
-  if [ ${#missing[@]} -gt 0 ]; then
-    warn "Some packages may have failed to install: ${missing[*]}"
-  fi
-  
+  install_apt_group "core desktop stack" "${core_pkgs[@]}"
+  install_apt_group "optional integrations" "${optional_pkgs[@]}"
   success "System packages installed"
 }
 
 install_packages_arch() {
-  local -a pkgs=(
-    bspwm sxhkd rofi feh picom
-    xorg-xsetroot xorg-xprop xdotool xclip
-    jq curl ffmpeg
-    scrot maim
-    playerctl
-    brightnessctl
+  local -a core_pkgs=(
+    i3-wm rofi feh picom
+    xorg-xrandr xorg-xsetroot xorg-xwininfo xorg-xev xdotool xclip
+    jq curl ffmpeg rsync
+    flameshot scrot maim
+    playerctl brightnessctl
     pulseaudio pamixer
     networkmanager wireless_tools
     i3lock
-    clipit plank
-    xfce4-power-manager polkit-gnome
+    xfce4-power-manager lxqt-policykit
     libnotify dunst
     kitty
-    bluez
+    bluez bluez-utils
     cava
-    python-pip
+    python python-pip
     libxkbcommon-x11
     libxcb-cursor
+    sassc
+    xdg-user-dirs
+    gtk3
+  )
+  local -a optional_pkgs=(
+    copyq clipit plank ukui-window-switch
+    kdeconnect qt6-tools polkit-gnome
+    pacman-contrib
   )
 
-  echo -e "${CYAN}[*]${NC} Installing packages via pacman..."
-  sudo pacman -Syu --needed --noconfirm "${pkgs[@]}" 2>/dev/null || true
-  
+  install_pacman_group "core desktop stack" "${core_pkgs[@]}"
+  install_pacman_group "optional integrations" "${optional_pkgs[@]}"
   success "System packages installed"
 }
 
@@ -332,8 +385,38 @@ make_exec() {
       chmod +x "$f" 2>/dev/null || true
     fi
   done < <(find "$root/scripts" "$root/hanauta/src/eww/scripts" -type f -print0 2>/dev/null)
+
+  if [ -d "$root/bin" ]; then
+    find "$root/bin" -maxdepth 1 -type f -exec chmod +x {} \; 2>/dev/null || true
+  fi
   
   success "Scripts made executable"
+}
+
+install_local_binaries() {
+  local root="$HOME/.config/i3"
+  local src_dir="$root/bin"
+  local target_dir="$HOME/.local/bin"
+  local -a linked=()
+
+  mkdir -p "$target_dir"
+  if [ ! -d "$src_dir" ]; then
+    warn "No bundled binaries found in $src_dir"
+    return 0
+  fi
+
+  for name in matugen hellwal i3lock-color; do
+    if [ -x "$src_dir/$name" ]; then
+      ln -sfn "$src_dir/$name" "$target_dir/$name"
+      linked+=("$name")
+    fi
+  done
+
+  if [ ${#linked[@]} -gt 0 ]; then
+    success "Bundled binaries linked into $target_dir: ${linked[*]}"
+  else
+    warn "No bundled public binaries were linked"
+  fi
 }
 
 print_summary() {
@@ -347,19 +430,20 @@ print_summary() {
   echo -e "  ${GREEN}✓${NC} Python environment (uv)"
   echo -e "  ${GREEN}✓${NC} Dotfiles"
   echo -e "  ${GREEN}✓${NC} Config links"
+  echo -e "  ${GREEN}✓${NC} Bundled binaries"
   echo ""
 }
 
 post_notes() {
   echo ""
   echo -e "${YELLOW}Important notes:${NC}"
-  echo -e "  • Wallpaper expected at ${BOLD}~/.wallpaper.png${NC} (see bspwmrc)"
-  echo -e "  • Conky script expected at ${BOLD}~/.config/conky/Auva/start.sh${NC}"
-  echo -e "  • fastcompmgr binary expected at ${BOLD}~/.local/bin/fastcompmgr${NC}"
-  echo -e "  • PyQt6 notification center: click the dashboard icon in the bar"
+  echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
+  echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
+  echo -e "  • PyQt6 notification center opens from the bar"
   echo ""
   echo -e "${CYAN}Next steps:${NC}"
-  echo -e "  1. Log out and log back in, or restart bspwm"
+  echo -e "  1. Log out and log back in, or reload i3"
+  echo -e "  2. Verify ${BOLD}matugen --help${NC} and ${BOLD}hellwal --help${NC} work from your shell"
   echo ""
 }
 
@@ -401,6 +485,7 @@ main() {
   copy_dotfiles
   link_configs
   make_exec
+  install_local_binaries
   if [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
     install_detected_editor_extensions
   fi

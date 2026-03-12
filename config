@@ -52,10 +52,10 @@ exec_always --no-startup-id sh -c 'command -v deadd-notification-center >/dev/nu
 # Startup apps (run once per i3 start)
 exec --no-startup-id sh -c 'sleep 10 && "$HOME/.config/i3/scripts/bspfloat" floating 5 > "$HOME/.log.bspfloat.txt" 2>&1'
 # exec --no-startup-id sh -c "$HOME/.config/conky/Auva/start.sh"
-exec --no-startup-id lxqt-policykit-agent
-exec --no-startup-id xfce4-power-manager
-exec --no-startup-id clipit
-exec --no-startup-id ukui-window-switch
+exec --no-startup-id sh -c 'command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent'
+exec --no-startup-id sh -c 'command -v xfce4-power-manager >/dev/null 2>&1 && xfce4-power-manager'
+exec --no-startup-id sh -c 'if command -v clipit >/dev/null 2>&1; then clipit; elif command -v copyq >/dev/null 2>&1; then copyq; fi'
+exec --no-startup-id sh -c 'command -v ukui-window-switch >/dev/null 2>&1 && ukui-window-switch'
 exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x picom 2>/dev/null; picom --config "$HOME/.config/i3/picom.conf" --daemon'
 # Eww (restart on reload)
 # I need to load the startup file from this folder
@@ -112,7 +112,7 @@ bindsym $mod+Return exec --no-startup-id kitty
 # Screenshot with Flameshot on PrintScreen
 bindsym --release Print exec --no-startup-id flameshot gui
 # Window switcher (ALT+TAB)
-bindsym Mod1+Tab exec --no-startup-id ukui-window-switch
+bindsym Mod1+Tab exec --no-startup-id sh -c 'command -v ukui-window-switch >/dev/null 2>&1 && ukui-window-switch'
 # Open hotkeys overlay
 bindsym Mod1+F1 exec --no-startup-id sh -c '"$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/widget-hotkeys-overlay/hotkeys_overlay.py"'
 # Openapps launcher (from bspwm)
