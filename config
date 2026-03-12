@@ -110,7 +110,7 @@ bindsym --release Print exec --no-startup-id flameshot gui
 # Window switcher (ALT+TAB)
 bindsym Mod1+Tab exec --no-startup-id ukui-window-switch
 # Openapps launcher (from bspwm)
-bindsym $mod+space exec --no-startup-id "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/launcher/launcher.py"
+bindsym $mod+space exec --no-startup-id sh -c '"$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/launcher/launcher.py"'
 # Desktop menu (right click)
 # Close focused window
 bindsym $mod+q kill
