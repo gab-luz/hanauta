@@ -4,6 +4,12 @@ Hanauta is a wallpaper-reactive desktop theme and workflow layer for `i3` on X11
 
 This project is intentionally focused on an X11 / XLibre desktop stack. The goal is not to be a generic Linux theme pack, but a tightly integrated desktop experience for an `i3`-driven session with strong control over visuals, system actions, and live theming.
 
+## Screenshots
+
+![Hanauta screenshot 1](assets/screenshots/2026-03-11_21-42.png)
+![Hanauta screenshot 2](assets/screenshots/2026-03-11_21-43.png)
+![Hanauta screenshot 3](assets/screenshots/2026-03-11_21-53.png)
+
 ## Features
 
 - Native PyQt6 bar with workspace state, media, clock, and system status
