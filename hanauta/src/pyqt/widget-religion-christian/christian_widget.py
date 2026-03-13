@@ -23,6 +23,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +42,12 @@ SETTINGS_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-cent
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 TRACKER_DIR = Path.home() / ".local" / "state" / "hanauta" / "christian-widget"
 TRACKER_FILE = TRACKER_DIR / "tracker.json"
+
+# Layout tuning: change this to make each devotion title row taller or shorter.
+DEVOTION_ROW_MIN_HEIGHT = 52
+
+# Layout tuning: change this to make the next devotion timer block taller or shorter.
+DEVOTION_TIMER_MIN_HEIGHT = 86
 
 MATERIAL_ICONS = {
     "auto_awesome": "\ue65f",
@@ -254,6 +262,7 @@ class DevotionRow(QFrame):
         self.ui_font = ui_font
         self.accent = accent
         self.setObjectName("devotionRow")
+        self.setMinimumHeight(DEVOTION_ROW_MIN_HEIGHT)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -376,7 +385,7 @@ class ChristianDevotionWidget(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setFixedSize(404, 758)
+        self.setFixedSize(404, 812)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -386,7 +395,22 @@ class ChristianDevotionWidget(QWidget):
         self.card.setObjectName("card")
         root.addWidget(self.card)
 
-        layout = QVBoxLayout(self.card)
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(0)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("contentScroll")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        card_layout.addWidget(self.scroll_area)
+
+        self.content = QWidget()
+        self.content.setObjectName("contentWidget")
+        self.scroll_area.setWidget(self.content)
+
+        layout = QVBoxLayout(self.content)
         layout.setContentsMargins(22, 22, 22, 22)
         layout.setSpacing(14)
 
@@ -417,6 +441,7 @@ class ChristianDevotionWidget(QWidget):
 
         self.verse_card = QFrame()
         self.verse_card.setObjectName("verseCard")
+        self.verse_card.setMinimumHeight(270)
         verse_layout = QVBoxLayout(self.verse_card)
         verse_layout.setContentsMargins(18, 18, 18, 18)
         verse_layout.setSpacing(10)
@@ -432,6 +457,7 @@ class ChristianDevotionWidget(QWidget):
         self.verse_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.verse_label.setTextFormat(Qt.TextFormat.RichText)
         self.verse_label.setFont(QFont(self.serif_font, 15))
+        self.verse_label.setMaximumHeight(110)
         verse_layout.addWidget(self.verse_label)
 
         self.citation_label = QLabel()
@@ -439,11 +465,13 @@ class ChristianDevotionWidget(QWidget):
         self.citation_label.setFont(QFont(self.ui_font, 9, QFont.Weight.Medium))
         verse_layout.addWidget(self.citation_label, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        countdown_wrap = QFrame()
-        countdown_wrap.setObjectName("countdownWrap")
-        countdown_layout = QVBoxLayout(countdown_wrap)
-        countdown_layout.setContentsMargins(0, 12, 0, 0)
-        countdown_layout.setSpacing(2)
+        self.countdown_wrap = QFrame()
+        self.countdown_wrap.setObjectName("countdownWrap")
+        self.countdown_wrap.setMinimumHeight(DEVOTION_TIMER_MIN_HEIGHT)
+        self.countdown_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        countdown_layout = QVBoxLayout(self.countdown_wrap)
+        countdown_layout.setContentsMargins(0, 12, 0, 8)
+        countdown_layout.setSpacing(4)
 
         self.countdown_hint = QLabel("Next Devotion In")
         self.countdown_hint.setObjectName("countdownHint")
@@ -454,8 +482,9 @@ class ChristianDevotionWidget(QWidget):
 
         countdown_layout.addWidget(self.countdown_hint, 0, Qt.AlignmentFlag.AlignHCenter)
         countdown_layout.addWidget(self.countdown_value, 0, Qt.AlignmentFlag.AlignHCenter)
-        verse_layout.addWidget(countdown_wrap)
+        verse_layout.addWidget(self.countdown_wrap)
         layout.addWidget(self.verse_card)
+        layout.addSpacing(8)
 
         self.next_label = QLabel()
         self.next_label.setObjectName("nextLabel")
@@ -463,6 +492,7 @@ class ChristianDevotionWidget(QWidget):
         layout.addWidget(self.next_label)
 
         timeline = QVBoxLayout()
+        timeline.setContentsMargins(0, 6, 0, 0)
         timeline.setSpacing(6)
         for index, slot in enumerate(self.SLOTS):
             row = DevotionRow(slot, self.material_font, self.ui_font, self._slot_accent(index))
@@ -569,6 +599,10 @@ class ChristianDevotionWidget(QWidget):
                 border: 1px solid {theme.panel_border};
                 border-radius: 24px;
             }}
+            QScrollArea#contentScroll, QWidget#contentWidget {{
+                background: transparent;
+                border: none;
+            }}
             QPushButton#iconButton, QPushButton#trackerIconButton {{
                 background: {theme.app_running_bg};
                 border: 1px solid {theme.app_running_border};
@@ -655,6 +689,16 @@ class ChristianDevotionWidget(QWidget):
             }}
             QPushButton#footerButton:hover {{
                 color: {theme.primary};
+            }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 8px;
+                margin: 12px 6px 12px 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {rgba(theme.primary, 0.30)};
+                border-radius: 4px;
+                min-height: 24px;
             }}
             """
         )
