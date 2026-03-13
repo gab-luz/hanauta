@@ -245,6 +245,15 @@ def load_notification_settings() -> dict:
         "home_assistant": {"url": "", "token": "", "pinned_entities": []},
         "services": merged_service_settings({}),
         "display": {"layout_mode": "extend", "primary": "", "outputs": []},
+        "weather": {
+            "enabled": False,
+            "name": "",
+            "admin1": "",
+            "country": "",
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "timezone": "auto",
+        },
         "ntfy": {
             "enabled": False,
             "show_in_bar": False,
@@ -277,6 +286,14 @@ def load_notification_settings() -> dict:
     display.setdefault("primary", "")
     outputs = display.get("outputs", [])
     display["outputs"] = outputs if isinstance(outputs, list) else []
+    weather = dict(payload.get("weather", {}))
+    weather.setdefault("enabled", False)
+    weather.setdefault("name", "")
+    weather.setdefault("admin1", "")
+    weather.setdefault("country", "")
+    weather.setdefault("latitude", 0.0)
+    weather.setdefault("longitude", 0.0)
+    weather.setdefault("timezone", "auto")
     ntfy = dict(payload.get("ntfy", {}))
     ntfy.setdefault("enabled", False)
     ntfy.setdefault("show_in_bar", False)
@@ -289,6 +306,7 @@ def load_notification_settings() -> dict:
     payload["home_assistant"] = home_assistant
     payload["services"] = services
     payload["display"] = display
+    payload["weather"] = weather
     payload["ntfy"] = ntfy
     return payload
 
