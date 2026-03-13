@@ -10,6 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,8 +31,15 @@ from PyQt6.QtWidgets import (
 )
 
 
+APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = Path(__file__).resolve().parents[4]
 FONTS_DIR = ROOT / "assets" / "fonts"
+SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 MATERIAL_ICONS = {
     "apps": "\ue5c3",
@@ -103,6 +111,17 @@ def load_app_fonts() -> dict[str, str]:
 
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
+
+
+def matugen_enabled() -> bool:
+    try:
+        payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    appearance = payload.get("appearance", {})
+    if not isinstance(appearance, dict):
+        return False
+    return bool(appearance.get("use_matugen_palette", False))
 
 
 @dataclass
@@ -226,9 +245,11 @@ class SearchLineEdit(QLineEdit):
 
 
 class CategoryButton(QPushButton):
-    def __init__(self, label: str, icon_text: str, material_font: str) -> None:
+    def __init__(self, label: str, icon_text: str, material_font: str, theme=None, use_matugen: bool = False) -> None:
         super().__init__()
         self._label_text = label
+        self.theme = theme
+        self.use_matugen = use_matugen
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setCheckable(True)
         self.setMinimumHeight(46)
@@ -244,8 +265,25 @@ class CategoryButton(QPushButton):
         layout.addWidget(self.text_label, 1)
         self.apply_state(False)
 
+    def update_theme(self, theme, use_matugen: bool) -> None:
+        self.theme = theme
+        self.use_matugen = use_matugen
+        self.apply_state(self.isChecked())
+
     def apply_state(self, active: bool) -> None:
         self.setChecked(active)
+        if self.use_matugen and self.theme is not None:
+            if active:
+                icon_color = self.theme.on_primary_container
+                text_color = self.theme.on_primary_container
+                weight = 700
+            else:
+                icon_color = self.theme.icon
+                text_color = self.theme.text
+                weight = 600
+            self.icon_label.setStyleSheet(f"color: {icon_color};")
+            self.text_label.setStyleSheet(f"color: {text_color}; font-weight: {weight};")
+            return
         if active:
             self.icon_label.setStyleSheet("color: #381e72;")
             self.text_label.setStyleSheet("color: #381e72; font-weight: 700;")
@@ -257,10 +295,12 @@ class CategoryButton(QPushButton):
 class AppCard(QFrame):
     clicked = pyqtSignal(object)
 
-    def __init__(self, app: DesktopApp, material_font: str, ui_font: str) -> None:
+    def __init__(self, app: DesktopApp, material_font: str, ui_font: str, theme=None, use_matugen: bool = False) -> None:
         super().__init__()
         self.app = app
         self.material_font = material_font
+        self.theme = theme
+        self.use_matugen = use_matugen
         self.setObjectName("appCard")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setFixedHeight(68)
@@ -298,7 +338,55 @@ class AppCard(QFrame):
         layout.addWidget(self.hint_label)
         self.set_selected(False)
 
+    def update_theme(self, theme, use_matugen: bool) -> None:
+        self.theme = theme
+        self.use_matugen = use_matugen
+
     def set_selected(self, selected: bool) -> None:
+        if self.use_matugen and self.theme is not None:
+            if selected:
+                bg = self.theme.primary_container
+                border = rgba(self.theme.primary, 0.64)
+                title_color = self.theme.on_primary_container
+                subtitle_color = rgba(self.theme.on_primary_container, 0.78)
+                hint_color = self.theme.on_primary_container
+                icon_bg = rgba(self.theme.on_primary_container, 0.10)
+                icon_color = self.theme.on_primary_container
+                hover_bg = self.theme.primary_container
+                hover_border = rgba(self.theme.primary, 0.64)
+            else:
+                bg = self.theme.app_running_bg
+                border = self.theme.app_running_border
+                title_color = self.theme.text
+                subtitle_color = self.theme.text_muted
+                hint_color = self.theme.primary
+                icon_bg = self.theme.chip_bg
+                icon_color = self.theme.primary
+                hover_bg = self.theme.hover_bg
+                hover_border = self.theme.chip_border
+            self.setStyleSheet(
+                f"""
+                QFrame#appCard {{
+                    background: {bg};
+                    border: 1px solid {border};
+                    border-radius: 18px;
+                }}
+                QFrame#appCard:hover {{
+                    background: {hover_bg};
+                    border: 1px solid {hover_border};
+                }}
+                QLabel#appCardIconWrap {{
+                    background: {icon_bg};
+                    border-radius: 13px;
+                }}
+                """
+            )
+            self.title_label.setStyleSheet(f"color: {title_color};")
+            self.subtitle_label.setStyleSheet(f"color: {subtitle_color}; font-size: 10px;")
+            self.hint_label.setStyleSheet(f"color: {hint_color}; font-size: 10px; font-weight: 700;")
+            if self.icon_wrap.pixmap() is None:
+                self.icon_wrap.setStyleSheet(f"color: {icon_color};")
+            return
         if selected:
             bg = "#d0bcff"
             border = "rgba(229,214,255,0.95)"
@@ -362,6 +450,9 @@ class LauncherWindow(QWidget):
         )
         self.ui_font = detect_font("Noto Sans", "DejaVu Sans", "Sans Serif")
         self.mono_font = detect_font("JetBrains Mono", "DejaVu Sans Mono", "Monospace")
+        self.theme = load_theme_palette()
+        self.use_matugen = matugen_enabled()
+        self._theme_mtime = palette_mtime()
         self.apps = scan_desktop_apps()
         self.filtered_apps: list[DesktopApp] = []
         self.category = "all"
@@ -383,6 +474,9 @@ class LauncherWindow(QWidget):
         self._animate_in()
         self._apply_filter()
         QTimer.singleShot(40, self.search_input.setFocus)
+        self.theme_timer = QTimer(self)
+        self.theme_timer.timeout.connect(self._reload_theme_if_needed)
+        self.theme_timer.start(3000)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -390,18 +484,6 @@ class LauncherWindow(QWidget):
 
         self.panel = QFrame()
         self.panel.setObjectName("panel")
-        self.panel.setStyleSheet(
-            """
-            QFrame#panel {
-                background: rgba(28, 27, 31, 0.97);
-                border: 1px solid rgba(147,143,153,0.15);
-                border-radius: 28px;
-            }
-            QWidget {
-                color: #f5f2f7;
-            }
-            """
-        )
         root.addWidget(self.panel)
 
         shell = QHBoxLayout(self.panel)
@@ -411,61 +493,35 @@ class LauncherWindow(QWidget):
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(208)
-        sidebar.setStyleSheet(
-            """
-            QFrame#sidebar {
-                background: rgba(43,41,48,0.44);
-                border-right: 1px solid rgba(255,255,255,0.05);
-                border-top-left-radius: 28px;
-                border-bottom-left-radius: 28px;
-            }
-            """
-        )
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(16, 18, 16, 18)
         sidebar_layout.setSpacing(8)
 
         brand = QHBoxLayout()
-        brand_icon = QLabel(material_icon("apps"))
-        brand_icon.setFont(QFont(self.material_font, 20))
-        brand_icon.setStyleSheet("color: #d0bcff;")
-        brand_label = QLabel("Hanauta Launcher")
-        brand_label.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
-        brand_label.setStyleSheet("color: #d0bcff;")
-        brand.addWidget(brand_icon)
-        brand.addWidget(brand_label)
+        self.brand_icon = QLabel(material_icon("apps"))
+        self.brand_icon.setObjectName("brandIcon")
+        self.brand_icon.setFont(QFont(self.material_font, 20))
+        self.brand_label = QLabel("Hanauta Launcher")
+        self.brand_label.setObjectName("brandLabel")
+        self.brand_label.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        brand.addWidget(self.brand_icon)
+        brand.addWidget(self.brand_label)
         brand.addStretch(1)
         sidebar_layout.addLayout(brand)
         sidebar_layout.addSpacing(10)
 
         self.category_buttons: dict[str, CategoryButton] = {}
         for key, label, icon_name in CATEGORY_ITEMS:
-            button = CategoryButton(label, material_icon(icon_name), self.material_font)
+            button = CategoryButton(label, material_icon(icon_name), self.material_font, self.theme, self.use_matugen)
             button.clicked.connect(lambda checked=False, value=key: self._set_category(value))
-            button.setStyleSheet(
-                """
-                QPushButton {
-                    background: transparent;
-                    border: none;
-                    border-radius: 18px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background: rgba(255,255,255,0.05);
-                }
-                QPushButton:checked {
-                    background: #d0bcff;
-                }
-                """
-            )
             sidebar_layout.addWidget(button)
             self.category_buttons[key] = button
         sidebar_layout.addStretch(1)
 
-        footer = QLabel("ESC to close")
-        footer.setFont(QFont(self.mono_font, 10))
-        footer.setStyleSheet("color: rgba(255,255,255,0.42);")
-        sidebar_layout.addWidget(footer)
+        self.sidebar_footer = QLabel("ESC to close")
+        self.sidebar_footer.setObjectName("sidebarFooter")
+        self.sidebar_footer.setFont(QFont(self.mono_font, 10))
+        sidebar_layout.addWidget(self.sidebar_footer)
 
         shell.addWidget(sidebar)
 
@@ -477,83 +533,35 @@ class LauncherWindow(QWidget):
 
         search_wrap = QFrame()
         search_wrap.setObjectName("searchWrap")
-        search_wrap.setStyleSheet(
-            """
-            QFrame#searchWrap {
-                background: rgba(43,41,48,0.86);
-                border-radius: 18px;
-                border: 1px solid rgba(255,255,255,0.05);
-            }
-            """
-        )
         search_layout = QHBoxLayout(search_wrap)
         search_layout.setContentsMargins(14, 10, 14, 10)
         search_layout.setSpacing(10)
-        search_icon = QLabel(material_icon("search"))
-        search_icon.setFont(QFont(self.material_font, 20))
-        search_icon.setStyleSheet("color: #d0bcff;")
+        self.search_icon = QLabel(material_icon("search"))
+        self.search_icon.setObjectName("searchIcon")
+        self.search_icon.setFont(QFont(self.material_font, 20))
         self.search_input = SearchLineEdit()
         self.search_input.setPlaceholderText("Type to search applications…")
         self.search_input.setFont(QFont(self.ui_font, 12))
-        self.search_input.setStyleSheet(
-            """
-            QLineEdit {
-                background: transparent;
-                border: none;
-                color: #ffffff;
-                selection-background-color: #d0bcff;
-                selection-color: #251431;
-            }
-            """
-        )
         self.search_input.textChanged.connect(self._apply_filter)
         self.search_input.move_selection.connect(self._move_selection)
         self.search_input.launch_selected.connect(self._launch_selected)
         self.search_input.close_requested.connect(self.close)
-        search_layout.addWidget(search_icon)
+        search_layout.addWidget(self.search_icon)
         search_layout.addWidget(self.search_input, 1)
         main_layout.addWidget(search_wrap)
 
         self.results_count = QLabel("")
         self.results_count.setFont(QFont(self.mono_font, 10))
-        self.results_count.setStyleSheet("color: rgba(255,255,255,0.46);")
+        self.results_count.setObjectName("resultsCount")
         main_layout.addWidget(self.results_count)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet(
-            """
-            QScrollArea {
-                background: rgba(19,17,28,0.88);
-                border: none;
-                border-radius: 22px;
-            }
-            QScrollArea > QWidget > QWidget {
-                background: rgba(19,17,28,0.88);
-                border-radius: 22px;
-            }
-            QScrollBar:vertical {
-                background: transparent;
-                width: 8px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(147,143,153,0.30);
-                border-radius: 4px;
-            }
-            """
-        )
+        self.scroll_area.setObjectName("resultsScroll")
         self.results_host = QWidget()
         self.results_host.setObjectName("resultsHost")
-        self.results_host.setStyleSheet(
-            """
-            QWidget#resultsHost {
-                background: rgba(19,17,28,0.88);
-                border-radius: 22px;
-            }
-            """
-        )
         self.results_layout = QVBoxLayout(self.results_host)
         self.results_layout.setContentsMargins(0, 0, 6, 0)
         self.results_layout.setSpacing(8)
@@ -563,10 +571,11 @@ class LauncherWindow(QWidget):
 
         self.footer_label = QLabel("")
         self.footer_label.setFont(QFont(self.mono_font, 10))
-        self.footer_label.setStyleSheet("color: rgba(255,255,255,0.42);")
+        self.footer_label.setObjectName("footerLabel")
         main_layout.addWidget(self.footer_label)
 
         shell.addWidget(main, 1)
+        self._apply_styles()
 
     def _apply_shadow(self) -> None:
         shadow = QGraphicsDropShadowEffect(self)
@@ -590,6 +599,158 @@ class LauncherWindow(QWidget):
         self._panel_animation.setEndValue(1.0)
         self._panel_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._panel_animation.start()
+
+    def _apply_styles(self) -> None:
+        if self.use_matugen:
+            theme = self.theme
+            self.setStyleSheet(
+                f"""
+                QWidget {{
+                    color: {theme.text};
+                    background: transparent;
+                }}
+                QFrame#panel {{
+                    background: {theme.panel_bg};
+                    border: 1px solid {theme.panel_border};
+                    border-radius: 28px;
+                }}
+                QFrame#sidebar {{
+                    background: {rgba(theme.surface_container_high, 0.72)};
+                    border-right: 1px solid {theme.chip_border};
+                    border-top-left-radius: 28px;
+                    border-bottom-left-radius: 28px;
+                }}
+                QLabel#brandIcon, QLabel#brandLabel, QLabel#searchIcon {{
+                    color: {theme.primary};
+                }}
+                QLabel#sidebarFooter, QLabel#resultsCount, QLabel#footerLabel {{
+                    color: {theme.text_muted};
+                }}
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    border-radius: 18px;
+                    text-align: left;
+                }}
+                QPushButton:hover {{
+                    background: {theme.hover_bg};
+                }}
+                QPushButton:checked {{
+                    background: {theme.primary_container};
+                }}
+                QFrame#searchWrap {{
+                    background: {theme.chip_bg};
+                    border-radius: 18px;
+                    border: 1px solid {theme.chip_border};
+                }}
+                QLineEdit {{
+                    background: transparent;
+                    border: none;
+                    color: {theme.text};
+                    selection-background-color: {theme.primary};
+                    selection-color: {theme.active_text};
+                }}
+                QScrollArea#resultsScroll {{
+                    background: {rgba(theme.surface_container, 0.88)};
+                    border: none;
+                    border-radius: 22px;
+                }}
+                QScrollArea#resultsScroll > QWidget > QWidget,
+                QWidget#resultsHost {{
+                    background: {rgba(theme.surface_container, 0.88)};
+                    border-radius: 22px;
+                }}
+                QScrollBar:vertical {{
+                    background: transparent;
+                    width: 8px;
+                }}
+                QScrollBar::handle:vertical {{
+                    background: {rgba(theme.outline, 0.30)};
+                    border-radius: 4px;
+                }}
+                """
+            )
+            return
+        self.setStyleSheet(
+            """
+            QFrame#panel {
+                background: rgba(28, 27, 31, 0.97);
+                border: 1px solid rgba(147,143,153,0.15);
+                border-radius: 28px;
+            }
+            QWidget {
+                color: #f5f2f7;
+                background: transparent;
+            }
+            QFrame#sidebar {
+                background: rgba(43,41,48,0.44);
+                border-right: 1px solid rgba(255,255,255,0.05);
+                border-top-left-radius: 28px;
+                border-bottom-left-radius: 28px;
+            }
+            QLabel#brandIcon, QLabel#brandLabel, QLabel#searchIcon {
+                color: #d0bcff;
+            }
+            QLabel#sidebarFooter, QLabel#resultsCount, QLabel#footerLabel {
+                color: rgba(255,255,255,0.42);
+            }
+            QPushButton {
+                background: transparent;
+                border: none;
+                border-radius: 18px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background: rgba(255,255,255,0.05);
+            }
+            QPushButton:checked {
+                background: #d0bcff;
+            }
+            QFrame#searchWrap {
+                background: rgba(43,41,48,0.86);
+                border-radius: 18px;
+                border: 1px solid rgba(255,255,255,0.05);
+            }
+            QLineEdit {
+                background: transparent;
+                border: none;
+                color: #ffffff;
+                selection-background-color: #d0bcff;
+                selection-color: #251431;
+            }
+            QScrollArea#resultsScroll {
+                background: rgba(19,17,28,0.88);
+                border: none;
+                border-radius: 22px;
+            }
+            QScrollArea#resultsScroll > QWidget > QWidget,
+            QWidget#resultsHost {
+                background: rgba(19,17,28,0.88);
+                border-radius: 22px;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 8px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(147,143,153,0.30);
+                border-radius: 4px;
+            }
+            """
+        )
+
+    def _reload_theme_if_needed(self) -> None:
+        current_use_matugen = matugen_enabled()
+        current_mtime = palette_mtime()
+        if current_use_matugen == self.use_matugen and (not current_use_matugen or current_mtime == self._theme_mtime):
+            return
+        self.use_matugen = current_use_matugen
+        self._theme_mtime = current_mtime
+        self.theme = load_theme_palette()
+        self._apply_styles()
+        for button in self.category_buttons.values():
+            button.update_theme(self.theme, self.use_matugen)
+        self._render_results()
 
     def _set_category(self, category: str) -> None:
         self.category = category
@@ -624,14 +785,15 @@ class LauncherWindow(QWidget):
 
         if not self.filtered_apps:
             empty = QLabel("No applications match this search.")
-            empty.setStyleSheet("color: rgba(255,255,255,0.56); padding: 10px 2px;")
+            empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
+            empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
             self.results_layout.insertWidget(0, empty)
             self.results_count.setText("0 applications")
             self.footer_label.setText("Enter launches the selected app")
             return
 
         for index, app in enumerate(self.filtered_apps):
-            card = AppCard(app, self.material_font, self.ui_font)
+            card = AppCard(app, self.material_font, self.ui_font, self.theme, self.use_matugen)
             card.set_selected(index == self.selected_index)
             card.clicked.connect(self._launch_app)
             self.results_layout.insertWidget(self.results_layout.count() - 1, card)

@@ -261,26 +261,26 @@ class WifiNetworkCard(QFrame):
         self.theme = theme
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setObjectName("wifiCard")
-        self.setMinimumHeight(62)
+        self.setMinimumHeight(74)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(12)
 
         icon_wrap = QFrame()
         icon_wrap.setObjectName("wifiCardIconWrap")
-        icon_wrap.setFixedSize(34, 34)
+        icon_wrap.setFixedSize(38, 38)
         icon_layout = QVBoxLayout(icon_wrap)
         icon_layout.setContentsMargins(0, 0, 0, 0)
         icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon = QLabel(material_icon(signal_icon(network.signal) if network.signal else "wifi_find"))
-        icon.setFont(QFont(material_font, 15))
+        icon.setFont(QFont(material_font, 16))
         icon.setObjectName("wifiCardIcon")
         icon_layout.addWidget(icon)
 
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(2)
+        text_layout.setSpacing(3)
         self.ssid_label = QLabel(network.ssid)
         self.ssid_label.setObjectName("wifiCardSsid")
         self.ssid_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
@@ -289,7 +289,8 @@ class WifiNetworkCard(QFrame):
             detail = f"{detail} • secured"
         self.detail_label = QLabel(detail)
         self.detail_label.setObjectName("wifiCardDetail")
-        self.detail_label.setFont(QFont(ui_font, 9))
+        self.detail_label.setWordWrap(True)
+        self.detail_label.setFont(QFont(ui_font, 8))
         text_layout.addWidget(self.ssid_label)
         text_layout.addWidget(self.detail_label)
 
@@ -334,9 +335,11 @@ class WifiNetworkCard(QFrame):
             }}
             QLabel#wifiCardSsid {{
                 color: {theme.text};
+                letter-spacing: 0.2px;
             }}
             QLabel#wifiCardDetail {{
                 color: {theme.text_muted};
+                line-height: 1.3em;
             }}
             QLabel#wifiCardTrail {{
                 color: {trail_color};
@@ -371,7 +374,7 @@ class WifiControlPopup(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
-        self.ui_font = detect_font("Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.ui_font = detect_font("Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self.scan_worker: WifiScanWorker | None = None
@@ -386,7 +389,7 @@ class WifiControlPopup(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setFixedSize(404, 596)
+        self.setFixedSize(408, 624)
         self.setWindowTitle("Wi-Fi Control")
 
         self._build_ui()
@@ -409,18 +412,23 @@ class WifiControlPopup(QWidget):
 
         layout = QVBoxLayout(self.panel)
         layout.setContentsMargins(22, 22, 22, 22)
-        layout.setSpacing(14)
+        layout.setSpacing(16)
 
         head = QHBoxLayout()
         head.setSpacing(12)
         title_wrap = QVBoxLayout()
         title_wrap.setSpacing(2)
+        kicker = QLabel("Network")
+        kicker.setObjectName("kickerLabel")
+        kicker.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
         title = QLabel("Wi-Fi")
         title.setObjectName("titleLabel")
-        title.setFont(QFont(self.ui_font, 20, QFont.Weight.DemiBold))
-        subtitle = QLabel("Fast network switching with secure connect flow")
+        title.setFont(QFont(self.ui_font, 17, QFont.Weight.DemiBold))
+        subtitle = QLabel("Secure switching, cleaner status, and quick reconnection.")
         subtitle.setObjectName("subtitleLabel")
-        subtitle.setFont(QFont(self.ui_font, 10, QFont.Weight.Medium))
+        subtitle.setWordWrap(True)
+        subtitle.setFont(QFont(self.ui_font, 9, QFont.Weight.Medium))
+        title_wrap.addWidget(kicker)
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
         head.addLayout(title_wrap, 1)
@@ -434,16 +442,30 @@ class WifiControlPopup(QWidget):
         self.hero.setObjectName("hero")
         hero_layout = QVBoxLayout(self.hero)
         hero_layout.setContentsMargins(16, 16, 16, 16)
-        hero_layout.setSpacing(8)
+        hero_layout.setSpacing(10)
+        hero_kicker = QLabel("Current network")
+        hero_kicker.setObjectName("sectionKicker")
+        hero_kicker.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
         self.connection_label = QLabel("Checking current network…")
         self.connection_label.setObjectName("connectionLabel")
-        self.connection_label.setFont(QFont(self.ui_font, 13, QFont.Weight.DemiBold))
+        self.connection_label.setWordWrap(True)
+        self.connection_label.setFont(QFont(self.ui_font, 12, QFont.Weight.DemiBold))
+        self.connection_meta = QLabel("Scanning adapter state and active SSID.")
+        self.connection_meta.setObjectName("connectionMeta")
+        self.connection_meta.setWordWrap(True)
+        self.connection_meta.setFont(QFont(self.ui_font, 8))
         self.connection_icon = QLabel(material_icon("wifi"))
         self.connection_icon.setObjectName("connectionIcon")
-        self.connection_icon.setFont(QFont(self.material_font, 20))
+        self.connection_icon.setFont(QFont(self.material_font, 22))
         connection_top = QHBoxLayout()
-        connection_top.addWidget(self.connection_label, 1)
-        connection_top.addWidget(self.connection_icon)
+        connection_text = QVBoxLayout()
+        connection_text.setContentsMargins(0, 0, 0, 0)
+        connection_text.setSpacing(4)
+        connection_text.addWidget(hero_kicker)
+        connection_text.addWidget(self.connection_label)
+        connection_text.addWidget(self.connection_meta)
+        connection_top.addLayout(connection_text, 1)
+        connection_top.addWidget(self.connection_icon, 0, Qt.AlignmentFlag.AlignTop)
         hero_layout.addLayout(connection_top)
         self.radio_button = QPushButton("Turn Wi-Fi Off")
         self.radio_button.setObjectName("secondaryButton")
@@ -456,14 +478,18 @@ class WifiControlPopup(QWidget):
         self.password_frame.setObjectName("passwordFrame")
         password_layout = QVBoxLayout(self.password_frame)
         password_layout.setContentsMargins(14, 14, 14, 14)
-        password_layout.setSpacing(8)
+        password_layout.setSpacing(10)
+        selection_kicker = QLabel("Selected access point")
+        selection_kicker.setObjectName("sectionKicker")
+        selection_kicker.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
         self.selection_label = QLabel("Select a network")
         self.selection_label.setObjectName("selectionLabel")
+        self.selection_label.setWordWrap(True)
         self.selection_label.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
         self.selection_hint = QLabel("Choose a Wi-Fi network below. Password is only needed for secured SSIDs.")
         self.selection_hint.setObjectName("selectionHint")
         self.selection_hint.setWordWrap(True)
-        self.selection_hint.setFont(QFont(self.ui_font, 9))
+        self.selection_hint.setFont(QFont(self.ui_font, 8))
         self.password_edit = QLineEdit()
         self.password_edit.setObjectName("passwordEdit")
         self.password_edit.setPlaceholderText("Password if required")
@@ -483,6 +509,7 @@ class WifiControlPopup(QWidget):
         actions.addWidget(self.disconnect_button)
         actions.addStretch(1)
         actions.addWidget(self.connect_button)
+        password_layout.addWidget(selection_kicker)
         password_layout.addWidget(self.selection_label)
         password_layout.addWidget(self.selection_hint)
         password_layout.addWidget(self.password_edit)
@@ -491,7 +518,8 @@ class WifiControlPopup(QWidget):
 
         self.status_label = QLabel("Scanning available networks…")
         self.status_label.setObjectName("statusLabel")
-        self.status_label.setFont(QFont(self.ui_font, 10))
+        self.status_label.setWordWrap(True)
+        self.status_label.setFont(QFont(self.ui_font, 9, QFont.Weight.Medium))
         layout.addWidget(self.status_label)
 
         self.scroll_area = QScrollArea()
@@ -524,11 +552,17 @@ class WifiControlPopup(QWidget):
                 border: 1px solid {theme.panel_border};
                 border-radius: 24px;
             }}
+            QLabel#kickerLabel, QLabel#sectionKicker {{
+                color: {theme.text_muted};
+                letter-spacing: 1.8px;
+                text-transform: uppercase;
+            }}
             QLabel#titleLabel {{
                 color: {theme.text};
             }}
             QLabel#subtitleLabel {{
                 color: {theme.text_muted};
+                line-height: 1.35em;
             }}
             QFrame#hero {{
                 background: {theme.chip_bg};
@@ -537,6 +571,10 @@ class WifiControlPopup(QWidget):
             }}
             QLabel#connectionLabel {{
                 color: {theme.text};
+            }}
+            QLabel#connectionMeta {{
+                color: {theme.text_muted};
+                line-height: 1.35em;
             }}
             QLabel#connectionIcon {{
                 color: {theme.primary};
@@ -552,10 +590,12 @@ class WifiControlPopup(QWidget):
             }}
             QLabel#selectionHint {{
                 color: {theme.text_muted};
+                line-height: 1.35em;
             }}
             QLabel#statusLabel {{
                 color: {theme.text_muted};
                 padding-left: 2px;
+                line-height: 1.35em;
             }}
             QLineEdit#passwordEdit {{
                 background: {theme.app_running_bg};
@@ -564,6 +604,7 @@ class WifiControlPopup(QWidget):
                 color: {theme.text};
                 padding: 10px 12px;
                 selection-background-color: {theme.hover_bg};
+                font-size: 10px;
             }}
             QLineEdit#passwordEdit:focus {{
                 border: 1px solid {theme.app_focused_border};
@@ -587,8 +628,9 @@ class WifiControlPopup(QWidget):
                 border: none;
                 border-radius: 16px;
                 color: {theme.active_text};
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
+                letter-spacing: 0.5px;
                 padding: 0 16px;
             }}
             QPushButton#primaryButton:hover {{
@@ -604,8 +646,9 @@ class WifiControlPopup(QWidget):
                 border: 1px solid {theme.app_running_border};
                 border-radius: 16px;
                 color: {theme.text};
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
+                letter-spacing: 0.5px;
                 padding: 0 14px;
             }}
             QPushButton#secondaryButton:hover {{
@@ -718,7 +761,9 @@ class WifiControlPopup(QWidget):
         if not self.networks:
             empty = QLabel("No Wi-Fi networks were found. Try turning the radio on or refreshing the scan.")
             empty.setWordWrap(True)
-            empty.setStyleSheet(f"color: {self.theme.text_muted}; padding: 8px;")
+            empty.setStyleSheet(
+                f"color: {self.theme.text_muted}; padding: 10px 8px; line-height: 1.35em;"
+            )
             self.list_layout.insertWidget(0, empty)
             return
         for network in self.networks:

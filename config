@@ -54,7 +54,6 @@ exec --no-startup-id sh -c 'sleep 10 && "$HOME/.config/i3/scripts/bspfloat" floa
 exec --no-startup-id sh -c 'command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent'
 exec --no-startup-id sh -c 'command -v xfce4-power-manager >/dev/null 2>&1 && xfce4-power-manager'
 exec --no-startup-id sh -c 'if command -v clipit >/dev/null 2>&1; then clipit; elif command -v copyq >/dev/null 2>&1; then copyq; fi'
-exec --no-startup-id sh -c 'command -v ukui-window-switch >/dev/null 2>&1 && ukui-window-switch'
 exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x picom 2>/dev/null; picom --config "$HOME/.config/i3/picom.conf" --daemon'
 # Eww (restart on reload)
 # I need to load the startup file from this folder
@@ -105,13 +104,17 @@ for_window [class="CyberBar"] exec --no-startup-id xdotool getactivewindow set_w
 for_window [class="HanautaHotkeys"] floating enable, border pixel 0, sticky enable
 for_window [title="Hanauta Hotkeys"] floating enable, border pixel 0, sticky enable
 
+# Hanauta notification toasts should never take focus
+for_window [title="^Hanauta Notification .*"] floating enable, border pixel 0, sticky enable
+no_focus [title="^Hanauta Notification .*"]
+
 # Basic i3 controls (minimal, adjust to taste)
 # Start a terminal
 bindsym $mod+Return exec --no-startup-id kitty
 # Screenshot with Flameshot on PrintScreen
 bindsym --release Print exec --no-startup-id flameshot gui
 # Window switcher (ALT+TAB)
-bindsym Mod1+Tab exec --no-startup-id sh -c 'command -v ukui-window-switch >/dev/null 2>&1 && ukui-window-switch'
+bindsym --release Mod1+Tab exec --no-startup-id sh -c 'if command -v ukui-window-switch >/dev/null 2>&1; then setsid -f ukui-window-switch >/dev/null 2>&1; else i3-msg "[class=.*]" focus; fi'
 # Open hotkeys overlay
 bindsym Mod1+F1 exec --no-startup-id sh -c '"$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/widget-hotkeys-overlay/hotkeys_overlay.py"'
 # Openapps launcher (from bspwm)
