@@ -17,6 +17,10 @@ ROOT = Path(__file__).resolve().parents[4]
 ASSETS_DIR = ROOT / "hanauta" / "src" / "assets"
 WEATHER_ICON_DIR = ASSETS_DIR / "weather-icons"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+ANIMATED_ICON_FALLBACKS = {
+    "partly-cloudy-day": "partly-cloudy-day-qt",
+    "partly-cloudy-night": "partly-cloudy-night-qt",
+}
 
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
@@ -313,7 +317,13 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
 
 
 def animated_icon_path(name: str) -> Path:
-    return WEATHER_ICON_DIR / "fill" / "svg" / f"{name}.svg"
+    preferred = WEATHER_ICON_DIR / "fill" / "svg" / f"{name}.svg"
+    fallback_name = ANIMATED_ICON_FALLBACKS.get(name, "")
+    if fallback_name:
+        fallback = WEATHER_ICON_DIR / "fill" / "svg" / f"{fallback_name}.svg"
+        if fallback.exists():
+            return fallback
+    return preferred
 
 
 def static_icon_path(name: str) -> Path:

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="moonFill" x1="164" x2="258" y1="96" y2="252" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c4b5fd"/>
+      <stop offset=".5" stop-color="#c4b5fd"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="cloudFill" x1="126" x2="312" y1="164" y2="386" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f3f7fe"/>
+      <stop offset=".5" stop-color="#f3f7fe"/>
+      <stop offset="1" stop-color="#deeafb"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(0 8)">
+    <path fill="url(#moonFill)" stroke="#a78bfa" stroke-width="6" d="M275 84c-61 7-109 58-109 121 0 68 55 123 123 123 40 0 77-19 100-52-12 4-24 6-37 6-68 0-123-55-123-123 0-28 10-54 26-75 7-9 14-15 20-21Z"/>
+    <g fill="#ede9fe">
+      <circle cx="334" cy="120" r="8">
+        <animate attributeName="opacity" values="1;.45;1" dur="3.4s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="366" cy="154" r="5">
+        <animate attributeName="opacity" values=".45;1;.45" dur="2.8s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="138" cy="122" r="6">
+        <animate attributeName="opacity" values="1;.35;1" dur="3.1s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+  </g>
+
+  <g>
+    <path fill="url(#cloudFill)" stroke="#e6effc" stroke-width="6" d="M326 352H160c-42 0-76-31-76-69 0-31 22-58 53-66 10-55 58-96 116-96 53 0 99 34 113 82 40 2 72 32 72 69 0 44-50 80-112 80Z">
+      <animateTransform attributeName="transform" type="translate" values="-10 0;10 0;-10 0" dur="6s" repeatCount="indefinite"/>
+    </path>
+    <path fill="#dbe7f8" opacity=".9" d="M342 287c-9-31-42-54-81-54-43 0-79 28-84 66-27 2-50 22-56 49 12-23 38-39 68-39h151c35 0 64 18 76 45 2-6 3-12 3-18 0-27-17-49-43-56-9-1-22 0-34 7Z">
+      <animateTransform attributeName="transform" type="translate" values="-6 0;6 0;-6 0" dur="6s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>
