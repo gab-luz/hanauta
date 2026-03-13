@@ -20,12 +20,13 @@ from pathlib import Path
 from urllib import error, request
 from urllib import parse
 
-from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QTimer, QStringListModel, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QComboBox,
+    QCompleter,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -46,6 +47,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
@@ -137,6 +139,7 @@ MATERIAL_ICONS = {
     "opacity": "\ue91c",
     "dock_to_left": "\ue7e6",
     "web_asset": "\ue069",
+    "public": "\ue80b",
     "widgets": "\ue1bd",
     "bolt": "\uea0b",
     "desktop_windows": "\ue30c",
@@ -151,6 +154,7 @@ MATERIAL_ICONS = {
     "lock": "\ue897",
     "notifications": "\ue7f4",
     "person": "\ue7fd",
+    "partly_cloudy_day": "\uf172",
     "auto_awesome": "\ue65f",
 }
 
@@ -290,6 +294,15 @@ def load_settings_state() -> dict:
             "username": "",
             "password": "",
         },
+        "weather": {
+            "enabled": False,
+            "name": "",
+            "admin1": "",
+            "country": "",
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "timezone": "auto",
+        },
         "display": {
             "layout_mode": "extend",
             "primary": "",
@@ -325,6 +338,14 @@ def load_settings_state() -> dict:
     ntfy.setdefault("token", "")
     ntfy.setdefault("username", "")
     ntfy.setdefault("password", "")
+    weather = dict(payload.get("weather", {}))
+    weather.setdefault("enabled", False)
+    weather.setdefault("name", "")
+    weather.setdefault("admin1", "")
+    weather.setdefault("country", "")
+    weather.setdefault("latitude", 0.0)
+    weather.setdefault("longitude", 0.0)
+    weather.setdefault("timezone", "auto")
     display = dict(payload.get("display", {}))
     display.setdefault("layout_mode", "extend")
     display.setdefault("primary", "")
@@ -337,6 +358,7 @@ def load_settings_state() -> dict:
         "appearance": appearance,
         "home_assistant": home_assistant,
         "ntfy": ntfy,
+        "weather": weather,
         "display": display,
         "services": services,
     }
@@ -1242,6 +1264,11 @@ class SettingsWindow(QWidget):
         )
 
         self.settings_state = load_settings_state()
+        self._weather_city_map: dict[str, WeatherCity] = {}
+        self._selected_weather_city: WeatherCity | None = configured_city()
+        self._weather_search_timer = QTimer(self)
+        self._weather_search_timer.setSingleShot(True)
+        self._weather_search_timer.timeout.connect(self._perform_weather_city_search)
         if not PYQT_THEME_FILE.exists() and not self.settings_state["appearance"].get("use_matugen_palette", False):
             write_default_pyqt_palette(use_matugen=False)
         self.theme_palette = load_theme_palette()
@@ -2238,6 +2265,7 @@ class SettingsWindow(QWidget):
             ("home_assistant", self._build_home_assistant_section()),
             ("vpn_control", self._build_vpn_service_section()),
             ("christian_widget", self._build_christian_service_section()),
+            ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
             layout.addWidget(widget)
@@ -2451,6 +2479,65 @@ class SettingsWindow(QWidget):
         self.service_sections["christian_widget"] = section
         return section
 
+    def _build_weather_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.weather_city_input = QLineEdit(self.settings_state["weather"].get("name", ""))
+        if self._selected_weather_city is not None:
+            self.weather_city_input.setText(self._selected_weather_city.label)
+        self.weather_city_input.setPlaceholderText("Type a city, region, or country")
+        self.weather_city_input.textEdited.connect(self._queue_weather_city_search)
+
+        self.weather_city_model = QStringListModel(self)
+        self.weather_city_completer = QCompleter(self.weather_city_model, self)
+        self.weather_city_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.weather_city_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.weather_city_completer.activated[str].connect(self._select_weather_city)
+        self.weather_city_input.setCompleter(self.weather_city_completer)
+
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "Forecast city",
+                "Autocomplete search powered by Open-Meteo geocoding.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_city_input,
+            )
+        )
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.weather_apply_button = QPushButton("Apply city")
+        self.weather_apply_button.setObjectName("primaryButton")
+        self.weather_apply_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.weather_apply_button.clicked.connect(self._save_weather_settings)
+        buttons.addWidget(self.weather_apply_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        self.weather_status = QLabel("Weather popup is idle.")
+        self.weather_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.weather_status.setWordWrap(True)
+        layout.addWidget(self.weather_status)
+
+        section = ExpandableServiceSection(
+            "weather",
+            "Weather",
+            "Choose a city for the weather popup and the bar weather icon.",
+            material_icon("partly_cloudy_day"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            bool(self.settings_state["weather"].get("enabled", False)),
+            self._set_weather_enabled,
+        )
+        self.weather_section = section
+        return section
+
     def _build_ntfy_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -2591,6 +2678,72 @@ class SettingsWindow(QWidget):
             return
         ntfy["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
+
+    def _set_weather_enabled(self, enabled: bool) -> None:
+        weather = self.settings_state.setdefault("weather", {})
+        weather["enabled"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "weather_status"):
+            self.weather_status.setText(
+                "Weather icon enabled on the bar." if enabled else "Weather icon disabled."
+            )
+
+    def _queue_weather_city_search(self, text: str) -> None:
+        self._selected_weather_city = None
+        if len(text.strip()) < 2:
+            self.weather_city_model.setStringList([])
+            return
+        self._weather_search_timer.start(250)
+
+    def _perform_weather_city_search(self) -> None:
+        if not hasattr(self, "weather_city_input"):
+            return
+        text = self.weather_city_input.text().strip()
+        if len(text) < 2:
+            self.weather_city_model.setStringList([])
+            return
+        matches = search_cities(text)
+        self._weather_city_map = {city.label: city for city in matches}
+        labels = list(self._weather_city_map.keys())
+        self.weather_city_model.setStringList(labels)
+        if labels:
+            self.weather_city_completer.complete()
+
+    def _select_weather_city(self, label: str) -> None:
+        city = self._weather_city_map.get(label)
+        if city is None:
+            return
+        self._selected_weather_city = city
+        self.weather_city_input.setText(label)
+        if hasattr(self, "weather_status"):
+            self.weather_status.setText(f"Selected city: {label}")
+
+    def _save_weather_settings(self) -> None:
+        city = self._selected_weather_city
+        current_text = self.weather_city_input.text().strip() if hasattr(self, "weather_city_input") else ""
+        if city is None and current_text:
+            city = self._weather_city_map.get(current_text)
+        if city is None:
+            if hasattr(self, "weather_status"):
+                self.weather_status.setText("Pick a city from the autocomplete list first.")
+            return
+        weather = self.settings_state.setdefault("weather", {})
+        weather.update(
+            {
+                "enabled": True,
+                "name": city.name,
+                "admin1": city.admin1,
+                "country": city.country,
+                "latitude": city.latitude,
+                "longitude": city.longitude,
+                "timezone": city.timezone,
+            }
+        )
+        save_settings_state(self.settings_state)
+        if hasattr(self, "weather_section"):
+            self.weather_section.set_enabled(True)
+        if hasattr(self, "weather_status"):
+            self.weather_status.setText(f"Weather city saved: {city.label}")
 
     def _make_transparency_switch(self) -> SwitchButton:
         switch = SwitchButton(bool(self.settings_state["appearance"].get("transparency", True)))

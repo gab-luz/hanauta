@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QByteArray, QEasingCurve, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QByteArray, QEasingCurve, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
@@ -38,6 +38,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
 
 SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
@@ -46,6 +47,7 @@ WIFI_CONTROL = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
+WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
@@ -515,6 +517,17 @@ class StatusNotifierTray(QFrame):
         self.setVisible(visible_buttons > 0)
 
 
+class WeatherWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        city = configured_city()
+        if city is None:
+            self.loaded.emit(None)
+            return
+        self.loaded.emit(fetch_forecast(city))
+
+
 class CyberBar(QWidget):
     def __init__(self, ui_path: Optional[Path] = None):
         super().__init__()
@@ -542,7 +555,10 @@ class CyberBar(QWidget):
         self._vpn_popup_process: Optional[subprocess.Popen] = None
         self._christian_widget_process: Optional[subprocess.Popen] = None
         self._ntfy_popup_process: Optional[subprocess.Popen] = None
+        self._weather_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
+        self._weather_worker: Optional[WeatherWorker] = None
+        self._weather_forecast: Optional[WeatherForecast] = None
         self._cava_buffer = ""
         self._battery_base: Optional[Path] = self._detect_battery_base()
         self._setup_window()
@@ -620,10 +636,15 @@ class CyberBar(QWidget):
         datetime_layout.setContentsMargins(12, 4, 12, 4)
         datetime_layout.setSpacing(8)
 
+        self.weather_icon = AnimatedWeatherIcon(18)
+        self.weather_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.weather_icon.clicked.connect(self._toggle_weather_popup)
+        self.weather_icon.hide()
         self.time_label = QLabel("--:--")
         self.time_label.setObjectName("timeLabel")
         self.date_label = QLabel("--")
         self.date_label.setObjectName("dateLabel")
+        datetime_layout.addWidget(self.weather_icon)
         datetime_layout.addWidget(self.time_label)
         datetime_layout.addWidget(self.date_label)
         self.btn_control_center = self._icon_button("dashboard")
@@ -769,6 +790,7 @@ class CyberBar(QWidget):
         self.workspace_chip.setToolTip("Workspace chip")
         self.workspace_label.setToolTip("Workspace label")
         self.datetime_chip.setToolTip("Date/time chip")
+        self.weather_icon.setToolTip("Weather button")
         self.time_label.setToolTip("Time label")
         self.date_label.setToolTip("Date label")
         self.btn_control_center.setToolTip("Control center button")
@@ -1049,6 +1071,14 @@ class CyberBar(QWidget):
         self.ntfy_popup_timer.timeout.connect(self._sync_ntfy_button)
         self.ntfy_popup_timer.start(1000)
 
+        self.weather_popup_timer = QTimer(self)
+        self.weather_popup_timer.timeout.connect(self._sync_weather_button)
+        self.weather_popup_timer.start(1000)
+
+        self.weather_timer = QTimer(self)
+        self.weather_timer.timeout.connect(self._poll_weather)
+        self.weather_timer.start(900000)
+
         self.powermenu_timer = QTimer(self)
         self.powermenu_timer.timeout.connect(self._sync_powermenu_button)
         self.powermenu_timer.start(1000)
@@ -1060,6 +1090,7 @@ class CyberBar(QWidget):
         self._poll_workspaces()
         self._poll_media()
         self._poll_system()
+        self._poll_weather()
 
     def _poll_clock(self) -> None:
         now = datetime.now()
@@ -1183,6 +1214,41 @@ class CyberBar(QWidget):
         self._poll_battery()
         self._sync_christian_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._sync_weather_visibility()
+
+    def _poll_weather(self) -> None:
+        if self._weather_worker is not None and self._weather_worker.isRunning():
+            return
+        if configured_city() is None:
+            self._weather_forecast = None
+            self._sync_weather_visibility()
+            return
+        self._weather_worker = WeatherWorker()
+        self._weather_worker.loaded.connect(self._apply_weather_forecast)
+        self._weather_worker.finished.connect(self._finish_weather_worker)
+        self._weather_worker.start()
+
+    def _apply_weather_forecast(self, forecast: object) -> None:
+        self._weather_forecast = forecast if isinstance(forecast, WeatherForecast) else None
+        if self._weather_forecast is not None:
+            current = self._weather_forecast.current
+            self.weather_icon.set_icon_path(animated_icon_path(current.icon_name))
+            self.weather_icon.setToolTip(
+                f"{self._weather_forecast.city.label} • {round(current.temperature):.0f}° • {current.condition}"
+            )
+        self._sync_weather_visibility()
+
+    def _finish_weather_worker(self) -> None:
+        self._weather_worker = None
+
+    def _sync_weather_visibility(self) -> None:
+        settings = load_runtime_settings()
+        weather = settings.get("weather", {})
+        if not isinstance(weather, dict):
+            weather = {}
+        enabled = bool(weather.get("enabled", False))
+        valid_city = bool(str(weather.get("name", "")).strip())
+        self.weather_icon.setVisible(enabled and valid_city)
 
     def _poll_network(self) -> None:
         connected = run_script("network.sh", "status") == "Connected"
@@ -1316,6 +1382,24 @@ class CyberBar(QWidget):
         except Exception:
             self._control_center_process = None
             self.btn_control_center.setChecked(False)
+
+    def _toggle_weather_popup(self) -> None:
+        if self._weather_popup_process is not None and self._weather_popup_process.poll() is None:
+            self._weather_popup_process.terminate()
+            self._weather_popup_process = None
+            return
+
+        if not WEATHER_POPUP.exists():
+            return
+
+        try:
+            self._weather_popup_process = subprocess.Popen(
+                [sys.executable, str(WEATHER_POPUP)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._weather_popup_process = None
 
     def _toggle_wifi_popup(self) -> None:
         if self._wifi_popup_process is not None and self._wifi_popup_process.poll() is None:
@@ -1483,6 +1567,11 @@ class CyberBar(QWidget):
             self._vpn_popup_process = None
         self.vpn_icon.setChecked(active)
 
+    def _sync_weather_button(self) -> None:
+        active = self._weather_popup_process is not None and self._weather_popup_process.poll() is None
+        if not active:
+            self._weather_popup_process = None
+
     def _sync_ntfy_button(self) -> None:
         active = self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None
         if not active:
@@ -1507,6 +1596,8 @@ class CyberBar(QWidget):
             self._wifi_popup_process.terminate()
         if self._vpn_popup_process is not None and self._vpn_popup_process.poll() is None:
             self._vpn_popup_process.terminate()
+        if self._weather_popup_process is not None and self._weather_popup_process.poll() is None:
+            self._weather_popup_process.terminate()
         if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
             self._christian_widget_process.terminate()
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
