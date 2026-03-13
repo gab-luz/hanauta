@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QByteArray, QEasingCurve, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
@@ -46,8 +46,10 @@ AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
 WIFI_CONTROL = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
+REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
+CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
@@ -76,6 +78,7 @@ MATERIAL_ICONS = {
     "dashboard": "\ue871",
     "music_note": "\ue405",
     "notifications": "\ue7f4",
+    "notifications_active": "\ue7f7",
     "pause": "\ue034",
     "play_arrow": "\ue037",
     "power_settings_new": "\ue8ac",
@@ -87,6 +90,15 @@ MATERIAL_ICONS = {
     "vpn_key": "\ue0da",
     "wifi": "\ue63e",
     "wifi_off": "\ue648",
+}
+
+
+DEFAULT_BAR_SETTINGS = {
+    "launcher_offset": 0,
+    "workspace_offset": 0,
+    "datetime_offset": 0,
+    "media_offset": 0,
+    "status_offset": 0,
 }
 
 
@@ -213,6 +225,20 @@ def load_runtime_settings() -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
+def load_bar_settings() -> dict[str, int]:
+    settings = load_runtime_settings()
+    current = settings.get("bar", {})
+    current = current if isinstance(current, dict) else {}
+    merged = dict(DEFAULT_BAR_SETTINGS)
+    for key, default in DEFAULT_BAR_SETTINGS.items():
+        try:
+            merged[key] = int(current.get(key, default))
+        except Exception:
+            merged[key] = default
+        merged[key] = max(-8, min(8, int(merged[key])))
+    return merged
+
+
 class WorkspaceDot(QPushButton):
     def __init__(self, num: int, callback):
         super().__init__("")
@@ -258,6 +284,17 @@ class WorkspaceDot(QPushButton):
             }}
             """
         )
+
+
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
 
 class EqualizerBar(QFrame):
@@ -535,6 +572,8 @@ class CyberBar(QWidget):
         self.loaded_fonts = load_app_fonts()
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
+        self._settings_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
+        self.bar_settings = load_bar_settings()
         self.material_font = detect_font(
             self.loaded_fonts.get("material_icons", ""),
             self.loaded_fonts.get("material_icons_outlined", ""),
@@ -554,16 +593,22 @@ class CyberBar(QWidget):
         self._wifi_popup_process: Optional[subprocess.Popen] = None
         self._vpn_popup_process: Optional[subprocess.Popen] = None
         self._christian_widget_process: Optional[subprocess.Popen] = None
+        self._reminders_widget_process: Optional[subprocess.Popen] = None
         self._ntfy_popup_process: Optional[subprocess.Popen] = None
         self._weather_popup_process: Optional[subprocess.Popen] = None
+        self._calendar_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
         self._weather_worker: Optional[WeatherWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
         self._cava_buffer = ""
         self._battery_base: Optional[Path] = self._detect_battery_base()
+        self._settings_watcher: Optional[QFileSystemWatcher] = None
+        self._settings_reload_timer: Optional[QTimer] = None
+        self._control_center_launch_pending = False
         self._setup_window()
         self._build_ui()
         self._apply_styles()
+        self._setup_settings_watcher()
         self._start_polls()
 
     def _setup_window(self) -> None:
@@ -582,59 +627,62 @@ class CyberBar(QWidget):
         self.move(geo.x(), geo.y())
 
     def _build_ui(self) -> None:
-        root = QHBoxLayout(self)
-        root.setContentsMargins(12, 4, 12, 4)
-        root.setSpacing(14)
+        self.root_layout = QHBoxLayout(self)
+        self.root_layout.setContentsMargins(12, 4, 12, 4)
+        self.root_layout.setSpacing(14)
 
         left_wrap = QWidget()
-        left_layout = QHBoxLayout(left_wrap)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(10)
+        self.left_layout = QHBoxLayout(left_wrap)
+        self.left_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_layout.setSpacing(10)
 
         self.ai_button = self._icon_button("auto_awesome")
         self.ai_button.setObjectName("aiToggleButton")
         self.ai_button.setCheckable(True)
         self.ai_button.clicked.connect(self._toggle_ai_popup)
-        left_layout.addWidget(self.ai_button)
+        self.ai_wrap = self._wrap_movable(self.ai_button)
+        self.left_layout.addWidget(self.ai_wrap)
 
         self.launcher_button = QPushButton("♪ hanauta")
         self.launcher_button.setObjectName("launcherButton")
         self.launcher_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.launcher_button.clicked.connect(self._open_launcher)
-        left_layout.addWidget(self.launcher_button)
+        self.launcher_wrap = self._wrap_movable(self.launcher_button)
+        self.left_layout.addWidget(self.launcher_wrap)
 
         self.workspace_chip = QFrame()
         self.workspace_chip.setObjectName("workspaceChip")
-        workspace_layout = QHBoxLayout(self.workspace_chip)
-        workspace_layout.setContentsMargins(12, 4, 12, 4)
-        workspace_layout.setSpacing(8)
+        self.workspace_layout = QHBoxLayout(self.workspace_chip)
+        self.workspace_layout.setContentsMargins(12, 4, 12, 4)
+        self.workspace_layout.setSpacing(8)
 
         self.workspace_label = QLabel("Workspace 1")
         self.workspace_label.setObjectName("workspaceLabel")
-        workspace_layout.addWidget(self.workspace_label)
+        self.workspace_layout.addWidget(self.workspace_label)
 
         dots_wrap = QWidget()
-        dots_layout = QHBoxLayout(dots_wrap)
-        dots_layout.setContentsMargins(0, 0, 0, 0)
-        dots_layout.setSpacing(6)
+        self.dots_layout = QHBoxLayout(dots_wrap)
+        self.dots_layout.setContentsMargins(0, 0, 0, 0)
+        self.dots_layout.setSpacing(6)
         for ws_num in range(1, 6):
             dot = WorkspaceDot(ws_num, self._goto_workspace)
             self.workspace_buttons[ws_num] = dot
-            dots_layout.addWidget(dot)
-        workspace_layout.addWidget(dots_wrap)
-        left_layout.addWidget(self.workspace_chip)
-        root.addWidget(left_wrap, 0, Qt.AlignmentFlag.AlignLeft)
+            self.dots_layout.addWidget(dot)
+        self.workspace_layout.addWidget(dots_wrap)
+        self.workspace_wrap = self._wrap_movable(self.workspace_chip)
+        self.left_layout.addWidget(self.workspace_wrap)
+        self.root_layout.addWidget(left_wrap, 0, Qt.AlignmentFlag.AlignLeft)
 
         center_wrap = QWidget()
-        center_layout = QHBoxLayout(center_wrap)
-        center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(10)
+        self.center_layout = QHBoxLayout(center_wrap)
+        self.center_layout.setContentsMargins(0, 0, 0, 0)
+        self.center_layout.setSpacing(10)
 
         self.datetime_chip = QFrame()
         self.datetime_chip.setObjectName("dateTimeChip")
-        datetime_layout = QHBoxLayout(self.datetime_chip)
-        datetime_layout.setContentsMargins(12, 4, 12, 4)
-        datetime_layout.setSpacing(8)
+        self.datetime_layout = QHBoxLayout(self.datetime_chip)
+        self.datetime_layout.setContentsMargins(12, 4, 12, 4)
+        self.datetime_layout.setSpacing(8)
 
         self.weather_icon = AnimatedWeatherIcon(18)
         self.weather_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -642,17 +690,20 @@ class CyberBar(QWidget):
         self.weather_icon.hide()
         self.time_label = QLabel("--:--")
         self.time_label.setObjectName("timeLabel")
-        self.date_label = QLabel("--")
+        self.date_label = ClickableLabel("--")
         self.date_label.setObjectName("dateLabel")
-        datetime_layout.addWidget(self.weather_icon)
-        datetime_layout.addWidget(self.time_label)
-        datetime_layout.addWidget(self.date_label)
+        self.date_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.date_label.clicked.connect(self._toggle_calendar_popup)
+        self.datetime_layout.addWidget(self.weather_icon)
+        self.datetime_layout.addWidget(self.time_label)
+        self.datetime_layout.addWidget(self.date_label)
         self.btn_control_center = self._icon_button("dashboard")
         self.btn_control_center.setObjectName("utilityButton")
         self.btn_control_center.setCheckable(True)
         self.btn_control_center.clicked.connect(self._toggle_notifications)
-        datetime_layout.addWidget(self.btn_control_center)
-        center_layout.addWidget(self.datetime_chip)
+        self.datetime_layout.addWidget(self.btn_control_center)
+        self.datetime_wrap = self._wrap_movable(self.datetime_chip)
+        self.center_layout.addWidget(self.datetime_wrap)
 
         self.media_chip = QFrame()
         self.media_chip.setObjectName("mediaChip")
@@ -660,23 +711,23 @@ class CyberBar(QWidget):
         self.media_opacity = QGraphicsOpacityEffect(self.media_chip)
         self.media_chip.setGraphicsEffect(self.media_opacity)
         self.media_opacity.setOpacity(0.0)
-        media_layout = QHBoxLayout(self.media_chip)
-        media_layout.setContentsMargins(14, 4, 14, 4)
-        media_layout.setSpacing(8)
+        self.media_layout = QHBoxLayout(self.media_chip)
+        self.media_layout.setContentsMargins(14, 4, 14, 4)
+        self.media_layout.setSpacing(8)
 
         self.media_icon = QLabel(material_icon("music_note"))
         self.media_icon.setObjectName("mediaIcon")
         self.media_icon.setFont(QFont(self.material_font, 16))
         self.media_equalizer = QWidget()
         self.media_equalizer.setObjectName("equalizerWrap")
-        equalizer_layout = QHBoxLayout(self.media_equalizer)
-        equalizer_layout.setContentsMargins(0, 0, 0, 0)
-        equalizer_layout.setSpacing(3)
+        self.equalizer_layout = QHBoxLayout(self.media_equalizer)
+        self.equalizer_layout.setContentsMargins(0, 0, 0, 0)
+        self.equalizer_layout.setSpacing(3)
         self.equalizer_bars: list[EqualizerBar] = []
         for _ in range(6):
             bar = EqualizerBar()
             self.equalizer_bars.append(bar)
-            equalizer_layout.addWidget(bar, 0, Qt.AlignmentFlag.AlignBottom)
+            self.equalizer_layout.addWidget(bar, 0, Qt.AlignmentFlag.AlignBottom)
         self.media_text = QLabel("Nothing playing")
         self.media_text.setObjectName("mediaText")
         self.media_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -689,25 +740,26 @@ class CyberBar(QWidget):
         for btn in (self.media_prev, self.media_play, self.media_next):
             btn.setObjectName("mediaControl")
 
-        media_layout.addWidget(self.media_icon)
-        media_layout.addWidget(self.media_equalizer)
-        media_layout.addWidget(self.media_text)
-        media_layout.addWidget(self.media_prev)
-        media_layout.addWidget(self.media_play)
-        media_layout.addWidget(self.media_next)
-        center_layout.addWidget(self.media_chip)
-        root.addWidget(center_wrap, 1, Qt.AlignmentFlag.AlignCenter)
+        self.media_layout.addWidget(self.media_icon)
+        self.media_layout.addWidget(self.media_equalizer)
+        self.media_layout.addWidget(self.media_text)
+        self.media_layout.addWidget(self.media_prev)
+        self.media_layout.addWidget(self.media_play)
+        self.media_layout.addWidget(self.media_next)
+        self.media_wrap = self._wrap_movable(self.media_chip)
+        self.center_layout.addWidget(self.media_wrap)
+        self.root_layout.addWidget(center_wrap, 1, Qt.AlignmentFlag.AlignCenter)
 
         right_wrap = QWidget()
-        right_layout = QHBoxLayout(right_wrap)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(8)
+        self.right_layout = QHBoxLayout(right_wrap)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
+        self.right_layout.setSpacing(8)
 
         self.status_chip = QFrame()
         self.status_chip.setObjectName("statusChip")
-        status_layout = QHBoxLayout(self.status_chip)
-        status_layout.setContentsMargins(10, 4, 10, 4)
-        status_layout.setSpacing(8)
+        self.status_layout = QHBoxLayout(self.status_chip)
+        self.status_layout.setContentsMargins(10, 4, 10, 4)
+        self.status_layout.setSpacing(8)
 
         self.net_icon = QPushButton(material_icon("wifi"))
         self.net_icon.setObjectName("statusIconButton")
@@ -725,6 +777,10 @@ class CyberBar(QWidget):
         self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.christian_button.clicked.connect(self._open_christian_widget)
         self.christian_button.setIconSize(QSize(16, 16))
+        self.reminders_button = QPushButton(material_icon("notifications_active"))
+        self.reminders_button.setObjectName("statusIconButton")
+        self.reminders_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.reminders_button.clicked.connect(self._open_reminders_widget)
         self.ntfy_button = QPushButton(material_icon("notifications"))
         self.ntfy_button.setObjectName("statusIconButton")
         self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -738,13 +794,14 @@ class CyberBar(QWidget):
         self.battery_value.setObjectName("batteryValue")
         for label in (self.net_icon, self.vpn_icon, self.ntfy_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
-        status_layout.addWidget(self.net_icon)
-        status_layout.addWidget(self.vpn_icon)
-        status_layout.addWidget(self.christian_button)
-        status_layout.addWidget(self.ntfy_button)
-        status_layout.addWidget(self.caffeine_icon)
-        status_layout.addWidget(self.battery_icon)
-        status_layout.addWidget(self.battery_value)
+        self.status_layout.addWidget(self.net_icon)
+        self.status_layout.addWidget(self.vpn_icon)
+        self.status_layout.addWidget(self.christian_button)
+        self.status_layout.addWidget(self.reminders_button)
+        self.status_layout.addWidget(self.ntfy_button)
+        self.status_layout.addWidget(self.caffeine_icon)
+        self.status_layout.addWidget(self.battery_icon)
+        self.status_layout.addWidget(self.battery_value)
         self.btn_clip = self._icon_button("content_paste")
         self.btn_clip.setObjectName("statusIconButton")
         self.btn_clip.clicked.connect(self._open_clipboard)
@@ -759,12 +816,13 @@ class CyberBar(QWidget):
         self.tray_host = StatusNotifierTray(self)
         self.tray_host.setProperty("embedded", True)
         self.tray_host.setToolTip("Qt StatusNotifier tray")
-        status_layout.addWidget(self.btn_clip)
-        status_layout.addWidget(self.btn_updates)
-        status_layout.addWidget(self.tray_host)
-        status_layout.addWidget(self.btn_power)
-        right_layout.addWidget(self.status_chip)
-        root.addWidget(right_wrap, 0, Qt.AlignmentFlag.AlignRight)
+        self.status_layout.addWidget(self.btn_clip)
+        self.status_layout.addWidget(self.btn_updates)
+        self.status_layout.addWidget(self.tray_host)
+        self.status_layout.addWidget(self.btn_power)
+        self.status_wrap = self._wrap_movable(self.status_chip)
+        self.right_layout.addWidget(self.status_wrap)
+        self.root_layout.addWidget(right_wrap, 0, Qt.AlignmentFlag.AlignRight)
 
         has_battery = self._battery_base is not None
         self.caffeine_icon.setVisible(False)
@@ -773,7 +831,9 @@ class CyberBar(QWidget):
         self._set_vpn_button_icon(False)
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
+        self._sync_reminders_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._apply_bar_settings()
         self._install_debug_tooltips()
 
     def _icon_button(self, icon_name: str) -> QPushButton:
@@ -782,6 +842,47 @@ class CyberBar(QWidget):
         button.setFont(QFont(self.material_font, 18))
         button.setToolTip(f"IconButton {icon_name}")
         return button
+
+    def _wrap_movable(self, widget: QWidget) -> QWidget:
+        wrap = QWidget()
+        layout = QVBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
+        return wrap
+
+    def _setup_settings_watcher(self) -> None:
+        self._settings_watcher = QFileSystemWatcher(self)
+        self._settings_reload_timer = QTimer(self)
+        self._settings_reload_timer.setSingleShot(True)
+        self._settings_reload_timer.timeout.connect(self._reload_settings_from_watcher)
+        self._settings_watcher.fileChanged.connect(self._queue_settings_reload)
+        self._watch_settings_file()
+
+    def _watch_settings_file(self) -> None:
+        if self._settings_watcher is None:
+            return
+        watched_files = self._settings_watcher.files()
+        if watched_files:
+            self._settings_watcher.removePaths(watched_files)
+        if SETTINGS_FILE.exists():
+            self._settings_watcher.addPath(str(SETTINGS_FILE))
+
+    def _queue_settings_reload(self) -> None:
+        if self._settings_reload_timer is None:
+            return
+        self._settings_reload_timer.start(40)
+
+    def _reload_settings_from_watcher(self) -> None:
+        self._watch_settings_file()
+        self._reload_settings_if_needed(force=True)
+
+    def _apply_vertical_offset(self, wrapper: QWidget, offset: int) -> None:
+        layout = wrapper.layout()
+        if layout is None:
+            return
+        layout.setContentsMargins(0, max(0, offset), 0, max(0, -offset))
+        wrapper.updateGeometry()
 
     def _install_debug_tooltips(self) -> None:
         self.setToolTip("CyberBar root")
@@ -792,7 +893,7 @@ class CyberBar(QWidget):
         self.datetime_chip.setToolTip("Date/time chip")
         self.weather_icon.setToolTip("Weather button")
         self.time_label.setToolTip("Time label")
-        self.date_label.setToolTip("Date label")
+        self.date_label.setToolTip("Date label / calendar")
         self.btn_control_center.setToolTip("Control center button")
         self.media_chip.setToolTip("Media chip")
         self.media_icon.setToolTip("Media icon")
@@ -805,6 +906,7 @@ class CyberBar(QWidget):
         self.net_icon.setToolTip("Wi-Fi button")
         self.vpn_icon.setToolTip("VPN button")
         self.christian_button.setToolTip("Christian widget button")
+        self.reminders_button.setToolTip("Reminders widget button")
         self.ntfy_button.setToolTip("ntfy publisher button")
         self.caffeine_icon.setToolTip("Caffeine icon")
         self.battery_icon.setToolTip("Battery icon")
@@ -813,6 +915,15 @@ class CyberBar(QWidget):
         self.btn_updates.setToolTip("Updates button")
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.btn_power.setToolTip("Power button")
+
+    def _apply_bar_settings(self) -> None:
+        self.bar_settings = load_bar_settings()
+        self._apply_vertical_offset(self.ai_wrap, self.bar_settings.get("launcher_offset", 0))
+        self._apply_vertical_offset(self.launcher_wrap, self.bar_settings.get("launcher_offset", 0))
+        self._apply_vertical_offset(self.workspace_wrap, self.bar_settings.get("workspace_offset", 0))
+        self._apply_vertical_offset(self.datetime_wrap, self.bar_settings.get("datetime_offset", 0))
+        self._apply_vertical_offset(self.media_wrap, self.bar_settings.get("media_offset", 0))
+        self._apply_vertical_offset(self.status_wrap, self.bar_settings.get("status_offset", 0))
 
     def _apply_styles(self) -> None:
         theme = self.theme
@@ -1010,6 +1121,8 @@ class CyberBar(QWidget):
         self._update_media_equalizer_color()
         self._set_vpn_button_icon(bool(self.vpn_icon.property("active")))
         self._set_christian_button_icon()
+        self._sync_christian_button_visibility()
+        self._sync_reminders_button_visibility()
         self._sync_ntfy_button_visibility()
         self._update_window_mask()
 
@@ -1021,10 +1134,22 @@ class CyberBar(QWidget):
     def _reload_theme_if_needed(self) -> None:
         current_mtime = palette_mtime()
         if current_mtime == self._theme_mtime:
+            self._reload_settings_if_needed()
             return
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
         self._apply_styles()
+        self._reload_settings_if_needed()
+
+    def _reload_settings_if_needed(self, force: bool = False) -> None:
+        current_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
+        if not force and current_mtime == self._settings_mtime:
+            return
+        self._settings_mtime = current_mtime
+        self._apply_bar_settings()
+        self._sync_christian_button_visibility()
+        self._sync_reminders_button_visibility()
+        self._sync_ntfy_button_visibility()
 
     def _update_window_mask(self) -> None:
         self.setMask(QRegion(self.rect()))
@@ -1291,6 +1416,15 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", service.get("show_in_notification_center", False)))
         self.christian_button.setVisible(enabled and show_in_bar)
 
+    def _sync_reminders_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("reminders_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", False))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.reminders_button.setVisible(enabled and show_in_bar)
+
     def _sync_ntfy_button_visibility(self) -> None:
         settings = load_runtime_settings()
         ntfy = settings.get("ntfy", {})
@@ -1362,6 +1496,8 @@ class CyberBar(QWidget):
         self._poll_workspaces()
 
     def _toggle_notifications(self) -> None:
+        if self._control_center_launch_pending:
+            return
         if self._control_center_process is not None and self._control_center_process.poll() is None:
             self._control_center_process.terminate()
             self._control_center_process = None
@@ -1372,16 +1508,34 @@ class CyberBar(QWidget):
             self.btn_control_center.setChecked(False)
             return
 
+        self._control_center_launch_pending = True
+        self.btn_control_center.setChecked(True)
+        self.btn_control_center.setEnabled(False)
+        QTimer.singleShot(450, self._finish_control_center_launch)
         try:
+            python_bin = self._python_bin()
             self._control_center_process = subprocess.Popen(
-                [sys.executable, str(NOTIFICATION_CENTER)],
+                [python_bin, str(NOTIFICATION_CENTER)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                start_new_session=True,
             )
-            self.btn_control_center.setChecked(True)
         except Exception:
             self._control_center_process = None
+            self._control_center_launch_pending = False
+            self.btn_control_center.setEnabled(True)
             self.btn_control_center.setChecked(False)
+
+    def _finish_control_center_launch(self) -> None:
+        self._control_center_launch_pending = False
+        self.btn_control_center.setEnabled(True)
+        self._sync_control_center_button()
+
+    def _python_bin(self) -> str:
+        python_bin = ROOT / ".venv" / "bin" / "python"
+        if python_bin.exists():
+            return str(python_bin)
+        return sys.executable
 
     def _toggle_weather_popup(self) -> None:
         if self._weather_popup_process is not None and self._weather_popup_process.poll() is None:
@@ -1400,6 +1554,25 @@ class CyberBar(QWidget):
             )
         except Exception:
             self._weather_popup_process = None
+
+    def _toggle_calendar_popup(self) -> None:
+        if self._calendar_popup_process is not None and self._calendar_popup_process.poll() is None:
+            self._calendar_popup_process.terminate()
+            self._calendar_popup_process = None
+            return
+
+        if not CALENDAR_POPUP.exists():
+            return
+
+        python_bin = ROOT / ".venv" / "bin" / "python"
+        try:
+            self._calendar_popup_process = subprocess.Popen(
+                [str(python_bin), str(CALENDAR_POPUP)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._calendar_popup_process = None
 
     def _toggle_wifi_popup(self) -> None:
         if self._wifi_popup_process is not None and self._wifi_popup_process.poll() is None:
@@ -1488,6 +1661,24 @@ class CyberBar(QWidget):
         except Exception:
             self._christian_widget_process = None
 
+    def _open_reminders_widget(self) -> None:
+        if not REMINDERS_WIDGET.exists():
+            return
+        if self._reminders_widget_process is not None and self._reminders_widget_process.poll() is None:
+            self._reminders_widget_process.terminate()
+            self._reminders_widget_process = None
+            return
+
+        python_bin = ROOT / ".venv" / "bin" / "python"
+        try:
+            self._reminders_widget_process = subprocess.Popen(
+                [str(python_bin), str(REMINDERS_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._reminders_widget_process = None
+
     def _toggle_ntfy_popup(self) -> None:
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
             self._ntfy_popup_process.terminate()
@@ -1550,7 +1741,9 @@ class CyberBar(QWidget):
         self.ai_button.setChecked(active)
 
     def _sync_control_center_button(self) -> None:
-        active = self._control_center_process is not None and self._control_center_process.poll() is None
+        active = self._control_center_launch_pending or (
+            self._control_center_process is not None and self._control_center_process.poll() is None
+        )
         if not active:
             self._control_center_process = None
         self.btn_control_center.setChecked(active)

@@ -58,6 +58,7 @@ SETTINGS_FILE = STATE_DIR / "settings.json"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
+REMINDERS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 
 MATERIAL_ICONS = {
     "airplanemode_active": "\ue195",
@@ -108,6 +109,14 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_bar": False,
         "next_devotion_notifications": False,
         "hourly_verse_notifications": False,
+    },
+    "calendar_widget": {
+        "enabled": True,
+        "show_in_notification_center": False,
+    },
+    "reminders_widget": {
+        "enabled": False,
+        "show_in_notification_center": False,
     },
 }
 
@@ -793,6 +802,8 @@ class NotificationCenter(QWidget):
         layout.addWidget(self._build_vpn_launcher_card())
         layout.addSpacing(10)
         layout.addWidget(self._build_christian_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_reminders_launcher_card())
         self._sync_service_card_visibility()
         return page
 
@@ -1104,6 +1115,17 @@ class NotificationCenter(QWidget):
         )
         return self.christian_launcher_card
 
+    def _build_reminders_launcher_card(self) -> QFrame:
+        self.reminders_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "Reminders",
+            "Open tracked CalDAV reminders and the tea reminder widget.",
+            "notifications",
+            "Open",
+            self._open_reminders_widget,
+        )
+        return self.reminders_launcher_card
+
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -1313,6 +1335,10 @@ class NotificationCenter(QWidget):
             self.christian_launcher_card.setVisible(
                 self._service_visible_in_notification_center("christian_widget")
             )
+        if hasattr(self, "reminders_launcher_card"):
+            self.reminders_launcher_card.setVisible(
+                self._service_visible_in_notification_center("reminders_widget")
+            )
 
     def _open_vpn_widget(self) -> None:
         if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
@@ -1323,6 +1349,11 @@ class NotificationCenter(QWidget):
         if not self._service_enabled("christian_widget") or not CHRISTIAN_WIDGET_SCRIPT.exists():
             return
         run_bg([sys.executable, str(CHRISTIAN_WIDGET_SCRIPT)])
+
+    def _open_reminders_widget(self) -> None:
+        if not self._service_enabled("reminders_widget") or not REMINDERS_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(REMINDERS_WIDGET_SCRIPT)])
 
     def _circle_icon_button(self, icon: str, accent: str = "default") -> QPushButton:
         button = QPushButton(material_icon(icon))
