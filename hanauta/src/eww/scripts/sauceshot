@@ -17,7 +17,7 @@ view() {
 	viewnior "$PIC"
 }
 abort() {
-	dunstify -i dialog-error "Error" "something went wrong"
+	notify-send -a "Screenshot" -i dialog-error "Error" "something went wrong"
 	exit 1
 }
 
@@ -25,20 +25,20 @@ case "$1" in
 --full)
 	full || abort
 	xclip -selection c -t image/png "$PIC"
-	dunstify -u normal -a "Screenshot" -i "$PIC" "Copied to clipboard" $PIC
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
 	view
 	;;
 --crop)
 	crop || abort
 	xclip -selection c -t image/png "$PIC"
-	dunstify -u normal -a "Screenshot" -i "$PIC" "Copied to clipboard" $PIC
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
 	view
 	;;
 --delay2)
 	sleep 2
 	full || abort
 	xclip -selection c -t image/png "$PIC"
-	dunstify -u normal -a "Screenshot" -i "$PIC" "Copied to clipboard" $PIC
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
 	view
 	;;
 esac

@@ -4,7 +4,7 @@
 
 # Icons
 iDIR="$HOME/.config/i3/assets"
-notify_cmd='dunstify -u low -h string:x-dunst-stack-tag:obvolume'
+notify_app="Volume"
 
 # Get Volume
 get_volume() {
@@ -25,7 +25,7 @@ get_icon() {
 
 # Notify
 notify_user() {
-	${notify_cmd} -i "$icon" "Volume : $(get_volume)%"
+	notify-send -a "$notify_app" -u low -i "$icon" "Volume" "$(get_volume)%"
 }
 
 # Increase Volume
@@ -43,9 +43,9 @@ dec_volume() {
 # Toggle Mute
 toggle_mute() {
 	if [[ $(pamixer --get-mute) == false ]]; then
-		pamixer --toggle-mute && ${notify_cmd} -i "$iDIR/mute.png" "Mute"
+		pamixer --toggle-mute && notify-send -a "$notify_app" -u low -i "$iDIR/mute.png" "Volume" "Mute"
 	else
-		pamixer --toggle-mute && get_icon && ${notify_cmd} -i "$icon" "Unmute"
+		pamixer --toggle-mute && get_icon && notify-send -a "$notify_app" -u low -i "$icon" "Volume" "Unmute"
 	fi
 }
 
@@ -63,5 +63,5 @@ if [[ -x $(which pamixer) ]]; then
 		echo "$(get_volume)%"
 	fi
 else
-	${notify_cmd} "'pamixer' is not installed."
+	notify-send -a "$notify_app" -u low "Volume" "'pamixer' is not installed."
 fi

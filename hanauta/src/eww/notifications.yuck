@@ -49,7 +49,7 @@
        :halign "center"
     (label :class "notification-empty-icon" :text "󰂚")
     (label :class "notification-empty-title" :text "No active notifications")
-    (label :class "notification-empty-copy" :text "This space will fill with Dunst history, alerts, and quick actions." :wrap true :justify "center")
+    (label :class "notification-empty-copy" :text "This space will fill with Hanauta notifications, alerts, and quick actions." :wrap true :justify "center")
   )
 )
 
@@ -61,7 +61,7 @@
     (box :orientation "h" :space-evenly false :spacing 8
       (label :class "notification-item-app" :text {notification.appname} :halign "start")
       (box :hexpand true)
-      (button :class "notification-item-close" :onclick "dunstctl close ${notification.id}" "󰅖")
+      (button :class "notification-item-close" :onclick "hanauta-notifyctl close ${notification.id}" "󰅖")
     )
     (label :class "notification-item-summary" :text {notification.summary} :halign "start" :xalign 0 :wrap true :justify "left")
     (label :class "notification-item-body" :text {notification.body} :halign "start" :xalign 0 :wrap true :justify "left")
@@ -111,7 +111,7 @@
             (label :class "panel-header-kicker" :text "Material You Hub")
             (label :class "panel-header-title" :text "Notification Center"))
           (box :hexpand true)
-          (button :class "panel-header-button" :onclick "dunstctl history-clear" "Clear"))
+          (button :class "panel-header-button" :onclick "hanauta-notifyctl history-clear" "Clear"))
         (box :class "rail-strip"
              :orientation "h"
              :space-evenly false
