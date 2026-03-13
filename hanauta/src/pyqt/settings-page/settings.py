@@ -176,18 +176,29 @@ DEFAULT_BAR_SETTINGS = {
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
+    "chip_radius": 0,
+    "merge_all_chips": False,
+    "full_bar_radius": 18,
 }
 
 
 def merged_bar_settings(payload: object) -> dict[str, int]:
     current = payload if isinstance(payload, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
+    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset"}
+    radius_keys = {"chip_radius", "full_bar_radius"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
+        if key == "merge_all_chips":
+            merged[key] = bool(current.get(key, default)) if isinstance(current, dict) else bool(default)
+            continue
         try:
-            merged[key] = int(current.get(key, default)) if isinstance(current, dict) else default
+            merged[key] = int(current.get(key, default)) if isinstance(current, dict) else int(default)
         except Exception:
-            merged[key] = default
-        merged[key] = max(-8, min(8, int(merged[key])))
+            merged[key] = int(default)
+        if key in offset_keys:
+            merged[key] = max(-8, min(8, int(merged[key])))
+        elif key in radius_keys:
+            merged[key] = max(0, min(32, int(merged[key])))
     return merged
 
 
@@ -199,6 +210,8 @@ DEFAULT_SERVICE_SETTINGS = {
     "vpn_control": {
         "enabled": True,
         "show_in_notification_center": False,
+        "reconnect_on_login": False,
+        "preferred_interface": "",
     },
     "christian_widget": {
         "enabled": False,
@@ -255,6 +268,13 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                     defaults.get("hourly_verse_notifications", False),
                 )
             )
+        elif key == "vpn_control":
+            merged[key]["reconnect_on_login"] = bool(
+                current.get("reconnect_on_login", defaults.get("reconnect_on_login", False))
+            )
+            merged[key]["preferred_interface"] = str(
+                current.get("preferred_interface", defaults.get("preferred_interface", ""))
+            ).strip()
         elif key == "reminders_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
@@ -546,6 +566,36 @@ def restore_saved_wallpaper() -> None:
         run_bg([str(WALLPAPER_SCRIPT), str(wallpaper_path)])
     else:
         run_bg(["feh", "--bg-fill", str(wallpaper_path)])
+
+
+def restore_saved_vpn() -> None:
+    settings = load_settings_state()
+    services = settings.get("services", {})
+    if not isinstance(services, dict):
+        return
+    vpn = services.get("vpn_control", {})
+    if not isinstance(vpn, dict):
+        return
+    if not bool(vpn.get("enabled", True)) or not bool(vpn.get("reconnect_on_login", False)):
+        return
+    iface = str(vpn.get("preferred_interface", "")).strip()
+    if not iface:
+        return
+    vpn_script = ROOT / "hanauta" / "src" / "eww" / "scripts" / "vpn.sh"
+    if not vpn_script.exists():
+        return
+    status_raw = run_text([str(vpn_script), "--status"])
+    try:
+        status = json.loads(status_raw) if status_raw else {}
+    except Exception:
+        status = {}
+    if (
+        isinstance(status, dict)
+        and str(status.get("wireguard", "")).strip() == "on"
+        and str(status.get("wg_selected", "")).strip() == iface
+    ):
+        return
+    run_bg([str(vpn_script), "--toggle-wg", iface])
 
 
 def build_display_command(displays: list[dict], primary_name: str, layout_mode: str) -> list[str]:
@@ -2344,6 +2394,21 @@ class SettingsWindow(QWidget):
         self.bar_status_offset_slider.setFixedWidth(164)
         self.bar_status_offset_slider.valueChanged.connect(self._set_bar_status_offset)
 
+        self.bar_chip_radius_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_chip_radius_slider.setRange(0, 32)
+        self.bar_chip_radius_slider.setValue(int(self.settings_state["bar"].get("chip_radius", 0)))
+        self.bar_chip_radius_slider.setFixedWidth(164)
+        self.bar_chip_radius_slider.valueChanged.connect(self._set_bar_chip_radius)
+
+        self.bar_full_merge_switch = SwitchButton(bool(self.settings_state["bar"].get("merge_all_chips", False)))
+        self.bar_full_merge_switch.toggledValue.connect(self._set_bar_merge_all_chips)
+
+        self.bar_full_radius_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_full_radius_slider.setRange(0, 32)
+        self.bar_full_radius_slider.setValue(int(self.settings_state["bar"].get("full_bar_radius", 18)))
+        self.bar_full_radius_slider.setFixedWidth(164)
+        self.bar_full_radius_slider.valueChanged.connect(self._set_bar_full_radius)
+
         layout.addWidget(
             SettingsRow(
                 material_icon("flip"),
@@ -2392,6 +2457,36 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_status_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Chip corner radius",
+                "Adjust how square or rounded the bar chips should be.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_chip_radius_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("dock_to_left"),
+                "Merge chips into full bar",
+                "Blend the separate chips into one continuous bar surface.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_full_merge_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Full bar corner radius",
+                "When full bar mode is enabled, choose how rounded the overall bar should be.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_full_radius_slider,
             )
         )
         return card
@@ -2546,10 +2641,32 @@ class SettingsWindow(QWidget):
                 display_switch,
             )
         )
+        reconnect_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["vpn_control"].get(
+                    "reconnect_on_login",
+                    False,
+                )
+            )
+        )
+        reconnect_switch.toggledValue.connect(
+            lambda enabled: self._set_vpn_service_flag("reconnect_on_login", enabled)
+        )
+        self.vpn_reconnect_switch = reconnect_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Reconnect on session start",
+                "Bring the selected WireGuard tunnel back when this desktop session starts.",
+                self.icon_font,
+                self.ui_font,
+                reconnect_switch,
+            )
+        )
         section = ExpandableServiceSection(
             "vpn_control",
             "VPN Control",
-            "Enable the WireGuard popup and optionally surface it in the notification center.",
+            "Enable the WireGuard popup, keep a preferred tunnel remembered, and optionally reopen it on session start.",
             material_icon("lock"),
             self.icon_font,
             self.ui_font,
@@ -3048,6 +3165,8 @@ class SettingsWindow(QWidget):
         service["enabled"] = bool(enabled)
         if not enabled:
             service["show_in_notification_center"] = False
+            if key == "vpn_control":
+                service["reconnect_on_login"] = False
             if key == "christian_widget":
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
@@ -3079,6 +3198,11 @@ class SettingsWindow(QWidget):
             if display_switch is not None:
                 display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
                 display_switch._apply_state()
+        if key == "vpn_control":
+            switch = getattr(self, "vpn_reconnect_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("reconnect_on_login", False)))
+                switch._apply_state()
         if key == "reminders_widget":
             switch = getattr(self, "reminders_bar_switch", None)
             if switch is not None:
@@ -3101,6 +3225,13 @@ class SettingsWindow(QWidget):
 
     def _set_christian_service_flag(self, flag: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault("christian_widget", {})
+        if not service.get("enabled", True):
+            return
+        service[flag] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_vpn_service_flag(self, flag: str, enabled: bool) -> None:
+        service = self.settings_state["services"].setdefault("vpn_control", {})
         if not service.get("enabled", True):
             return
         service[flag] = bool(enabled)
@@ -3250,6 +3381,18 @@ class SettingsWindow(QWidget):
 
     def _set_bar_status_offset(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["status_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_chip_radius(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["chip_radius"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_merge_all_chips(self, enabled: bool) -> None:
+        self.settings_state.setdefault("bar", {})["merge_all_chips"] = bool(enabled)
+        self._save_bar_settings()
+
+    def _set_bar_full_radius(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["full_bar_radius"] = int(value)
         self._save_bar_settings()
 
     def _queue_weather_city_search(self, text: str) -> None:
@@ -4100,12 +4243,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--service-section", default="")
     parser.add_argument("--restore-displays", action="store_true")
     parser.add_argument("--restore-wallpaper", action="store_true")
+    parser.add_argument("--restore-vpn", action="store_true")
     args, _ = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
     if args.restore_displays:
         restore_saved_displays()
         return 0
     if args.restore_wallpaper:
         restore_saved_wallpaper()
+        return 0
+    if args.restore_vpn:
+        restore_saved_vpn()
         return 0
     app = QApplication(sys.argv)
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())

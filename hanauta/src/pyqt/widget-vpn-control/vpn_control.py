@@ -63,6 +63,38 @@ def service_enabled() -> bool:
     return bool(current.get("enabled", True))
 
 
+def load_vpn_service_settings() -> dict[str, object]:
+    try:
+        raw = SETTINGS_FILE.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    services = payload.get("services", {})
+    if not isinstance(services, dict):
+        return {}
+    current = services.get("vpn_control", {})
+    return current if isinstance(current, dict) else {}
+
+
+def save_vpn_service_setting(key: str, value: object) -> None:
+    try:
+        raw = SETTINGS_FILE.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception:
+        payload = {}
+    services = payload.get("services", {})
+    if not isinstance(services, dict):
+        services = {}
+    current = services.get("vpn_control", {})
+    if not isinstance(current, dict):
+        current = {}
+    current[key] = value
+    services["vpn_control"] = current
+    payload["services"] = services
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def run_cmd(cmd: list[str], timeout: float = 3.0) -> str:
     try:
         result = subprocess.run(
@@ -465,7 +497,8 @@ class VpnControlPopup(QWidget):
             return
         status = self._load_status()
         interfaces = self._load_interfaces()
-        selected = status.get("wg_selected", "")
+        service = load_vpn_service_settings()
+        selected = status.get("wg_selected", "") or str(service.get("preferred_interface", "")).strip()
         active = status.get("wireguard") == "on"
 
         if selected and selected not in interfaces:
@@ -502,6 +535,7 @@ class VpnControlPopup(QWidget):
     def _set_interface(self, iface: str) -> None:
         if self._building_combo or not iface:
             return
+        save_vpn_service_setting("preferred_interface", iface)
         run_script_bg("vpn.sh", "--set-wg", iface)
         QTimer.singleShot(250, self.refresh_state)
 

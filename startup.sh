@@ -13,4 +13,5 @@ LOG=/tmp/i3-startup.log
   "$HOME/.config/i3/hanauta/src/eww/scripts/notifications-cache-daemon.sh" >/tmp/eww-notifications-cache.log 2>&1 &
   "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" --restore-displays >/tmp/hanauta-display-restore.log 2>&1 &
   "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" --restore-wallpaper >/tmp/hanauta-wallpaper-restore.log 2>&1 &
+  "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" --restore-vpn >/tmp/hanauta-vpn-restore.log 2>&1 &
 } >>"$LOG" 2>&1

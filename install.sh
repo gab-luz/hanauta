@@ -10,6 +10,7 @@ INSTALL_VSCODE_ONLY=false
 INSTALL_VSCODIUM_ONLY=false
 INSTALL_NOTIFICATION_DAEMON_ONLY=false
 INSTALL_QUICKSHELL_ONLY=false
+INSTALL_WIREGUARD_SYSTEMD_ONLY=false
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -112,9 +113,12 @@ parse_args() {
       --quickshell)
         INSTALL_QUICKSHELL_ONLY=true
         ;;
+      --wireguard-systemd)
+        INSTALL_WIREGUARD_SYSTEMD_ONLY=true
+        ;;
       -h|--help)
         cat <<EOF
-Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon] [--quickshell]
+Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon] [--quickshell] [--wireguard-systemd]
 
 Without flags:
   Runs the full desktop install only.
@@ -124,6 +128,7 @@ With flags:
   --vscodium  Install only the VSCodium extension
   --notification-daemon  Install only the Hanauta notification daemon components
   --quickshell  Install only the Quickshell runtime dependencies
+  --wireguard-systemd  Offer a systemd-based WireGuard auto-start setup
 EOF
         exit 0
         ;;
@@ -134,6 +139,90 @@ EOF
     esac
     shift
   done
+}
+
+confirm_yes() {
+  local prompt="$1"
+  local reply=""
+  read -r -p "$prompt [y/N] " reply
+  case "${reply,,}" in
+    y|yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_wireguard_systemd_support_debian() {
+  install_apt_group "wireguard systemd support" wireguard-tools
+}
+
+install_wireguard_systemd_support_arch() {
+  install_pacman_group "wireguard systemd support" wireguard-tools
+}
+
+setup_wireguard_systemd() {
+  local iface="${1:-}"
+  if [ -z "$iface" ]; then
+    error "WireGuard interface name is required."
+    return 1
+  fi
+
+  if ! need_cmd sudo; then
+    error "sudo is required for the systemd-based WireGuard setup."
+    return 1
+  fi
+
+  if detect_debian_like; then
+    install_wireguard_systemd_support_debian
+  elif detect_arch; then
+    install_wireguard_systemd_support_arch
+  else
+    warn "Unknown distro. Skipping package install and trying the existing systemd unit."
+  fi
+
+  if [ ! -f "/etc/wireguard/${iface}.conf" ]; then
+    error "Expected /etc/wireguard/${iface}.conf but it was not found."
+    return 1
+  fi
+
+  info "Enabling the systemd WireGuard unit for ${iface}..."
+  sudo systemctl enable "wg-quick@${iface}.service"
+  success "wg-quick@${iface}.service is enabled."
+
+  if confirm_yes "Start ${iface} now as well?"; then
+    sudo systemctl restart "wg-quick@${iface}.service"
+    success "${iface} started through systemd."
+  else
+    info "Skipped starting ${iface} right now."
+  fi
+}
+
+offer_wireguard_systemd_setup() {
+  echo ""
+  echo -e "${MAGENTA}${BOLD}Optional WireGuard Setup${NC}"
+  echo -e "Enable a ${BOLD}systemd-based WireGuard auto-start${NC} for one interface."
+  echo -e "This uses ${BOLD}sudo${NC}, enables ${BOLD}wg-quick@interface.service${NC}, and can reconnect the tunnel outside the i3 session."
+  echo ""
+
+  if ! confirm_yes "Do you want to continue with the systemd-based WireGuard setup?"; then
+    info "Skipping systemd-based WireGuard setup."
+    return 0
+  fi
+
+  warn "This will make WireGuard managed by systemd at startup, not just by the desktop session."
+  if ! confirm_yes "Are you absolutely sure you want to enable this system-level WireGuard setup?"; then
+    info "Second confirmation declined. Skipping systemd-based WireGuard setup."
+    return 0
+  fi
+
+  local iface=""
+  read -r -p "Enter the WireGuard interface name to enable at startup (example: wg0): " iface
+  iface="${iface// /}"
+  if [ -z "$iface" ]; then
+    warn "No interface entered. Skipping systemd-based WireGuard setup."
+    return 0
+  fi
+
+  setup_wireguard_systemd "$iface"
 }
 
 print_banner() {
@@ -541,6 +630,13 @@ main() {
     return 0
   fi
 
+  if [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ]; then
+    print_banner
+    offer_wireguard_systemd_setup
+    info "Done!"
+    return 0
+  fi
+
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] && [ "$INSTALL_QUICKSHELL_ONLY" = true ]; then
     error "Use only one of --notification-daemon or --quickshell."
     return 1
@@ -590,6 +686,8 @@ main() {
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ] && [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
     install_detected_editor_extensions
   fi
+
+  offer_wireguard_systemd_setup
 
   print_summary
   post_notes
