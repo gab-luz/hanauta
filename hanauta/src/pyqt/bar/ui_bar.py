@@ -101,6 +101,9 @@ DEFAULT_BAR_SETTINGS = {
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
+    "chip_radius": 0,
+    "merge_all_chips": False,
+    "full_bar_radius": 18,
 }
 
 
@@ -233,12 +236,19 @@ def load_bar_settings() -> dict[str, int]:
     current = settings.get("bar", {})
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
+    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
+        if isinstance(default, bool):
+            merged[key] = bool(current.get(key, default))
+            continue
         try:
             merged[key] = int(current.get(key, default))
         except Exception:
             merged[key] = default
-        merged[key] = max(-8, min(8, int(merged[key])))
+        if key in offset_keys:
+            merged[key] = max(-8, min(8, int(merged[key])))
+        else:
+            merged[key] = max(0, min(32, int(merged[key])))
     return merged
 
 
@@ -290,6 +300,17 @@ class WorkspaceDot(QPushButton):
 
 
 class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
+class ClickableFrame(QFrame):
     clicked = pyqtSignal()
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
@@ -640,8 +661,16 @@ class CyberBar(QWidget):
         self.move(geo.x(), geo.y())
 
     def _build_ui(self) -> None:
-        self.root_layout = QHBoxLayout(self)
-        self.root_layout.setContentsMargins(12, 4, 12, 4)
+        self.outer_layout = QVBoxLayout(self)
+        self.outer_layout.setContentsMargins(12, 4, 12, 4)
+        self.outer_layout.setSpacing(0)
+
+        self.bar_surface = QFrame()
+        self.bar_surface.setObjectName("barSurface")
+        self.outer_layout.addWidget(self.bar_surface)
+
+        self.root_layout = QHBoxLayout(self.bar_surface)
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
         self.root_layout.setSpacing(14)
 
         left_wrap = QWidget()
@@ -649,19 +678,43 @@ class CyberBar(QWidget):
         self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(10)
 
+        self.launcher_chip = QFrame()
+        self.launcher_chip.setObjectName("launcherChip")
+        self.launcher_layout = QHBoxLayout(self.launcher_chip)
+        self.launcher_layout.setContentsMargins(8, 4, 8, 4)  # top/bottom margins move the row vertically
+        self.launcher_layout.setSpacing(6)  # spacing only changes the horizontal gap
+        self.launcher_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.ai_button = self._icon_button("auto_awesome")
         self.ai_button.setObjectName("aiToggleButton")
         self.ai_button.setCheckable(True)
         self.ai_button.clicked.connect(self._toggle_ai_popup)
-        self.ai_wrap = self._wrap_movable(self.ai_button)
+        self.launcher_trigger = ClickableFrame()
+        self.launcher_trigger.setObjectName("launcherTrigger")
+        self.launcher_trigger.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.launcher_trigger.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self.launcher_trigger.setFixedHeight(20)
+        self.launcher_trigger.clicked.connect(self._open_launcher)
+        self.launcher_trigger_layout = QHBoxLayout(self.launcher_trigger)
+        self.launcher_trigger_layout.setContentsMargins(10, 0, 10, 2)
+        self.launcher_trigger_layout.setSpacing(5)
+        self.launcher_trigger_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.launcher_note = QLabel("♪")
+        self.launcher_note.setObjectName("launcherNote")
+        self.launcher_note.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
+        self.launcher_note.setFixedSize(12, 16)
+        self.launcher_text = QLabel("hanauta")
+        self.launcher_text.setObjectName("launcherText")
+        self.launcher_text.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.launcher_text.setFixedHeight(15)
+        self.launcher_trigger_layout.addWidget(self.launcher_note)
+        self.launcher_trigger_layout.addWidget(self.launcher_text)
+        self.launcher_layout.addWidget(self.ai_button)
+        self.launcher_layout.addWidget(self.launcher_trigger)
+        self.launcher_layout.setAlignment(self.ai_button, Qt.AlignmentFlag.AlignVCenter)
+        self.launcher_layout.setAlignment(self.launcher_trigger, Qt.AlignmentFlag.AlignVCenter)
+        self.ai_wrap = self._wrap_movable(self.launcher_chip)
         self.left_layout.addWidget(self.ai_wrap)
-
-        self.launcher_button = QPushButton("♪ hanauta")
-        self.launcher_button.setObjectName("launcherButton")
-        self.launcher_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.launcher_button.clicked.connect(self._open_launcher)
-        self.launcher_wrap = self._wrap_movable(self.launcher_button)
-        self.left_layout.addWidget(self.launcher_wrap)
+        self.launcher_wrap = self.ai_wrap
 
         self.workspace_chip = QFrame()
         self.workspace_chip.setObjectName("workspaceChip")
@@ -902,7 +955,7 @@ class CyberBar(QWidget):
     def _install_debug_tooltips(self) -> None:
         self.setToolTip("CyberBar root")
         self.ai_button.setToolTip("AI toggle button")
-        self.launcher_button.setToolTip("Launcher button")
+        self.launcher_trigger.setToolTip("Launcher button")
         self.workspace_chip.setToolTip("Workspace chip")
         self.workspace_label.setToolTip("Workspace label")
         self.datetime_chip.setToolTip("Date/time chip")
@@ -933,6 +986,12 @@ class CyberBar(QWidget):
 
     def _apply_bar_settings(self) -> None:
         self.bar_settings = load_bar_settings()
+        merge_all_chips = bool(self.bar_settings.get("merge_all_chips", False))
+        self.root_layout.setSpacing(0 if merge_all_chips else 14)
+        self.left_layout.setSpacing(0 if merge_all_chips else 10)
+        self.center_layout.setSpacing(0 if merge_all_chips else 10)
+        self.right_layout.setSpacing(0 if merge_all_chips else 8)
+        self.root_layout.setContentsMargins(8, 4, 8, 4)
         self._apply_vertical_offset(self.ai_wrap, self.bar_settings.get("launcher_offset", 0))
         self._apply_vertical_offset(self.launcher_wrap, self.bar_settings.get("launcher_offset", 0))
         self._apply_vertical_offset(self.workspace_wrap, self.bar_settings.get("workspace_offset", 0))
@@ -942,9 +1001,20 @@ class CyberBar(QWidget):
 
     def _apply_styles(self) -> None:
         theme = self.theme
+        chip_radius = int(self.bar_settings.get("chip_radius", 0))
+        chip_radius_css = f"{chip_radius}px"
+        merge_all_chips = bool(self.bar_settings.get("merge_all_chips", False))
+        full_bar_radius = int(self.bar_settings.get("full_bar_radius", 18))
+        full_bar_radius_css = f"{full_bar_radius}px"
         status_icon_color = theme.primary
         status_hover_color = theme.text
         status_active_color = theme.primary
+        chip_bg = "transparent" if merge_all_chips else theme.chip_bg
+        chip_border = "transparent" if merge_all_chips else theme.chip_border
+        media_bg = "transparent" if merge_all_chips else theme.panel_bg
+        media_border = "transparent" if merge_all_chips else theme.panel_border
+        full_bar_bg = theme.panel_bg if merge_all_chips else "transparent"
+        full_bar_border = theme.panel_border if merge_all_chips else "transparent"
         self.setStyleSheet(
             f"""
             QWidget {{
@@ -953,33 +1023,54 @@ class CyberBar(QWidget):
                 font-family: "Inter", "Noto Sans", sans-serif;
                 font-size: 12px;
             }}
-            #workspaceChip, #dateTimeChip {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
-                border-radius: 16px;
+            #barSurface {{
+                background: {full_bar_bg};
+                border: 1px solid {full_bar_border};
+                border-radius: {full_bar_radius_css};
+            }}
+            #workspaceChip, #dateTimeChip, #launcherChip {{
+                background: {chip_bg};
+                border: 1px solid {chip_border};
+                border-radius: {chip_radius_css};
             }}
             #mediaChip {{
-                background: {theme.panel_bg};
-                border: 1px solid {theme.panel_border};
-                border-radius: 16px;
+                background: {media_bg};
+                border: 1px solid {media_border};
+                border-radius: {chip_radius_css};
             }}
             #mediaChip[active="false"] {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {"transparent" if merge_all_chips else theme.chip_bg};
+                border: 1px solid {"transparent" if merge_all_chips else theme.chip_border};
             }}
             #statusChip {{
-                background: {theme.panel_bg};
-                border: 1px solid {theme.panel_border};
-                border-radius: 16px;
+                background: {media_bg};
+                border: 1px solid {media_border};
+                border-radius: {chip_radius_css};
             }}
-            #launcherButton {{
+            #launcherTrigger {{
+                background: transparent;
+                border: none;
+                border-radius: {max(0, chip_radius - 4)}px;
+                min-height: 20px;
+                max-height: 20px;
+            }}
+            QLabel#launcherNote {{
+                color: {theme.primary};
+                font-family: "Inter";
+                font-size: 14px;
+                font-weight: 700;
+                padding-bottom: 3px;
+            }}
+            QLabel#launcherText {{
+                color: {theme.primary};
+                font-family: "Inter";
+                font-size: 11px;
+                font-weight: 700;
+                padding-bottom: 3px;
+            }}
+            #launcherChip:hover {{
                 background: {theme.hover_bg};
                 border: 1px solid {theme.app_focused_border};
-                border-radius: 16px;
-                color: {theme.primary};
-                font-weight: 700;
-                padding: 0 12px;
-                min-height: 30px;
             }}
             #workspaceLabel {{
                 color: {theme.text_muted};
@@ -1005,12 +1096,12 @@ class CyberBar(QWidget):
             #statusIconButton:hover {{
                 color: {status_hover_color};
                 background: {theme.hover_bg};
-                border-radius: 11px;
+                border-radius: {max(0, chip_radius - 5)}px;
             }}
             #statusIconButton:checked {{
                 color: {status_active_color};
                 background: {theme.accent_soft};
-                border-radius: 11px;
+                border-radius: {max(0, chip_radius - 5)}px;
             }}
             #statusIconButton[active="true"] {{
                 color: {status_active_color};
@@ -1059,7 +1150,7 @@ class CyberBar(QWidget):
                 max-width: 22px;
                 padding: 0;
             }}
-            #mediaControl:hover, #utilityButton:hover, #launcherButton:hover, #aiToggleButton:hover {{
+            #mediaControl:hover, #utilityButton:hover, #aiToggleButton:hover {{
                 color: {theme.text};
                 background: {theme.hover_bg};
                 border-radius: 11px;
@@ -1078,10 +1169,19 @@ class CyberBar(QWidget):
                 max-width: 22px;
                 padding: 0;
             }}
+            #launcherChip QPushButton#aiToggleButton:hover,
+            #launcherChip QFrame#launcherTrigger:hover {{
+                background: {theme.hover_bg};
+                border-radius: {max(0, chip_radius - 5)}px;
+            }}
+            #launcherChip QFrame#launcherTrigger:hover QLabel#launcherNote,
+            #launcherChip QFrame#launcherTrigger:hover QLabel#launcherText {{
+                color: {theme.text};
+            }}
             #aiToggleButton:checked {{
                 color: {theme.primary};
                 background: {theme.accent_soft};
-                border-radius: 11px;
+                border-radius: {max(0, chip_radius - 5)}px;
             }}
             #timeLabel {{
                 color: {theme.text};
@@ -1165,6 +1265,7 @@ class CyberBar(QWidget):
             return
         self._settings_mtime = current_mtime
         self._apply_bar_settings()
+        self._apply_styles()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_ntfy_button_visibility()
