@@ -164,9 +164,11 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": False,
     },
     "christian_widget": {
-        "enabled": True,
+        "enabled": False,
         "show_in_notification_center": False,
         "show_in_bar": False,
+        "next_devotion_notifications": False,
+        "hourly_verse_notifications": False,
     },
 }
 
@@ -193,6 +195,18 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                         "show_in_notification_center",
                         defaults.get("show_in_bar", False),
                     ),
+                )
+            )
+            merged[key]["next_devotion_notifications"] = bool(
+                current.get(
+                    "next_devotion_notifications",
+                    defaults.get("next_devotion_notifications", False),
+                )
+            )
+            merged[key]["hourly_verse_notifications"] = bool(
+                current.get(
+                    "hourly_verse_notifications",
+                    defaults.get("hourly_verse_notifications", False),
                 )
             )
     return merged
@@ -262,6 +276,11 @@ def load_settings_state() -> dict:
             "token": "",
             "pinned_entities": [],
         },
+        "display": {
+            "layout_mode": "extend",
+            "primary": "",
+            "outputs": [],
+        },
         "services": merged_service_settings({}),
     }
     try:
@@ -284,10 +303,18 @@ def load_settings_state() -> dict:
     home_assistant.setdefault("url", "")
     home_assistant.setdefault("token", "")
     home_assistant.setdefault("pinned_entities", [])
+    display = dict(payload.get("display", {}))
+    display.setdefault("layout_mode", "extend")
+    display.setdefault("primary", "")
+    outputs = display.get("outputs", [])
+    if not isinstance(outputs, list):
+        outputs = []
+    display["outputs"] = [item for item in outputs if isinstance(item, dict)]
     services = merged_service_settings(payload.get("services", {}))
     return {
         "appearance": appearance,
         "home_assistant": home_assistant,
+        "display": display,
         "services": services,
     }
 
@@ -360,6 +387,98 @@ def restore_saved_wallpaper() -> None:
         run_bg([str(WALLPAPER_SCRIPT), str(wallpaper_path)])
     else:
         run_bg(["feh", "--bg-fill", str(wallpaper_path)])
+
+
+def build_display_command(displays: list[dict], primary_name: str, layout_mode: str) -> list[str]:
+    cmd = ["xrandr"]
+    ordered = sorted(displays, key=lambda item: (item["name"] != primary_name, item["name"]))
+    previous_enabled: str | None = None
+    for display in ordered:
+        cmd.extend(["--output", str(display["name"])])
+        if not display.get("enabled"):
+            cmd.append("--off")
+            continue
+        resolution = str(display.get("resolution", "")).strip()
+        modes = [str(mode) for mode in display.get("modes", [])]
+        if not resolution and modes:
+            resolution = modes[0]
+        if resolution:
+            cmd.extend(["--mode", resolution])
+        refresh = str(display.get("refresh", "")).strip()
+        if refresh and refresh != "Auto":
+            cmd.extend(["--rate", refresh])
+        cmd.extend(["--rotate", str(display.get("orientation", "normal")) or "normal"])
+        if display["name"] == primary_name:
+            cmd.append("--primary")
+        if previous_enabled and layout_mode == "extend":
+            cmd.extend(["--right-of", previous_enabled])
+        elif previous_enabled and layout_mode == "duplicate":
+            cmd.extend(["--same-as", primary_name])
+        previous_enabled = str(display["name"])
+    return cmd
+
+
+def restore_saved_displays() -> None:
+    settings = load_settings_state()
+    display_state = settings.get("display", {})
+    if not isinstance(display_state, dict):
+        return
+    saved_outputs = display_state.get("outputs", [])
+    if not isinstance(saved_outputs, list) or not saved_outputs:
+        return
+
+    current = parse_xrandr_state()
+    if not current:
+        return
+    available = {str(item.get("name", "")): item for item in current}
+    restored: list[dict] = []
+    for saved in saved_outputs:
+        if not isinstance(saved, dict):
+            continue
+        name = str(saved.get("name", "")).strip()
+        if not name or name not in available:
+            continue
+        current_item = available[name]
+        restored.append(
+            {
+                "name": name,
+                "enabled": bool(saved.get("enabled", current_item.get("enabled", True))),
+                "resolution": str(saved.get("resolution", current_item.get("current_mode", ""))),
+                "refresh": str(saved.get("refresh", "Auto")),
+                "orientation": str(saved.get("orientation", current_item.get("orientation", "normal"))),
+                "modes": list(current_item.get("modes", [])),
+            }
+        )
+    if not restored:
+        return
+
+    enabled = [display for display in restored if display.get("enabled")]
+    if not enabled:
+        return
+    primary_name = str(display_state.get("primary", "")).strip() or str(enabled[0]["name"])
+    if primary_name not in {str(display["name"]) for display in enabled}:
+        primary_name = str(enabled[0]["name"])
+    layout_mode = str(display_state.get("layout_mode", "extend"))
+    if layout_mode not in {"extend", "duplicate"}:
+        layout_mode = "extend"
+
+    if layout_mode == "duplicate" and len(enabled) > 1:
+        common_modes = set(str(mode) for mode in enabled[0].get("modes", []))
+        for display in enabled[1:]:
+            common_modes &= set(str(mode) for mode in display.get("modes", []))
+        if not common_modes:
+            layout_mode = "extend"
+        else:
+            primary_display = next(display for display in enabled if str(display["name"]) == primary_name)
+            if str(primary_display.get("resolution", "")) not in common_modes:
+                primary_display["resolution"] = sorted(common_modes, key=resolution_area, reverse=True)[0]
+            for display in enabled:
+                display["resolution"] = primary_display["resolution"]
+                if str(display["name"]) != primary_name:
+                    display["refresh"] = "Auto"
+
+    cmd = build_display_command(restored, primary_name, layout_mode)
+    subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
 def accent_palette(name: str) -> dict[str, str]:
@@ -1779,25 +1898,39 @@ class SettingsWindow(QWidget):
             for display in self.display_state:
                 self.primary_display_combo.addItem(display["name"])
             if self.display_state:
-                primary_name = next((display["name"] for display in self.display_state if display.get("primary")), self.display_state[0]["name"])
+                saved_primary = str(self.settings_state.get("display", {}).get("primary", ""))
+                available_names = {display["name"] for display in self.display_state}
+                if saved_primary in available_names:
+                    primary_name = saved_primary
+                else:
+                    primary_name = next((display["name"] for display in self.display_state if display.get("primary")), self.display_state[0]["name"])
                 self.primary_display_combo.setCurrentText(primary_name)
+        saved_layout = str(self.settings_state.get("display", {}).get("layout_mode", "extend"))
+        if saved_layout in {"extend", "duplicate"}:
+            self._set_display_layout_mode(saved_layout)
         self._rebuild_display_output_cards()
 
     def _collect_display_form_state(self) -> list[dict]:
         collected: list[dict] = []
+        saved_outputs = {
+            str(item.get("name", "")): item
+            for item in self.settings_state.get("display", {}).get("outputs", [])
+            if isinstance(item, dict)
+        }
         for display in self.display_state:
             controls = self.display_controls.get(display["name"], {})
             enabled_widget = controls.get("enabled")
             resolution_widget = controls.get("resolution")
             refresh_widget = controls.get("refresh")
             orientation_widget = controls.get("orientation")
+            saved = saved_outputs.get(display["name"], {})
             collected.append(
                 {
                     "name": display["name"],
-                    "enabled": bool(enabled_widget.isChecked()) if isinstance(enabled_widget, SwitchButton) else bool(display.get("enabled")),
-                    "resolution": resolution_widget.currentText() if isinstance(resolution_widget, QComboBox) else str(display.get("current_mode", "")),
-                    "refresh": refresh_widget.currentText() if isinstance(refresh_widget, QComboBox) else "Auto",
-                    "orientation": orientation_widget.currentText() if isinstance(orientation_widget, QComboBox) else str(display.get("orientation", "normal")),
+                    "enabled": bool(enabled_widget.isChecked()) if isinstance(enabled_widget, SwitchButton) else bool(saved.get("enabled", display.get("enabled"))),
+                    "resolution": resolution_widget.currentText() if isinstance(resolution_widget, QComboBox) else str(saved.get("resolution", display.get("current_mode", ""))),
+                    "refresh": refresh_widget.currentText() if isinstance(refresh_widget, QComboBox) else str(saved.get("refresh", "Auto")),
+                    "orientation": orientation_widget.currentText() if isinstance(orientation_widget, QComboBox) else str(saved.get("orientation", display.get("orientation", "normal"))),
                     "modes": list(display.get("modes", [])),
                 }
             )
@@ -1831,33 +1964,26 @@ class SettingsWindow(QWidget):
                 if display["name"] != primary_name:
                     display["refresh"] = "Auto"
 
-        cmd = ["xrandr"]
-        ordered = sorted(displays, key=lambda item: (item["name"] != primary_name, item["name"]))
-        previous_enabled: str | None = None
-        for display in ordered:
-            cmd.extend(["--output", display["name"]])
-            if not display["enabled"]:
-                cmd.append("--off")
-                continue
-            resolution = display["resolution"] or (display["modes"][0] if display["modes"] else "")
-            if resolution:
-                cmd.extend(["--mode", resolution])
-            refresh = display["refresh"]
-            if refresh and refresh != "Auto":
-                cmd.extend(["--rate", refresh])
-            cmd.extend(["--rotate", display["orientation"] or "normal"])
-            if display["name"] == primary_name:
-                cmd.append("--primary")
-            if previous_enabled and self.display_layout_mode == "extend":
-                cmd.extend(["--right-of", previous_enabled])
-            elif previous_enabled and self.display_layout_mode == "duplicate":
-                cmd.extend(["--same-as", primary_name])
-            previous_enabled = display["name"]
-
+        cmd = build_display_command(displays, primary_name, self.display_layout_mode)
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             self.display_status.setText((result.stderr or result.stdout or "Failed to apply display settings.").strip())
             return
+        self.settings_state["display"] = {
+            "layout_mode": self.display_layout_mode,
+            "primary": primary_name,
+            "outputs": [
+                {
+                    "name": display["name"],
+                    "enabled": bool(display["enabled"]),
+                    "resolution": str(display["resolution"]),
+                    "refresh": str(display["refresh"]),
+                    "orientation": str(display["orientation"]),
+                }
+                for display in displays
+            ],
+        }
+        save_settings_state(self.settings_state)
         self.display_status.setText("Display layout applied.")
         self._refresh_display_state()
         self._apply_current_wallpaper_layout()
@@ -2201,10 +2327,54 @@ class SettingsWindow(QWidget):
                 display_switch,
             )
         )
+        next_devotion_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["christian_widget"].get(
+                    "next_devotion_notifications",
+                    False,
+                )
+            )
+        )
+        next_devotion_switch.toggledValue.connect(
+            lambda enabled: self._set_christian_service_flag("next_devotion_notifications", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Next devotion notifications",
+                "Send a desktop notification when the next devotion time begins.",
+                self.icon_font,
+                self.ui_font,
+                next_devotion_switch,
+            )
+        )
+        hourly_verse_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["christian_widget"].get(
+                    "hourly_verse_notifications",
+                    False,
+                )
+            )
+        )
+        hourly_verse_switch.toggledValue.connect(
+            lambda enabled: self._set_christian_service_flag("hourly_verse_notifications", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("auto_awesome"),
+                "Hourly random verse",
+                "Show a random Bible verse notification once every hour.",
+                self.icon_font,
+                self.ui_font,
+                hourly_verse_switch,
+            )
+        )
+        self.christian_next_devotion_switch = next_devotion_switch
+        self.christian_hourly_verse_switch = hourly_verse_switch
         section = ExpandableServiceSection(
             "christian_widget",
             "Christian Widget",
-            "Enable the devotion widget and optionally surface it on the bar.",
+            "Enable the devotion widget, surface it on the bar, and control its desktop notifications.",
             material_icon("auto_awesome"),
             self.icon_font,
             self.ui_font,
@@ -2225,6 +2395,8 @@ class SettingsWindow(QWidget):
             service["show_in_notification_center"] = False
             if key == "christian_widget":
                 service["show_in_bar"] = False
+                service["next_devotion_notifications"] = False
+                service["hourly_verse_notifications"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
         if section is not None:
@@ -2236,6 +2408,15 @@ class SettingsWindow(QWidget):
             else:
                 display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
             display_switch._apply_state()
+        if key == "christian_widget":
+            for attr_name, setting_key in (
+                ("christian_next_devotion_switch", "next_devotion_notifications"),
+                ("christian_hourly_verse_switch", "hourly_verse_notifications"),
+            ):
+                switch = getattr(self, attr_name, None)
+                if switch is not None:
+                    switch.setChecked(bool(service.get(setting_key, False)))
+                    switch._apply_state()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -2249,6 +2430,13 @@ class SettingsWindow(QWidget):
         if not service.get("enabled", True):
             return
         service["show_in_bar"] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_christian_service_flag(self, flag: str, enabled: bool) -> None:
+        service = self.settings_state["services"].setdefault("christian_widget", {})
+        if not service.get("enabled", True):
+            return
+        service[flag] = bool(enabled)
         save_settings_state(self.settings_state)
 
     def _make_transparency_switch(self) -> SwitchButton:
@@ -3013,8 +3201,12 @@ class SettingsWindow(QWidget):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--page", choices=("overview", "appearance", "display", "bar", "services", "picom"), default="appearance")
+    parser.add_argument("--restore-displays", action="store_true")
     parser.add_argument("--restore-wallpaper", action="store_true")
     args, _ = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
+    if args.restore_displays:
+        restore_saved_displays()
+        return 0
     if args.restore_wallpaper:
         restore_saved_wallpaper()
         return 0

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import html
 import json
+import csv
+import random
 import signal
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -42,6 +45,7 @@ SETTINGS_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-cent
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 TRACKER_DIR = Path.home() / ".local" / "state" / "hanauta" / "christian-widget"
 TRACKER_FILE = TRACKER_DIR / "tracker.json"
+VERSES_FILE = APP_DIR / "assets" / "christian_verses.csv"
 
 # Layout tuning: change this to make each devotion title row taller or shorter.
 DEVOTION_ROW_MIN_HEIGHT = 52
@@ -85,14 +89,14 @@ def service_enabled() -> bool:
         raw = SETTINGS_FILE.read_text(encoding="utf-8")
         payload = json.loads(raw)
     except Exception:
-        return True
+        return False
     services = payload.get("services", {})
     if not isinstance(services, dict):
-        return True
+        return False
     current = services.get("christian_widget", {})
     if not isinstance(current, dict):
-        return True
-    return bool(current.get("enabled", True))
+        return False
+    return bool(current.get("enabled", False))
 
 
 @dataclass(frozen=True)
@@ -112,6 +116,12 @@ class DevotionSlot:
 class TrackerState:
     book_index: int = 0
     chapter: int = 1
+
+
+@dataclass
+class ChristianPreferences:
+    next_devotion_notifications: bool = False
+    hourly_verse_notifications: bool = False
 
 
 def load_app_fonts() -> dict[str, str]:
@@ -215,6 +225,39 @@ def save_tracker_state(state: TrackerState) -> None:
         json.dumps({"book_index": state.book_index, "chapter": state.chapter}, indent=2),
         encoding="utf-8",
     )
+
+
+def load_christian_preferences() -> ChristianPreferences:
+    try:
+        raw = SETTINGS_FILE.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception:
+        return ChristianPreferences()
+    services = payload.get("services", {})
+    if not isinstance(services, dict):
+        return ChristianPreferences()
+    current = services.get("christian_widget", {})
+    if not isinstance(current, dict):
+        return ChristianPreferences()
+    return ChristianPreferences(
+        next_devotion_notifications=bool(current.get("next_devotion_notifications", False)),
+        hourly_verse_notifications=bool(current.get("hourly_verse_notifications", False)),
+    )
+
+
+def load_verses_from_csv() -> list[Verse]:
+    verses: list[Verse] = []
+    try:
+        with VERSES_FILE.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                text = str(row.get("text", "")).strip()
+                citation = str(row.get("citation", "")).strip()
+                if text and citation:
+                    verses.append(Verse(text=text, citation=citation))
+    except Exception:
+        pass
+    return verses
 
 
 class TrackerProgressBar(QFrame):
@@ -324,7 +367,7 @@ class DevotionRow(QFrame):
 
 
 class ChristianDevotionWidget(QWidget):
-    VERSES = [
+    DEFAULT_VERSES = [
         Verse("Be still, and know that I am God.", "Psalm 46:10"),
         Verse("The Lord is my shepherd; I shall not want.", "Psalm 23:1"),
         Verse("Let all that you do be done in love.", "1 Corinthians 16:14"),
@@ -357,10 +400,14 @@ class ChristianDevotionWidget(QWidget):
         self.serif_font = detect_font("Playfair Display", "Noto Serif", "DejaVu Serif", "Serif")
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
+        self.verses = load_verses_from_csv() or list(self.DEFAULT_VERSES)
+        self.preferences = load_christian_preferences()
         self.verse_offset = 0
         self.rows: list[DevotionRow] = []
         self.tracker_state = load_tracker_state()
         self._fade_animation: QPropertyAnimation | None = None
+        self._last_devotion_notification_key = ""
+        self._last_hourly_notification_key = ""
 
         self._setup_window()
         self._build_ui()
@@ -730,8 +777,8 @@ class ChristianDevotionWidget(QWidget):
         self.refresh_content()
 
     def _current_verse(self, today: date) -> Verse:
-        index = (today.toordinal() + self.verse_offset) % len(self.VERSES)
-        return self.VERSES[index]
+        index = (today.toordinal() + self.verse_offset) % len(self.verses)
+        return self.verses[index]
 
     def _next_devotion(self, now: datetime) -> tuple[int, datetime]:
         for index, slot in enumerate(self.SLOTS):
@@ -793,6 +840,40 @@ class ChristianDevotionWidget(QWidget):
             self.tracker_state.chapter = BIBLE_BOOKS[self.tracker_state.book_index][1]
         self._persist_tracker()
 
+    def _notify(self, title: str, body: str) -> None:
+        if not body.strip():
+            return
+        try:
+            subprocess.Popen(
+                ["notify-send", title, body],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    def _maybe_send_notifications(self, now: datetime, next_index: int) -> None:
+        self.preferences = load_christian_preferences()
+        if self.preferences.next_devotion_notifications:
+            slot = self.SLOTS[next_index]
+            slot_now = now.hour == slot.at.hour and now.minute == slot.at.minute
+            devotion_key = f"{now.date().isoformat()}:{slot.name}:{now.hour:02d}:{now.minute:02d}"
+            if slot_now and devotion_key != self._last_devotion_notification_key:
+                self._notify(
+                    "Next Devotion",
+                    f"{slot.name} begins now.",
+                )
+                self._last_devotion_notification_key = devotion_key
+        if self.preferences.hourly_verse_notifications:
+            hourly_key = f"{now.date().isoformat()}:{now.hour:02d}"
+            if now.minute == 0 and hourly_key != self._last_hourly_notification_key:
+                verse = random.choice(self.verses)
+                self._notify(
+                    "Hourly Verse",
+                    f"{verse.text} — {verse.citation}",
+                )
+                self._last_hourly_notification_key = hourly_key
+
     def rotate_verse(self) -> None:
         self.verse_offset = (self.verse_offset + 1) % len(self.VERSES)
         self.refresh_content()
@@ -829,6 +910,7 @@ class ChristianDevotionWidget(QWidget):
         self.next_label.setText(
             f"Upcoming devotion: {self.SLOTS[next_index].name} at {self.SLOTS[next_index].at.strftime('%H:%M')}"
         )
+        self._maybe_send_notifications(now, next_index)
 
         for index, row in enumerate(self.rows):
             row.set_active(index == next_index)
