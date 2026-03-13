@@ -26,7 +26,6 @@ slowfade () {
     fi
 }
 
-pkill -u "$USER" -USR1 dunst || true
 slowfade start
 if command -v mpc >/dev/null 2>&1 && mpc status >/dev/null 2>&1; then
     mpc pause >/dev/null 2>&1

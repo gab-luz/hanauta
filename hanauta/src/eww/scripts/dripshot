@@ -13,7 +13,7 @@ crop() {
 	maim --select "$PIC"
 }
 abort() {
-	dunstify -i dialog-error "Error" "something went wrong"
+	notify-send -a "Screenshot" -i dialog-error "Error" "something went wrong"
 	exit 1
 }
 
@@ -21,11 +21,11 @@ case "$1" in
 --full)
 	full || abort
 	xclip -selection c -t image/png "$PIC"
-	dunstify -u normal -a "Screenshot" -i "$PIC" "Copied to clipboard" $PIC
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
 	;;
 --crop)
 	crop || abort
 	xclip -selection c -t image/png "$PIC"
-	dunstify -u normal -a "Screenshot" -i "$PIC" "Copied to clipboard" $PIC
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
 	;;
 esac

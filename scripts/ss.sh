@@ -23,7 +23,7 @@ capture_selected_area() {
 
 # Function to display a notification
 notify() {
-    dunstify -a "Screenshot Script" -u low -i screenshot-symbolic "$1"
+    notify-send -a "Screenshot Script" -u low -i screenshot-symbolic "$1"
 }
 if ! [ -d "$HOME/Pictures/ss/" ]; then
     mkdir -p ~/Pictures/ss/

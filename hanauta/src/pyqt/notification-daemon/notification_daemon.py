@@ -353,7 +353,7 @@ class NotificationInterface(ServiceInterface):
         return [notification_id, reason]
 
 
-class DunstCompatInterface(ServiceInterface):
+class LegacyCompatInterface(ServiceInterface):
     def __init__(self) -> None:
         super().__init__("org.dunstproject.cmd0")
 
@@ -381,7 +381,7 @@ class BusThread(threading.Thread):
         self.daemon_ref = daemon
         self.loop: asyncio.AbstractEventLoop | None = None
         self.interface: NotificationInterface | None = None
-        self.dunst_compat: DunstCompatInterface | None = None
+        self.legacy_compat: LegacyCompatInterface | None = None
 
     def run(self) -> None:
         self.loop = asyncio.new_event_loop()
@@ -392,9 +392,9 @@ class BusThread(threading.Thread):
     async def _run(self) -> None:
         bus = await MessageBus().connect()
         self.interface = NotificationInterface(self.daemon_ref)
-        self.dunst_compat = DunstCompatInterface()
+        self.legacy_compat = LegacyCompatInterface()
         bus.export("/org/freedesktop/Notifications", self.interface)
-        bus.export("/org/freedesktop/Notifications", self.dunst_compat)
+        bus.export("/org/freedesktop/Notifications", self.legacy_compat)
         await bus.request_name("org.freedesktop.Notifications")
 
     def emit_action(self, notification_id: int, action_key: str) -> None:

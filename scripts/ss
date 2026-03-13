@@ -15,9 +15,9 @@ fi
 
 function notify_view() {
 	if [[ -e "$dir/$file" ]]; then
-		dunstify --replace=699 -i "$dir/$file" Screenshot "Saved in $dir"
+		notify-send -a "Screenshot" -i "$dir/$file" "Screenshot" "Saved in $dir"
 	else
-		dunstify --replace=699 -i "$dir/$file" Screenshot "Screenshot Deleted."
+		notify-send -a "Screenshot" -i "$dir/$file" "Screenshot" "Screenshot deleted."
 	fi
 }
 
@@ -26,13 +26,13 @@ function imgtemp() {
 		echo "$bytes" | base64 --decode | tee "$file"
 		notify_view
 	else
-		dunstify -i ~/.config/i3/assets/cancel.svg Screenshot "Operation Cancelled."
+		notify-send -a "Screenshot" -i ~/.config/i3/assets/cancel.svg "Screenshot" "Operation cancelled."
 	fi
 }
 
 function countdown() {
 	for sec in $(seq "$1" -1 1); do
-		dunstify -t 1000 --replace=699 -i ~/.config/i3/assets/screenshot.svg "Taking shot in : $sec"
+		notify-send -a "Screenshot" -t 1000 -i ~/.config/i3/assets/screenshot.svg "Screenshot" "Taking shot in: $sec"
 		sleep 1
 	done
 }

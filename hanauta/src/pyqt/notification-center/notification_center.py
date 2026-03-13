@@ -152,11 +152,11 @@ def run_bg(cmd: list[str]) -> None:
         pass
 
 
-def dunstctl_command(*args: str) -> list[str]:
-    local = BIN_DIR / "dunstctl"
+def notification_control_command(*args: str) -> list[str]:
+    local = BIN_DIR / "hanauta-notifyctl"
     if local.exists():
         return [str(local), *args]
-    return ["dunstctl", *args]
+    return ["hanauta-notifyctl", *args]
 
 
 def detect_font(*families: str) -> str:
@@ -1746,7 +1746,7 @@ class NotificationCenter(QWidget):
             bt_on, "bluetooth", "Connected" if bt_on else "Off"
         )
 
-        dnd_on = parse_bool_text(run_cmd(dunstctl_command("is-paused")))
+        dnd_on = parse_bool_text(run_cmd(notification_control_command("is-paused")))
         self.quick_buttons["dnd"].set_state(
             dnd_on, "do_not_disturb_on", "On" if dnd_on else "Off"
         )
@@ -2176,9 +2176,9 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(300, self._poll_quick_settings)
 
     def _toggle_dnd(self) -> None:
-        dnd_on = parse_bool_text(run_cmd(dunstctl_command("is-paused")))
+        dnd_on = parse_bool_text(run_cmd(notification_control_command("is-paused")))
         if dnd_on:
-            run_cmd(dunstctl_command("set-paused", "false"))
+            run_cmd(notification_control_command("set-paused", "false"))
             run_bg(
                 [
                     "notify-send",
@@ -2199,7 +2199,7 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(350, self._enable_dnd_after_warning)
 
     def _enable_dnd_after_warning(self) -> None:
-        run_cmd(dunstctl_command("set-paused", "true"))
+        run_cmd(notification_control_command("set-paused", "true"))
         self._poll_quick_settings()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]

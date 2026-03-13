@@ -411,11 +411,10 @@ ensure_dock_defaults() {
 }
 
 link_configs() {
-  mkdir -p "$HOME/.config/sxhkd" "$HOME/.config/picom" "$HOME/.config/dunst"
+  mkdir -p "$HOME/.config/sxhkd" "$HOME/.config/picom"
 
   ln -sfn "$HOME/.config/i3/sxhkdrc" "$HOME/.config/sxhkd/sxhkdrc"
   ln -sfn "$HOME/.config/i3/picom.conf" "$HOME/.config/picom/picom.conf"
-  ln -sfn "$HOME/.config/i3/dunstrc" "$HOME/.config/dunst/dunstrc" 2>/dev/null || true
   success "Config symlinks created"
 }
 
@@ -452,7 +451,7 @@ install_local_binaries() {
     return 0
   fi
 
-  for name in matugen hellwal i3lock-color dunstctl dunstify; do
+  for name in matugen hellwal i3lock-color hanauta-notifyctl hanauta-notify-send; do
     if [ -x "$src_dir/$name" ]; then
       ln -sfn "$src_dir/$name" "$target_dir/$name"
       linked+=("$name")

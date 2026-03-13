@@ -13,4 +13,4 @@ COLOR_CODE="$HEX_COLOR"
 
 echo "$COLOR_CODE" | xclip -sel c
 
-dunstify -u normal -a "Colorpicker" -i "$FNAME" $COLOR_CODE "Copied to clipboard"
+notify-send -u normal -a "Colorpicker" -i "$FNAME" "$COLOR_CODE" "Copied to clipboard"

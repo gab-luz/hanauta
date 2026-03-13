@@ -4,7 +4,7 @@
 
 limit=5
 
-if ! command -v dunstctl >/dev/null 2>&1; then
+if ! command -v hanauta-notifyctl >/dev/null 2>&1; then
   echo "(label :class \"notif-empty\" :text \"Sem notificações\")"
   exit 0
 fi
@@ -14,7 +14,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-raw="$(dunstctl history 2>/dev/null)" || raw=""
+raw="$(hanauta-notifyctl history 2>/dev/null)" || raw=""
 if [ -z "$raw" ]; then
   echo "(label :class \"notif-empty\" :text \"Sem notificações\")"
   exit 0
