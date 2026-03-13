@@ -31,6 +31,11 @@ from PyQt6.QtWidgets import (
 
 APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = APP_DIR.parents[1]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
 SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
 FONTS_DIR = ROOT / "assets" / "fonts"
 
@@ -248,11 +253,12 @@ class WifiActionWorker(QThread):
 class WifiNetworkCard(QFrame):
     clicked = pyqtSignal(object)
 
-    def __init__(self, network: WifiNetwork, material_font: str, ui_font: str) -> None:
+    def __init__(self, network: WifiNetwork, material_font: str, ui_font: str, theme) -> None:
         super().__init__()
         self.network = network
         self.material_font = material_font
         self.ui_font = ui_font
+        self.theme = theme
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setObjectName("wifiCard")
         self.setMinimumHeight(62)
@@ -275,34 +281,38 @@ class WifiNetworkCard(QFrame):
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
-        ssid_label = QLabel(network.ssid)
-        ssid_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
-        ssid_label.setStyleSheet("color: #ffffff;")
+        self.ssid_label = QLabel(network.ssid)
+        self.ssid_label.setObjectName("wifiCardSsid")
+        self.ssid_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
         detail = "Connected" if network.in_use else f"{network.signal}% signal"
         if network.is_secure:
             detail = f"{detail} • secured"
-        detail_label = QLabel(detail)
-        detail_label.setStyleSheet("color: rgba(237,231,244,0.56); font-size: 9px;")
-        text_layout.addWidget(ssid_label)
-        text_layout.addWidget(detail_label)
+        self.detail_label = QLabel(detail)
+        self.detail_label.setObjectName("wifiCardDetail")
+        self.detail_label.setFont(QFont(ui_font, 9))
+        text_layout.addWidget(self.ssid_label)
+        text_layout.addWidget(self.detail_label)
 
-        trail = QLabel(material_icon("check_circle" if network.in_use else ("lock" if network.is_secure else "lock_open")))
-        trail.setFont(QFont(material_font, 14))
-        trail.setStyleSheet(f"color: {'#c3b1e1' if network.in_use else 'rgba(255,255,255,0.44)'};")
+        self.trail = QLabel(material_icon("check_circle" if network.in_use else ("lock" if network.is_secure else "lock_open")))
+        self.trail.setObjectName("wifiCardTrail")
+        self.trail.setFont(QFont(material_font, 14))
 
         layout.addWidget(icon_wrap)
         layout.addLayout(text_layout, 1)
-        layout.addWidget(trail)
+        layout.addWidget(self.trail)
 
         self._render()
 
     def _render(self) -> None:
+        theme = self.theme
         if self.network.in_use:
-            bg = "rgba(195,177,225,0.12)"
-            border = "rgba(195,177,225,0.28)"
+            bg = rgba(theme.primary, 0.12)
+            border = rgba(theme.primary, 0.28)
+            trail_color = theme.primary
         else:
-            bg = "rgba(255,255,255,0.03)"
-            border = "rgba(255,255,255,0.05)"
+            bg = theme.app_running_bg
+            border = theme.app_running_border
+            trail_color = theme.inactive
         self.setStyleSheet(
             f"""
             QFrame#wifiCard {{
@@ -311,19 +321,33 @@ class WifiNetworkCard(QFrame):
                 border-radius: 16px;
             }}
             QFrame#wifiCard:hover {{
-                background: rgba(255,255,255,0.05);
+                background: {theme.hover_bg};
             }}
             QFrame#wifiCardIconWrap {{
-                background: rgba(255,255,255,0.05);
-                border: 1px solid rgba(195,177,225,0.10);
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
                 border-radius: 17px;
             }}
             QLabel#wifiCardIcon {{
-                color: #c3b1e1;
+                color: {theme.primary};
+                font-family: "{self.material_font}";
+            }}
+            QLabel#wifiCardSsid {{
+                color: {theme.text};
+            }}
+            QLabel#wifiCardDetail {{
+                color: {theme.text_muted};
+            }}
+            QLabel#wifiCardTrail {{
+                color: {trail_color};
                 font-family: "{self.material_font}";
             }}
             """
         )
+
+    def update_theme(self, theme) -> None:
+        self.theme = theme
+        self._render()
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
@@ -348,6 +372,8 @@ class WifiControlPopup(QWidget):
             "Material Symbols Rounded",
         )
         self.ui_font = detect_font("Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.theme = load_theme_palette()
+        self._theme_mtime = palette_mtime()
         self.scan_worker: WifiScanWorker | None = None
         self.action_worker: WifiActionWorker | None = None
         self.networks: list[WifiNetwork] = []
@@ -368,6 +394,10 @@ class WifiControlPopup(QWidget):
         self._place_window()
         self._animate_in()
         self.refresh_networks()
+
+        self.theme_timer = QTimer(self)
+        self.theme_timer.timeout.connect(self._reload_theme_if_needed)
+        self.theme_timer.start(3000)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -478,68 +508,71 @@ class WifiControlPopup(QWidget):
         self.scroll_area.setWidget(self.list_host)
         layout.addWidget(self.scroll_area, 1)
 
+        self._apply_styles()
+
+    def _apply_styles(self) -> None:
+        theme = self.theme
         self.setStyleSheet(
             f"""
             QWidget {{
-                color: #ede7f4;
+                background: transparent;
+                color: {theme.text};
                 font-family: "Inter", "Noto Sans", sans-serif;
             }}
             QFrame#panel {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(30, 27, 46, 230),
-                    stop:1 rgba(18, 18, 28, 242));
-                border: 1px solid rgba(195, 177, 225, 0.16);
+                background: {theme.panel_bg};
+                border: 1px solid {theme.panel_border};
                 border-radius: 24px;
             }}
             QLabel#titleLabel {{
-                color: #ffffff;
+                color: {theme.text};
             }}
             QLabel#subtitleLabel {{
-                color: rgba(195, 177, 225, 0.78);
+                color: {theme.text_muted};
             }}
             QFrame#hero {{
-                background: rgba(195, 177, 225, 0.05);
-                border: 1px solid rgba(195, 177, 225, 0.22);
+                background: {theme.chip_bg};
+                border: 1px solid {theme.chip_border};
                 border-radius: 20px;
             }}
             QLabel#connectionLabel {{
-                color: #ffffff;
+                color: {theme.text};
             }}
             QLabel#connectionIcon {{
-                color: #c3b1e1;
+                color: {theme.primary};
                 font-family: "{self.material_font}";
             }}
             QFrame#passwordFrame {{
-                background: rgba(255,255,255,0.03);
-                border: 1px solid rgba(195, 177, 225, 0.14);
+                background: {theme.chip_bg};
+                border: 1px solid {theme.chip_border};
                 border-radius: 18px;
             }}
             QLabel#selectionLabel {{
-                color: #ffffff;
+                color: {theme.text};
             }}
             QLabel#selectionHint {{
-                color: rgba(237, 231, 244, 0.58);
+                color: {theme.text_muted};
             }}
             QLabel#statusLabel {{
-                color: rgba(255, 255, 255, 0.56);
+                color: {theme.text_muted};
                 padding-left: 2px;
             }}
             QLineEdit#passwordEdit {{
-                background: rgba(9, 8, 13, 0.84);
-                border: 1px solid rgba(195, 177, 225, 0.12);
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
                 border-radius: 14px;
-                color: #ffffff;
+                color: {theme.text};
                 padding: 10px 12px;
-                selection-background-color: rgba(195, 177, 225, 0.32);
+                selection-background-color: {theme.hover_bg};
             }}
             QLineEdit#passwordEdit:focus {{
-                border: 1px solid rgba(195, 177, 225, 0.28);
+                border: 1px solid {theme.app_focused_border};
             }}
             QPushButton#iconButton {{
-                background: transparent;
-                border: none;
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
                 border-radius: 18px;
-                color: #c3b1e1;
+                color: {theme.icon};
                 min-width: 36px;
                 max-width: 36px;
                 min-height: 36px;
@@ -547,42 +580,43 @@ class WifiControlPopup(QWidget):
                 font-family: "{self.material_font}";
             }}
             QPushButton#iconButton:hover {{
-                background: rgba(255, 255, 255, 0.08);
+                background: {theme.hover_bg};
             }}
             QPushButton#primaryButton {{
-                background: #c3b1e1;
+                background: {theme.primary};
                 border: none;
                 border-radius: 16px;
-                color: #1a1625;
+                color: {theme.active_text};
                 font-size: 12px;
                 font-weight: 700;
                 padding: 0 16px;
             }}
             QPushButton#primaryButton:hover {{
-                background: #d3c2ee;
+                background: {theme.primary_container};
+                color: {theme.on_primary_container};
             }}
             QPushButton#primaryButton:disabled {{
-                background: rgba(195, 177, 225, 0.40);
-                color: rgba(26, 22, 37, 0.62);
+                background: {theme.app_running_bg};
+                color: {theme.inactive};
             }}
             QPushButton#secondaryButton {{
-                background: rgba(255,255,255,0.05);
-                border: 1px solid rgba(195, 177, 225, 0.12);
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
                 border-radius: 16px;
-                color: #ffffff;
+                color: {theme.text};
                 font-size: 12px;
                 font-weight: 700;
                 padding: 0 14px;
             }}
             QPushButton#secondaryButton:hover {{
-                background: rgba(255,255,255,0.08);
+                background: {theme.hover_bg};
             }}
             QPushButton#secondaryButton:disabled {{
-                color: rgba(255,255,255,0.42);
+                color: {theme.inactive};
             }}
             QScrollArea#networkScroll {{
-                background: rgba(255,255,255,0.03);
-                border: 1px solid rgba(195, 177, 225, 0.12);
+                background: {theme.chip_bg};
+                border: 1px solid {theme.chip_border};
                 border-radius: 20px;
             }}
             QScrollArea#networkScroll > QWidget > QWidget,
@@ -596,11 +630,20 @@ class WifiControlPopup(QWidget):
                 margin: 10px 0;
             }}
             QScrollBar::handle:vertical {{
-                background: rgba(195, 177, 225, 0.30);
+                background: {rgba(theme.primary, 0.30)};
                 border-radius: 4px;
             }}
             """
         )
+
+    def _reload_theme_if_needed(self) -> None:
+        current_mtime = palette_mtime()
+        if current_mtime == self._theme_mtime:
+            return
+        self._theme_mtime = current_mtime
+        self.theme = load_theme_palette()
+        self._apply_styles()
+        self._rebuild_network_cards()
 
     def _icon_button(self, icon_name: str) -> QPushButton:
         button = QPushButton(material_icon(icon_name))
@@ -675,11 +718,11 @@ class WifiControlPopup(QWidget):
         if not self.networks:
             empty = QLabel("No Wi-Fi networks were found. Try turning the radio on or refreshing the scan.")
             empty.setWordWrap(True)
-            empty.setStyleSheet("color: rgba(246,239,255,0.56); padding: 8px;")
+            empty.setStyleSheet(f"color: {self.theme.text_muted}; padding: 8px;")
             self.list_layout.insertWidget(0, empty)
             return
         for network in self.networks:
-            card = WifiNetworkCard(network, self.material_font, self.ui_font)
+            card = WifiNetworkCard(network, self.material_font, self.ui_font, self.theme)
             card.clicked.connect(self._select_network)
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)
 

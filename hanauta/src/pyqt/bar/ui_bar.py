@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QEasingCurve, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QByteArray, QEasingCurve, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
@@ -44,6 +44,7 @@ NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_c
 AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
 WIFI_CONTROL = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
+CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
@@ -51,6 +52,8 @@ FONTS_DIR = ROOT / "assets" / "fonts"
 ASSETS_DIR = APP_DIR / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
+CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
+SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 TRAY_SLOT_WIDTH = 24
 TRAY_SLOT_HEIGHT = 32
 TRAY_SLOT_SIZE = 20
@@ -160,7 +163,24 @@ def load_app_fonts() -> dict[str, str]:
 def tinted_svg_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
     if not path.exists():
         return QIcon()
-    renderer = QSvgRenderer(str(path))
+    renderer = QSvgRenderer()
+    try:
+        raw_svg = path.read_text(encoding="utf-8")
+    except OSError:
+        raw_svg = ""
+    if raw_svg:
+        normalized = (
+            raw_svg.replace("param(fill)", "#FFFFFF")
+            .replace("param(outline)", "#FFFFFF")
+            .replace("param(fill-opacity)", "1")
+            .replace("param(outline-opacity)", "1")
+            .replace("param(outline-width)", "1.5")
+        )
+        renderer.load(QByteArray(normalized.encode("utf-8")))
+    else:
+        renderer.load(str(path))
+    if not renderer.isValid():
+        return QIcon()
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -169,6 +189,16 @@ def tinted_svg_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
     painter.fillRect(pixmap.rect(), color)
     painter.end()
     return QIcon(pixmap)
+
+
+def load_service_settings() -> dict[str, dict[str, object]]:
+    try:
+        raw = SETTINGS_FILE.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    services = payload.get("services", {})
+    return services if isinstance(services, dict) else {}
 
 
 class WorkspaceDot(QPushButton):
@@ -500,6 +530,7 @@ class CyberBar(QWidget):
         self._control_center_process: Optional[subprocess.Popen] = None
         self._wifi_popup_process: Optional[subprocess.Popen] = None
         self._vpn_popup_process: Optional[subprocess.Popen] = None
+        self._christian_widget_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
         self._cava_buffer = ""
         self._battery_base: Optional[Path] = self._detect_battery_base()
@@ -657,6 +688,11 @@ class CyberBar(QWidget):
         self.vpn_icon.setCheckable(True)
         self.vpn_icon.setText(material_icon("vpn_key"))
         self.vpn_icon.clicked.connect(self._toggle_vpn_popup)
+        self.christian_button = QPushButton("")
+        self.christian_button.setObjectName("statusIconButton")
+        self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.christian_button.clicked.connect(self._open_christian_widget)
+        self.christian_button.setIconSize(QSize(16, 16))
         self.battery_icon = QLabel(material_icon("battery_full"))
         self.battery_icon.setObjectName("statusIcon")
         self.caffeine_icon = QLabel(material_icon("coffee"))
@@ -667,6 +703,7 @@ class CyberBar(QWidget):
             label.setFont(QFont(self.material_font, 16))
         status_layout.addWidget(self.net_icon)
         status_layout.addWidget(self.vpn_icon)
+        status_layout.addWidget(self.christian_button)
         status_layout.addWidget(self.caffeine_icon)
         status_layout.addWidget(self.battery_icon)
         status_layout.addWidget(self.battery_value)
@@ -696,6 +733,8 @@ class CyberBar(QWidget):
         self.battery_icon.setVisible(has_battery)
         self.battery_value.setVisible(has_battery)
         self._set_vpn_button_icon(False)
+        self._set_christian_button_icon()
+        self._sync_christian_button_visibility()
         self._install_debug_tooltips()
 
     def _icon_button(self, icon_name: str) -> QPushButton:
@@ -725,6 +764,7 @@ class CyberBar(QWidget):
         self.status_chip.setToolTip("Status chip")
         self.net_icon.setToolTip("Wi-Fi button")
         self.vpn_icon.setToolTip("VPN button")
+        self.christian_button.setToolTip("Christian widget button")
         self.caffeine_icon.setToolTip("Caffeine icon")
         self.battery_icon.setToolTip("Battery icon")
         self.battery_value.setToolTip("Battery value")
@@ -928,6 +968,7 @@ class CyberBar(QWidget):
             )
         self._update_media_equalizer_color()
         self._set_vpn_button_icon(bool(self.vpn_icon.property("active")))
+        self._set_christian_button_icon()
         self._update_window_mask()
 
     def _update_media_equalizer_color(self) -> None:
@@ -1116,6 +1157,7 @@ class CyberBar(QWidget):
         self._poll_network()
         self._poll_caffeine()
         self._poll_battery()
+        self._sync_christian_button_visibility()
 
     def _poll_network(self) -> None:
         connected = run_script("network.sh", "status") == "Connected"
@@ -1138,6 +1180,25 @@ class CyberBar(QWidget):
     def _set_vpn_button_icon(self, active: bool) -> None:
         self.vpn_icon.setIcon(QIcon())
         self.vpn_icon.setText(material_icon("vpn_key"))
+
+    def _set_christian_button_icon(self) -> None:
+        icon = tinted_svg_icon(CHRISTIAN_ICON, QColor(self.theme.primary), 16)
+        if not icon.isNull():
+            self.christian_button.setIcon(icon)
+            self.christian_button.setText("")
+            return
+        self.christian_button.setIcon(QIcon())
+        self.christian_button.setText(material_icon("auto_awesome"))
+        self.christian_button.setFont(QFont(self.material_font, 16))
+
+    def _sync_christian_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("christian_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", service.get("show_in_notification_center", False)))
+        self.christian_button.setVisible(enabled and show_in_bar)
 
     def _poll_caffeine(self) -> None:
         caffeine_on = run_script("caffeine.sh", "status") == "on"
@@ -1291,6 +1352,24 @@ class CyberBar(QWidget):
             self._ai_popup_process = None
             self.ai_button.setChecked(False)
 
+    def _open_christian_widget(self) -> None:
+        if not CHRISTIAN_WIDGET.exists():
+            return
+        if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
+            self._christian_widget_process.terminate()
+            self._christian_widget_process = None
+            return
+
+        python_bin = ROOT / ".venv" / "bin" / "python"
+        try:
+            self._christian_widget_process = subprocess.Popen(
+                [str(python_bin), str(CHRISTIAN_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._christian_widget_process = None
+
     def _open_launcher(self) -> None:
         python_bin = ROOT / ".venv" / "bin" / "python"
         if LAUNCHER_APP.exists():
@@ -1367,6 +1446,8 @@ class CyberBar(QWidget):
             self._wifi_popup_process.terminate()
         if self._vpn_popup_process is not None and self._vpn_popup_process.poll() is None:
             self._vpn_popup_process.terminate()
+        if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
+            self._christian_widget_process.terminate()
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
             self._powermenu_process.terminate()
         super().closeEvent(event)

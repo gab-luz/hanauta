@@ -166,6 +166,7 @@ DEFAULT_SERVICE_SETTINGS = {
     "christian_widget": {
         "enabled": True,
         "show_in_notification_center": False,
+        "show_in_bar": False,
     },
 }
 
@@ -177,15 +178,23 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
         current = services.get(key, {}) if isinstance(services, dict) else {}
         if not isinstance(current, dict):
             current = {}
-        merged[key] = {
-            "enabled": bool(current.get("enabled", defaults["enabled"])),
-            "show_in_notification_center": bool(
+        merged[key] = {"enabled": bool(current.get("enabled", defaults["enabled"]))}
+        merged[key]["show_in_notification_center"] = bool(
+            current.get(
+                "show_in_notification_center",
+                defaults["show_in_notification_center"],
+            )
+        )
+        if key == "christian_widget":
+            merged[key]["show_in_bar"] = bool(
                 current.get(
-                    "show_in_notification_center",
-                    defaults["show_in_notification_center"],
+                    "show_in_bar",
+                    current.get(
+                        "show_in_notification_center",
+                        defaults.get("show_in_bar", False),
+                    ),
                 )
-            ),
-        }
+            )
     return merged
 
 
@@ -2173,20 +2182,20 @@ class SettingsWindow(QWidget):
         display_switch = SwitchButton(
             bool(
                 self.settings_state["services"]["christian_widget"].get(
-                    "show_in_notification_center",
+                    "show_in_bar",
                     False,
                 )
             )
         )
         display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("christian_widget", enabled)
+            lambda enabled: self._set_service_bar_visibility("christian_widget", enabled)
         )
         self.service_display_switches["christian_widget"] = display_switch
         layout.addWidget(
             SettingsRow(
                 material_icon("widgets"),
-                "Show in notification center",
-                "Expose a compact launcher card for the Christian devotion widget.",
+                "Show on bar",
+                "Display a tinted Christian devotion launcher icon on the bar.",
                 self.icon_font,
                 self.ui_font,
                 display_switch,
@@ -2195,7 +2204,7 @@ class SettingsWindow(QWidget):
         section = ExpandableServiceSection(
             "christian_widget",
             "Christian Widget",
-            "Enable the devotion widget and optionally surface it in the notification center.",
+            "Enable the devotion widget and optionally surface it on the bar.",
             material_icon("auto_awesome"),
             self.icon_font,
             self.ui_font,
@@ -2214,13 +2223,18 @@ class SettingsWindow(QWidget):
         service["enabled"] = bool(enabled)
         if not enabled:
             service["show_in_notification_center"] = False
+            if key == "christian_widget":
+                service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
         if section is not None:
             section.set_enabled(enabled)
         display_switch = getattr(self, "service_display_switches", {}).get(key)
         if display_switch is not None:
-            display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
+            if key == "christian_widget":
+                display_switch.setChecked(bool(service.get("show_in_bar", False)))
+            else:
+                display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
             display_switch._apply_state()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
@@ -2228,6 +2242,13 @@ class SettingsWindow(QWidget):
         if not service.get("enabled", True):
             return
         service["show_in_notification_center"] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_service_bar_visibility(self, key: str, enabled: bool) -> None:
+        service = self.settings_state["services"].setdefault(key, {})
+        if not service.get("enabled", True):
+            return
+        service["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
 
     def _make_transparency_switch(self) -> SwitchButton:

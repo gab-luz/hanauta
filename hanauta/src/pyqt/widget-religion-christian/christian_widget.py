@@ -6,13 +6,15 @@ PyQt6 Christian devotion widget rebuilt from idea.html.
 
 from __future__ import annotations
 
+import html
+import json
+import signal
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
-import json
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
@@ -26,21 +28,48 @@ from PyQt6.QtWidgets import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[4]
+APP_DIR = Path(__file__).resolve().parents[2]
+ROOT = APP_DIR.parents[1]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
 FONTS_DIR = ROOT / "assets" / "fonts"
-STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
-SETTINGS_FILE = STATE_DIR / "settings.json"
+SETTINGS_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
+SETTINGS_FILE = SETTINGS_DIR / "settings.json"
+TRACKER_DIR = Path.home() / ".local" / "state" / "hanauta" / "christian-widget"
+TRACKER_FILE = TRACKER_DIR / "tracker.json"
 
 MATERIAL_ICONS = {
     "auto_awesome": "\ue65f",
+    "book": "\ue865",
+    "chevron_left": "\ue5cb",
+    "chevron_right": "\ue5cc",
     "brightness_3": "\ue3a8",
     "calendar_today": "\ue935",
     "light_mode": "\ue518",
-    "nights_stay": "\uf1d2",
     "refresh": "\ue5d5",
     "schedule": "\ue8b5",
     "wb_twilight": "\ue1c6",
 }
+
+BIBLE_BOOKS: list[tuple[str, int]] = [
+    ("Genesis", 50), ("Exodus", 40), ("Leviticus", 27), ("Numbers", 36), ("Deuteronomy", 34),
+    ("Joshua", 24), ("Judges", 21), ("Ruth", 4), ("1 Samuel", 31), ("2 Samuel", 24),
+    ("1 Kings", 22), ("2 Kings", 25), ("1 Chronicles", 29), ("2 Chronicles", 36), ("Ezra", 10),
+    ("Nehemiah", 13), ("Esther", 10), ("Job", 42), ("Psalms", 150), ("Proverbs", 31),
+    ("Ecclesiastes", 12), ("Song of Songs", 8), ("Isaiah", 66), ("Jeremiah", 52), ("Lamentations", 5),
+    ("Ezekiel", 48), ("Daniel", 12), ("Hosea", 14), ("Joel", 3), ("Amos", 9),
+    ("Obadiah", 1), ("Jonah", 4), ("Micah", 7), ("Nahum", 3), ("Habakkuk", 3),
+    ("Zephaniah", 3), ("Haggai", 2), ("Zechariah", 14), ("Malachi", 4), ("Matthew", 28),
+    ("Mark", 16), ("Luke", 24), ("John", 21), ("Acts", 28), ("Romans", 16),
+    ("1 Corinthians", 16), ("2 Corinthians", 13), ("Galatians", 6), ("Ephesians", 6), ("Philippians", 4),
+    ("Colossians", 4), ("1 Thessalonians", 5), ("2 Thessalonians", 3), ("1 Timothy", 6), ("2 Timothy", 4),
+    ("Titus", 3), ("Philemon", 1), ("Hebrews", 13), ("James", 5), ("1 Peter", 5),
+    ("2 Peter", 3), ("1 John", 5), ("2 John", 1), ("3 John", 1), ("Jude", 1), ("Revelation", 22),
+]
+TOTAL_BIBLE_CHAPTERS = sum(chapters for _, chapters in BIBLE_BOOKS)
 
 
 def service_enabled() -> bool:
@@ -68,8 +97,13 @@ class Verse:
 class DevotionSlot:
     name: str
     at: time
-    color: str
     icon: str
+
+
+@dataclass
+class TrackerState:
+    book_index: int = 0
+    chapter: int = 1
 
 
 def load_app_fonts() -> dict[str, str]:
@@ -145,12 +179,80 @@ def format_countdown(delta: timedelta) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
+def clamp_tracker_state(state: TrackerState) -> TrackerState:
+    max_index = len(BIBLE_BOOKS) - 1
+    book_index = max(0, min(max_index, int(state.book_index)))
+    max_chapter = BIBLE_BOOKS[book_index][1]
+    chapter = max(1, min(max_chapter, int(state.chapter)))
+    return TrackerState(book_index=book_index, chapter=chapter)
+
+
+def load_tracker_state() -> TrackerState:
+    try:
+        raw = TRACKER_FILE.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception:
+        return TrackerState()
+    return clamp_tracker_state(
+        TrackerState(
+            book_index=int(payload.get("book_index", 0)),
+            chapter=int(payload.get("chapter", 1)),
+        )
+    )
+
+
+def save_tracker_state(state: TrackerState) -> None:
+    TRACKER_DIR.mkdir(parents=True, exist_ok=True)
+    TRACKER_FILE.write_text(
+        json.dumps({"book_index": state.book_index, "chapter": state.chapter}, indent=2),
+        encoding="utf-8",
+    )
+
+
+class TrackerProgressBar(QFrame):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("trackerProgress")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.fill = QFrame()
+        self.fill.setObjectName("trackerProgressFill")
+        self.fill.setMinimumWidth(12)
+        layout.addWidget(self.fill, 0, Qt.AlignmentFlag.AlignLeft)
+        self._ratio = 0.0
+
+    def apply_theme(self, track_color: str, fill_color: str) -> None:
+        self.setStyleSheet(
+            f"""
+            QFrame#trackerProgress {{
+                background: {track_color};
+                border-radius: 7px;
+            }}
+            QFrame#trackerProgressFill {{
+                background: {fill_color};
+                border-radius: 7px;
+            }}
+            """
+        )
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self.set_ratio(self._ratio)
+
+    def set_ratio(self, ratio: float) -> None:
+        self._ratio = max(0.0, min(1.0, ratio))
+        width = max(12, int(self.width() * self._ratio))
+        self.fill.setFixedWidth(width)
+        self.fill.setFixedHeight(self.height())
+
+
 class DevotionRow(QFrame):
-    def __init__(self, slot: DevotionSlot, material_font: str, ui_font: str) -> None:
+    def __init__(self, slot: DevotionSlot, material_font: str, ui_font: str, accent: str) -> None:
         super().__init__()
         self.slot = slot
         self.material_font = material_font
         self.ui_font = ui_font
+        self.accent = accent
         self.setObjectName("devotionRow")
 
         layout = QHBoxLayout(self)
@@ -180,11 +282,14 @@ class DevotionRow(QFrame):
         layout.addWidget(self.time_label, 0, Qt.AlignmentFlag.AlignRight)
         self.set_active(False)
 
+    def set_accent(self, accent: str) -> None:
+        self.accent = accent
+
     def set_active(self, active: bool) -> None:
-        bg = "rgba(195, 177, 225, 0.12)" if active else "transparent"
-        border = "rgba(195, 177, 225, 0.32)" if active else "transparent"
-        name_color = "#c3b1e1" if active else "rgba(255,255,255,0.90)"
-        time_color = "#c3b1e1" if active else "rgba(255,255,255,0.60)"
+        bg = rgba(self.accent, 0.14) if active else "transparent"
+        border = rgba(self.accent, 0.30) if active else "transparent"
+        name_color = self.accent if active else "rgba(255,255,255,0.90)"
+        time_color = self.accent if active else "rgba(255,255,255,0.60)"
         self.setStyleSheet(
             f"""
             QFrame#devotionRow {{
@@ -193,10 +298,10 @@ class DevotionRow(QFrame):
                 border-radius: 14px;
             }}
             QFrame#devotionRow:hover {{
-                background: rgba(255,255,255,0.05);
+                background: {rgba(self.accent, 0.08)};
             }}
             QLabel#rowIcon {{
-                color: {self.slot.color};
+                color: {self.accent};
                 font-family: "{self.material_font}";
             }}
             QLabel#rowName {{
@@ -219,11 +324,11 @@ class ChristianDevotionWidget(QWidget):
     ]
 
     SLOTS = [
-        DevotionSlot("Morning Prayer", time(6, 30), "rgba(255, 232, 183, 0.78)", "wb_twilight"),
-        DevotionSlot("Noon Grace", time(12, 15), "#c3b1e1", "light_mode"),
-        DevotionSlot("Evening Vesper", time(18, 45), "rgba(255, 197, 136, 0.72)", "wb_twilight"),
-        DevotionSlot("Night Prayer", time(21, 30), "rgba(165, 197, 255, 0.72)", "brightness_3"),
-        DevotionSlot("Compline", time(23, 0), "rgba(170, 164, 255, 0.72)", "schedule"),
+        DevotionSlot("Morning Prayer", time(6, 30), "wb_twilight"),
+        DevotionSlot("Noon Grace", time(12, 15), "light_mode"),
+        DevotionSlot("Evening Vesper", time(18, 45), "wb_twilight"),
+        DevotionSlot("Night Prayer", time(21, 30), "brightness_3"),
+        DevotionSlot("Compline", time(23, 0), "schedule"),
     ]
 
     def __init__(self) -> None:
@@ -241,11 +346,16 @@ class ChristianDevotionWidget(QWidget):
         )
         self.ui_font = detect_font("Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.serif_font = detect_font("Playfair Display", "Noto Serif", "DejaVu Serif", "Serif")
+        self.theme = load_theme_palette()
+        self._theme_mtime = palette_mtime()
         self.verse_offset = 0
         self.rows: list[DevotionRow] = []
+        self.tracker_state = load_tracker_state()
+        self._fade_animation: QPropertyAnimation | None = None
 
         self._setup_window()
         self._build_ui()
+        self._apply_styles()
         self._apply_window_effects()
         self._place_window()
         self.refresh_content()
@@ -253,6 +363,10 @@ class ChristianDevotionWidget(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_content)
         self.timer.start(1000)
+
+        self.theme_timer = QTimer(self)
+        self.theme_timer.timeout.connect(self._reload_theme_if_needed)
+        self.theme_timer.start(3000)
 
     def _setup_window(self) -> None:
         self.setWindowTitle("Christian Devotion")
@@ -262,7 +376,7 @@ class ChristianDevotionWidget(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setFixedSize(404, 624)
+        self.setFixedSize(404, 758)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -274,7 +388,7 @@ class ChristianDevotionWidget(QWidget):
 
         layout = QVBoxLayout(self.card)
         layout.setContentsMargins(22, 22, 22, 22)
-        layout.setSpacing(16)
+        layout.setSpacing(14)
 
         header = QHBoxLayout()
         header.setSpacing(12)
@@ -316,6 +430,7 @@ class ChristianDevotionWidget(QWidget):
         self.verse_label.setObjectName("verseLabel")
         self.verse_label.setWordWrap(True)
         self.verse_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.verse_label.setTextFormat(Qt.TextFormat.RichText)
         self.verse_label.setFont(QFont(self.serif_font, 15))
         verse_layout.addWidget(self.verse_label)
 
@@ -349,11 +464,64 @@ class ChristianDevotionWidget(QWidget):
 
         timeline = QVBoxLayout()
         timeline.setSpacing(6)
-        for slot in self.SLOTS:
-            row = DevotionRow(slot, self.material_font, self.ui_font)
+        for index, slot in enumerate(self.SLOTS):
+            row = DevotionRow(slot, self.material_font, self.ui_font, self._slot_accent(index))
             self.rows.append(row)
             timeline.addWidget(row)
         layout.addLayout(timeline)
+
+        self.tracker_card = QFrame()
+        self.tracker_card.setObjectName("trackerCard")
+        tracker_layout = QVBoxLayout(self.tracker_card)
+        tracker_layout.setContentsMargins(16, 16, 16, 16)
+        tracker_layout.setSpacing(10)
+
+        tracker_header = QHBoxLayout()
+        tracker_header.setSpacing(8)
+        tracker_icon = QLabel(material_icon("book"))
+        tracker_icon.setObjectName("trackerIcon")
+        tracker_icon.setFont(QFont(self.material_font, 16))
+        tracker_title = QLabel("Bible Tracker")
+        tracker_title.setObjectName("trackerTitle")
+        tracker_title.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
+        tracker_header.addWidget(tracker_icon)
+        tracker_header.addWidget(tracker_title)
+        tracker_header.addStretch(1)
+        tracker_layout.addLayout(tracker_header)
+
+        self.tracker_book_label = QLabel()
+        self.tracker_book_label.setObjectName("trackerBook")
+        self.tracker_book_label.setFont(QFont(self.ui_font, 14, QFont.Weight.DemiBold))
+        tracker_layout.addWidget(self.tracker_book_label)
+
+        self.tracker_meta_label = QLabel()
+        self.tracker_meta_label.setObjectName("trackerMeta")
+        self.tracker_meta_label.setFont(QFont(self.ui_font, 9))
+        tracker_layout.addWidget(self.tracker_meta_label)
+
+        self.tracker_progress = TrackerProgressBar()
+        self.tracker_progress.setFixedHeight(14)
+        tracker_layout.addWidget(self.tracker_progress)
+
+        self.tracker_progress_label = QLabel()
+        self.tracker_progress_label.setObjectName("trackerProgressLabel")
+        self.tracker_progress_label.setFont(QFont(self.ui_font, 9, QFont.Weight.Medium))
+        tracker_layout.addWidget(self.tracker_progress_label)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.prev_button = self._tracker_button("chevron_left", "Previous chapter", self._go_previous_chapter)
+        self.next_button = self._tracker_button("chevron_right", "Next chapter", self._go_next_chapter)
+        self.finish_book_button = QPushButton("Finish Book")
+        self.finish_book_button.setObjectName("trackerTextButton")
+        self.finish_book_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.finish_book_button.clicked.connect(self._finish_current_book)
+        controls.addWidget(self.prev_button)
+        controls.addWidget(self.next_button)
+        controls.addStretch(1)
+        controls.addWidget(self.finish_book_button)
+        tracker_layout.addLayout(controls)
+        layout.addWidget(self.tracker_card)
 
         footer = QHBoxLayout()
         footer.setSpacing(14)
@@ -368,76 +536,117 @@ class ChristianDevotionWidget(QWidget):
         layout.addStretch(1)
         layout.addLayout(footer)
 
+    def _tracker_button(self, icon_name: str, tooltip: str, callback) -> QPushButton:
+        button = QPushButton(material_icon(icon_name))
+        button.setObjectName("trackerIconButton")
+        button.setFont(QFont(self.material_font, 18))
+        button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        button.setToolTip(tooltip)
+        button.clicked.connect(callback)
+        return button
+
+    def _slot_accent(self, index: int) -> str:
+        accents = [
+            self.theme.primary,
+            self.theme.secondary,
+            self.theme.tertiary,
+            self.theme.on_primary_container,
+            self.theme.on_secondary,
+        ]
+        return accents[index % len(accents)]
+
+    def _apply_styles(self) -> None:
+        theme = self.theme
         self.setStyleSheet(
             f"""
             QWidget {{
-                color: #ede7f4;
+                color: {theme.text};
                 font-family: "Inter", "Noto Sans", sans-serif;
+                background: transparent;
             }}
             QFrame#card {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(30, 27, 46, 230),
-                    stop:1 rgba(18, 18, 28, 242));
-                border: 1px solid rgba(195, 177, 225, 0.16);
+                background: {theme.panel_bg};
+                border: 1px solid {theme.panel_border};
                 border-radius: 24px;
             }}
-            QPushButton#iconButton {{
-                background: transparent;
-                border: none;
+            QPushButton#iconButton, QPushButton#trackerIconButton {{
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
                 border-radius: 18px;
-                color: #c3b1e1;
+                color: {theme.primary};
                 min-width: 36px;
                 max-width: 36px;
                 min-height: 36px;
                 max-height: 36px;
                 font-family: "{self.material_font}";
             }}
-            QPushButton#iconButton:hover {{
-                background: rgba(255, 255, 255, 0.08);
+            QPushButton#iconButton:hover, QPushButton#trackerIconButton:hover {{
+                background: {theme.hover_bg};
             }}
             QLabel#dateLabel {{
-                color: #ffffff;
+                color: {theme.text};
             }}
             QLabel#periodLabel {{
-                color: rgba(195, 177, 225, 0.78);
+                color: {theme.text_muted};
             }}
-            QFrame#verseCard {{
-                background: rgba(195, 177, 225, 0.05);
-                border: 1px solid rgba(195, 177, 225, 0.22);
+            QFrame#verseCard, QFrame#trackerCard {{
+                background: {theme.chip_bg};
+                border: 1px solid {theme.chip_border};
                 border-radius: 20px;
             }}
             QLabel#verseHeading {{
-                color: rgba(195, 177, 225, 0.64);
+                color: {theme.text_muted};
                 letter-spacing: 2px;
                 text-transform: uppercase;
             }}
             QLabel#verseLabel {{
-                color: #ffffff;
+                color: {theme.text};
                 font-family: "{self.serif_font}";
                 font-style: italic;
-                line-height: 1.4;
+                padding: 2px 8px 6px 8px;
             }}
             QLabel#citationLabel {{
-                color: rgba(195, 177, 225, 0.84);
+                color: {theme.primary};
             }}
             QFrame#countdownWrap {{
-                border-top: 1px solid rgba(255, 255, 255, 0.05);
+                border-top: 1px solid {theme.separator};
             }}
             QLabel#countdownHint {{
-                color: rgba(255, 255, 255, 0.40);
+                color: {theme.inactive};
                 letter-spacing: 1px;
             }}
             QLabel#countdownValue {{
-                color: #c3b1e1;
+                color: {theme.primary};
             }}
-            QLabel#nextLabel {{
-                color: rgba(255, 255, 255, 0.60);
+            QLabel#nextLabel, QLabel#trackerMeta, QLabel#trackerProgressLabel {{
+                color: {theme.text_muted};
                 padding-left: 2px;
+            }}
+            QLabel#trackerTitle, QLabel#trackerBook {{
+                color: {theme.text};
+            }}
+            QLabel#trackerIcon {{
+                color: {theme.primary};
+                font-family: "{self.material_font}";
+            }}
+            QPushButton#trackerTextButton {{
+                background: {theme.primary};
+                border: none;
+                border-radius: 16px;
+                color: {theme.active_text};
+                font-size: 12px;
+                font-weight: 700;
+                padding: 0 14px;
+                min-height: 34px;
+            }}
+            QPushButton#trackerTextButton:hover {{
+                background: {theme.primary_container};
+                color: {theme.on_primary_container};
             }}
             QPushButton#footerButton {{
                 background: transparent;
                 border: none;
-                color: rgba(255, 255, 255, 0.34);
+                color: {theme.inactive};
                 font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 1px;
@@ -445,10 +654,13 @@ class ChristianDevotionWidget(QWidget):
                 padding: 6px 4px;
             }}
             QPushButton#footerButton:hover {{
-                color: #c3b1e1;
+                color: {theme.primary};
             }}
             """
         )
+        self.tracker_progress.apply_theme(rgba(theme.on_surface_variant, 0.16), theme.primary)
+        for index, row in enumerate(self.rows):
+            row.set_accent(self._slot_accent(index))
 
     def _apply_window_effects(self) -> None:
         shadow = QGraphicsDropShadowEffect(self)
@@ -464,6 +676,15 @@ class ChristianDevotionWidget(QWidget):
         geo = screen.availableGeometry()
         self.move(geo.x() + geo.width() - self.width() - 18, geo.y() + 72)
 
+    def _reload_theme_if_needed(self) -> None:
+        current_mtime = palette_mtime()
+        if current_mtime == self._theme_mtime:
+            return
+        self._theme_mtime = current_mtime
+        self.theme = load_theme_palette()
+        self._apply_styles()
+        self.refresh_content()
+
     def _current_verse(self, today: date) -> Verse:
         index = (today.toordinal() + self.verse_offset) % len(self.VERSES)
         return self.VERSES[index]
@@ -475,9 +696,74 @@ class ChristianDevotionWidget(QWidget):
                 return index, candidate
         return 0, datetime.combine(now.date() + timedelta(days=1), self.SLOTS[0].at)
 
+    def _tracker_completed_chapters(self) -> int:
+        completed = sum(chapters for _, chapters in BIBLE_BOOKS[: self.tracker_state.book_index])
+        completed += self.tracker_state.chapter - 1
+        return max(0, min(TOTAL_BIBLE_CHAPTERS, completed))
+
+    def _update_tracker_labels(self) -> None:
+        book_name, total_chapters = BIBLE_BOOKS[self.tracker_state.book_index]
+        completed = self._tracker_completed_chapters()
+        ratio = completed / TOTAL_BIBLE_CHAPTERS if TOTAL_BIBLE_CHAPTERS else 0.0
+        self.tracker_book_label.setText(book_name)
+        self.tracker_meta_label.setText(
+            f"Chapter {self.tracker_state.chapter} of {total_chapters} • {TOTAL_BIBLE_CHAPTERS - completed} chapters remaining"
+        )
+        self.tracker_progress_label.setText(
+            f"{completed} / {TOTAL_BIBLE_CHAPTERS} chapters completed • {ratio * 100:.1f}%"
+        )
+        self.tracker_progress.set_ratio(ratio)
+        is_last_book = self.tracker_state.book_index == len(BIBLE_BOOKS) - 1
+        is_last_chapter = self.tracker_state.chapter == total_chapters
+        self.finish_book_button.setDisabled(is_last_book and is_last_chapter)
+
+    def _persist_tracker(self) -> None:
+        self.tracker_state = clamp_tracker_state(self.tracker_state)
+        save_tracker_state(self.tracker_state)
+        self._update_tracker_labels()
+
+    def _go_previous_chapter(self) -> None:
+        if self.tracker_state.chapter > 1:
+            self.tracker_state.chapter -= 1
+        elif self.tracker_state.book_index > 0:
+            self.tracker_state.book_index -= 1
+            self.tracker_state.chapter = BIBLE_BOOKS[self.tracker_state.book_index][1]
+        self._persist_tracker()
+
+    def _go_next_chapter(self) -> None:
+        book_name, total_chapters = BIBLE_BOOKS[self.tracker_state.book_index]
+        if self.tracker_state.chapter < total_chapters:
+            self.tracker_state.chapter += 1
+        elif self.tracker_state.book_index < len(BIBLE_BOOKS) - 1:
+            self.tracker_state.book_index += 1
+            self.tracker_state.chapter = 1
+        else:
+            self.tracker_state.chapter = total_chapters
+        self._persist_tracker()
+
+    def _finish_current_book(self) -> None:
+        if self.tracker_state.book_index < len(BIBLE_BOOKS) - 1:
+            self.tracker_state.book_index += 1
+            self.tracker_state.chapter = 1
+        else:
+            self.tracker_state.chapter = BIBLE_BOOKS[self.tracker_state.book_index][1]
+        self._persist_tracker()
+
     def rotate_verse(self) -> None:
         self.verse_offset = (self.verse_offset + 1) % len(self.VERSES)
         self.refresh_content()
+        self._fade_in_verse()
+
+    def _fade_in_verse(self) -> None:
+        if self._fade_animation is not None:
+            self._fade_animation.stop()
+        self.setWindowOpacity(0.92)
+        self._fade_animation = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade_animation.setDuration(180)
+        self._fade_animation.setStartValue(0.92)
+        self._fade_animation.setEndValue(1.0)
+        self._fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_animation.start()
 
     def refresh_content(self) -> None:
         now = datetime.now()
@@ -487,7 +773,13 @@ class ChristianDevotionWidget(QWidget):
 
         self.date_label.setText(now.strftime("%d %B %Y"))
         self.period_label.setText(liturgical_label(today))
-        self.verse_label.setText(f'"{verse.text}"')
+        self.verse_label.setText(
+            (
+                f"<div style='line-height: 145%;'>"
+                f"&ldquo;{html.escape(verse.text)}&rdquo;"
+                f"</div>"
+            )
+        )
         self.citation_label.setText(f"\u2014 {verse.citation}")
         self.countdown_value.setText(format_countdown(next_time - now))
         self.next_label.setText(
@@ -496,18 +788,24 @@ class ChristianDevotionWidget(QWidget):
 
         for index, row in enumerate(self.rows):
             row.set_active(index == next_index)
+        self._update_tracker_labels()
 
 
 def main() -> int:
     if not service_enabled():
         return 0
     app = QApplication(sys.argv)
+    signal.signal(signal.SIGINT, lambda *_args: app.quit())
     app.setStyle("Fusion")
 
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
     app.setPalette(palette)
+
+    signal_timer = QTimer()
+    signal_timer.timeout.connect(lambda: None)
+    signal_timer.start(250)
 
     widget = ChristianDevotionWidget()
     widget.show()
