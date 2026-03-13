@@ -45,6 +45,7 @@ AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
 WIFI_CONTROL = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
+NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
@@ -199,6 +200,15 @@ def load_service_settings() -> dict[str, dict[str, object]]:
         return {}
     services = payload.get("services", {})
     return services if isinstance(services, dict) else {}
+
+
+def load_runtime_settings() -> dict[str, object]:
+    try:
+        raw = SETTINGS_FILE.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 class WorkspaceDot(QPushButton):
@@ -531,6 +541,7 @@ class CyberBar(QWidget):
         self._wifi_popup_process: Optional[subprocess.Popen] = None
         self._vpn_popup_process: Optional[subprocess.Popen] = None
         self._christian_widget_process: Optional[subprocess.Popen] = None
+        self._ntfy_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
         self._cava_buffer = ""
         self._battery_base: Optional[Path] = self._detect_battery_base()
@@ -693,17 +704,23 @@ class CyberBar(QWidget):
         self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.christian_button.clicked.connect(self._open_christian_widget)
         self.christian_button.setIconSize(QSize(16, 16))
+        self.ntfy_button = QPushButton(material_icon("notifications"))
+        self.ntfy_button.setObjectName("statusIconButton")
+        self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_button.setCheckable(True)
+        self.ntfy_button.clicked.connect(self._toggle_ntfy_popup)
         self.battery_icon = QLabel(material_icon("battery_full"))
         self.battery_icon.setObjectName("statusIcon")
         self.caffeine_icon = QLabel(material_icon("coffee"))
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.ntfy_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         status_layout.addWidget(self.net_icon)
         status_layout.addWidget(self.vpn_icon)
         status_layout.addWidget(self.christian_button)
+        status_layout.addWidget(self.ntfy_button)
         status_layout.addWidget(self.caffeine_icon)
         status_layout.addWidget(self.battery_icon)
         status_layout.addWidget(self.battery_value)
@@ -735,6 +752,7 @@ class CyberBar(QWidget):
         self._set_vpn_button_icon(False)
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
+        self._sync_ntfy_button_visibility()
         self._install_debug_tooltips()
 
     def _icon_button(self, icon_name: str) -> QPushButton:
@@ -765,6 +783,7 @@ class CyberBar(QWidget):
         self.net_icon.setToolTip("Wi-Fi button")
         self.vpn_icon.setToolTip("VPN button")
         self.christian_button.setToolTip("Christian widget button")
+        self.ntfy_button.setToolTip("ntfy publisher button")
         self.caffeine_icon.setToolTip("Caffeine icon")
         self.battery_icon.setToolTip("Battery icon")
         self.battery_value.setToolTip("Battery value")
@@ -969,6 +988,7 @@ class CyberBar(QWidget):
         self._update_media_equalizer_color()
         self._set_vpn_button_icon(bool(self.vpn_icon.property("active")))
         self._set_christian_button_icon()
+        self._sync_ntfy_button_visibility()
         self._update_window_mask()
 
     def _update_media_equalizer_color(self) -> None:
@@ -1024,6 +1044,10 @@ class CyberBar(QWidget):
         self.vpn_popup_timer = QTimer(self)
         self.vpn_popup_timer.timeout.connect(self._sync_vpn_button)
         self.vpn_popup_timer.start(1000)
+
+        self.ntfy_popup_timer = QTimer(self)
+        self.ntfy_popup_timer.timeout.connect(self._sync_ntfy_button)
+        self.ntfy_popup_timer.start(1000)
 
         self.powermenu_timer = QTimer(self)
         self.powermenu_timer.timeout.connect(self._sync_powermenu_button)
@@ -1158,6 +1182,7 @@ class CyberBar(QWidget):
         self._poll_caffeine()
         self._poll_battery()
         self._sync_christian_button_visibility()
+        self._sync_ntfy_button_visibility()
 
     def _poll_network(self) -> None:
         connected = run_script("network.sh", "status") == "Connected"
@@ -1199,6 +1224,15 @@ class CyberBar(QWidget):
         enabled = bool(service.get("enabled", True))
         show_in_bar = bool(service.get("show_in_bar", service.get("show_in_notification_center", False)))
         self.christian_button.setVisible(enabled and show_in_bar)
+
+    def _sync_ntfy_button_visibility(self) -> None:
+        settings = load_runtime_settings()
+        ntfy = settings.get("ntfy", {})
+        if not isinstance(ntfy, dict):
+            ntfy = {}
+        enabled = bool(ntfy.get("enabled", False))
+        show_in_bar = bool(ntfy.get("show_in_bar", False))
+        self.ntfy_button.setVisible(enabled and show_in_bar)
 
     def _poll_caffeine(self) -> None:
         caffeine_on = run_script("caffeine.sh", "status") == "on"
@@ -1370,6 +1404,27 @@ class CyberBar(QWidget):
         except Exception:
             self._christian_widget_process = None
 
+    def _toggle_ntfy_popup(self) -> None:
+        if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
+            self._ntfy_popup_process.terminate()
+            self._ntfy_popup_process = None
+            self.ntfy_button.setChecked(False)
+            return
+        if not NTFY_POPUP.exists():
+            self.ntfy_button.setChecked(False)
+            return
+        python_bin = ROOT / ".venv" / "bin" / "python"
+        try:
+            self._ntfy_popup_process = subprocess.Popen(
+                [str(python_bin), str(NTFY_POPUP)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.ntfy_button.setChecked(True)
+        except Exception:
+            self._ntfy_popup_process = None
+            self.ntfy_button.setChecked(False)
+
     def _open_launcher(self) -> None:
         python_bin = ROOT / ".venv" / "bin" / "python"
         if LAUNCHER_APP.exists():
@@ -1428,6 +1483,12 @@ class CyberBar(QWidget):
             self._vpn_popup_process = None
         self.vpn_icon.setChecked(active)
 
+    def _sync_ntfy_button(self) -> None:
+        active = self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None
+        if not active:
+            self._ntfy_popup_process = None
+        self.ntfy_button.setChecked(active)
+
     def _sync_powermenu_button(self) -> None:
         active = self._powermenu_process is not None and self._powermenu_process.poll() is None
         if not active:
@@ -1448,6 +1509,8 @@ class CyberBar(QWidget):
             self._vpn_popup_process.terminate()
         if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
             self._christian_widget_process.terminate()
+        if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
+            self._ntfy_popup_process.terminate()
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
             self._powermenu_process.terminate()
         super().closeEvent(event)

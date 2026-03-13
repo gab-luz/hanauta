@@ -46,8 +46,7 @@ client.background       #c0caf5
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
 
 
-# Notifications (deadd-notification-center)
-exec_always --no-startup-id sh -c 'command -v deadd-notification-center >/dev/null 2>&1 && deadd-notification-center || { [ -x "$HOME/.config/i3/bin/deadd-notification-center" ] && "$HOME/.config/i3/bin/deadd-notification-center"; }'
+# Notifications are handled by Hanauta's native PyQt notification daemon from startup.sh
 
 # Startup apps (run once per i3 start)
 exec --no-startup-id sh -c 'sleep 10 && "$HOME/.config/i3/scripts/bspfloat" floating 5 > "$HOME/.log.bspfloat.txt" 2>&1'

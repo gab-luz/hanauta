@@ -6,6 +6,7 @@ CACHE_FILE="/tmp/eww-notifications-cache.json"
 PID_FILE="/tmp/eww-notifications-cache.pid"
 TMP_FILE="/tmp/eww-notifications-cache.tmp"
 INTERVAL="${1:-2}"
+LOCAL_DUNSTCTL="$HOME/.config/i3/bin/dunstctl"
 
 if [ -f "$PID_FILE" ]; then
   old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
@@ -18,13 +19,20 @@ printf '%s\n' "$$" >"$PID_FILE"
 trap 'rm -f "$PID_FILE" "$TMP_FILE"' EXIT INT TERM
 
 write_cache() {
-  if ! command -v dunstctl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  local dunstctl_bin="dunstctl"
+  if [ -x "$LOCAL_DUNSTCTL" ]; then
+    dunstctl_bin="$LOCAL_DUNSTCTL"
+  elif ! command -v dunstctl >/dev/null 2>&1; then
+    dunstctl_bin=""
+  fi
+
+  if [ -z "$dunstctl_bin" ] || ! command -v jq >/dev/null 2>&1; then
     printf '%s\n' '[]' >"$TMP_FILE"
     mv "$TMP_FILE" "$CACHE_FILE"
     return
   fi
 
-  raw="$(dunstctl history 2>/dev/null || true)"
+  raw="$("$dunstctl_bin" history 2>/dev/null || true)"
   if [ -z "$raw" ]; then
     printf '%s\n' '[]' >"$TMP_FILE"
     mv "$TMP_FILE" "$CACHE_FILE"
