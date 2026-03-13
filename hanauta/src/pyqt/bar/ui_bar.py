@@ -92,6 +92,8 @@ MATERIAL_ICONS = {
     "wifi_off": "\ue648",
 }
 
+REMINDERS_BAR_GLYPH = "\ue003"
+
 
 DEFAULT_BAR_SETTINGS = {
     "launcher_offset": 0,
@@ -162,6 +164,7 @@ def load_app_fonts() -> dict[str, str]:
         "material_symbols_rounded": FONTS_DIR / "MaterialSymbolsRounded.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
+        "pomicons": FONTS_DIR / "Pomicons.ttf",
     }
     for key, path in font_map.items():
         if not path.exists():
@@ -584,6 +587,16 @@ class CyberBar(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
+        self.reminders_font = detect_font(
+            "Symbols Nerd Font Mono",
+            "Symbols Nerd Font",
+            "JetBrainsMono Nerd Font Mono",
+            "JetBrainsMono Nerd Font",
+            "FiraCode Nerd Font Mono",
+            "FiraCode Nerd Font",
+            self.loaded_fonts.get("pomicons", ""),
+            self.material_font,
+        )
         self.workspace_buttons: dict[int, WorkspaceDot] = {}
         self._media_animation: Optional[QPropertyAnimation] = None
         self._media_playing = False
@@ -777,8 +790,9 @@ class CyberBar(QWidget):
         self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.christian_button.clicked.connect(self._open_christian_widget)
         self.christian_button.setIconSize(QSize(16, 16))
-        self.reminders_button = QPushButton(material_icon("notifications_active"))
+        self.reminders_button = QPushButton(REMINDERS_BAR_GLYPH)
         self.reminders_button.setObjectName("statusIconButton")
+        self.reminders_button.setProperty("nerdIcon", True)
         self.reminders_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.reminders_button.clicked.connect(self._open_reminders_widget)
         self.ntfy_button = QPushButton(material_icon("notifications"))
@@ -794,6 +808,7 @@ class CyberBar(QWidget):
         self.battery_value.setObjectName("batteryValue")
         for label in (self.net_icon, self.vpn_icon, self.ntfy_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
+        self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.status_layout.addWidget(self.net_icon)
         self.status_layout.addWidget(self.vpn_icon)
         self.status_layout.addWidget(self.christian_button)
@@ -999,6 +1014,9 @@ class CyberBar(QWidget):
             }}
             #statusIconButton[active="true"] {{
                 color: {status_active_color};
+            }}
+            #statusIconButton[nerdIcon="true"] {{
+                font-family: "{self.reminders_font}";
             }}
             #mediaText {{
                 color: {theme.text_muted};
