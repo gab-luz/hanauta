@@ -50,6 +50,7 @@ ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
 FALLBACK_COVER = ROOT / "assets" / "fallback.webp"
 ASSETS_DIR = APP_DIR / "assets"
+BIN_DIR = ROOT / "bin"
 HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
@@ -151,6 +152,13 @@ def run_bg(cmd: list[str]) -> None:
         pass
 
 
+def dunstctl_command(*args: str) -> list[str]:
+    local = BIN_DIR / "dunstctl"
+    if local.exists():
+        return [str(local), *args]
+    return ["dunstctl", *args]
+
+
 def detect_font(*families: str) -> str:
     for family in families:
         if family and QFont(family).exactMatch():
@@ -236,12 +244,24 @@ def load_notification_settings() -> dict:
         "appearance": {"accent": "orchid"},
         "home_assistant": {"url": "", "token": "", "pinned_entities": []},
         "services": merged_service_settings({}),
+        "display": {"layout_mode": "extend", "primary": "", "outputs": []},
+        "ntfy": {
+            "enabled": False,
+            "show_in_bar": False,
+            "server_url": "https://ntfy.sh",
+            "topic": "",
+            "token": "",
+            "username": "",
+            "password": "",
+        },
     }
     try:
         raw = SETTINGS_FILE.read_text(encoding="utf-8")
         payload = json.loads(raw)
     except Exception:
         return default
+    if not isinstance(payload, dict):
+        payload = {}
     appearance = dict(payload.get("appearance", {}))
     appearance.setdefault("accent", "orchid")
     home_assistant = dict(payload.get("home_assistant", {}))
@@ -252,7 +272,25 @@ def load_notification_settings() -> dict:
     ][:5]
     home_assistant["pinned_entities"] = pinned
     services = merged_service_settings(payload.get("services", {}))
-    return {"appearance": appearance, "home_assistant": home_assistant, "services": services}
+    display = dict(payload.get("display", {}))
+    display.setdefault("layout_mode", "extend")
+    display.setdefault("primary", "")
+    outputs = display.get("outputs", [])
+    display["outputs"] = outputs if isinstance(outputs, list) else []
+    ntfy = dict(payload.get("ntfy", {}))
+    ntfy.setdefault("enabled", False)
+    ntfy.setdefault("show_in_bar", False)
+    ntfy.setdefault("server_url", "https://ntfy.sh")
+    ntfy.setdefault("topic", "")
+    ntfy.setdefault("token", "")
+    ntfy.setdefault("username", "")
+    ntfy.setdefault("password", "")
+    payload["appearance"] = appearance
+    payload["home_assistant"] = home_assistant
+    payload["services"] = services
+    payload["display"] = display
+    payload["ntfy"] = ntfy
+    return payload
 
 
 def save_notification_settings(settings: dict) -> None:
@@ -1708,7 +1746,7 @@ class NotificationCenter(QWidget):
             bt_on, "bluetooth", "Connected" if bt_on else "Off"
         )
 
-        dnd_on = parse_bool_text(run_cmd(["dunstctl", "is-paused"]))
+        dnd_on = parse_bool_text(run_cmd(dunstctl_command("is-paused")))
         self.quick_buttons["dnd"].set_state(
             dnd_on, "do_not_disturb_on", "On" if dnd_on else "Off"
         )
@@ -2138,9 +2176,9 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(300, self._poll_quick_settings)
 
     def _toggle_dnd(self) -> None:
-        dnd_on = parse_bool_text(run_cmd(["dunstctl", "is-paused"]))
+        dnd_on = parse_bool_text(run_cmd(dunstctl_command("is-paused")))
         if dnd_on:
-            run_cmd(["dunstctl", "set-paused", "false"])
+            run_cmd(dunstctl_command("set-paused", "false"))
             run_bg(
                 [
                     "notify-send",
@@ -2161,7 +2199,7 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(350, self._enable_dnd_after_warning)
 
     def _enable_dnd_after_warning(self) -> None:
-        run_cmd(["dunstctl", "set-paused", "true"])
+        run_cmd(dunstctl_command("set-paused", "true"))
         self._poll_quick_settings()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]

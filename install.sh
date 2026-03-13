@@ -8,6 +8,7 @@ VSCODE_EXTENSION_ID="hanauta.hanauta-wallpaper-theme"
 INSTALL_EDITOR_EXTENSIONS_AUTO=false
 INSTALL_VSCODE_ONLY=false
 INSTALL_VSCODIUM_ONLY=false
+INSTALL_NOTIFICATION_DAEMON_ONLY=false
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -104,9 +105,12 @@ parse_args() {
         INSTALL_EDITOR_EXTENSIONS_AUTO=false
         INSTALL_VSCODIUM_ONLY=true
         ;;
+      --notification-daemon)
+        INSTALL_NOTIFICATION_DAEMON_ONLY=true
+        ;;
       -h|--help)
         cat <<EOF
-Usage: ./install.sh [--vscode] [--vscodium]
+Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon]
 
 Without flags:
   Runs the full desktop install only.
@@ -114,6 +118,7 @@ Without flags:
 With flags:
   --vscode    Install only the VS Code extension
   --vscodium  Install only the VSCodium extension
+  --notification-daemon  Install only the Hanauta notification daemon components
 EOF
         exit 0
         ;;
@@ -246,7 +251,7 @@ install_packages_debian() {
     network-manager wireless-tools
     i3lock
     xfce4-power-manager lxqt-policykit
-    libnotify-bin dunst
+    libnotify-bin
     kitty
     bluez
     cava
@@ -281,7 +286,7 @@ install_packages_arch() {
     networkmanager wireless_tools
     i3lock
     xfce4-power-manager lxqt-policykit
-    libnotify dunst
+    libnotify
     kitty
     bluez bluez-utils
     cava
@@ -341,6 +346,27 @@ install_deadd_arch() {
   else
     warn "yay/paru not found; install deadd-notification-center from AUR manually."
   fi
+}
+
+install_notification_packages_debian() {
+  local -a pkgs=(
+    python3 python3-pip python3-venv
+    libnotify-bin jq curl
+    x11-utils x11-xserver-utils
+  )
+
+  echo -e "${CYAN}[*]${NC} Updating package lists..."
+  sudo apt-get update -qq
+  install_apt_group "notification daemon" "${pkgs[@]}"
+}
+
+install_notification_packages_arch() {
+  local -a pkgs=(
+    python python-pip
+    libnotify jq curl
+    xorg-xrandr xorg-xsetroot
+  )
+  install_pacman_group "notification daemon" "${pkgs[@]}"
 }
 
 copy_dotfiles() {
@@ -426,7 +452,7 @@ install_local_binaries() {
     return 0
   fi
 
-  for name in matugen hellwal i3lock-color; do
+  for name in matugen hellwal i3lock-color dunstctl dunstify; do
     if [ -x "$src_dir/$name" ]; then
       ln -sfn "$src_dir/$name" "$target_dir/$name"
       linked+=("$name")
@@ -492,12 +518,18 @@ main() {
 
   if detect_debian_like; then
     info "Detected Debian-based distribution"
-    install_packages_debian
-    install_deadd_debian
+    if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ]; then
+      install_notification_packages_debian
+    else
+      install_packages_debian
+    fi
   elif detect_arch; then
     info "Detected Arch Linux distribution"
-    install_packages_arch
-    install_deadd_arch
+    if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ]; then
+      install_notification_packages_arch
+    else
+      install_packages_arch
+    fi
   else
     warn "Unknown distro; skipping system package install."
   fi
@@ -508,7 +540,7 @@ main() {
   link_configs
   make_exec
   install_local_binaries
-  if [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
+  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
     install_detected_editor_extensions
   fi
 

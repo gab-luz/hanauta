@@ -20,6 +20,8 @@ build/
 .ruff_cache/
 .uv/
 idea.html
+hanauta/src/pyqt/dock/idea.html
+hanauta/src/pyqt/widget-religion-christian/idea.html
 # IDEs
 .idea/
 .vscode/

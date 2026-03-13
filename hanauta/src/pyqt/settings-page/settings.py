@@ -7,6 +7,7 @@ Standalone PyQt6 settings screen inspired by the Hanauta settings mock.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import platform
@@ -17,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 from urllib import error, request
+from urllib import parse
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
@@ -145,7 +147,10 @@ MATERIAL_ICONS = {
     "restart_alt": "\uf053",
     "expand_more": "\ue5cf",
     "home": "\ue88a",
+    "hub": "\uee20",
     "lock": "\ue897",
+    "notifications": "\ue7f4",
+    "person": "\ue7fd",
     "auto_awesome": "\ue65f",
 }
 
@@ -276,6 +281,15 @@ def load_settings_state() -> dict:
             "token": "",
             "pinned_entities": [],
         },
+        "ntfy": {
+            "enabled": False,
+            "show_in_bar": False,
+            "server_url": "https://ntfy.sh",
+            "topic": "",
+            "token": "",
+            "username": "",
+            "password": "",
+        },
         "display": {
             "layout_mode": "extend",
             "primary": "",
@@ -303,6 +317,14 @@ def load_settings_state() -> dict:
     home_assistant.setdefault("url", "")
     home_assistant.setdefault("token", "")
     home_assistant.setdefault("pinned_entities", [])
+    ntfy = dict(payload.get("ntfy", {}))
+    ntfy.setdefault("enabled", False)
+    ntfy.setdefault("show_in_bar", False)
+    ntfy.setdefault("server_url", "https://ntfy.sh")
+    ntfy.setdefault("topic", "")
+    ntfy.setdefault("token", "")
+    ntfy.setdefault("username", "")
+    ntfy.setdefault("password", "")
     display = dict(payload.get("display", {}))
     display.setdefault("layout_mode", "extend")
     display.setdefault("primary", "")
@@ -314,6 +336,7 @@ def load_settings_state() -> dict:
     return {
         "appearance": appearance,
         "home_assistant": home_assistant,
+        "ntfy": ntfy,
         "display": display,
         "services": services,
     }
@@ -508,6 +531,48 @@ def fetch_home_assistant_json(base_url: str, token: str, path: str) -> tuple[obj
         return None, f"Home Assistant returned HTTP {exc.code}."
     except Exception:
         return None, "Unable to reach Home Assistant."
+
+
+def send_ntfy_message(
+    server_url: str,
+    topic: str,
+    title: str,
+    message: str,
+    token: str = "",
+    username: str = "",
+    password: str = "",
+) -> tuple[bool, str]:
+    base = (server_url or "").strip().rstrip("/")
+    channel = (topic or "").strip()
+    if not base:
+        return False, "Server URL is required."
+    if not channel:
+        return False, "Topic is required."
+    if not message.strip():
+        return False, "Message body is required."
+    url = f"{base}/{parse.quote(channel)}"
+    headers = {"Content-Type": "text/plain; charset=utf-8"}
+    if title.strip():
+        headers["Title"] = title.strip()
+    if token.strip():
+        headers["Authorization"] = f"Bearer {token.strip()}"
+    req = request.Request(url, data=message.encode("utf-8"), headers=headers, method="POST")
+    if username.strip() or password.strip():
+        credentials = f"{username.strip()}:{password}"
+        encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+        req.add_header("Authorization", f"Basic {encoded}")
+    try:
+        with request.urlopen(req, timeout=8) as response:
+            response.read()
+        return True, "ntfy message sent."
+    except error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="ignore").strip()
+        except Exception:
+            detail = ""
+        return False, detail or f"HTTP {exc.code}"
+    except Exception as exc:
+        return False, str(exc)
 
 
 def format_uptime(seconds: int) -> str:
@@ -2173,6 +2238,7 @@ class SettingsWindow(QWidget):
             ("home_assistant", self._build_home_assistant_section()),
             ("vpn_control", self._build_vpn_service_section()),
             ("christian_widget", self._build_christian_service_section()),
+            ("ntfy", self._build_ntfy_section()),
         ):
             layout.addWidget(widget)
         return card
@@ -2385,6 +2451,76 @@ class SettingsWindow(QWidget):
         self.service_sections["christian_widget"] = section
         return section
 
+    def _build_ntfy_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.ntfy_server_input = QLineEdit(self.settings_state["ntfy"].get("server_url", "https://ntfy.sh"))
+        self.ntfy_server_input.setPlaceholderText("https://ntfy.sh")
+        self.ntfy_topic_input = QLineEdit(self.settings_state["ntfy"].get("topic", ""))
+        self.ntfy_topic_input.setPlaceholderText("alerts-topic")
+        self.ntfy_token_input = QLineEdit(self.settings_state["ntfy"].get("token", ""))
+        self.ntfy_token_input.setPlaceholderText("Access token")
+        self.ntfy_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ntfy_username_input = QLineEdit(self.settings_state["ntfy"].get("username", ""))
+        self.ntfy_username_input.setPlaceholderText("Username (optional)")
+        self.ntfy_password_input = QLineEdit(self.settings_state["ntfy"].get("password", ""))
+        self.ntfy_password_input.setPlaceholderText("Password (optional)")
+        self.ntfy_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        layout.addWidget(SettingsRow(material_icon("web_asset"), "Server URL", "Custom ntfy instance URL.", self.icon_font, self.ui_font, self.ntfy_server_input))
+        layout.addWidget(SettingsRow(material_icon("hub"), "Default topic", "Topic used by the bar publisher and test sends.", self.icon_font, self.ui_font, self.ntfy_topic_input))
+        layout.addWidget(SettingsRow(material_icon("bolt"), "Access token", "Bearer token for ntfy authentication if required.", self.icon_font, self.ui_font, self.ntfy_token_input))
+        layout.addWidget(SettingsRow(material_icon("person"), "Username", "Optional basic auth username.", self.icon_font, self.ui_font, self.ntfy_username_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Password", "Optional basic auth password.", self.icon_font, self.ui_font, self.ntfy_password_input))
+
+        self.ntfy_bar_switch = SwitchButton(bool(self.settings_state["ntfy"].get("show_in_bar", False)))
+        self.ntfy_bar_switch.toggledValue.connect(self._set_ntfy_show_in_bar)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show on bar",
+                "Display an ntfy publish icon on the bar.",
+                self.icon_font,
+                self.ui_font,
+                self.ntfy_bar_switch,
+            )
+        )
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.ntfy_save_button = QPushButton("Save")
+        self.ntfy_test_button = QPushButton("Send Test")
+        self.ntfy_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_test_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_save_button.clicked.connect(self._save_ntfy_settings)
+        self.ntfy_test_button.clicked.connect(self._send_ntfy_test)
+        buttons.addWidget(self.ntfy_save_button)
+        buttons.addWidget(self.ntfy_test_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        self.ntfy_status = QLabel("ntfy integration is idle.")
+        self.ntfy_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.ntfy_status.setWordWrap(True)
+        layout.addWidget(self.ntfy_status)
+
+        section = ExpandableServiceSection(
+            "ntfy",
+            "ntfy",
+            "Custom ntfy server, topics, credentials, and an optional bar publisher icon.",
+            material_icon("notifications"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            bool(self.settings_state["ntfy"].get("enabled", False)),
+            self._set_ntfy_enabled,
+        )
+        self.ntfy_section = section
+        return section
+
     def _service_enabled(self, key: str) -> bool:
         return bool(self.settings_state["services"].get(key, {}).get("enabled", True))
 
@@ -2437,6 +2573,23 @@ class SettingsWindow(QWidget):
         if not service.get("enabled", True):
             return
         service[flag] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_ntfy_enabled(self, enabled: bool) -> None:
+        ntfy = self.settings_state.setdefault("ntfy", {})
+        ntfy["enabled"] = bool(enabled)
+        if not enabled:
+            ntfy["show_in_bar"] = False
+        save_settings_state(self.settings_state)
+        if hasattr(self, "ntfy_bar_switch"):
+            self.ntfy_bar_switch.setChecked(bool(ntfy.get("show_in_bar", False)))
+            self.ntfy_bar_switch._apply_state()
+
+    def _set_ntfy_show_in_bar(self, enabled: bool) -> None:
+        ntfy = self.settings_state.setdefault("ntfy", {})
+        if not ntfy.get("enabled", False):
+            return
+        ntfy["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
 
     def _make_transparency_switch(self) -> SwitchButton:
@@ -2749,6 +2902,32 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         self.ha_status.setText(f"{len(pinned)}/5 entities pinned.")
         self._rebuild_ha_entity_list()
+
+    def _save_ntfy_settings(self) -> None:
+        ntfy = self.settings_state.setdefault("ntfy", {})
+        ntfy["server_url"] = self.ntfy_server_input.text().strip().rstrip("/")
+        ntfy["topic"] = self.ntfy_topic_input.text().strip()
+        ntfy["token"] = self.ntfy_token_input.text().strip()
+        ntfy["username"] = self.ntfy_username_input.text().strip()
+        ntfy["password"] = self.ntfy_password_input.text()
+        save_settings_state(self.settings_state)
+        if hasattr(self, "ntfy_status"):
+            self.ntfy_status.setText("ntfy settings saved.")
+
+    def _send_ntfy_test(self) -> None:
+        self._save_ntfy_settings()
+        ntfy = self.settings_state.get("ntfy", {})
+        ok, message = send_ntfy_message(
+            str(ntfy.get("server_url", "")),
+            str(ntfy.get("topic", "")),
+            "Hanauta Test",
+            "ntfy integration is working.",
+            token=str(ntfy.get("token", "")),
+            username=str(ntfy.get("username", "")),
+            password=str(ntfy.get("password", "")),
+        )
+        if hasattr(self, "ntfy_status"):
+            self.ntfy_status.setText(message if message else ("ntfy test sent." if ok else "ntfy test failed."))
 
     def _refresh_system_overview(self) -> None:
         session = os.environ.get("XDG_SESSION_DESKTOP") or os.environ.get("DESKTOP_SESSION") or "unknown"
