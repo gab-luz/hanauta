@@ -35,6 +35,6 @@ window_name = [
   "stalonetray",
   "zuluCrypt",
   "i3",
-  "zuluCrypt-gui 2>&1 | sed -n '1,120p'",
-  "Hanauta Settings"
+  "Hanauta Settings",
+  "Hanauta Launcher"
 ]

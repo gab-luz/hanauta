@@ -363,6 +363,27 @@ copy_dotfiles() {
   success "Dotfiles copied"
 }
 
+ensure_dock_defaults() {
+  local src="$SCRIPT_DIR/hanauta/src/pyqt/dock/dock.toml"
+  local dst="$HOME/.config/i3/hanauta/src/pyqt/dock/dock.toml"
+
+  if [ ! -f "$src" ]; then
+    warn "Dock config template not found at $src"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$dst")"
+  if [ ! -f "$dst" ]; then
+    cp "$src" "$dst"
+  fi
+
+  if rg -q 'window_name = \[' "$dst" 2>/dev/null; then
+    success "Dock blacklist defaults are installed"
+  else
+    warn "Dock config is present but blacklist defaults could not be verified"
+  fi
+}
+
 link_configs() {
   mkdir -p "$HOME/.config/sxhkd" "$HOME/.config/picom" "$HOME/.config/dunst"
 
@@ -483,6 +504,7 @@ main() {
 
   setup_python_venv
   copy_dotfiles
+  ensure_dock_defaults
   link_configs
   make_exec
   install_local_binaries

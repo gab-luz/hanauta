@@ -102,8 +102,11 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": False,
     },
     "christian_widget": {
-        "enabled": True,
+        "enabled": False,
         "show_in_notification_center": False,
+        "show_in_bar": False,
+        "next_devotion_notifications": False,
+        "hourly_verse_notifications": False,
     },
 }
 
@@ -209,6 +212,22 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                 )
             ),
         }
+        if key == "christian_widget":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", False))
+            )
+            merged[key]["next_devotion_notifications"] = bool(
+                current.get(
+                    "next_devotion_notifications",
+                    defaults.get("next_devotion_notifications", False),
+                )
+            )
+            merged[key]["hourly_verse_notifications"] = bool(
+                current.get(
+                    "hourly_verse_notifications",
+                    defaults.get("hourly_verse_notifications", False),
+                )
+            )
     return merged
 
 
