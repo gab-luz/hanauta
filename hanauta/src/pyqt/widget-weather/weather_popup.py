@@ -10,7 +10,8 @@ import signal
 import sys
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QPainter, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -30,6 +31,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
+SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
@@ -71,6 +73,22 @@ def detect_font(*families: str) -> str:
     return "Sans Serif"
 
 
+def tinted_static_icon(path: Path, color: QColor, size: int) -> QPixmap:
+    renderer = QSvgRenderer(str(path))
+    if not renderer.isValid():
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        return pixmap
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), color)
+    painter.end()
+    return pixmap
+
+
 class ForecastWorker(QThread):
     loaded = pyqtSignal(object)
     failed = pyqtSignal(str)
@@ -93,6 +111,7 @@ class MetricCard(QFrame):
         self.setObjectName("metricCard")
         self.ui_font = ui_font
         self.theme = theme
+        self.icon_name = icon_name
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
@@ -100,12 +119,12 @@ class MetricCard(QFrame):
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(6)
-        icon = AnimatedWeatherIcon(16)
-        icon.set_icon_path(static_icon_path(icon_name))
+        self.icon = QLabel()
+        self.icon.setFixedSize(16, 16)
         title_label = QLabel(title)
         title_label.setObjectName("metricTitle")
         title_label.setFont(QFont(ui_font, 8, QFont.Weight.Medium))
-        top.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(title_label, 1)
         layout.addLayout(top)
 
@@ -114,11 +133,17 @@ class MetricCard(QFrame):
         self.value_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
         layout.addWidget(self.value_label)
 
+    def apply_theme(self, theme) -> None:
+        self.theme = theme
+        self.icon.setPixmap(tinted_static_icon(static_icon_path(self.icon_name), QColor(theme.primary), 16))
+
 
 class DailyForecastRow(QFrame):
     def __init__(self, day: str, icon_name: str, precip: str, high: str, low: str, ui_font: str, theme) -> None:
         super().__init__()
         self.setObjectName("forecastRow")
+        self.theme = theme
+        self.icon_name = icon_name
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(12)
@@ -128,8 +153,8 @@ class DailyForecastRow(QFrame):
         self.day_label.setFont(QFont(ui_font, 11, QFont.Weight.Medium))
         self.day_label.setMinimumWidth(88)
 
-        self.icon = AnimatedWeatherIcon(22)
-        self.icon.set_icon_path(static_icon_path(icon_name))
+        self.icon = QLabel()
+        self.icon.setFixedSize(22, 22)
 
         self.precip_label = QLabel(precip)
         self.precip_label.setObjectName("forecastMeta")
@@ -153,6 +178,11 @@ class DailyForecastRow(QFrame):
         layout.addWidget(self.high_label)
         layout.addWidget(self.low_label)
 
+    def apply_theme(self, theme) -> None:
+        self.theme = theme
+        icon_color = QColor(theme.secondary if theme.use_matugen else theme.text)
+        self.icon.setPixmap(tinted_static_icon(static_icon_path(self.icon_name), icon_color, 22))
+
 
 class WeatherPopup(QWidget):
     POPUP_RIGHT_SHIFT_RATIO = 0.72
@@ -162,10 +192,22 @@ class WeatherPopup(QWidget):
         self.loaded_fonts = load_app_fonts()
         self.ui_font = detect_font("Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.display_font = detect_font("Outfit", "Inter", "Noto Sans", "Sans Serif")
+        self.icon_font = detect_font(
+            self.loaded_fonts.get("material_icons", ""),
+            self.loaded_fonts.get("material_icons_outlined", ""),
+            self.loaded_fonts.get("material_symbols_outlined", ""),
+            self.loaded_fonts.get("material_symbols_rounded", ""),
+            "Material Icons",
+            "Material Icons Outlined",
+            "Material Symbols Outlined",
+            "Material Symbols Rounded",
+        )
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self.worker: ForecastWorker | None = None
         self._fade: QPropertyAnimation | None = None
+        self.forecast_rows: list[DailyForecastRow] = []
+        self._static_icon_labels: list[tuple[QLabel, str, int]] = []
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowFlags(
@@ -223,6 +265,13 @@ class WeatherPopup(QWidget):
         self.refresh_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.refresh_button.clicked.connect(self.refresh_forecast)
         header.addWidget(self.refresh_button, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.settings_button = QPushButton("\ue8b8")
+        self.settings_button.setObjectName("iconButton")
+        self.settings_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.settings_button.setFont(QFont(self.icon_font, 18))
+        self.settings_button.clicked.connect(self._open_weather_settings)
+        header.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
 
         self.hero = QFrame()
@@ -303,6 +352,7 @@ class WeatherPopup(QWidget):
         self.forecast_layout.addStretch(1)
         self.scroll.setWidget(host)
         layout.addWidget(self.scroll, 1)
+        self._apply_icon_theme()
 
     def _small_stat(self, icon_name: str, title: str, value_label: QLabel) -> QWidget:
         wrap = QFrame()
@@ -310,8 +360,9 @@ class WeatherPopup(QWidget):
         layout = QHBoxLayout(wrap)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(8)
-        icon = AnimatedWeatherIcon(18)
-        icon.set_icon_path(static_icon_path(icon_name))
+        icon = QLabel()
+        icon.setFixedSize(18, 18)
+        self._static_icon_labels.append((icon, icon_name, 18))
         labels = QVBoxLayout()
         labels.setContentsMargins(0, 0, 0, 0)
         labels.setSpacing(1)
@@ -394,6 +445,22 @@ class WeatherPopup(QWidget):
             QPushButton#secondaryButton:hover {{
                 background: {theme.hover_bg};
             }}
+            QPushButton#iconButton {{
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
+                border-radius: 16px;
+                color: {theme.primary};
+                min-width: 34px;
+                max-width: 34px;
+                min-height: 34px;
+                max-height: 34px;
+                font-family: "{self.icon_font}";
+                padding: 0;
+            }}
+            QPushButton#iconButton:hover {{
+                background: {theme.hover_bg};
+                color: {theme.text};
+            }}
             QScrollArea#forecastScroll {{
                 background: transparent;
                 border: none;
@@ -409,6 +476,24 @@ class WeatherPopup(QWidget):
             }}
             """
         )
+        self._apply_icon_theme()
+
+    def _apply_icon_theme(self) -> None:
+        static_color = QColor(self.theme.primary if self.theme.use_matugen else self.theme.text)
+        self.current_icon.set_tint(None)
+        for icon_label, icon_name, size in self._static_icon_labels:
+            icon_label.setPixmap(tinted_static_icon(static_icon_path(icon_name), static_color, size))
+        for metric in (
+            getattr(self, "metric_feels", None),
+            getattr(self, "metric_humidity", None),
+            getattr(self, "metric_wind", None),
+            getattr(self, "metric_precip", None),
+            getattr(self, "metric_pressure", None),
+        ):
+            if metric is not None:
+                metric.apply_theme(self.theme)
+        for row in self.forecast_rows:
+            row.apply_theme(self.theme)
 
     def _apply_shadow(self) -> None:
         shadow = QGraphicsDropShadowEffect(self)
@@ -450,6 +535,7 @@ class WeatherPopup(QWidget):
         self.worker.start()
 
     def _clear_forecast_rows(self) -> None:
+        self.forecast_rows.clear()
         while self.forecast_layout.count() > 1:
             item = self.forecast_layout.takeAt(0)
             widget = item.widget()
@@ -482,6 +568,8 @@ class WeatherPopup(QWidget):
                 self.ui_font,
                 self.theme,
             )
+            row.apply_theme(self.theme)
+            self.forecast_rows.append(row)
             self.forecast_layout.insertWidget(self.forecast_layout.count() - 1, row)
 
     def _show_error(self, message: str) -> None:
@@ -503,6 +591,22 @@ class WeatherPopup(QWidget):
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
         self._apply_styles()
+
+    def _open_weather_settings(self) -> None:
+        if not SETTINGS_PAGE_SCRIPT.exists():
+            return
+        try:
+            import subprocess
+
+            subprocess.Popen(
+                [sys.executable, str(SETTINGS_PAGE_SCRIPT), "--page", "services", "--service-section", "weather"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self.close()
+        except Exception:
+            pass
 
     def focusOutEvent(self, event) -> None:  # type: ignore[override]
         super().focusOutEvent(event)
