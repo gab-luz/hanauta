@@ -54,6 +54,7 @@ FONTS_DIR = ROOT / "assets" / "fonts"
 WALLS_DIR = ROOT / "hanauta" / "walls"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
+QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 WALLPAPER_SCRIPT = ROOT / "hanauta" / "src" / "eww" / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "hanauta" / "src" / "eww" / "scripts" / "run_matugen.sh"
 CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
@@ -153,14 +154,41 @@ MATERIAL_ICONS = {
     "hub": "\uee20",
     "lock": "\ue897",
     "notifications": "\ue7f4",
+    "notifications_active": "\ue7f7",
     "person": "\ue7fd",
     "partly_cloudy_day": "\uf172",
+    "calendar_month": "\ue935",
+    "event_upcoming": "\ue614",
+    "schedule": "\ue8b5",
+    "alarm": "\ue855",
+    "coffee": "\uefef",
     "auto_awesome": "\ue65f",
 }
 
 
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
+
+
+DEFAULT_BAR_SETTINGS = {
+    "launcher_offset": 0,
+    "workspace_offset": 0,
+    "datetime_offset": 0,
+    "media_offset": 0,
+    "status_offset": 0,
+}
+
+
+def merged_bar_settings(payload: object) -> dict[str, int]:
+    current = payload if isinstance(payload, dict) else {}
+    merged = dict(DEFAULT_BAR_SETTINGS)
+    for key, default in DEFAULT_BAR_SETTINGS.items():
+        try:
+            merged[key] = int(current.get(key, default)) if isinstance(current, dict) else default
+        except Exception:
+            merged[key] = default
+        merged[key] = max(-8, min(8, int(merged[key])))
+    return merged
 
 
 DEFAULT_SERVICE_SETTINGS = {
@@ -178,6 +206,15 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_bar": False,
         "next_devotion_notifications": False,
         "hourly_verse_notifications": False,
+    },
+    "calendar_widget": {
+        "enabled": True,
+        "show_in_notification_center": False,
+    },
+    "reminders_widget": {
+        "enabled": False,
+        "show_in_notification_center": False,
+        "show_in_bar": False,
     },
 }
 
@@ -217,6 +254,10 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                     "hourly_verse_notifications",
                     defaults.get("hourly_verse_notifications", False),
                 )
+            )
+        elif key == "reminders_widget":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
     return merged
 
@@ -303,11 +344,29 @@ def load_settings_state() -> dict:
             "longitude": 0.0,
             "timezone": "auto",
         },
+        "calendar": {
+            "show_week_numbers": False,
+            "show_other_month_days": True,
+            "first_day_of_week": "monday",
+            "caldav_url": "",
+            "caldav_username": "",
+            "caldav_password": "",
+            "last_sync_status": "",
+            "connected": False,
+        },
+        "reminders": {
+            "default_lead_minutes": 20,
+            "default_intensity": "discrete",
+            "tracked_events": [],
+            "tea_label": "Tea",
+            "tea_minutes": 5,
+        },
         "display": {
             "layout_mode": "extend",
             "primary": "",
             "outputs": [],
         },
+        "bar": dict(DEFAULT_BAR_SETTINGS),
         "services": merged_service_settings({}),
     }
     try:
@@ -346,6 +405,57 @@ def load_settings_state() -> dict:
     weather.setdefault("latitude", 0.0)
     weather.setdefault("longitude", 0.0)
     weather.setdefault("timezone", "auto")
+    calendar = dict(payload.get("calendar", {}))
+    calendar.setdefault("show_week_numbers", False)
+    calendar.setdefault("show_other_month_days", True)
+    first_day = str(calendar.get("first_day_of_week", "monday")).strip().lower()
+    calendar["first_day_of_week"] = first_day if first_day in {"monday", "sunday"} else "monday"
+    calendar.setdefault("caldav_url", "")
+    calendar.setdefault("caldav_username", "")
+    calendar.setdefault("caldav_password", "")
+    calendar.setdefault("last_sync_status", "")
+    calendar.setdefault("connected", False)
+    reminders = dict(payload.get("reminders", {}))
+    try:
+        reminders["default_lead_minutes"] = max(0, min(240, int(reminders.get("default_lead_minutes", 20))))
+    except Exception:
+        reminders["default_lead_minutes"] = 20
+    default_intensity = str(reminders.get("default_intensity", "discrete")).strip().lower()
+    reminders["default_intensity"] = default_intensity if default_intensity in {"quiet", "discrete", "disturbing"} else "discrete"
+    reminders["tea_label"] = str(reminders.get("tea_label", "Tea")).strip() or "Tea"
+    try:
+        reminders["tea_minutes"] = max(1, min(180, int(reminders.get("tea_minutes", 5))))
+    except Exception:
+        reminders["tea_minutes"] = 5
+    tracked = reminders.get("tracked_events", [])
+    if not isinstance(tracked, list):
+        tracked = []
+    sanitized_tracked: list[dict] = []
+    for item in tracked:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        start = str(item.get("start", "")).strip()
+        if not title or not start:
+            continue
+        try:
+            lead_minutes = max(0, min(240, int(item.get("lead_minutes", reminders["default_lead_minutes"]))))
+        except Exception:
+            lead_minutes = reminders["default_lead_minutes"]
+        severity = str(item.get("severity", reminders["default_intensity"])).strip().lower()
+        if severity not in {"quiet", "discrete", "disturbing"}:
+            severity = reminders["default_intensity"]
+        sanitized_tracked.append(
+            {
+                "title": title,
+                "start": start,
+                "lead_minutes": lead_minutes,
+                "severity": severity,
+                "calendar_index": int(item.get("calendar_index", -1)) if str(item.get("calendar_index", "")).strip() else -1,
+                "filename": str(item.get("filename", "")).strip(),
+            }
+        )
+    reminders["tracked_events"] = sanitized_tracked
     display = dict(payload.get("display", {}))
     display.setdefault("layout_mode", "extend")
     display.setdefault("primary", "")
@@ -353,13 +463,17 @@ def load_settings_state() -> dict:
     if not isinstance(outputs, list):
         outputs = []
     display["outputs"] = [item for item in outputs if isinstance(item, dict)]
+    bar = merged_bar_settings(payload.get("bar", {}))
     services = merged_service_settings(payload.get("services", {}))
     return {
         "appearance": appearance,
         "home_assistant": home_assistant,
         "ntfy": ntfy,
         "weather": weather,
+        "calendar": calendar,
+        "reminders": reminders,
         "display": display,
+        "bar": bar,
         "services": services,
     }
 
@@ -1242,7 +1356,7 @@ class ExpandableServiceSection(QFrame):
 
 
 class SettingsWindow(QWidget):
-    def __init__(self, initial_page: str = "appearance") -> None:
+    def __init__(self, initial_page: str = "appearance", initial_service_section: str = "") -> None:
         super().__init__()
         self.fonts = load_app_fonts()
         self.ui_font = detect_font(
@@ -1276,6 +1390,7 @@ class SettingsWindow(QWidget):
         self.current_accent = accent_palette(self.settings_state["appearance"].get("accent", "orchid"))
         self._refresh_current_accent()
         self.initial_page = initial_page
+        self.initial_service_section = initial_service_section
         self._window_animation: QParallelAnimationGroup | None = None
         self._slideshow_timer = QTimer(self)
         self._slideshow_timer.timeout.connect(self._advance_slideshow)
@@ -1506,6 +1621,8 @@ class SettingsWindow(QWidget):
         self.page_stack.setCurrentIndex(order[resolved])
         for button_key, button in getattr(self, "nav_buttons", {}).items():
             button.setChecked(button_key == resolved)
+        if resolved == "services" and self.initial_service_section:
+            QTimer.singleShot(0, lambda: self._focus_service_section(self.initial_service_section))
 
     def _build_system_overview_card(self) -> QWidget:
         card = QFrame()
@@ -2197,46 +2314,84 @@ class SettingsWindow(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
-        position_slider = QSlider(Qt.Orientation.Horizontal)
-        position_slider.setRange(0, 2)
-        position_slider.setValue(1)
-        position_slider.setFixedWidth(164)
+        self.bar_launcher_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_launcher_offset_slider.setRange(-8, 8)
+        self.bar_launcher_offset_slider.setValue(int(self.settings_state["bar"].get("launcher_offset", 0)))
+        self.bar_launcher_offset_slider.setFixedWidth(164)
+        self.bar_launcher_offset_slider.valueChanged.connect(self._set_bar_launcher_offset)
 
-        style_slider = QSlider(Qt.Orientation.Horizontal)
-        style_slider.setRange(0, 2)
-        style_slider.setValue(2)
-        style_slider.setFixedWidth(164)
+        self.bar_workspace_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_workspace_offset_slider.setRange(-8, 8)
+        self.bar_workspace_offset_slider.setValue(int(self.settings_state["bar"].get("workspace_offset", 0)))
+        self.bar_workspace_offset_slider.setFixedWidth(164)
+        self.bar_workspace_offset_slider.valueChanged.connect(self._set_bar_workspace_offset)
 
-        widgets_switch = SwitchButton(True)
+        self.bar_datetime_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_datetime_offset_slider.setRange(-8, 8)
+        self.bar_datetime_offset_slider.setValue(int(self.settings_state["bar"].get("datetime_offset", 0)))
+        self.bar_datetime_offset_slider.setFixedWidth(164)
+        self.bar_datetime_offset_slider.valueChanged.connect(self._set_bar_datetime_offset)
+
+        self.bar_media_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_media_offset_slider.setRange(-8, 8)
+        self.bar_media_offset_slider.setValue(int(self.settings_state["bar"].get("media_offset", 0)))
+        self.bar_media_offset_slider.setFixedWidth(164)
+        self.bar_media_offset_slider.valueChanged.connect(self._set_bar_media_offset)
+
+        self.bar_status_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_status_offset_slider.setRange(-8, 8)
+        self.bar_status_offset_slider.setValue(int(self.settings_state["bar"].get("status_offset", 0)))
+        self.bar_status_offset_slider.setFixedWidth(164)
+        self.bar_status_offset_slider.valueChanged.connect(self._set_bar_status_offset)
 
         layout.addWidget(
             SettingsRow(
-                material_icon("dock_to_left"),
-                "Bar position",
-                "Centered with enough breathing room for workspace states.",
+                material_icon("flip"),
+                "Launcher / AI offset",
+                "Move the AI icon and launcher block up or down without changing their internal alignment.",
                 self.icon_font,
                 self.ui_font,
-                position_slider,
+                self.bar_launcher_offset_slider,
             )
         )
         layout.addWidget(
             SettingsRow(
-                material_icon("widgets"),
-                "Bar style",
-                "Material 3 expressive with rounded modules and soft borders.",
+                material_icon("flip"),
+                "Workspace offset",
+                "Move the workspace block up or down as a whole.",
                 self.icon_font,
                 self.ui_font,
-                style_slider,
+                self.bar_workspace_offset_slider,
             )
         )
         layout.addWidget(
             SettingsRow(
-                material_icon("bolt"),
-                "Live widgets",
-                "Refresh quick settings, media, and status surfaces without noise.",
+                material_icon("flip"),
+                "Date/time offset",
+                "Move the clock and date block up or down as a whole.",
                 self.icon_font,
                 self.ui_font,
-                widgets_switch,
+                self.bar_datetime_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Media offset",
+                "Move the now playing block up or down as a whole.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_media_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Status offset",
+                "Move the network, battery, tray, and power block up or down as a whole.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_status_offset_slider,
             )
         )
         return card
@@ -2265,11 +2420,22 @@ class SettingsWindow(QWidget):
             ("home_assistant", self._build_home_assistant_section()),
             ("vpn_control", self._build_vpn_service_section()),
             ("christian_widget", self._build_christian_service_section()),
+            ("calendar_widget", self._build_calendar_service_section()),
+            ("reminders_widget", self._build_reminders_service_section()),
             ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
             layout.addWidget(widget)
         return card
+
+    def _focus_service_section(self, key: str) -> None:
+        section = getattr(self, "service_sections", {}).get(key)
+        if section is None:
+            return
+        if section.enabled_switch.isChecked():
+            section.set_expanded(True)
+            section.header_button.setFocus()
+        self.initial_service_section = ""
 
     def _build_home_assistant_section(self) -> QWidget:
         content = QWidget()
@@ -2538,6 +2704,272 @@ class SettingsWindow(QWidget):
         self.weather_section = section
         return section
 
+    def _build_calendar_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.calendar_display_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["calendar_widget"].get(
+                    "show_in_notification_center",
+                    False,
+                )
+            )
+        )
+        self.calendar_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("calendar_widget", enabled)
+        )
+        self.service_display_switches["calendar_widget"] = self.calendar_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose a calendar launcher card in the notification center overview.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_display_switch,
+            )
+        )
+
+        self.calendar_week_numbers_switch = SwitchButton(
+            bool(self.settings_state["calendar"].get("show_week_numbers", False))
+        )
+        self.calendar_week_numbers_switch.toggledValue.connect(self._set_calendar_show_week_numbers)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("calendar_month"),
+                "Show week numbers",
+                "Adds ISO week numbers to the stylized calendar grid.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_week_numbers_switch,
+            )
+        )
+
+        self.calendar_other_month_switch = SwitchButton(
+            bool(self.settings_state["calendar"].get("show_other_month_days", True))
+        )
+        self.calendar_other_month_switch.toggledValue.connect(self._set_calendar_show_other_month_days)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("event_upcoming"),
+                "Show adjacent month days",
+                "Keep leading and trailing days visible for a fuller month view.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_other_month_switch,
+            )
+        )
+
+        self.calendar_first_day_combo = QComboBox()
+        self.calendar_first_day_combo.setObjectName("settingsCombo")
+        self.calendar_first_day_combo.addItem("Monday", "monday")
+        self.calendar_first_day_combo.addItem("Sunday", "sunday")
+        current_first_day = str(self.settings_state["calendar"].get("first_day_of_week", "monday"))
+        index = self.calendar_first_day_combo.findData(current_first_day)
+        self.calendar_first_day_combo.setCurrentIndex(max(0, index))
+        self.calendar_first_day_combo.currentIndexChanged.connect(self._set_calendar_first_day)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "First day of week",
+                "Choose how the popup month grid should begin.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_first_day_combo,
+            )
+        )
+
+        self.calendar_url_input = QLineEdit(self.settings_state["calendar"].get("caldav_url", ""))
+        self.calendar_url_input.setPlaceholderText("https://dav.example.com/caldav/")
+        self.calendar_user_input = QLineEdit(self.settings_state["calendar"].get("caldav_username", ""))
+        self.calendar_user_input.setPlaceholderText("username")
+        self.calendar_password_input = QLineEdit(self.settings_state["calendar"].get("caldav_password", ""))
+        self.calendar_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.calendar_password_input.setPlaceholderText("Password or app password")
+        layout.addWidget(SettingsRow(material_icon("web_asset"), "CalDAV URL", "Used to discover and sync remote calendars into qcal.", self.icon_font, self.ui_font, self.calendar_url_input))
+        layout.addWidget(SettingsRow(material_icon("person"), "CalDAV username", "Account used for CalDAV discovery.", self.icon_font, self.ui_font, self.calendar_user_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "CalDAV password", "Stored so qcal can keep your event list wired up.", self.icon_font, self.ui_font, self.calendar_password_input))
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.calendar_save_button = QPushButton("Save")
+        self.calendar_save_button.setObjectName("secondaryButton")
+        self.calendar_discover_button = QPushButton("Discover calendars")
+        self.calendar_discover_button.setObjectName("primaryButton")
+        self.calendar_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.calendar_discover_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.calendar_save_button.clicked.connect(self._save_calendar_settings)
+        self.calendar_discover_button.clicked.connect(self._discover_calendar_calendars)
+        buttons.addWidget(self.calendar_save_button)
+        buttons.addWidget(self.calendar_discover_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        self.calendar_status = QLabel(
+            str(self.settings_state["calendar"].get("last_sync_status", "")).strip() or "Calendar integration is idle."
+        )
+        self.calendar_status.setWordWrap(True)
+        self.calendar_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.calendar_status)
+
+        section = ExpandableServiceSection(
+            "calendar_widget",
+            "Calendar",
+            "Style the calendar popup and connect CalDAV calendars for live events.",
+            material_icon("calendar_month"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("calendar_widget"),
+            lambda enabled: self._set_service_enabled("calendar_widget", enabled),
+        )
+        self.service_sections["calendar_widget"] = section
+        return section
+
+    def _build_reminders_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.reminders_display_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["reminders_widget"].get(
+                    "show_in_notification_center",
+                    False,
+                )
+            )
+        )
+        self.reminders_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("reminders_widget", enabled)
+        )
+        self.service_display_switches["reminders_widget"] = self.reminders_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose a reminders launcher card beside the other overview widgets.",
+                self.icon_font,
+                self.ui_font,
+                self.reminders_display_switch,
+            )
+        )
+
+        self.reminders_bar_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["reminders_widget"].get(
+                    "show_in_bar",
+                    False,
+                )
+            )
+        )
+        self.reminders_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("reminders_widget", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications"),
+                "Show on bar",
+                "Adds a reminders icon to the bar so the widget can be opened directly.",
+                self.icon_font,
+                self.ui_font,
+                self.reminders_bar_switch,
+            )
+        )
+
+        self.reminders_intensity_combo = QComboBox()
+        self.reminders_intensity_combo.setObjectName("settingsCombo")
+        self.reminders_intensity_combo.addItem("Quiet", "quiet")
+        self.reminders_intensity_combo.addItem("Discrete", "discrete")
+        self.reminders_intensity_combo.addItem("Very disturbing", "disturbing")
+        current_intensity = str(self.settings_state["reminders"].get("default_intensity", "discrete"))
+        intensity_index = self.reminders_intensity_combo.findData(current_intensity)
+        self.reminders_intensity_combo.setCurrentIndex(max(0, intensity_index))
+        self.reminders_intensity_combo.currentIndexChanged.connect(self._set_reminder_default_intensity)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Default reminder style",
+                "Quiet is subtle, discrete is standard, and very disturbing repeats aggressively.",
+                self.icon_font,
+                self.ui_font,
+                self.reminders_intensity_combo,
+            )
+        )
+
+        self.reminders_lead_slider = QSlider(Qt.Orientation.Horizontal)
+        self.reminders_lead_slider.setRange(0, 120)
+        self.reminders_lead_slider.setValue(int(self.settings_state["reminders"].get("default_lead_minutes", 20)))
+        self.reminders_lead_slider.valueChanged.connect(self._set_reminder_default_lead_minutes)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("alarm"),
+                "Lead time",
+                "How many minutes before a tracked CalDAV event the reminders widget should surface it.",
+                self.icon_font,
+                self.ui_font,
+                self.reminders_lead_slider,
+            )
+        )
+
+        self.tea_label_input = QLineEdit(self.settings_state["reminders"].get("tea_label", "Tea"))
+        self.tea_label_input.setPlaceholderText("Tea, eggs, rice, pasta...")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("coffee"),
+                "Tea reminder label",
+                "Default label for the quick kitchen timer inside the reminders widget.",
+                self.icon_font,
+                self.ui_font,
+                self.tea_label_input,
+            )
+        )
+
+        self.tea_minutes_slider = QSlider(Qt.Orientation.Horizontal)
+        self.tea_minutes_slider.setRange(1, 30)
+        self.tea_minutes_slider.setValue(int(self.settings_state["reminders"].get("tea_minutes", 5)))
+        self.tea_minutes_slider.valueChanged.connect(self._set_tea_default_minutes)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Tea reminder minutes",
+                "Sets the default duration for tea, eggs, or any quick custom timer.",
+                self.icon_font,
+                self.ui_font,
+                self.tea_minutes_slider,
+            )
+        )
+
+        self.reminders_status = QLabel(
+            f"{len(self.settings_state['reminders'].get('tracked_events', []))} tracked CalDAV reminder(s) saved."
+        )
+        self.reminders_status.setWordWrap(True)
+        self.reminders_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.reminders_status)
+
+        self.reminders_save_button = QPushButton("Save reminder defaults")
+        self.reminders_save_button.setObjectName("primaryButton")
+        self.reminders_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.reminders_save_button.clicked.connect(self._save_reminders_settings)
+        layout.addWidget(self.reminders_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        section = ExpandableServiceSection(
+            "reminders_widget",
+            "Reminders",
+            "Surface tracked CalDAV event reminders and configure how noisy they should be.",
+            material_icon("alarm"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("reminders_widget"),
+            lambda enabled: self._set_service_enabled("reminders_widget", enabled),
+        )
+        self.service_sections["reminders_widget"] = section
+        return section
+
     def _build_ntfy_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -2620,6 +3052,8 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
+            if key == "reminders_widget":
+                service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
         if section is not None:
@@ -2640,6 +3074,16 @@ class SettingsWindow(QWidget):
                 if switch is not None:
                     switch.setChecked(bool(service.get(setting_key, False)))
                     switch._apply_state()
+        if key in {"calendar_widget", "reminders_widget"}:
+            display_switch = getattr(self, "service_display_switches", {}).get(key)
+            if display_switch is not None:
+                display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
+                display_switch._apply_state()
+        if key == "reminders_widget":
+            switch = getattr(self, "reminders_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -2661,6 +3105,102 @@ class SettingsWindow(QWidget):
             return
         service[flag] = bool(enabled)
         save_settings_state(self.settings_state)
+
+    def _set_calendar_show_week_numbers(self, enabled: bool) -> None:
+        self.settings_state.setdefault("calendar", {})["show_week_numbers"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "calendar_status"):
+            self.calendar_status.setText("Calendar week numbers updated.")
+
+    def _set_calendar_show_other_month_days(self, enabled: bool) -> None:
+        self.settings_state.setdefault("calendar", {})["show_other_month_days"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "calendar_status"):
+            self.calendar_status.setText("Calendar adjacent-month visibility updated.")
+
+    def _set_calendar_first_day(self, index: int) -> None:
+        value = self.calendar_first_day_combo.itemData(index) if hasattr(self, "calendar_first_day_combo") else "monday"
+        self.settings_state.setdefault("calendar", {})["first_day_of_week"] = str(value or "monday")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "calendar_status"):
+            self.calendar_status.setText("Calendar first day updated.")
+
+    def _save_calendar_settings(self) -> None:
+        calendar = self.settings_state.setdefault("calendar", {})
+        calendar["caldav_url"] = self.calendar_url_input.text().strip()
+        calendar["caldav_username"] = self.calendar_user_input.text().strip()
+        calendar["caldav_password"] = self.calendar_password_input.text()
+        save_settings_state(self.settings_state)
+        if hasattr(self, "calendar_status"):
+            self.calendar_status.setText("Calendar settings saved.")
+
+    def _discover_calendar_calendars(self) -> None:
+        self._save_calendar_settings()
+        calendar = self.settings_state.setdefault("calendar", {})
+        url = str(calendar.get("caldav_url", "")).strip()
+        username = str(calendar.get("caldav_username", "")).strip()
+        password = str(calendar.get("caldav_password", ""))
+        if not url or not username or not password:
+            self.calendar_status.setText("CalDAV URL, username, and password are required.")
+            return
+        if not QCAL_WRAPPER.exists():
+            self.calendar_status.setText("qcal wrapper is missing.")
+            return
+        result = subprocess.run(
+            [sys.executable, str(QCAL_WRAPPER), "discover", url, username, password],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        try:
+            payload = json.loads(result.stdout or "{}")
+        except Exception:
+            payload = {"success": False, "error": (result.stderr or "CalDAV discovery failed.").strip()}
+        success = bool(payload.get("success", False))
+        calendar["connected"] = success
+        names = payload.get("calendars", [])
+        if success:
+            discovered = ", ".join(str(name) for name in names[:3])
+            suffix = "" if len(names) <= 3 else "..."
+            calendar["last_sync_status"] = f"Connected to {len(names)} calendar(s): {discovered}{suffix}"
+        else:
+            calendar["last_sync_status"] = str(payload.get("error", "Unable to discover calendars.")).strip()
+        save_settings_state(self.settings_state)
+        self.calendar_status.setText(calendar["last_sync_status"] or "Calendar integration updated.")
+
+    def _set_reminder_default_intensity(self, index: int) -> None:
+        value = self.reminders_intensity_combo.itemData(index) if hasattr(self, "reminders_intensity_combo") else "discrete"
+        self.settings_state.setdefault("reminders", {})["default_intensity"] = str(value or "discrete")
+        save_settings_state(self.settings_state)
+        self._refresh_reminders_status()
+
+    def _set_reminder_default_lead_minutes(self, value: int) -> None:
+        self.settings_state.setdefault("reminders", {})["default_lead_minutes"] = int(value)
+        save_settings_state(self.settings_state)
+        self._refresh_reminders_status()
+
+    def _set_tea_default_minutes(self, value: int) -> None:
+        self.settings_state.setdefault("reminders", {})["tea_minutes"] = int(value)
+        save_settings_state(self.settings_state)
+        self._refresh_reminders_status()
+
+    def _save_reminders_settings(self) -> None:
+        reminders = self.settings_state.setdefault("reminders", {})
+        reminders["tea_label"] = self.tea_label_input.text().strip() or "Tea"
+        reminders["default_intensity"] = str(self.reminders_intensity_combo.currentData() or "discrete")
+        reminders["default_lead_minutes"] = int(self.reminders_lead_slider.value())
+        reminders["tea_minutes"] = int(self.tea_minutes_slider.value())
+        save_settings_state(self.settings_state)
+        self._refresh_reminders_status("Reminder defaults saved.")
+
+    def _refresh_reminders_status(self, prefix: str = "") -> None:
+        tracked_count = len(self.settings_state.get("reminders", {}).get("tracked_events", []))
+        detail = (
+            f"{tracked_count} tracked reminder(s) • "
+            f"{self.settings_state['reminders'].get('default_lead_minutes', 20)} min lead • "
+            f"{self.settings_state['reminders'].get('default_intensity', 'discrete')}"
+        )
+        self.reminders_status.setText(f"{prefix} {detail}".strip())
 
     def _set_ntfy_enabled(self, enabled: bool) -> None:
         ntfy = self.settings_state.setdefault("ntfy", {})
@@ -2687,6 +3227,30 @@ class SettingsWindow(QWidget):
             self.weather_status.setText(
                 "Weather icon enabled on the bar." if enabled else "Weather icon disabled."
             )
+
+    def _save_bar_settings(self) -> None:
+        self.settings_state["bar"] = merged_bar_settings(self.settings_state.get("bar", {}))
+        save_settings_state(self.settings_state)
+
+    def _set_bar_launcher_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["launcher_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_workspace_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["workspace_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_datetime_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["datetime_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_media_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["media_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_status_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["status_offset"] = int(value)
+        self._save_bar_settings()
 
     def _queue_weather_city_search(self, text: str) -> None:
         self._selected_weather_city = None
@@ -3533,6 +4097,7 @@ class SettingsWindow(QWidget):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--page", choices=("overview", "appearance", "display", "bar", "services", "picom"), default="appearance")
+    parser.add_argument("--service-section", default="")
     parser.add_argument("--restore-displays", action="store_true")
     parser.add_argument("--restore-wallpaper", action="store_true")
     args, _ = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
@@ -3547,7 +4112,7 @@ def main(argv: list[str] | None = None) -> int:
     sigint_timer = QTimer()
     sigint_timer.start(200)
     sigint_timer.timeout.connect(lambda: None)
-    window = SettingsWindow(initial_page=args.page)
+    window = SettingsWindow(initial_page=args.page, initial_service_section=str(args.service_section or ""))
     window.show()
     return app.exec()
 

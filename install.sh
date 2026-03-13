@@ -9,6 +9,7 @@ INSTALL_EDITOR_EXTENSIONS_AUTO=false
 INSTALL_VSCODE_ONLY=false
 INSTALL_VSCODIUM_ONLY=false
 INSTALL_NOTIFICATION_DAEMON_ONLY=false
+INSTALL_QUICKSHELL_ONLY=false
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -108,9 +109,12 @@ parse_args() {
       --notification-daemon)
         INSTALL_NOTIFICATION_DAEMON_ONLY=true
         ;;
+      --quickshell)
+        INSTALL_QUICKSHELL_ONLY=true
+        ;;
       -h|--help)
         cat <<EOF
-Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon]
+Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon] [--quickshell]
 
 Without flags:
   Runs the full desktop install only.
@@ -119,6 +123,7 @@ With flags:
   --vscode    Install only the VS Code extension
   --vscodium  Install only the VSCodium extension
   --notification-daemon  Install only the Hanauta notification daemon components
+  --quickshell  Install only the Quickshell runtime dependencies
 EOF
         exit 0
         ;;
@@ -306,6 +311,35 @@ install_packages_arch() {
   install_pacman_group "core desktop stack" "${core_pkgs[@]}"
   install_pacman_group "optional integrations" "${optional_pkgs[@]}"
   success "System packages installed"
+}
+
+install_quickshell_packages_debian() {
+  local -a pkgs=(
+    quickshell
+  )
+
+  echo -e "${CYAN}[*]${NC} Updating package lists..."
+  sudo apt-get update -qq
+  warn "Quickshell is Wayland-oriented and not part of the default Hanauta X11 base install."
+  install_apt_group "quickshell" "${pkgs[@]}"
+}
+
+install_quickshell_packages_arch() {
+  if pacman_has_package quickshell; then
+    install_pacman_group "quickshell" quickshell
+    return 0
+  fi
+
+  if need_cmd yay; then
+    info "Installing quickshell via AUR..."
+    yay -S --noconfirm quickshell
+  elif need_cmd paru; then
+    info "Installing quickshell via AUR..."
+    paru -S --noconfirm quickshell
+  else
+    warn "quickshell not found in pacman repos and yay/paru is unavailable."
+    warn "Install quickshell manually, then rerun the calendar popup."
+  fi
 }
 
 install_deadd_debian() {
@@ -507,6 +541,11 @@ main() {
     return 0
   fi
 
+  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] && [ "$INSTALL_QUICKSHELL_ONLY" = true ]; then
+    error "Use only one of --notification-daemon or --quickshell."
+    return 1
+  fi
+
   print_banner
 
   if ! need_cmd sudo; then
@@ -519,6 +558,8 @@ main() {
     info "Detected Debian-based distribution"
     if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ]; then
       install_notification_packages_debian
+    elif [ "$INSTALL_QUICKSHELL_ONLY" = true ]; then
+      install_quickshell_packages_debian
     else
       install_packages_debian
     fi
@@ -526,11 +567,18 @@ main() {
     info "Detected Arch Linux distribution"
     if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ]; then
       install_notification_packages_arch
+    elif [ "$INSTALL_QUICKSHELL_ONLY" = true ]; then
+      install_quickshell_packages_arch
     else
       install_packages_arch
     fi
   else
     warn "Unknown distro; skipping system package install."
+  fi
+
+  if [ "$INSTALL_QUICKSHELL_ONLY" = true ]; then
+    info "Done!"
+    return 0
   fi
 
   setup_python_venv
@@ -539,7 +587,7 @@ main() {
   link_configs
   make_exec
   install_local_binaries
-  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
+  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ] && [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
     install_detected_editor_extensions
   fi
 
