@@ -312,6 +312,7 @@ class ClickableLabel(QLabel):
 
 class ClickableFrame(QFrame):
     clicked = pyqtSignal()
+    hoveredChanged = pyqtSignal(bool)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
@@ -319,6 +320,14 @@ class ClickableFrame(QFrame):
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def enterEvent(self, event) -> None:  # type: ignore[override]
+        self.hoveredChanged.emit(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # type: ignore[override]
+        self.hoveredChanged.emit(False)
+        super().leaveEvent(event)
 
 
 class EqualizerBar(QFrame):
@@ -694,6 +703,7 @@ class CyberBar(QWidget):
         self.launcher_trigger.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.launcher_trigger.setFixedHeight(20)
         self.launcher_trigger.clicked.connect(self._open_launcher)
+        self.launcher_trigger.hoveredChanged.connect(self._update_launcher_wordmark_colors)
         self.launcher_trigger_layout = QHBoxLayout(self.launcher_trigger)
         self.launcher_trigger_layout.setContentsMargins(10, 0, 10, 2)
         self.launcher_trigger_layout.setSpacing(5)
@@ -1055,14 +1065,12 @@ class CyberBar(QWidget):
                 max-height: 20px;
             }}
             QLabel#launcherNote {{
-                color: {theme.primary};
                 font-family: "Inter";
                 font-size: 14px;
                 font-weight: 700;
                 padding-bottom: 3px;
             }}
             QLabel#launcherText {{
-                color: {theme.primary};
                 font-family: "Inter";
                 font-size: 11px;
                 font-weight: 700;
@@ -1227,6 +1235,7 @@ class CyberBar(QWidget):
             }}
             """
         )
+        self._update_launcher_wordmark_colors()
         for dot in self.workspace_buttons.values():
             dot.set_colors(
                 {
@@ -1243,6 +1252,11 @@ class CyberBar(QWidget):
         self._sync_reminders_button_visibility()
         self._sync_ntfy_button_visibility()
         self._update_window_mask()
+
+    def _update_launcher_wordmark_colors(self, hovered: bool = False) -> None:
+        color = self.theme.text if hovered else self.theme.primary
+        self.launcher_note.setStyleSheet(f"color: {color};")
+        self.launcher_text.setStyleSheet(f"color: {color};")
 
     def _update_media_equalizer_color(self) -> None:
         color = self.theme.equalizer if self._media_playing else self.theme.text_muted
