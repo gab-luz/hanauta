@@ -101,6 +101,7 @@ DEFAULT_BAR_SETTINGS = {
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
+    "bar_height": 45,
     "chip_radius": 0,
     "merge_all_chips": False,
     "full_bar_radius": 18,
@@ -247,6 +248,8 @@ def load_bar_settings() -> dict[str, int]:
             merged[key] = default
         if key in offset_keys:
             merged[key] = max(-8, min(8, int(merged[key])))
+        elif key == "bar_height":
+            merged[key] = max(32, min(72, int(merged[key])))
         else:
             merged[key] = max(0, min(32, int(merged[key])))
     return merged
@@ -666,7 +669,7 @@ class CyberBar(QWidget):
 
         screen = QApplication.primaryScreen()
         geo = screen.availableGeometry()
-        self.setFixedSize(geo.width(), 40)
+        self.setFixedSize(geo.width(), int(self.bar_settings.get("bar_height", 40)))
         self.move(geo.x(), geo.y())
 
     def _build_ui(self) -> None:
@@ -997,11 +1000,35 @@ class CyberBar(QWidget):
     def _apply_bar_settings(self) -> None:
         self.bar_settings = load_bar_settings()
         merge_all_chips = bool(self.bar_settings.get("merge_all_chips", False))
+        bar_height = int(self.bar_settings.get("bar_height", 40))
+        outer_vertical_margin = 4
+        surface_height = max(24, bar_height - (outer_vertical_margin * 2))
+        chip_vertical_padding = max(4, min(14, (surface_height - 22) // 2))
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geo = screen.availableGeometry()
+            self.setFixedSize(geo.width(), bar_height)
+            self.move(geo.x(), geo.y())
+        self.outer_layout.setContentsMargins(12, outer_vertical_margin, 12, outer_vertical_margin)
+        self.bar_surface.setFixedHeight(surface_height)
         self.root_layout.setSpacing(0 if merge_all_chips else 14)
         self.left_layout.setSpacing(0 if merge_all_chips else 10)
         self.center_layout.setSpacing(0 if merge_all_chips else 10)
         self.right_layout.setSpacing(0 if merge_all_chips else 8)
-        self.root_layout.setContentsMargins(8, 4, 8, 4)
+        self.root_layout.setContentsMargins(8, 0, 8, 0)
+        for chip in (
+            self.launcher_chip,
+            self.workspace_chip,
+            self.datetime_chip,
+            self.media_chip,
+            self.status_chip,
+        ):
+            chip.setFixedHeight(surface_height)
+        self.launcher_layout.setContentsMargins(8, chip_vertical_padding, 8, chip_vertical_padding)
+        self.workspace_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
+        self.datetime_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
+        self.media_layout.setContentsMargins(14, chip_vertical_padding, 14, chip_vertical_padding)
+        self.status_layout.setContentsMargins(10, chip_vertical_padding, 10, chip_vertical_padding)
         self._apply_vertical_offset(self.ai_wrap, self.bar_settings.get("launcher_offset", 0))
         self._apply_vertical_offset(self.launcher_wrap, self.bar_settings.get("launcher_offset", 0))
         self._apply_vertical_offset(self.workspace_wrap, self.bar_settings.get("workspace_offset", 0))
