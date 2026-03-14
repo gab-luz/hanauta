@@ -1,0 +1,14 @@
+{
+  "_comment": "Override any bar icon with a glyph or an image path. Restart/reload the bar after edits.",
+  "launcher_note": "♪",
+  "wifi": "󰖩",
+  "wifi_off": "󰖪",
+  "vpn_key": "󰦝",
+  "timer": "󰔛",
+  "show_chart": "󰄧",
+  "notifications": "󰂚",
+  "sports_esports": "󰺵",
+  "content_paste": "󰅌",
+  "system_update": "󰚰",
+  "power_settings_new": "󰐥"
+}
