@@ -59,6 +59,7 @@ SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 REMINDERS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
+POMODORO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 
 MATERIAL_ICONS = {
     "airplanemode_active": "\ue195",
@@ -92,6 +93,7 @@ MATERIAL_ICONS = {
     "wifi": "\ue63e",
     "lock": "\ue897",
     "auto_awesome": "\ue65f",
+    "timer": "\ue425",
 }
 
 DEFAULT_SERVICE_SETTINGS = {
@@ -117,6 +119,10 @@ DEFAULT_SERVICE_SETTINGS = {
     "reminders_widget": {
         "enabled": False,
         "show_in_notification_center": False,
+    },
+    "pomodoro_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
     },
 }
 
@@ -804,6 +810,8 @@ class NotificationCenter(QWidget):
         layout.addWidget(self._build_christian_launcher_card())
         layout.addSpacing(10)
         layout.addWidget(self._build_reminders_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_pomodoro_launcher_card())
         self._sync_service_card_visibility()
         return page
 
@@ -1126,6 +1134,17 @@ class NotificationCenter(QWidget):
         )
         return self.reminders_launcher_card
 
+    def _build_pomodoro_launcher_card(self) -> QFrame:
+        self.pomodoro_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "Pomodoro",
+            "Open the focus timer widget with work, short break, and long break modes.",
+            "timer",
+            "Open",
+            self._open_pomodoro_widget,
+        )
+        return self.pomodoro_launcher_card
+
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -1339,6 +1358,10 @@ class NotificationCenter(QWidget):
             self.reminders_launcher_card.setVisible(
                 self._service_visible_in_notification_center("reminders_widget")
             )
+        if hasattr(self, "pomodoro_launcher_card"):
+            self.pomodoro_launcher_card.setVisible(
+                self._service_visible_in_notification_center("pomodoro_widget")
+            )
 
     def _open_vpn_widget(self) -> None:
         if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
@@ -1354,6 +1377,11 @@ class NotificationCenter(QWidget):
         if not self._service_enabled("reminders_widget") or not REMINDERS_WIDGET_SCRIPT.exists():
             return
         run_bg([sys.executable, str(REMINDERS_WIDGET_SCRIPT)])
+
+    def _open_pomodoro_widget(self) -> None:
+        if not self._service_enabled("pomodoro_widget") or not POMODORO_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(POMODORO_WIDGET_SCRIPT)])
 
     def _circle_icon_button(self, icon: str, accent: str = "default") -> QPushButton:
         button = QPushButton(material_icon(icon))

@@ -161,6 +161,7 @@ MATERIAL_ICONS = {
     "event_upcoming": "\ue614",
     "schedule": "\ue8b5",
     "alarm": "\ue855",
+    "timer": "\ue425",
     "coffee": "\uefef",
     "auto_awesome": "\ue65f",
 }
@@ -232,6 +233,11 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": False,
         "show_in_bar": False,
     },
+    "pomodoro_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
+    },
 }
 
 
@@ -279,6 +285,10 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                 current.get("preferred_interface", defaults.get("preferred_interface", ""))
             ).strip()
         elif key == "reminders_widget":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", False))
+            )
+        elif key == "pomodoro_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
@@ -384,6 +394,14 @@ def load_settings_state() -> dict:
             "tea_label": "Tea",
             "tea_minutes": 5,
         },
+        "pomodoro": {
+            "work_minutes": 25,
+            "short_break_minutes": 5,
+            "long_break_minutes": 15,
+            "long_break_every": 4,
+            "auto_start_breaks": False,
+            "auto_start_focus": False,
+        },
         "display": {
             "layout_mode": "extend",
             "primary": "",
@@ -479,6 +497,25 @@ def load_settings_state() -> dict:
             }
         )
     reminders["tracked_events"] = sanitized_tracked
+    pomodoro = dict(payload.get("pomodoro", {}))
+    try:
+        pomodoro["work_minutes"] = max(5, min(90, int(pomodoro.get("work_minutes", 25))))
+    except Exception:
+        pomodoro["work_minutes"] = 25
+    try:
+        pomodoro["short_break_minutes"] = max(1, min(30, int(pomodoro.get("short_break_minutes", 5))))
+    except Exception:
+        pomodoro["short_break_minutes"] = 5
+    try:
+        pomodoro["long_break_minutes"] = max(5, min(60, int(pomodoro.get("long_break_minutes", 15))))
+    except Exception:
+        pomodoro["long_break_minutes"] = 15
+    try:
+        pomodoro["long_break_every"] = max(2, min(8, int(pomodoro.get("long_break_every", 4))))
+    except Exception:
+        pomodoro["long_break_every"] = 4
+    pomodoro["auto_start_breaks"] = bool(pomodoro.get("auto_start_breaks", False))
+    pomodoro["auto_start_focus"] = bool(pomodoro.get("auto_start_focus", False))
     display = dict(payload.get("display", {}))
     display.setdefault("layout_mode", "extend")
     display.setdefault("primary", "")
@@ -495,6 +532,7 @@ def load_settings_state() -> dict:
         "weather": weather,
         "calendar": calendar,
         "reminders": reminders,
+        "pomodoro": pomodoro,
         "display": display,
         "bar": bar,
         "services": services,
@@ -2543,6 +2581,7 @@ class SettingsWindow(QWidget):
             ("christian_widget", self._build_christian_service_section()),
             ("calendar_widget", self._build_calendar_service_section()),
             ("reminders_widget", self._build_reminders_service_section()),
+            ("pomodoro_widget", self._build_pomodoro_service_section()),
             ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
@@ -3113,6 +3152,166 @@ class SettingsWindow(QWidget):
         self.service_sections["reminders_widget"] = section
         return section
 
+    def _build_pomodoro_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.pomodoro_display_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["pomodoro_widget"].get(
+                    "show_in_notification_center",
+                    True,
+                )
+            )
+        )
+        self.pomodoro_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("pomodoro_widget", enabled)
+        )
+        self.service_display_switches["pomodoro_widget"] = self.pomodoro_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose a Pomodoro launcher card in the overview page.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_display_switch,
+            )
+        )
+
+        self.pomodoro_bar_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["pomodoro_widget"].get(
+                    "show_in_bar",
+                    False,
+                )
+            )
+        )
+        self.pomodoro_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("pomodoro_widget", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("timer"),
+                "Show on bar",
+                "Adds a Pomodoro icon to the bar so the timer can be opened directly.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_bar_switch,
+            )
+        )
+
+        self.pomodoro_work_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pomodoro_work_slider.setRange(5, 90)
+        self.pomodoro_work_slider.setValue(int(self.settings_state["pomodoro"].get("work_minutes", 25)))
+        self.pomodoro_work_slider.valueChanged.connect(self._set_pomodoro_work_minutes)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("timer"),
+                "Work minutes",
+                "Length of each focus session before a break begins.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_work_slider,
+            )
+        )
+
+        self.pomodoro_short_break_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pomodoro_short_break_slider.setRange(1, 30)
+        self.pomodoro_short_break_slider.setValue(int(self.settings_state["pomodoro"].get("short_break_minutes", 5)))
+        self.pomodoro_short_break_slider.valueChanged.connect(self._set_pomodoro_short_break_minutes)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("coffee"),
+                "Short break minutes",
+                "Quick reset break used between most work sessions.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_short_break_slider,
+            )
+        )
+
+        self.pomodoro_long_break_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pomodoro_long_break_slider.setRange(5, 60)
+        self.pomodoro_long_break_slider.setValue(int(self.settings_state["pomodoro"].get("long_break_minutes", 15)))
+        self.pomodoro_long_break_slider.valueChanged.connect(self._set_pomodoro_long_break_minutes)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Long break minutes",
+                "Recovery break used after a full Pomodoro cycle.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_long_break_slider,
+            )
+        )
+
+        self.pomodoro_cycle_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pomodoro_cycle_slider.setRange(2, 8)
+        self.pomodoro_cycle_slider.setValue(int(self.settings_state["pomodoro"].get("long_break_every", 4)))
+        self.pomodoro_cycle_slider.valueChanged.connect(self._set_pomodoro_long_break_every)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("alarm"),
+                "Long break every",
+                "How many completed focus sessions should happen before the long break.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_cycle_slider,
+            )
+        )
+
+        self.pomodoro_auto_breaks_switch = SwitchButton(
+            bool(self.settings_state["pomodoro"].get("auto_start_breaks", False))
+        )
+        self.pomodoro_auto_breaks_switch.toggledValue.connect(self._set_pomodoro_auto_start_breaks)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Auto-start breaks",
+                "Start short and long break timers automatically when work ends.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_auto_breaks_switch,
+            )
+        )
+
+        self.pomodoro_auto_focus_switch = SwitchButton(
+            bool(self.settings_state["pomodoro"].get("auto_start_focus", False))
+        )
+        self.pomodoro_auto_focus_switch.toggledValue.connect(self._set_pomodoro_auto_start_focus)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("auto_awesome"),
+                "Auto-start focus",
+                "Begin the next work session automatically after a break ends.",
+                self.icon_font,
+                self.ui_font,
+                self.pomodoro_auto_focus_switch,
+            )
+        )
+
+        self.pomodoro_status = QLabel("Pomodoro widget defaults are ready.")
+        self.pomodoro_status.setWordWrap(True)
+        self.pomodoro_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.pomodoro_status)
+
+        section = ExpandableServiceSection(
+            "pomodoro_widget",
+            "Pomodoro",
+            "Run a focused work timer with quick breaks, a progress ring, and Matugen-aware styling.",
+            material_icon("timer"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("pomodoro_widget"),
+            lambda enabled: self._set_service_enabled("pomodoro_widget", enabled),
+        )
+        self.service_sections["pomodoro_widget"] = section
+        return section
+
     def _build_ntfy_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -3197,7 +3396,7 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
-            if key == "reminders_widget":
+            if key in {"reminders_widget", "pomodoro_widget"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -3219,7 +3418,7 @@ class SettingsWindow(QWidget):
                 if switch is not None:
                     switch.setChecked(bool(service.get(setting_key, False)))
                     switch._apply_state()
-        if key in {"calendar_widget", "reminders_widget"}:
+        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget"}:
             display_switch = getattr(self, "service_display_switches", {}).get(key)
             if display_switch is not None:
                 display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
@@ -3231,6 +3430,11 @@ class SettingsWindow(QWidget):
                 switch._apply_state()
         if key == "reminders_widget":
             switch = getattr(self, "reminders_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
+        if key == "pomodoro_widget":
+            switch = getattr(self, "pomodoro_bar_switch", None)
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
@@ -3340,6 +3544,46 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("reminders", {})["tea_minutes"] = int(value)
         save_settings_state(self.settings_state)
         self._refresh_reminders_status()
+
+    def _set_pomodoro_work_minutes(self, value: int) -> None:
+        self.settings_state.setdefault("pomodoro", {})["work_minutes"] = max(5, min(90, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(f"Work sessions set to {int(value)} minute(s).")
+
+    def _set_pomodoro_short_break_minutes(self, value: int) -> None:
+        self.settings_state.setdefault("pomodoro", {})["short_break_minutes"] = max(1, min(30, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(f"Short breaks set to {int(value)} minute(s).")
+
+    def _set_pomodoro_long_break_minutes(self, value: int) -> None:
+        self.settings_state.setdefault("pomodoro", {})["long_break_minutes"] = max(5, min(60, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(f"Long breaks set to {int(value)} minute(s).")
+
+    def _set_pomodoro_long_break_every(self, value: int) -> None:
+        self.settings_state.setdefault("pomodoro", {})["long_break_every"] = max(2, min(8, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(f"Long break cadence set to every {int(value)} focus session(s).")
+
+    def _set_pomodoro_auto_start_breaks(self, enabled: bool) -> None:
+        self.settings_state.setdefault("pomodoro", {})["auto_start_breaks"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(
+                "Break timers will auto-start after work sessions." if enabled else "Break timers now wait for manual start."
+            )
+
+    def _set_pomodoro_auto_start_focus(self, enabled: bool) -> None:
+        self.settings_state.setdefault("pomodoro", {})["auto_start_focus"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(
+                "Focus sessions will auto-start after breaks." if enabled else "Focus sessions now wait for manual start."
+            )
 
     def _save_reminders_settings(self) -> None:
         reminders = self.settings_state.setdefault("reminders", {})

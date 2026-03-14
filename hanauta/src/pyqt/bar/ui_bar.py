@@ -47,6 +47,7 @@ WIFI_CONTROL = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
+POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
@@ -82,6 +83,7 @@ MATERIAL_ICONS = {
     "pause": "\ue034",
     "play_arrow": "\ue037",
     "power_settings_new": "\ue8ac",
+    "timer": "\ue425",
     "skip_next": "\ue044",
     "skip_previous": "\ue045",
     "system_update": "\ue62a",
@@ -640,6 +642,7 @@ class CyberBar(QWidget):
         self._vpn_popup_process: Optional[subprocess.Popen] = None
         self._christian_widget_process: Optional[subprocess.Popen] = None
         self._reminders_widget_process: Optional[subprocess.Popen] = None
+        self._pomodoro_widget_process: Optional[subprocess.Popen] = None
         self._ntfy_popup_process: Optional[subprocess.Popen] = None
         self._weather_popup_process: Optional[subprocess.Popen] = None
         self._calendar_popup_process: Optional[subprocess.Popen] = None
@@ -861,6 +864,10 @@ class CyberBar(QWidget):
         self.reminders_button.setProperty("nerdIcon", True)
         self.reminders_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.reminders_button.clicked.connect(self._open_reminders_widget)
+        self.pomodoro_button = QPushButton(material_icon("timer"))
+        self.pomodoro_button.setObjectName("statusIconButton")
+        self.pomodoro_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.pomodoro_button.clicked.connect(self._open_pomodoro_widget)
         self.ntfy_button = QPushButton(material_icon("notifications"))
         self.ntfy_button.setObjectName("statusIconButton")
         self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -872,13 +879,14 @@ class CyberBar(QWidget):
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.ntfy_button, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.pomodoro_button, self.ntfy_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.status_layout.addWidget(self.net_icon)
         self.status_layout.addWidget(self.vpn_icon)
         self.status_layout.addWidget(self.christian_button)
         self.status_layout.addWidget(self.reminders_button)
+        self.status_layout.addWidget(self.pomodoro_button)
         self.status_layout.addWidget(self.ntfy_button)
         self.status_layout.addWidget(self.caffeine_icon)
         self.status_layout.addWidget(self.battery_icon)
@@ -913,6 +921,7 @@ class CyberBar(QWidget):
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
+        self._sync_pomodoro_button_visibility()
         self._sync_ntfy_button_visibility()
         self._apply_bar_settings()
         self._install_debug_tooltips()
@@ -1277,6 +1286,7 @@ class CyberBar(QWidget):
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
+        self._sync_pomodoro_button_visibility()
         self._sync_ntfy_button_visibility()
         self._update_window_mask()
 
@@ -1585,6 +1595,15 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.reminders_button.setVisible(enabled and show_in_bar)
 
+    def _sync_pomodoro_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("pomodoro_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.pomodoro_button.setVisible(enabled and show_in_bar)
+
     def _sync_ntfy_button_visibility(self) -> None:
         settings = load_runtime_settings()
         ntfy = settings.get("ntfy", {})
@@ -1839,6 +1858,24 @@ class CyberBar(QWidget):
         except Exception:
             self._reminders_widget_process = None
 
+    def _open_pomodoro_widget(self) -> None:
+        if not POMODORO_WIDGET.exists():
+            return
+        if self._pomodoro_widget_process is not None and self._pomodoro_widget_process.poll() is None:
+            self._pomodoro_widget_process.terminate()
+            self._pomodoro_widget_process = None
+            return
+
+        python_bin = ROOT / ".venv" / "bin" / "python"
+        try:
+            self._pomodoro_widget_process = subprocess.Popen(
+                [str(python_bin), str(POMODORO_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._pomodoro_widget_process = None
+
     def _toggle_ntfy_popup(self) -> None:
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
             self._ntfy_popup_process.terminate()
@@ -1953,6 +1990,8 @@ class CyberBar(QWidget):
             self._weather_popup_process.terminate()
         if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
             self._christian_widget_process.terminate()
+        if self._pomodoro_widget_process is not None and self._pomodoro_widget_process.poll() is None:
+            self._pomodoro_widget_process.terminate()
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
             self._ntfy_popup_process.terminate()
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
