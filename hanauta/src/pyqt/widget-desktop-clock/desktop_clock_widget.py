@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import QPoint, QPointF, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF, QRegion
 from PyQt6.QtWidgets import QApplication, QWidget
 
 
@@ -113,6 +113,7 @@ class DesktopClockWidget(QWidget):
 
         self._apply_size()
         self._place_window()
+        self._update_window_mask()
 
         self.tick_timer = QTimer(self)
         self.tick_timer.timeout.connect(self.update)
@@ -152,9 +153,14 @@ class DesktopClockWidget(QWidget):
             self.settings_state = current_settings
             self._apply_size()
             self._place_window()
+            self._update_window_mask()
         else:
             self.settings_state = current_settings
         self.update()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_window_mask()
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
@@ -184,41 +190,54 @@ class DesktopClockWidget(QWidget):
             return moment.strftime("%H")
         return moment.strftime("%I")
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        del event
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
+    def _face_path(self) -> tuple[QPainterPath, QPointF, float, float]:
         rect = self.rect().adjusted(10, 10, -10, -10)
         center = QPointF(rect.center())
         outer_radius = min(rect.width(), rect.height()) / 2.0 - 6.0
         inner_radius = outer_radius * 0.90
-
         face_path = QPainterPath()
         scallops = 18
         for index in range(scallops * 6 + 1):
             angle = (math.tau * index) / (scallops * 6)
             pulse = math.sin(angle * scallops)
             radius = outer_radius + pulse * (outer_radius * 0.045)
-            point = QPointF(center.x() + math.cos(angle - math.pi / 2) * radius, center.y() + math.sin(angle - math.pi / 2) * radius)
+            point = QPointF(
+                center.x() + math.cos(angle - math.pi / 2) * radius,
+                center.y() + math.sin(angle - math.pi / 2) * radius,
+            )
             if index == 0:
                 face_path.moveTo(point)
             else:
                 face_path.lineTo(point)
         face_path.closeSubpath()
+        return face_path, center, outer_radius, inner_radius
 
-        painter.fillPath(face_path, QColor(rgba(self.theme.surface_container_high, 0.86)))
-        outline_pen = QPen(QColor(rgba(self.theme.outline, 0.38)), 1.5)
-        painter.setPen(outline_pen)
-        painter.drawPath(face_path)
+    def _update_window_mask(self) -> None:
+        face_path, _, _, _ = self._face_path()
+        polygon = QPolygonF(face_path.toFillPolygon())
+        self.setMask(QRegion(polygon.toPolygon()))
 
-        tick_pen = QPen(QColor(rgba(self.theme.text, 0.72)), max(2.0, outer_radius * 0.012))
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        face_path, center, outer_radius, inner_radius = self._face_path()
+        face_fill = QColor(self.theme.secondary)
+        face_fill.setAlphaF(0.92)
+        painter.fillPath(face_path, face_fill)
+
+        dial_color = QColor(self.theme.on_secondary)
+        dial_color.setAlphaF(0.42)
+        tick_pen = QPen(dial_color, max(2.0, outer_radius * 0.012))
         tick_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(tick_pen)
         for index in range(60):
             angle = (math.tau * index) / 60.0 - math.pi / 2
-            outer = inner_radius * 0.96
-            inner = inner_radius * (0.83 if index % 5 == 0 else 0.89)
+            is_major = index % 5 == 0
+            tick_length = inner_radius * (0.105 if is_major else 0.055)
+            outer = inner_radius * 0.92
+            inner = outer - tick_length
             start = QPointF(center.x() + math.cos(angle) * inner, center.y() + math.sin(angle) * inner)
             end = QPointF(center.x() + math.cos(angle) * outer, center.y() + math.sin(angle) * outer)
             painter.drawLine(start, end)
@@ -226,30 +245,42 @@ class DesktopClockWidget(QWidget):
         now = datetime.now()
         hour_text = self._format_hour(now)
         minute_text = now.strftime("%M")
-        digital_color = QColor(rgba(self.theme.text, 0.36))
+        digital_color = QColor(self.theme.on_secondary)
+        digital_color.setAlphaF(0.28)
         painter.setPen(digital_color)
         painter.setFont(QFont(self.display_font, max(44, int(outer_radius * 0.46)), QFont.Weight.Bold))
-        painter.drawText(self.rect().adjusted(0, int(-outer_radius * 0.22), 0, 0), Qt.AlignmentFlag.AlignCenter, hour_text)
-        painter.drawText(self.rect().adjusted(0, int(outer_radius * 0.18), 0, 0), Qt.AlignmentFlag.AlignCenter, minute_text)
+        painter.drawText(self.rect().adjusted(0, int(-outer_radius * 0.18), 0, 0), Qt.AlignmentFlag.AlignCenter, hour_text)
+        painter.drawText(self.rect().adjusted(0, int(outer_radius * 0.24), 0, 0), Qt.AlignmentFlag.AlignCenter, minute_text)
 
         hour_angle = ((now.hour % 12) + now.minute / 60.0) * (math.tau / 12.0) - math.pi / 2
         minute_angle = (now.minute + now.second / 60.0) * (math.tau / 60.0) - math.pi / 2
         second_angle = now.second * (math.tau / 60.0) - math.pi / 2
 
-        painter.setPen(QPen(QColor(rgba(self.theme.text, 0.84)), max(10.0, outer_radius * 0.07), cap=Qt.PenCapStyle.RoundCap))
-        painter.drawLine(center, QPointF(center.x() + math.cos(hour_angle) * inner_radius * 0.44, center.y() + math.sin(hour_angle) * inner_radius * 0.44))
+        hour_hand_color = QColor(self.theme.on_secondary)
+        hour_hand_color.setAlphaF(0.70)
+        minute_hand_color = QColor(self.theme.primary)
+        minute_hand_color.setAlphaF(0.96)
+        second_hand_color = QColor(self.theme.error)
+        second_hand_color.setAlphaF(0.82)
 
-        painter.setPen(QPen(QColor(rgba(self.theme.primary, 0.96)), max(7.0, outer_radius * 0.048), cap=Qt.PenCapStyle.RoundCap))
-        painter.drawLine(center, QPointF(center.x() + math.cos(minute_angle) * inner_radius * 0.63, center.y() + math.sin(minute_angle) * inner_radius * 0.63))
+        painter.setPen(QPen(hour_hand_color, max(10.0, outer_radius * 0.072), cap=Qt.PenCapStyle.RoundCap))
+        painter.drawLine(center, QPointF(center.x() + math.cos(hour_angle) * inner_radius * 0.42, center.y() + math.sin(hour_angle) * inner_radius * 0.42))
+
+        painter.setPen(QPen(minute_hand_color, max(8.0, outer_radius * 0.052), cap=Qt.PenCapStyle.RoundCap))
+        painter.drawLine(center, QPointF(center.x() + math.cos(minute_angle) * inner_radius * 0.62, center.y() + math.sin(minute_angle) * inner_radius * 0.62))
 
         if bool(self.settings_state.get("clock", {}).get("show_seconds", True)):
-            painter.setPen(QPen(QColor(self.theme.error), max(3.0, outer_radius * 0.018), cap=Qt.PenCapStyle.RoundCap))
+            painter.setPen(QPen(second_hand_color, max(3.0, outer_radius * 0.018), cap=Qt.PenCapStyle.RoundCap))
             painter.drawLine(center, QPointF(center.x() + math.cos(second_angle) * inner_radius * 0.70, center.y() + math.sin(second_angle) * inner_radius * 0.70))
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(rgba(self.theme.primary_container, 0.92)))
+        center_outer = QColor(self.theme.primary)
+        center_outer.setAlphaF(0.95)
+        painter.setBrush(center_outer)
         painter.drawEllipse(center, max(8.0, outer_radius * 0.05), max(8.0, outer_radius * 0.05))
-        painter.setBrush(QColor(self.theme.on_primary_container))
+        center_inner = QColor(self.theme.primary_container)
+        center_inner.setAlphaF(0.96)
+        painter.setBrush(center_inner)
         painter.drawEllipse(center, max(3.0, outer_radius * 0.018), max(3.0, outer_radius * 0.018))
 
 

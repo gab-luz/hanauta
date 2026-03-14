@@ -97,6 +97,7 @@ shadow-exclude = [
   "window_type = 'dock'",
   "class_g = 'Rofi'",
   "class_g = 'Conky'",
+  "name = 'Hanauta Desktop Clock'",
 ];
 
 rounded-corners-exclude = [
@@ -104,7 +105,8 @@ rounded-corners-exclude = [
   "class_g = 'Rofi'",
   "class_g = 'Conky'",
   "class_g = 'mpv'",
-  "name = 'PyQt Notification Center'"
+  "name = 'PyQt Notification Center'",
+  "name = 'Hanauta Desktop Clock'"
   
 ];
 
