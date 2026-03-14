@@ -291,7 +291,7 @@ Window {
                                 height: root.tileSize
                                 hoverEnabled: true
                                 focusPolicy: Qt.StrongFocus
-                                property bool highlighted: hovered || activeFocus
+                                property bool tileHighlighted: hovered || activeFocus
 
                                 // click -> confirm dialog
                                 onClicked: {
@@ -308,11 +308,11 @@ Window {
                                         id: baseRect
                                         anchors.fill: parent
                                         radius: root.tileRadius
-                                        color: tileBtn.highlighted ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
+                                        color: tileBtn.tileHighlighted ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
                                         border.width: tileBtn.activeFocus ? 2 : 1
                                         border.color: tileBtn.activeFocus
                                                       ? Qt.rgba(1, 1, 1, 0.30)
-                                                      : (tileBtn.highlighted ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.10))
+                                                      : (tileBtn.tileHighlighted ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.10))
                                         Behavior on color { ColorAnimation { duration: 160 } }
                                     }
 
@@ -320,7 +320,7 @@ Window {
                                         anchors.fill: parent
                                         radius: root.tileRadius
                                         color: model.accent
-                                        opacity: tileBtn.highlighted ? 0.16 : 0.0
+                                        opacity: tileBtn.tileHighlighted ? 0.16 : 0.0
                                         Behavior on opacity { NumberAnimation { duration: 220 } }
                                     }
                                 }
@@ -336,8 +336,8 @@ Window {
                                     anchors.centerIn: parent
 
                                     transformOrigin: Item.Center
-                                    scale: tileBtn.highlighted ? 1.10 : 1.0
-                                    rotation: tileBtn.highlighted ? model.hoverRotation : 0
+                                    scale: tileBtn.tileHighlighted ? 1.10 : 1.0
+                                    rotation: tileBtn.tileHighlighted ? model.hoverRotation : 0
 
                                     Behavior on scale { NumberAnimation { duration: 220 } }
                                     Behavior on rotation { NumberAnimation { duration: 500 } }
@@ -350,7 +350,7 @@ Window {
                                 horizontalAlignment: Text.AlignHCenter
                                 font.pixelSize: 13
                                 font.weight: 600
-                                color: tileBtn.highlighted ? model.accent : Qt.rgba(209/255, 213/255, 219/255, 1.0)
+                                color: tileBtn.tileHighlighted ? model.accent : Qt.rgba(209/255, 213/255, 219/255, 1.0)
                                 Behavior on color { ColorAnimation { duration: 180 } }
                             }
                         }
