@@ -8,7 +8,7 @@ Window {
     id: root
     visible: true
     visibility: Window.FullScreen
-    flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+    flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
     color: "transparent"
     title: "Power Menu"
 
@@ -291,6 +291,7 @@ Window {
                                 height: root.tileSize
                                 hoverEnabled: true
                                 focusPolicy: Qt.StrongFocus
+                                property bool highlighted: hovered || activeFocus
 
                                 // click -> confirm dialog
                                 onClicked: {
@@ -307,41 +308,20 @@ Window {
                                         id: baseRect
                                         anchors.fill: parent
                                         radius: root.tileRadius
-                                        color: tileBtn.hovered ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
+                                        color: tileBtn.highlighted ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
                                         border.width: tileBtn.activeFocus ? 2 : 1
                                         border.color: tileBtn.activeFocus
                                                       ? Qt.rgba(1, 1, 1, 0.30)
-                                                      : (tileBtn.hovered ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.10))
+                                                      : (tileBtn.highlighted ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.10))
+                                        Behavior on color { ColorAnimation { duration: 160 } }
                                     }
 
-                                    // glow source (hidden), rendered via MultiEffect for blur feel
                                     Rectangle {
-                                        id: glowSource
                                         anchors.fill: parent
                                         radius: root.tileRadius
                                         color: model.accent
-                                        visible: false
-                                    }
-
-                                    MultiEffect {
-                                        anchors.fill: parent
-                                        source: glowSource
-                                        blurEnabled: true
-                                        blur: 1.0
-                                        blurMax: 80
-                                        opacity: tileBtn.hovered ? 0.35 : 0.0
+                                        opacity: tileBtn.highlighted ? 0.16 : 0.0
                                         Behavior on opacity { NumberAnimation { duration: 220 } }
-                                    }
-
-                                    // subtle shadow
-                                    MultiEffect {
-                                        anchors.fill: parent
-                                        source: baseRect
-                                        shadowEnabled: true
-                                        shadowOpacity: tileBtn.hovered ? 0.25 : 0.18
-                                        shadowBlur: 0.60
-                                        shadowVerticalOffset: 10
-                                        shadowHorizontalOffset: 0
                                     }
                                 }
 
@@ -356,8 +336,8 @@ Window {
                                     anchors.centerIn: parent
 
                                     transformOrigin: Item.Center
-                                    scale: tileBtn.hovered ? 1.10 : 1.0
-                                    rotation: tileBtn.hovered ? model.hoverRotation : 0
+                                    scale: tileBtn.highlighted ? 1.10 : 1.0
+                                    rotation: tileBtn.highlighted ? model.hoverRotation : 0
 
                                     Behavior on scale { NumberAnimation { duration: 220 } }
                                     Behavior on rotation { NumberAnimation { duration: 500 } }
@@ -370,7 +350,7 @@ Window {
                                 horizontalAlignment: Text.AlignHCenter
                                 font.pixelSize: 13
                                 font.weight: 600
-                                color: tileBtn.hovered ? model.accent : Qt.rgba(209/255, 213/255, 219/255, 1.0)
+                                color: tileBtn.highlighted ? model.accent : Qt.rgba(209/255, 213/255, 219/255, 1.0)
                                 Behavior on color { ColorAnimation { duration: 180 } }
                             }
                         }
