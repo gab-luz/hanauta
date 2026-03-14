@@ -13,7 +13,7 @@ Window {
     flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
 
     property var colors: backend.palette
-    property bool hiddenState: backend.autoHide && !hoverTracker.containsMouse && !settingsPopup.opened
+    property bool hiddenState: backend.autoHide && !hoverTracker.containsMouse && !settingsWindow.visible
     property int appButtonHeight: Math.max(64, backend.itemHeight)
     property int iconBoxSize: Math.min(48, Math.max(44, appButtonHeight - 24))
 
@@ -29,10 +29,22 @@ Window {
     }
 
     onHiddenStateChanged: refreshGeometry()
-    onWidthChanged: backend.syncWindowGeometry(x, y, width, height, hiddenState)
-    onHeightChanged: backend.syncWindowGeometry(x, y, width, height, hiddenState)
-    onXChanged: backend.syncWindowGeometry(x, y, width, height, hiddenState)
-    onYChanged: backend.syncWindowGeometry(x, y, width, height, hiddenState)
+    onWidthChanged: {
+        backend.syncWindowGeometry(x, y, width, height, hiddenState)
+        positionSettingsWindow()
+    }
+    onHeightChanged: {
+        backend.syncWindowGeometry(x, y, width, height, hiddenState)
+        positionSettingsWindow()
+    }
+    onXChanged: {
+        backend.syncWindowGeometry(x, y, width, height, hiddenState)
+        positionSettingsWindow()
+    }
+    onYChanged: {
+        backend.syncWindowGeometry(x, y, width, height, hiddenState)
+        positionSettingsWindow()
+    }
 
     Component.onCompleted: {
         refreshGeometry()
@@ -43,9 +55,29 @@ Window {
         appear.restart()
     }
 
+    function positionSettingsWindow() {
+        if (!settingsWindow.visible)
+            return
+        settingsWindow.x = Math.round(root.x + root.width - settingsWindow.width - 12)
+        settingsWindow.y = Math.round(root.y - settingsWindow.height - 14)
+    }
+
+    function toggleSettingsWindow() {
+        if (settingsWindow.visible) {
+            settingsWindow.close()
+            return
+        }
+        settingsWindow.show()
+        positionSettingsWindow()
+        settingsWindow.requestActivate()
+    }
+
     Connections {
         target: backend
-        function onConfigChanged() { refreshGeometry() }
+        function onConfigChanged() {
+            refreshGeometry()
+            positionSettingsWindow()
+        }
     }
 
     Behavior on y {
@@ -194,16 +226,46 @@ Window {
                             width: 60
                             height: appButtonHeight
 
-                            property bool focused: !!modelData.focused
-                            property bool running: (modelData.running || 0) > 0
+                            property string itemWmClass: String(modelData.wmClass || "")
+                            property bool itemFocused: backend.isWindowGroupFocused(itemWmClass) || !!modelData.focused
+                            property bool itemRunning: backend.isWindowGroupRunning(itemWmClass) || (modelData.running || 0) > 0
+                            property bool itemHovered: pointerArea.containsMouse
+
+                            function shellColor() {
+                                if (itemHovered)
+                                    return colors.hoverBg
+                                if (itemFocused)
+                                    return colors.focusedBg
+                                if (itemRunning)
+                                    return colors.runningBg
+                                return "transparent"
+                            }
+
+                            function shellBorderColor() {
+                                if (itemFocused)
+                                    return colors.focusedBorder
+                                if (itemRunning)
+                                    return colors.runningBorder
+                                if (itemHovered)
+                                    return colors.utilityBorder
+                                return "transparent"
+                            }
+
+                            function dotColor() {
+                                if (itemFocused)
+                                    return colors.dot
+                                if (itemRunning)
+                                    return colors.text
+                                return "transparent"
+                            }
 
                             Rectangle {
                                 id: appShell
                                 anchors.fill: parent
                                 radius: 20
-                                color: focused ? colors.focusedBg : (running ? colors.runningBg : "transparent")
+                                color: shellColor()
                                 border.width: 1
-                                border.color: focused ? colors.focusedBorder : (running ? colors.runningBorder : "transparent")
+                                border.color: shellBorderColor()
 
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Behavior on border.color { ColorAnimation { duration: 120 } }
@@ -246,22 +308,22 @@ Window {
                                         height: 6
                                         radius: 3
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        color: running ? colors.dot : "transparent"
+                                        color: dotColor()
+                                        Behavior on color { ColorAnimation { duration: 120 } }
                                     }
                                 }
                             }
 
                             MouseArea {
+                                id: pointerArea
                                 anchors.fill: parent
                                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                                 hoverEnabled: true
-                                onEntered: appShell.color = focused ? colors.focusedBg : colors.hoverBg
-                                onExited: appShell.color = focused ? colors.focusedBg : (running ? colors.runningBg : "transparent")
                                 onClicked: function(mouse) {
                                     if (mouse.button === Qt.MiddleButton) {
                                         backend.openNewItem(modelData.itemId)
                                     } else {
-                                        backend.activateItem(modelData.itemId)
+                                        backend.activatePreferred(modelData.itemId, itemWmClass, itemRunning)
                                     }
                                 }
                             }
@@ -327,12 +389,12 @@ Window {
                 Layout.preferredHeight: 42
                 text: backend.glyph("settings")
                 hoverEnabled: true
-                onClicked: settingsPopup.opened ? settingsPopup.close() : settingsPopup.open()
+                onClicked: root.toggleSettingsWindow()
                 background: Rectangle {
                     radius: width / 2
-                    color: settingsButton.hovered || settingsPopup.opened ? colors.hoverBg : "transparent"
+                    color: settingsButton.hovered || settingsWindow.visible ? colors.hoverBg : "transparent"
                     border.width: 1
-                    border.color: settingsButton.hovered || settingsPopup.opened ? colors.utilityBorder : "transparent"
+                    border.color: settingsButton.hovered || settingsWindow.visible ? colors.utilityBorder : "transparent"
                 }
                 contentItem: Text {
                     text: settingsButton.text
@@ -346,252 +408,296 @@ Window {
         }
     }
 
-    Popup {
-        id: settingsPopup
-        x: root.width - width - 20
-        y: root.height - height - panel.height - 18
+    Window {
+        id: settingsWindow
         width: 320
-        height: 420
-        padding: 0
-        modal: false
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle {
+        height: 462
+        visible: false
+        color: "transparent"
+        title: "CyberDock Settings"
+        transientParent: root
+        flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+
+        onVisibleChanged: if (visible) root.positionSettingsWindow()
+
+        Rectangle {
+            anchors.fill: parent
             radius: 28
             color: Qt.alpha(colors.panelBg, 0.98)
             border.width: 1
             border.color: colors.panelBorder
-        }
-
-        contentItem: ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 18
-            spacing: 14
-
-            RowLayout {
-                Layout.fillWidth: true
-
-                ColumnLayout {
-                    spacing: 2
-                    Text {
-                        text: "Dock settings"
-                        color: colors.text
-                        font.family: "Outfit"
-                        font.pixelSize: 18
-                        font.weight: Font.DemiBold
-                    }
-                    Text {
-                        text: "Native preview with the same dock.toml"
-                        color: colors.textMuted
-                        font.family: backend.uiFontFamily
-                        font.pixelSize: 12
-                    }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                ToolButton {
-                    text: backend.glyph("open_in_new")
-                    onClicked: backend.openDockConfig()
-                    background: Rectangle {
-                        radius: width / 2
-                        color: parent.hovered ? colors.hoverBg : "transparent"
-                    }
-                    contentItem: Text {
-                        text: parent.text
-                        color: colors.icon
-                        font.family: backend.materialFontFamily
-                        font.pixelSize: 16
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                implicitHeight: 1
-                color: colors.separator
-            }
-
-            SwitchDelegate {
-                Layout.fillWidth: true
-                text: "Auto-hide"
-                checked: backend.autoHide
-                onToggled: backend.autoHide = checked
-                indicator: Rectangle {
-                    implicitWidth: 42
-                    implicitHeight: 26
-                    radius: 13
-                    color: parent.checked ? colors.focusedBg : colors.utilityBg
-                    border.width: 1
-                    border.color: parent.checked ? colors.focusedBorder : colors.utilityBorder
-                    Rectangle {
-                        width: 18
-                        height: 18
-                        radius: 9
-                        x: parent.checked ? 20 : 4
-                        y: 4
-                        color: colors.text
-                        Behavior on x { NumberAnimation { duration: 120 } }
-                    }
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: colors.text
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 14
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: "transparent"
-                }
-            }
-
-            SwitchDelegate {
-                Layout.fillWidth: true
-                text: "Keep icons left"
-                checked: backend.iconsLeft
-                onToggled: backend.iconsLeft = checked
-                indicator: Rectangle {
-                    implicitWidth: 42
-                    implicitHeight: 26
-                    radius: 13
-                    color: parent.checked ? colors.focusedBg : colors.utilityBg
-                    border.width: 1
-                    border.color: parent.checked ? colors.focusedBorder : colors.utilityBorder
-                    Rectangle {
-                        width: 18
-                        height: 18
-                        radius: 9
-                        x: parent.checked ? 20 : 4
-                        y: 4
-                        color: colors.text
-                        Behavior on x { NumberAnimation { duration: 120 } }
-                    }
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: colors.text
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 14
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle { color: "transparent" }
-            }
+            clip: true
 
             ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
+                anchors.fill: parent
+                anchors.margins: 18
+                spacing: 14
 
-                Text {
-                    text: "Position"
-                    color: colors.textMuted
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 12
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        spacing: 2
+                        Text {
+                            text: "Dock settings"
+                            color: colors.text
+                            font.family: "Outfit"
+                            font.pixelSize: 18
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            text: "Native preview with the same dock.toml"
+                            color: colors.textMuted
+                            font.family: backend.uiFontFamily
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    ToolButton {
+                        text: backend.glyph("open_in_new")
+                        hoverEnabled: true
+                        onClicked: backend.openDockConfig()
+                        background: Rectangle {
+                            radius: width / 2
+                            color: parent.hovered ? colors.hoverBg : "transparent"
+                        }
+                        contentItem: Text {
+                            text: parent.text
+                            color: colors.icon
+                            font.family: backend.materialFontFamily
+                            font.pixelSize: 16
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+
+                    ToolButton {
+                        text: "\u2715"
+                        hoverEnabled: true
+                        onClicked: settingsWindow.close()
+                        background: Rectangle {
+                            radius: width / 2
+                            color: parent.hovered ? colors.hoverBg : "transparent"
+                        }
+                        contentItem: Text {
+                            text: parent.text
+                            color: colors.icon
+                            font.family: backend.uiFontFamily
+                            font.pixelSize: 14
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                 }
 
-                ComboBox {
+                Rectangle {
                     Layout.fillWidth: true
-                    model: [
-                        { label: "Left", value: "left" },
-                        { label: "Center", value: "center" },
-                        { label: "Right", value: "right" }
-                    ]
-                    textRole: "label"
-                    currentIndex: {
-                        for (var i = 0; i < model.length; i++) {
-                            if (model[i].value === backend.position) {
-                                return i
+                    implicitHeight: 1
+                    color: colors.separator
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    ColumnLayout {
+                        width: 268
+                        spacing: 14
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Auto-hide"
+                                color: colors.text
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 14
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            Switch {
+                                checked: backend.autoHide
+                                onToggled: backend.autoHide = checked
+                                indicator: Rectangle {
+                                    implicitWidth: 42
+                                    implicitHeight: 26
+                                    radius: 13
+                                    color: parent.checked ? colors.focusedBg : colors.utilityBg
+                                    border.width: 1
+                                    border.color: parent.checked ? colors.focusedBorder : colors.utilityBorder
+
+                                    Rectangle {
+                                        width: 18
+                                        height: 18
+                                        radius: 9
+                                        x: parent.parent.checked ? 20 : 4
+                                        y: 4
+                                        color: colors.text
+                                        Behavior on x { NumberAnimation { duration: 120 } }
+                                    }
+                                }
+                                contentItem: Item {}
                             }
                         }
-                        return 1
-                    }
-                    onActivated: backend.position = model[index].value
-                }
-            }
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
 
-                Text {
-                    text: "Width"
-                    color: colors.textMuted
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 12
-                }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Keep icons left"
+                                color: colors.text
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 14
+                                verticalAlignment: Text.AlignVCenter
+                            }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
+                            Switch {
+                                checked: backend.iconsLeft
+                                onToggled: backend.iconsLeft = checked
+                                indicator: Rectangle {
+                                    implicitWidth: 42
+                                    implicitHeight: 26
+                                    radius: 13
+                                    color: parent.checked ? colors.focusedBg : colors.utilityBg
+                                    border.width: 1
+                                    border.color: parent.checked ? colors.focusedBorder : colors.utilityBorder
 
-                    SpinBox {
-                        Layout.fillWidth: true
-                        from: 0
-                        to: 100
-                        value: backend.dockWidth
-                        editable: true
-                        onValueModified: backend.dockWidth = value
-                    }
+                                    Rectangle {
+                                        width: 18
+                                        height: 18
+                                        radius: 9
+                                        x: parent.parent.checked ? 20 : 4
+                                        y: 4
+                                        color: colors.text
+                                        Behavior on x { NumberAnimation { duration: 120 } }
+                                    }
+                                }
+                                contentItem: Item {}
+                            }
+                        }
 
-                    ComboBox {
-                        Layout.preferredWidth: 90
-                        model: ["%", "px"]
-                        currentIndex: backend.dockWidthUnit === "%" ? 0 : 1
-                        onActivated: backend.dockWidthUnit = model[index]
-                    }
-                }
-            }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
+                            Text {
+                                text: "Position"
+                                color: colors.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 12
+                            }
 
-                Text {
-                    text: "Icon height"
-                    color: colors.textMuted
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 12
-                }
+                            ComboBox {
+                                Layout.fillWidth: true
+                                model: [
+                                    { label: "Left", value: "left" },
+                                    { label: "Center", value: "center" },
+                                    { label: "Right", value: "right" }
+                                ]
+                                textRole: "label"
+                                currentIndex: {
+                                    for (var i = 0; i < model.length; i++) {
+                                        if (model[i].value === backend.position)
+                                            return i
+                                    }
+                                    return 1
+                                }
+                                onActivated: backend.position = model[index].value
+                            }
+                        }
 
-                Slider {
-                    Layout.fillWidth: true
-                    from: 64
-                    to: 120
-                    value: backend.itemHeight
-                    onMoved: backend.itemHeight = Math.round(value)
-                }
-            }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
+                            Text {
+                                text: "Width"
+                                color: colors.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 12
+                            }
 
-                Text {
-                    text: "Transparency"
-                    color: colors.textMuted
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 12
-                }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 10
+                                SpinBox {
+                                    Layout.fillWidth: true
+                                    from: 0
+                                    to: backend.dockWidthUnit === "%" ? 100 : 2400
+                                    value: backend.dockWidth
+                                    editable: true
+                                    onValueModified: backend.dockWidth = value
+                                }
 
-                    Slider {
-                        Layout.fillWidth: true
-                        from: 0
-                        to: 100
-                        value: backend.transparency
-                        onMoved: backend.transparency = Math.round(value)
-                    }
+                                ComboBox {
+                                    Layout.preferredWidth: 90
+                                    model: ["%", "px"]
+                                    currentIndex: backend.dockWidthUnit === "%" ? 0 : 1
+                                    onActivated: backend.dockWidthUnit = model[index]
+                                }
+                            }
+                        }
 
-                    Text {
-                        text: Math.round(backend.transparency) + "%"
-                        color: colors.text
-                        font.family: backend.monoFontFamily
-                        font.pixelSize: 12
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Text {
+                                text: "Icon height"
+                                color: colors.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 12
+                            }
+
+                            Slider {
+                                Layout.fillWidth: true
+                                from: 64
+                                to: 120
+                                value: backend.itemHeight
+                                onMoved: backend.itemHeight = Math.round(value)
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Text {
+                                text: "Transparency"
+                                color: colors.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 12
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                Slider {
+                                    Layout.fillWidth: true
+                                    from: 0
+                                    to: 100
+                                    value: backend.transparency
+                                    onMoved: backend.transparency = Math.round(value)
+                                }
+
+                                Text {
+                                    text: Math.round(backend.transparency) + "%"
+                                    color: colors.text
+                                    font.family: backend.monoFontFamily
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
                     }
                 }
             }
