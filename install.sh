@@ -350,6 +350,9 @@ install_packages_debian() {
     bluez
     cava
     python3 python3-pip python3-venv
+    build-essential pkg-config
+    libglib2.0-dev libgtk-3-dev
+    qt6-base-dev
     libxkbcommon-x11-0
     libxcb-cursor0
     sassc
@@ -385,6 +388,8 @@ install_packages_arch() {
     bluez bluez-utils
     cava
     python python-pip
+    gcc pkgconf glib2
+    qt6-base
     libxkbcommon-x11
     libxcb-cursor
     sassc
@@ -474,6 +479,9 @@ install_deadd_arch() {
 install_notification_packages_debian() {
   local -a pkgs=(
     python3 python3-pip python3-venv
+    build-essential pkg-config
+    libglib2.0-dev libgtk-3-dev
+    qt6-base-dev
     libnotify-bin jq curl
     x11-utils x11-xserver-utils
   )
@@ -486,10 +494,31 @@ install_notification_packages_debian() {
 install_notification_packages_arch() {
   local -a pkgs=(
     python python-pip
+    gcc pkgconf glib2 gtk3
+    qt6-base
     libnotify jq curl
     xorg-xrandr xorg-xsetroot
   )
   install_pacman_group "notification daemon" "${pkgs[@]}"
+}
+
+build_native_services() {
+  local root="$HOME/.config/i3"
+  local build_script="$root/hanauta/src/service/build.sh"
+
+  if [ ! -f "$build_script" ]; then
+    warn "Native service build script not found at $build_script"
+    return 1
+  fi
+
+  info "Building native Hanauta C services..."
+  if (cd "$root" && bash "$build_script"); then
+    success "Native Hanauta services built"
+    return 0
+  fi
+
+  error "Failed to build native Hanauta services"
+  return 1
 }
 
 copy_dotfiles() {
@@ -574,7 +603,7 @@ install_local_binaries() {
     return 0
   fi
 
-  for name in matugen hellwal i3lock-color hanauta-notifyctl hanauta-notify-send; do
+  for name in matugen hellwal i3lock-color hanauta-notifyctl hanauta-notify-send hanauta-clock; do
     if [ -x "$src_dir/$name" ]; then
       ln -sfn "$src_dir/$name" "$target_dir/$name"
       linked+=("$name")
@@ -714,6 +743,7 @@ main() {
 
   setup_python_venv
   copy_dotfiles
+  build_native_services
   ensure_dock_defaults
   ensure_hanauta_settings
   link_configs
