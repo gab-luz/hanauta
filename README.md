@@ -94,3 +94,4 @@ Run the full desktop installer:
 - The active desktop UI stack is PyQt6.
 - Eww helper scripts are still reused where they already provide reliable system actions or state.
 - This project is tuned for an opinionated personal desktop, not for every possible Linux environment.
+- Some plugin and widget ideas were also informed by references like `dms-plugins`: https://github.com/AvengeMedia/dms-plugins
