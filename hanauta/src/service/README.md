@@ -15,6 +15,9 @@ This folder now contains the native C background stack for Hanauta:
 - `hanauta-clock.cpp`
   - Native Qt desktop clock.
   - Uses the same Hanauta settings file as the PyQt clock.
+- `hanauta-powermenu.cpp`
+  - Native Qt/QML powermenu.
+  - Reuses `src/pyqt/powermenu/powermenu.qml` for visual parity with the Python version.
 
 ## Build
 
@@ -28,6 +31,7 @@ That produces:
 - `hanauta/bin/hanauta-notifyctl`
 - `hanauta/bin/hanauta-notifyd`
 - `hanauta/bin/hanauta-clock`
+- `hanauta/bin/hanauta-powermenu`
 
 ## Runtime
 
