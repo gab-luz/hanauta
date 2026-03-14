@@ -112,6 +112,9 @@ no_focus [title="Hanauta Desktop Clock"]
 # Window switcher rules
 for_window [title="Hanauta Window Switcher"] floating enable, border pixel 0, sticky enable
 
+# Power menu overlay rules
+for_window [title="Power Menu"] floating enable, border pixel 0, sticky enable
+
 # Hanauta notification toasts should never take focus
 for_window [title="^Hanauta Notification .*"] floating enable, border pixel 0, sticky enable
 no_focus [title="^Hanauta Notification .*"]

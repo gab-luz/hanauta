@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import platform
 import random
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -21,7 +23,7 @@ from urllib import error, request
 from urllib import parse
 import locale as pylocale
 
-from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QTimer, QStringListModel, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -34,6 +36,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -61,6 +64,8 @@ WALLPAPER_SCRIPT = ROOT / "hanauta" / "src" / "eww" / "scripts" / "set_wallpaper
 MATUGEN_SCRIPT = ROOT / "hanauta" / "src" / "eww" / "scripts" / "run_matugen.sh"
 CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
 RENDERED_WALLPAPER_DIR = Path.home() / ".wallpapers" / "rendered"
+WALLPAPER_SOURCE_CACHE_DIR = ROOT / "hanauta" / "vendor" / "wallpaper-sources"
+COMMUNITY_WALLPAPER_DIR = ROOT / "hanauta" / "walls" / "community"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PYQT_THEME_DIR = Path.home() / ".local" / "state" / "hanauta" / "theme"
@@ -126,6 +131,19 @@ wintypes:
   dropdown_menu = { shadow = false; };
 };
 """
+
+WALLPAPER_SOURCE_PRESETS = {
+    "caelestia": {
+        "label": "Caelestia shell",
+        "repo": "https://github.com/caelestia-dots/shell.git",
+        "subdirs": ["assets"],
+    },
+    "end4": {
+        "label": "End-4 dots-hyprland",
+        "repo": "https://github.com/end-4/dots-hyprland.git",
+        "subdirs": ["dots/.config/quickshell/ii/assets/images"],
+    },
+}
 
 MATERIAL_ICONS = {
     "close": "\ue5cd",
@@ -1162,9 +1180,229 @@ def write_default_pyqt_palette(use_matugen: bool = False) -> None:
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
+    return recursive_wallpaper_candidates(folder)
+
+
+def recursive_wallpaper_candidates(folder: Path) -> list[Path]:
     if not folder.exists() or not folder.is_dir():
         return []
-    return sorted([path for path in folder.iterdir() if path.suffix.lower() in IMAGE_SUFFIXES])
+    return sorted(
+        path
+        for path in folder.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    )
+
+
+def file_sha1(path: Path) -> str | None:
+    digest = hashlib.sha1()
+    try:
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def load_json_file(path: Path) -> dict:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def nested_dict_value(payload: dict, *keys: str) -> object | None:
+    current: object = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def expand_wallpaper_dir(path_value: object) -> Path | None:
+    if not isinstance(path_value, str):
+        return None
+    text = path_value.strip()
+    if not text:
+        return None
+    return Path(os.path.expandvars(text)).expanduser()
+
+
+def caelestia_wallpaper_dirs(cache_dir: Path) -> list[Path]:
+    shell_config = Path.home() / ".config" / "caelestia" / "shell.json"
+    config = load_json_file(shell_config)
+    configured_dir = expand_wallpaper_dir(nested_dict_value(config, "paths", "wallpaperDir"))
+    env_dir = expand_wallpaper_dir(os.environ.get("CAELESTIA_WALLPAPERS_DIR"))
+    candidates = [
+        configured_dir,
+        env_dir,
+        Path.home() / "Wallpaper-Bank" / "wallpapers",
+        Path.home() / "Wallpaper-Bank",
+        Path.home() / "Pictures" / "Wallpapers" / "showcase",
+        Path.home() / "Pictures" / "Wallpapers",
+        cache_dir / "assets",
+    ]
+    results: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        key = str(candidate.expanduser())
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(candidate)
+    return results
+
+
+def end4_wallpaper_dirs(cache_dir: Path) -> list[Path]:
+    shell_config = Path.home() / ".config" / "illogical-impulse" / "config.json"
+    config = load_json_file(shell_config)
+    configured_file = expand_wallpaper_dir(nested_dict_value(config, "background", "wallpaperPath"))
+    configured_dir = configured_file.parent if configured_file and configured_file.suffix else configured_file
+    candidates = [
+        configured_dir,
+        Path.home() / "Wallpaper-Bank" / "wallpapers",
+        Path.home() / "Wallpaper-Bank",
+        Path.home() / "Pictures" / "Wallpapers" / "showcase",
+        Path.home() / "Pictures" / "Wallpapers",
+        cache_dir / "dots" / ".config" / "quickshell" / "ii" / "assets" / "images",
+    ]
+    results: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        key = str(candidate.expanduser())
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(candidate)
+    return results
+
+
+def wallpaper_source_directories(source_key: str, cache_dir: Path) -> list[Path]:
+    if source_key == "caelestia":
+        return caelestia_wallpaper_dirs(cache_dir)
+    if source_key == "end4":
+        return end4_wallpaper_dirs(cache_dir)
+
+    preset = WALLPAPER_SOURCE_PRESETS.get(source_key, {})
+    return [cache_dir / str(subdir) for subdir in preset.get("subdirs", [])]
+
+
+def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | None]:
+    preset = WALLPAPER_SOURCE_PRESETS.get(source_key)
+    if not preset:
+        return False, "Wallpaper source preset is missing.", None
+
+    repo_url = str(preset.get("repo", "")).strip()
+    if not repo_url:
+        return False, "Wallpaper source repository is missing.", None
+
+    cache_dir = WALLPAPER_SOURCE_CACHE_DIR / source_key
+    target_dir = COMMUNITY_WALLPAPER_DIR / source_key
+    WALLPAPER_SOURCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    COMMUNITY_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if (cache_dir / ".git").exists():
+            fetch = subprocess.run(
+                ["git", "-C", str(cache_dir), "fetch", "--depth", "1", "origin"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if fetch.returncode != 0:
+                message = (fetch.stderr or fetch.stdout or "Failed to refresh wallpaper source.").strip()
+                return False, message, None
+            reset = subprocess.run(
+                ["git", "-C", str(cache_dir), "reset", "--hard", "FETCH_HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if reset.returncode != 0:
+                message = (reset.stderr or reset.stdout or "Failed to update wallpaper source.").strip()
+                return False, message, None
+        else:
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir, ignore_errors=True)
+            clone = subprocess.run(
+                ["git", "clone", "--depth", "1", repo_url, str(cache_dir)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if clone.returncode != 0:
+                message = (clone.stderr or clone.stdout or "Failed to clone wallpaper source.").strip()
+                return False, message, None
+    except Exception as exc:
+        return False, str(exc), None
+
+    source_dirs = wallpaper_source_directories(source_key, cache_dir)
+    candidates: list[Path] = []
+    source_labels: list[str] = []
+    for source_dir in source_dirs:
+        if not source_dir.exists():
+            continue
+        discovered = recursive_wallpaper_candidates(source_dir)
+        if not discovered:
+            continue
+        candidates.extend(discovered)
+        source_labels.append(str(source_dir))
+    if not candidates:
+        candidates = [
+            path for path in cache_dir.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+        ]
+    if not candidates:
+        return False, f"{preset['label']} does not currently expose wallpaper images in the expected paths.", None
+
+    shutil.rmtree(target_dir, ignore_errors=True)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    seen_hashes: set[str] = set()
+    for index, source in enumerate(sorted(candidates), start=1):
+        digest = file_sha1(source)
+        if digest and digest in seen_hashes:
+            continue
+        if digest:
+            seen_hashes.add(digest)
+        target = target_dir / f"{copied + 1:03d}-{source.name}"
+        try:
+            shutil.copy2(source, target)
+            copied += 1
+        except OSError:
+            continue
+
+    if copied == 0:
+        return False, f"Hanauta could not copy any images from {preset['label']}.", None
+
+    source_summary = ", ".join(source_labels[:2])
+    if len(source_labels) > 2:
+        source_summary += f", +{len(source_labels) - 2} more"
+    if source_summary:
+        return True, f"Synced {copied} image(s) from {preset['label']} using {source_summary}.", target_dir
+    return True, f"Synced {copied} image(s) from {preset['label']}.", target_dir
+
+
+class WallpaperSourceSyncWorker(QThread):
+    finished_sync = pyqtSignal(str, bool, str, object)
+
+    def __init__(self, source_key: str) -> None:
+        super().__init__()
+        self.source_key = source_key
+
+    def run(self) -> None:
+        ok, message, folder = sync_wallpaper_source_preset(self.source_key)
+        self.finished_sync.emit(self.source_key, ok, message, folder)
 
 
 def sanitize_output_name(name: str) -> str:
@@ -1252,24 +1490,33 @@ class NavPillButton(QPushButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setObjectName("navPill")
+        self._compact = False
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 6, 0, 6)
-        layout.setSpacing(4)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(10)
 
-        icon = QLabel(glyph)
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setFont(QFont(icon_font, 16))
-        icon.setProperty("iconRole", True)
+        self.icon_label = QLabel(glyph)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon_label.setFont(QFont(icon_font, 17))
+        self.icon_label.setProperty("iconRole", True)
+        self.icon_label.setFixedWidth(22)
 
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setWordWrap(True)
-        label.setFont(QFont(text_font, 8))
-        label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.text_label = QLabel(text)
+        self.text_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.text_label.setWordWrap(False)
+        self.text_label.setFont(QFont(text_font, 9))
+        self.text_label.setStyleSheet("color: #FFFFFF; background: transparent;")
 
-        layout.addWidget(icon)
-        layout.addWidget(label)
+        layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.text_label, 1, Qt.AlignmentFlag.AlignVCenter)
+
+    def set_compact(self, compact: bool) -> None:
+        self._compact = bool(compact)
+        self.text_label.setVisible(not self._compact)
+        self.setProperty("compact", self._compact)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class SegmentedChip(QPushButton):
@@ -1430,33 +1677,33 @@ class ActionCard(QPushButton):
         self._ui_font = ui_font
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setObjectName("actionCard")
-        self.setMinimumHeight(72)
+        self.setMinimumHeight(64)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
 
         icon_wrap = QFrame()
         icon_wrap.setObjectName("actionIconWrap")
-        icon_wrap.setFixedSize(34, 34)
+        icon_wrap.setFixedSize(32, 32)
         icon_layout = QVBoxLayout(icon_wrap)
         icon_layout.setContentsMargins(0, 0, 0, 0)
         self.icon_label = QLabel(icon_text)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_label.setFont(QFont(icon_font, 16))
+        self.icon_label.setFont(QFont(icon_font, 15))
         self.icon_label.setProperty("iconRole", True)
         icon_layout.addWidget(self.icon_label)
 
         text_wrap = QVBoxLayout()
         text_wrap.setSpacing(3)
         self.title_label = QLabel(title)
-        self.title_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
+        self.title_label.setFont(QFont(ui_font, 9, QFont.Weight.DemiBold))
         self.title_label.setWordWrap(True)
         self.title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
         self.detail_label = QLabel(detail)
         self.detail_label.setWordWrap(True)
-        self.detail_label.setFont(QFont(ui_font, 9))
+        self.detail_label.setFont(QFont(ui_font, 8))
         self.detail_label.setStyleSheet("color: rgba(255,255,255,0.82); background: transparent;")
 
         text_wrap.addWidget(self.title_label)
@@ -1477,17 +1724,17 @@ class SettingsRow(QFrame):
         self.setObjectName("settingsRow")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
 
         icon_wrap = QFrame()
         icon_wrap.setObjectName("rowIconWrap")
-        icon_wrap.setFixedSize(30, 30)
+        icon_wrap.setFixedSize(28, 28)
         icon_layout = QVBoxLayout(icon_wrap)
         icon_layout.setContentsMargins(0, 0, 0, 0)
         icon = QLabel(icon_text)
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setFont(QFont(icon_font, 15))
+        icon.setFont(QFont(icon_font, 14))
         icon.setProperty("iconRole", True)
         icon_layout.addWidget(icon)
 
@@ -1495,7 +1742,7 @@ class SettingsRow(QFrame):
         text_wrap.setSpacing(3)
 
         title_label = QLabel(title)
-        title_label.setFont(QFont(ui_font, 10))
+        title_label.setFont(QFont(ui_font, 9))
         title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
 
         detail_label = QLabel(detail)
@@ -1658,6 +1905,8 @@ class SettingsWindow(QWidget):
         self.initial_page = initial_page
         self.initial_service_section = initial_service_section
         self._window_animation: QParallelAnimationGroup | None = None
+        self._wallpaper_sync_worker: WallpaperSourceSyncWorker | None = None
+        self._sidebar_collapsed = False
         self._slideshow_timer = QTimer(self)
         self._slideshow_timer.timeout.connect(self._advance_slideshow)
         self._slideshow_index = 0
@@ -1675,13 +1924,13 @@ class SettingsWindow(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.resize(940, 628)
+        self.resize(1180, 720)
         self.setWindowOpacity(0.0)
 
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(56)
-        shadow.setOffset(0, 24)
-        shadow.setColor(QColor(8, 5, 10, 180))
+        shadow.setBlurRadius(48)
+        shadow.setOffset(0, 18)
+        shadow.setColor(QColor(8, 5, 10, 150))
         self.setGraphicsEffect(shadow)
 
         outer = QVBoxLayout(self)
@@ -1698,7 +1947,7 @@ class SettingsWindow(QWidget):
         shell_layout.addWidget(self._build_header())
 
         body = QHBoxLayout()
-        body.setContentsMargins(12, 10, 12, 12)
+        body.setContentsMargins(10, 10, 10, 10)
         body.setSpacing(10)
 
         body.addWidget(self._build_sidebar())
@@ -1741,11 +1990,11 @@ class SettingsWindow(QWidget):
     def _build_header(self) -> QWidget:
         header = QFrame()
         header.setObjectName("topHeader")
-        header.setFixedHeight(62)
+        header.setFixedHeight(54)
 
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 8, 14, 8)
+        layout.setSpacing(10)
 
         lead_chip = QFrame()
         lead_chip.setObjectName("headerLeadChip")
@@ -1767,10 +2016,10 @@ class SettingsWindow(QWidget):
         title_wrap.setSpacing(1)
         title = QLabel("Settings")
         title.setObjectName("headerTitle")
-        title.setFont(QFont(self.display_font, 13))
+        title.setFont(QFont(self.display_font, 12))
         subtitle = QLabel("Wallpaper, accents, and shell behavior")
         subtitle.setObjectName("headerSubtitle")
-        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setFont(QFont(self.ui_font, 8))
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
 
@@ -1787,26 +2036,43 @@ class SettingsWindow(QWidget):
         return header
 
     def _build_sidebar(self) -> QWidget:
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(104)
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setFixedWidth(244)
 
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(10, 12, 10, 12)
+        layout = QVBoxLayout(self.sidebar)
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        menu_button = QPushButton(material_icon("menu"))
-        menu_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        menu_button.setFixedSize(44, 38)
-        menu_button.setFont(QFont(self.icon_font, 16))
-        menu_button.setProperty("iconButton", True)
-        layout.addWidget(menu_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(8)
+
+        self.sidebar_title = QLabel("Settings")
+        self.sidebar_title.setObjectName("sidebarTitle")
+        self.sidebar_title.setFont(QFont(self.display_font, 12, QFont.Weight.DemiBold))
+
+        self.sidebar_menu_button = QPushButton(material_icon("menu"))
+        self.sidebar_menu_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar_menu_button.setFixedSize(38, 36)
+        self.sidebar_menu_button.setFont(QFont(self.icon_font, 16))
+        self.sidebar_menu_button.setProperty("iconButton", True)
+        self.sidebar_menu_button.clicked.connect(self._toggle_sidebar)
+
+        top_row.addWidget(self.sidebar_title, 1)
+        top_row.addWidget(self.sidebar_menu_button, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(top_row)
 
         nav_section = QFrame()
         nav_section.setObjectName("sidebarNavSection")
         nav_layout = QVBoxLayout(nav_section)
         nav_layout.setContentsMargins(6, 8, 6, 8)
-        nav_layout.setSpacing(8)
+        nav_layout.setSpacing(6)
+
+        self.sidebar_section_label = QLabel("Workspace")
+        self.sidebar_section_label.setObjectName("sidebarSectionLabel")
+        self.sidebar_section_label.setFont(QFont(self.ui_font, 8, QFont.Weight.DemiBold))
+        nav_layout.addWidget(self.sidebar_section_label)
 
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
@@ -1832,7 +2098,7 @@ class SettingsWindow(QWidget):
 
         layout.addWidget(nav_section)
         layout.addStretch(1)
-        return sidebar
+        return self.sidebar
 
     def _build_scroll_body(self) -> QWidget:
         self.page_stack = QStackedWidget()
@@ -1846,6 +2112,17 @@ class SettingsWindow(QWidget):
         self._show_page(self.initial_page)
         return self.page_stack
 
+    def _toggle_sidebar(self) -> None:
+        self._sidebar_collapsed = not self._sidebar_collapsed
+        if hasattr(self, "sidebar"):
+            self.sidebar.setFixedWidth(84 if self._sidebar_collapsed else 244)
+        if hasattr(self, "sidebar_title"):
+            self.sidebar_title.setVisible(not self._sidebar_collapsed)
+        if hasattr(self, "sidebar_section_label"):
+            self.sidebar_section_label.setVisible(not self._sidebar_collapsed)
+        for button in getattr(self, "nav_buttons", {}).values():
+            button.set_compact(self._sidebar_collapsed)
+
     def _scroll_page(self, *widgets: QWidget) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1858,8 +2135,8 @@ class SettingsWindow(QWidget):
         scroll.setWidget(content)
 
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 6, 0)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(10)
         for widget in widgets:
             layout.addWidget(widget)
         layout.addStretch(1)
@@ -1964,7 +2241,7 @@ class SettingsWindow(QWidget):
         title = QLabel("Wallpaper & Colors")
         title.setObjectName("appearanceTitle")
         title.setFont(QFont(self.display_font, 13))
-        subtitle = QLabel("Lavender glass surfaces with wallpaper-driven color control.")
+        subtitle = QLabel("Pick, import, and rotate wallpapers without disturbing Matugen theming.")
         subtitle.setObjectName("appearanceSubtitle")
         subtitle.setFont(QFont(self.ui_font, 9))
 
@@ -1997,14 +2274,20 @@ class SettingsWindow(QWidget):
         self.choose_picture_button = ActionCard(material_icon("photo_library"), "Choose picture", "Select and apply a wallpaper image", self.icon_font, self.ui_font)
         self.choose_folder_button = ActionCard(material_icon("folder_open"), "Choose folder", "Use a folder as a slideshow source", self.icon_font, self.ui_font)
         self.slideshow_button = ActionCard(material_icon("image"), "Start slideshow", "Rotate wallpapers from the selected folder", self.icon_font, self.ui_font)
+        self.sync_caelestia_button = ActionCard(material_icon("photo_library"), "Import Caelestia wallpapers", "Scan Caelestia wallpaper folders and copy every discovered image into Hanauta", self.icon_font, self.ui_font)
+        self.sync_end4_button = ActionCard(material_icon("image"), "Import End-4 wallpapers", "Scan End-4 wallpaper folders, including local downloads, and copy every discovered image into Hanauta", self.icon_font, self.ui_font)
         self.random_wall_button.clicked.connect(self._apply_random_wallpaper)
         self.choose_picture_button.clicked.connect(self._choose_wallpaper_file)
         self.choose_folder_button.clicked.connect(self._choose_wallpaper_folder)
         self.slideshow_button.clicked.connect(self._toggle_slideshow)
+        self.sync_caelestia_button.clicked.connect(lambda: self._sync_wallpaper_source("caelestia"))
+        self.sync_end4_button.clicked.connect(lambda: self._sync_wallpaper_source("end4"))
         actions.addWidget(self.random_wall_button)
         actions.addWidget(self.choose_picture_button)
         actions.addWidget(self.choose_folder_button)
         actions.addWidget(self.slideshow_button)
+        actions.addWidget(self.sync_caelestia_button)
+        actions.addWidget(self.sync_end4_button)
 
         mode_heading = QLabel("Theme mode")
         mode_heading.setObjectName("appearanceSectionLabel")
@@ -2065,6 +2348,19 @@ class SettingsWindow(QWidget):
             chips_layout.addWidget(chip, index // 6, index % 6)
         chips_outer.addWidget(chips)
         layout.addWidget(chips_frame)
+
+        self.appearance_status = QLabel(
+            "Built-in wallpaper import can pull from your Caelestia and End-4 wallpaper folders, including nested downloads."
+        )
+        self.appearance_status.setObjectName("settingsStatus")
+        self.appearance_status.setFont(QFont(self.ui_font, 9))
+        layout.addWidget(self.appearance_status)
+        self.wallpaper_sync_progress = QProgressBar()
+        self.wallpaper_sync_progress.setObjectName("settingsProgressBar")
+        self.wallpaper_sync_progress.setRange(0, 0)
+        self.wallpaper_sync_progress.setTextVisible(False)
+        self.wallpaper_sync_progress.hide()
+        layout.addWidget(self.wallpaper_sync_progress)
 
         self.slideshow_interval = QSlider(Qt.Orientation.Horizontal)
         self.slideshow_interval.setRange(5, 120)
@@ -4778,6 +5074,51 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         self._sync_wallpaper_controls()
 
+    def _sync_wallpaper_source(self, source_key: str) -> None:
+        if getattr(self, "_wallpaper_sync_worker", None) is not None:
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText("Wallpaper sync is already running.")
+            return
+        if hasattr(self, "appearance_status"):
+            preset = WALLPAPER_SOURCE_PRESETS.get(source_key, {})
+            source_label = str(preset.get("label", "community source"))
+            self.appearance_status.setText(f"Syncing wallpapers from {source_label}...")
+        if hasattr(self, "wallpaper_sync_progress"):
+            self.wallpaper_sync_progress.show()
+        for button_name in ("sync_caelestia_button", "sync_end4_button"):
+            button = getattr(self, button_name, None)
+            if isinstance(button, QPushButton):
+                button.setEnabled(False)
+        self._wallpaper_sync_worker = WallpaperSourceSyncWorker(source_key)
+        self._wallpaper_sync_worker.finished_sync.connect(self._finish_wallpaper_source_sync)
+        self._wallpaper_sync_worker.finished.connect(self._cleanup_wallpaper_source_worker)
+        self._wallpaper_sync_worker.start()
+
+    def _finish_wallpaper_source_sync(self, _source_key: str, ok: bool, message: str, folder_obj: object) -> None:
+        folder = folder_obj if isinstance(folder_obj, Path) else None
+        if not ok or folder is None:
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText(message)
+            return
+        self.settings_state["appearance"]["slideshow_folder"] = str(folder)
+        self.settings_state["appearance"]["wallpaper_mode"] = "slideshow"
+        save_settings_state(self.settings_state)
+        self._sync_wallpaper_controls()
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(f"{message} Slideshow folder now points to {folder}.")
+
+    def _cleanup_wallpaper_source_worker(self) -> None:
+        if hasattr(self, "wallpaper_sync_progress"):
+            self.wallpaper_sync_progress.hide()
+        for button_name in ("sync_caelestia_button", "sync_end4_button"):
+            button = getattr(self, button_name, None)
+            if isinstance(button, QPushButton):
+                button.setEnabled(True)
+        worker = getattr(self, "_wallpaper_sync_worker", None)
+        if worker is not None:
+            worker.deleteLater()
+        self._wallpaper_sync_worker = None
+
     def _apply_matugen_palette(self, force: bool = False) -> None:
         if not self.wallpaper.exists() or not self.wallpaper.is_file():
             return
@@ -4865,7 +5206,8 @@ class SettingsWindow(QWidget):
         folder = Path(self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))).expanduser()
         choices = wallpaper_candidates(folder)
         if not choices:
-            self.ha_status.setText("No images found in slideshow folder.")
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText("No images found in the current slideshow folder.")
             return
         choice = random.choice(choices)
         self._apply_wallpaper(choice)
@@ -4888,6 +5230,8 @@ class SettingsWindow(QWidget):
         self.settings_state["appearance"]["slideshow_folder"] = str(Path(selected).expanduser())
         self.settings_state["appearance"]["wallpaper_mode"] = "slideshow"
         save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(f"Slideshow folder updated to {Path(selected).expanduser()}.")
 
     def _set_slideshow_interval(self, value: int) -> None:
         self.settings_state["appearance"]["slideshow_interval"] = int(value)
@@ -5193,23 +5537,32 @@ class SettingsWindow(QWidget):
             QFrame#shell {{
                 background: {rgba(theme.surface_container, 0.94)};
                 border: 1px solid {rgba(theme.outline, 0.20)};
-                border-radius: 20px;
+                border-radius: 18px;
             }}
             QFrame#topHeader {{
                 background: {rgba(theme.surface_container_high, 0.92)};
                 border-bottom: 1px solid {rgba(theme.outline, 0.16)};
-                border-top-left-radius: 20px;
-                border-top-right-radius: 20px;
+                border-top-left-radius: 18px;
+                border-top-right-radius: 18px;
             }}
             QFrame#sidebar {{
-                background: {rgba(theme.surface_container_high, 0.86)};
+                background: {rgba(theme.surface_container_high, 0.92)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 20px;
+                border-radius: 18px;
             }}
             QFrame#headerLeadChip, QFrame#sidebarNavSection {{
                 background: {rgba(theme.surface_container_high, 0.88)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 16px;
+                border-radius: 14px;
+            }}
+            QLabel#sidebarTitle {{
+                color: {theme.text};
+            }}
+            QLabel#sidebarSectionLabel {{
+                color: {theme.text_muted};
+                padding-left: 8px;
+                letter-spacing: 0.7px;
+                text-transform: uppercase;
             }}
             QLabel#headerLeadIcon {{
                 color: {accent};
@@ -5243,12 +5596,12 @@ class SettingsWindow(QWidget):
             QFrame#contentCard {{
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 18px;
+                border-radius: 16px;
             }}
             QFrame#appearanceCard {{
                 background: {rgba(theme.surface_container, 0.92)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 24px;
+                border-radius: 18px;
             }}
             QLabel#appearanceTitle {{
                 color: {theme.text};
@@ -5259,28 +5612,39 @@ class SettingsWindow(QWidget):
             QFrame#appearanceHeroWrap {{
                 background: {rgba(theme.surface_container_high, 0.86)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 20px;
+                border-radius: 16px;
             }}
             QFrame#appearanceActionColumn, QFrame#appearanceAccentFrame {{
                 background: {rgba(theme.surface_container_high, 0.86)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 18px;
+                border-radius: 16px;
             }}
             QLabel#appearanceSectionLabel {{
                 color: {theme.primary};
                 letter-spacing: 1px;
+            }}
+            QProgressBar#settingsProgressBar {{
+                min-height: 8px;
+                max-height: 8px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
+                background: {rgba(theme.surface_container_high, 0.82)};
+            }}
+            QProgressBar#settingsProgressBar::chunk {{
+                border-radius: 999px;
+                background: {theme.primary};
             }}
             QFrame#previewCard {{
                 background: transparent;
                 border: none;
             }}
             QPushButton#navPill {{
-                min-height: 72px;
+                min-height: 44px;
                 border: 1px solid transparent;
-                border-radius: 18px;
+                border-radius: 14px;
                 background: transparent;
                 color: {theme.text};
-                text-align: center;
+                text-align: left;
             }}
             QPushButton#navPill:hover {{
                 background: {theme.hover_bg};
@@ -5291,13 +5655,18 @@ class SettingsWindow(QWidget):
                 border-color: {theme.app_focused_border};
                 color: {theme.text};
             }}
+            QPushButton#navPill[compact="true"] {{
+                min-height: 42px;
+                max-width: 52px;
+                padding: 0;
+            }}
             QPushButton#navPill QLabel[iconRole="true"] {{
                 font-family: "{self.icon_font}";
             }}
             QPushButton#actionCard {{
                 background: {rgba(theme.surface_container_high, 0.88)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 16px;
+                border-radius: 14px;
                 color: {theme.text};
                 text-align: left;
             }}
@@ -5308,7 +5677,7 @@ class SettingsWindow(QWidget):
             QFrame#actionIconWrap, QFrame#rowIconWrap {{
                 background: {theme.accent_soft};
                 border: 1px solid {theme.app_focused_border};
-                border-radius: 12px;
+                border-radius: 10px;
             }}
             QLabel[iconRole="true"] {{
                 font-family: "{self.icon_font}";

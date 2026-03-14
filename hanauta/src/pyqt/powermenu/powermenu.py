@@ -195,6 +195,8 @@ class Backend(QObject):
 
 def main() -> int:
     app = QGuiApplication(sys.argv)
+    app.setApplicationName("Hanauta Power Menu")
+    app.setDesktopFileName("HanautaPowerMenu")
 
     base_dir = Path(__file__).resolve().parent
     qml_path = base_dir / "powermenu.qml"
