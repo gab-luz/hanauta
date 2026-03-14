@@ -104,6 +104,11 @@ for_window [class="CyberBar"] exec --no-startup-id xdotool getactivewindow set_w
 for_window [class="HanautaHotkeys"] floating enable, border pixel 0, sticky enable
 for_window [title="Hanauta Hotkeys"] floating enable, border pixel 0, sticky enable
 
+# Desktop clock rules
+for_window [class="HanautaDesktopClock"] floating enable, border pixel 0, sticky enable
+for_window [title="Hanauta Desktop Clock"] floating enable, border pixel 0, sticky enable
+no_focus [title="Hanauta Desktop Clock"]
+
 # Window switcher rules
 for_window [title="Hanauta Window Switcher"] floating enable, border pixel 0, sticky enable
 
