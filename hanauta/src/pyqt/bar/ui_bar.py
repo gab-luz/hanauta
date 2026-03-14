@@ -38,7 +38,20 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.rss import collect_entries as collect_rss_entries
+from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
+from pyqt.shared.rss import load_cache as load_rss_cache
+from pyqt.shared.rss import save_cache as save_rss_cache
 from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
+from pyqt.shared.crypto import (
+    fetch_prices as fetch_crypto_prices,
+    load_settings_state as load_crypto_settings_state,
+    load_tracker_state as load_crypto_tracker_state,
+    movement_summary as crypto_movement_summary,
+    save_tracker_state as save_crypto_tracker_state,
+    should_check as crypto_should_check,
+    slug_to_name as crypto_slug_to_name,
+)
 
 SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
@@ -48,9 +61,15 @@ VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
+RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
+OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
+CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
+VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
+SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
+ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
@@ -60,10 +79,12 @@ VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+LOCKSTATUS_SCRIPT = SCRIPTS_DIR / "lockstatus.sh"
 TRAY_SLOT_WIDTH = 24
 TRAY_SLOT_HEIGHT = 32
 TRAY_SLOT_SIZE = 20
 TRAY_ICON_SIZE = 16
+VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 MATERIAL_ICONS = {
     "battery_2_bar": "\uebe0",
@@ -83,6 +104,9 @@ MATERIAL_ICONS = {
     "pause": "\ue034",
     "play_arrow": "\ue037",
     "power_settings_new": "\ue8ac",
+    "public": "\ue80b",
+    "videocam": "\ue04b",
+    "show_chart": "\ue6e1",
     "timer": "\ue425",
     "skip_next": "\ue044",
     "skip_previous": "\ue045",
@@ -150,6 +174,12 @@ def run_bg(cmd: list[str]) -> None:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
+
+
+def widget_python() -> str:
+    if VENV_PYTHON.exists():
+        return str(VENV_PYTHON)
+    return sys.executable
 
 
 def detect_font(*families: str) -> str:
@@ -232,6 +262,20 @@ def load_runtime_settings() -> dict[str, object]:
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def load_region_settings() -> dict[str, object]:
+    settings = load_runtime_settings()
+    current = settings.get("region", {})
+    current = current if isinstance(current, dict) else {}
+    date_style = str(current.get("date_style", "us")).strip().lower()
+    temperature_unit = str(current.get("temperature_unit", "c")).strip().lower()
+    return {
+        "locale_code": str(current.get("locale_code", "")).strip(),
+        "use_24_hour": bool(current.get("use_24_hour", False)),
+        "date_style": date_style if date_style in {"us", "iso", "eu"} else "us",
+        "temperature_unit": temperature_unit if temperature_unit in {"c", "f"} else "c",
+    }
 
 
 def load_bar_settings() -> dict[str, int]:
@@ -612,6 +656,7 @@ class CyberBar(QWidget):
         self._theme_mtime = palette_mtime()
         self._settings_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
         self.bar_settings = load_bar_settings()
+        self.region_settings = load_region_settings()
         self.material_font = detect_font(
             self.loaded_fonts.get("material_icons", ""),
             self.loaded_fonts.get("material_icons_outlined", ""),
@@ -643,6 +688,10 @@ class CyberBar(QWidget):
         self._christian_widget_process: Optional[subprocess.Popen] = None
         self._reminders_widget_process: Optional[subprocess.Popen] = None
         self._pomodoro_widget_process: Optional[subprocess.Popen] = None
+        self._rss_widget_process: Optional[subprocess.Popen] = None
+        self._obs_widget_process: Optional[subprocess.Popen] = None
+        self._crypto_widget_process: Optional[subprocess.Popen] = None
+        self._vps_widget_process: Optional[subprocess.Popen] = None
         self._ntfy_popup_process: Optional[subprocess.Popen] = None
         self._weather_popup_process: Optional[subprocess.Popen] = None
         self._calendar_popup_process: Optional[subprocess.Popen] = None
@@ -654,6 +703,10 @@ class CyberBar(QWidget):
         self._settings_watcher: Optional[QFileSystemWatcher] = None
         self._settings_reload_timer: Optional[QTimer] = None
         self._control_center_launch_pending = False
+        self._caps_lock_on: Optional[bool] = None
+        self._num_lock_on: Optional[bool] = None
+        self._rss_last_interval_ms = 0
+        self._crypto_last_interval_ms = 0
         self._setup_window()
         self._build_ui()
         self._apply_styles()
@@ -776,9 +829,15 @@ class CyberBar(QWidget):
         self.date_label.setObjectName("dateLabel")
         self.date_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.date_label.clicked.connect(self._toggle_calendar_popup)
+        self.locale_button = QPushButton(material_icon("public"))
+        self.locale_button.setObjectName("utilityButton")
+        self.locale_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.locale_button.setFont(QFont(self.material_font, 18))
+        self.locale_button.clicked.connect(self._open_region_settings)
         self.datetime_layout.addWidget(self.weather_icon)
         self.datetime_layout.addWidget(self.time_label)
         self.datetime_layout.addWidget(self.date_label)
+        self.datetime_layout.addWidget(self.locale_button)
         self.btn_control_center = self._icon_button("dashboard")
         self.btn_control_center.setObjectName("utilityButton")
         self.btn_control_center.setCheckable(True)
@@ -864,10 +923,32 @@ class CyberBar(QWidget):
         self.reminders_button.setProperty("nerdIcon", True)
         self.reminders_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.reminders_button.clicked.connect(self._open_reminders_widget)
+        self.caps_lock_button = QPushButton("A")
+        self.caps_lock_button.setObjectName("statusLockButton")
+        self.caps_lock_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.caps_lock_button.clicked.connect(lambda: self._toggle_lock_state("caps"))
+        self.caps_lock_button.hide()
+        self.num_lock_button = QPushButton("1")
+        self.num_lock_button.setObjectName("statusLockButton")
+        self.num_lock_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.num_lock_button.clicked.connect(lambda: self._toggle_lock_state("num"))
+        self.num_lock_button.hide()
         self.pomodoro_button = QPushButton(material_icon("timer"))
         self.pomodoro_button.setObjectName("statusIconButton")
         self.pomodoro_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.pomodoro_button.clicked.connect(self._open_pomodoro_widget)
+        self.rss_button = QPushButton(material_icon("public"))
+        self.rss_button.setObjectName("statusIconButton")
+        self.rss_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.rss_button.clicked.connect(self._open_rss_widget)
+        self.obs_button = QPushButton(material_icon("videocam"))
+        self.obs_button.setObjectName("statusIconButton")
+        self.obs_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.obs_button.clicked.connect(self._open_obs_widget)
+        self.crypto_button = QPushButton(material_icon("show_chart"))
+        self.crypto_button.setObjectName("statusIconButton")
+        self.crypto_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.crypto_button.clicked.connect(self._open_crypto_widget)
         self.ntfy_button = QPushButton(material_icon("notifications"))
         self.ntfy_button.setObjectName("statusIconButton")
         self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -879,14 +960,21 @@ class CyberBar(QWidget):
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.pomodoro_button, self.ntfy_button, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.ntfy_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
+        self.caps_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
+        self.num_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
         self.status_layout.addWidget(self.net_icon)
         self.status_layout.addWidget(self.vpn_icon)
         self.status_layout.addWidget(self.christian_button)
         self.status_layout.addWidget(self.reminders_button)
+        self.status_layout.addWidget(self.caps_lock_button)
+        self.status_layout.addWidget(self.num_lock_button)
         self.status_layout.addWidget(self.pomodoro_button)
+        self.status_layout.addWidget(self.rss_button)
+        self.status_layout.addWidget(self.obs_button)
+        self.status_layout.addWidget(self.crypto_button)
         self.status_layout.addWidget(self.ntfy_button)
         self.status_layout.addWidget(self.caffeine_icon)
         self.status_layout.addWidget(self.battery_icon)
@@ -922,6 +1010,9 @@ class CyberBar(QWidget):
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
+        self._sync_rss_button_visibility()
+        self._sync_obs_button_visibility()
+        self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
         self._apply_bar_settings()
         self._install_debug_tooltips()
@@ -1153,6 +1244,24 @@ class CyberBar(QWidget):
             #statusIconButton[nerdIcon="true"] {{
                 font-family: "{self.reminders_font}";
             }}
+            #statusLockButton {{
+                background: transparent;
+                border: 1px solid transparent;
+                color: {theme.inactive};
+                min-width: 26px;
+                max-width: 26px;
+                padding: 0;
+                border-radius: {max(0, chip_radius - 5)}px;
+            }}
+            #statusLockButton[active="true"] {{
+                background: {rgba(theme.primary, 0.14)};
+                color: {theme.primary};
+                border: 1px solid {rgba(theme.primary, 0.18)};
+            }}
+            #statusLockButton:hover {{
+                background: {theme.hover_bg};
+                color: {theme.text};
+            }}
             #mediaText {{
                 color: {theme.text_muted};
                 font-size: 11px;
@@ -1287,13 +1396,54 @@ class CyberBar(QWidget):
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
+        self._sync_rss_button_visibility()
+        self._sync_obs_button_visibility()
+        self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._update_locale_button()
         self._update_window_mask()
 
     def _update_launcher_wordmark_colors(self, hovered: bool = False) -> None:
         color = self.theme.text if hovered else self.theme.primary
         self.launcher_note.setStyleSheet(f"color: {color};")
         self.launcher_text.setStyleSheet(f"color: {color};")
+
+    def _format_time_text(self, moment: datetime) -> str:
+        if bool(self.region_settings.get("use_24_hour", False)):
+            return moment.strftime("%H:%M")
+        return moment.strftime("%-I:%M %p")
+
+    def _format_date_text(self, moment: datetime) -> str:
+        style = str(self.region_settings.get("date_style", "us"))
+        if style == "iso":
+            return moment.strftime("%a, %Y-%m-%d")
+        if style == "eu":
+            return moment.strftime("%a, %d/%m")
+        return moment.strftime("%a, %m/%d")
+
+    def _update_locale_button(self) -> None:
+        locale_code = str(self.region_settings.get("locale_code", "")).strip()
+        label = locale_code or "System locale"
+        self.locale_button.setToolTip(f"Region & locale: {label}")
+
+    def _set_lock_button_state(self, button: QPushButton, active: bool, title: str) -> None:
+        button.setProperty("active", active)
+        button.setVisible(active)
+        button.setToolTip(f"{title}: {'On' if active else 'Off'}")
+        self.style().unpolish(button)
+        self.style().polish(button)
+
+    def _send_lock_notification(self, title: str, enabled: bool, replace_id: int) -> None:
+        state_text = "Enabled" if enabled else "Disabled"
+        try:
+            subprocess.Popen(
+                ["notify-send", "-r", str(replace_id), title, state_text],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
 
     def _update_media_equalizer_color(self) -> None:
         color = self.theme.equalizer if self._media_playing else self.theme.text_muted
@@ -1315,11 +1465,17 @@ class CyberBar(QWidget):
         if not force and current_mtime == self._settings_mtime:
             return
         self._settings_mtime = current_mtime
+        self.region_settings = load_region_settings()
         self._apply_bar_settings()
         self._apply_styles()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
+        self._sync_pomodoro_button_visibility()
+        self._sync_rss_button_visibility()
+        self._sync_obs_button_visibility()
+        self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._update_locale_button()
 
     def _update_window_mask(self) -> None:
         self.setMask(QRegion(self.rect()))
@@ -1345,6 +1501,10 @@ class CyberBar(QWidget):
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
+
+        self.settings_timer = QTimer(self)
+        self.settings_timer.timeout.connect(self._reload_settings_if_needed)
+        self.settings_timer.start(800)
 
         self.ai_popup_timer = QTimer(self)
         self.ai_popup_timer.timeout.connect(self._sync_ai_button)
@@ -1374,6 +1534,14 @@ class CyberBar(QWidget):
         self.weather_timer.timeout.connect(self._poll_weather)
         self.weather_timer.start(900000)
 
+        self.rss_notify_timer = QTimer(self)
+        self.rss_notify_timer.timeout.connect(self._poll_rss_notifications)
+        self.rss_notify_timer.start(60000)
+
+        self.crypto_timer = QTimer(self)
+        self.crypto_timer.timeout.connect(self._poll_crypto_notifications)
+        self.crypto_timer.start(60000)
+
         self.powermenu_timer = QTimer(self)
         self.powermenu_timer.timeout.connect(self._sync_powermenu_button)
         self.powermenu_timer.start(1000)
@@ -1386,11 +1554,13 @@ class CyberBar(QWidget):
         self._poll_media()
         self._poll_system()
         self._poll_weather()
+        self._poll_rss_notifications()
+        self._poll_crypto_notifications()
 
     def _poll_clock(self) -> None:
         now = datetime.now()
-        self.time_label.setText(now.strftime("%-I:%M %p"))
-        self.date_label.setText(now.strftime("%a, %m/%d"))
+        self.time_label.setText(self._format_time_text(now))
+        self.date_label.setText(self._format_date_text(now))
 
     def _poll_workspaces(self) -> None:
         result = run_cmd(["i3-msg", "-t", "get_workspaces"])
@@ -1507,7 +1677,13 @@ class CyberBar(QWidget):
         self._poll_network()
         self._poll_caffeine()
         self._poll_battery()
+        self._poll_lock_states()
         self._sync_christian_button_visibility()
+        self._sync_reminders_button_visibility()
+        self._sync_pomodoro_button_visibility()
+        self._sync_rss_button_visibility()
+        self._sync_obs_button_visibility()
+        self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_weather_visibility()
 
@@ -1535,6 +1711,129 @@ class CyberBar(QWidget):
 
     def _finish_weather_worker(self) -> None:
         self._weather_worker = None
+
+    def _send_action_notification(
+        self,
+        summary: str,
+        body: str,
+        action_label: str,
+        open_url: str,
+        replace_id: int,
+    ) -> None:
+        if not ACTION_NOTIFICATION_SCRIPT.exists() or not open_url.strip():
+            try:
+                subprocess.Popen(
+                    ["notify-send", summary, body],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception:
+                pass
+            return
+        run_bg(
+            [
+                widget_python(),
+                str(ACTION_NOTIFICATION_SCRIPT),
+                "--app-name",
+                "Hanauta",
+                "--summary",
+                summary,
+                "--body",
+                body,
+                "--action-label",
+                action_label,
+                "--open-url",
+                open_url,
+                "--replace-id",
+                str(replace_id),
+            ]
+        )
+
+    def _poll_rss_notifications(self) -> None:
+        settings = load_runtime_settings()
+        services = settings.get("services", {})
+        rss_settings = settings.get("rss", {})
+        if not isinstance(services, dict) or not isinstance(rss_settings, dict):
+            return
+        service = services.get("rss_widget", {})
+        if not isinstance(service, dict) or not bool(service.get("enabled", True)):
+            return
+        if not bool(rss_settings.get("notify_new_items", True)):
+            return
+        cache = load_rss_cache()
+        interval = max(5, int(rss_settings.get("check_interval_minutes", 15) or 15))
+        checked = cache.get("last_checked_at", "")
+        if checked and not crypto_should_check(str(checked), interval):
+            return
+        try:
+            _sources, entries = collect_rss_entries(settings)
+        except Exception:
+            return
+        seen = set(str(item) for item in cache.get("seen", []))
+        if not seen:
+            cache["seen"] = [rss_entry_fingerprint(item) for item in entries]
+            cache["last_checked_at"] = datetime.now().astimezone().isoformat()
+            save_rss_cache(cache)
+            return
+        new_items: list[dict[str, str]] = []
+        for item in entries:
+            fingerprint = rss_entry_fingerprint(item)
+            if fingerprint not in seen:
+                new_items.append(item)
+            seen.add(fingerprint)
+        cache["seen"] = list(seen)
+        cache["last_checked_at"] = datetime.now().astimezone().isoformat()
+        save_rss_cache(cache)
+        for index, item in enumerate(new_items[:3]):
+            title = str(item.get("title", "New story")).strip() or "New story"
+            feed_title = str(item.get("feed_title", "")).strip() or "RSS feed"
+            detail = str(item.get("detail", "")).strip() or feed_title
+            link = str(item.get("link", "")).strip()
+            if not link:
+                continue
+            body = f"{feed_title}\n{detail[:150]}"
+            self._send_action_notification(title, body, "Read", link, 22000 + index)
+
+    def _poll_crypto_notifications(self) -> None:
+        settings = load_crypto_settings_state()
+        services = settings.get("services", {})
+        crypto_settings = settings.get("crypto", {})
+        if not isinstance(services, dict) or not isinstance(crypto_settings, dict):
+            return
+        service = services.get("crypto_widget", {})
+        if not isinstance(service, dict) or not bool(service.get("enabled", True)):
+            return
+        if not bool(crypto_settings.get("notify_price_moves", True)):
+            return
+        interval = max(5, int(crypto_settings.get("check_interval_minutes", 15) or 15))
+        state = load_crypto_tracker_state()
+        if not crypto_should_check(str(state.get("last_checked_at", "")), interval):
+            return
+        try:
+            prices = fetch_crypto_prices(settings)
+        except Exception:
+            return
+        previous = state.get("last_prices", {})
+        if not isinstance(previous, dict):
+            previous = {}
+        up_threshold = float(crypto_settings.get("price_up_percent", 3.0) or 3.0)
+        down_threshold = float(crypto_settings.get("price_down_percent", 3.0) or 3.0)
+        for coin_id, payload in prices.items():
+            prev_price = float(previous.get(coin_id, 0.0) or 0.0)
+            current_price = float(payload.get("price", 0.0) or 0.0)
+            if prev_price <= 0 or current_price <= 0:
+                continue
+            movement = crypto_movement_summary(prev_price, current_price)
+            if movement >= up_threshold or movement <= -down_threshold:
+                direction = "up" if movement >= 0 else "down"
+                summary = f"{crypto_slug_to_name(coin_id)} moved {direction}"
+                body = f"{movement:+.2f}% since the last check • {current_price:,.2f} {payload.get('currency', 'USD')}"
+                url = f"https://www.coingecko.com/en/coins/{coin_id}"
+                self._send_action_notification(summary, body, "Open", url, 23000 + abs(hash(coin_id)) % 500)
+        state["last_prices"] = {coin_id: float(payload.get("price", 0.0) or 0.0) for coin_id, payload in prices.items()}
+        state["last_checked_at"] = datetime.now().astimezone().isoformat()
+        save_crypto_tracker_state(state)
 
     def _sync_weather_visibility(self) -> None:
         settings = load_runtime_settings()
@@ -1604,6 +1903,33 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.pomodoro_button.setVisible(enabled and show_in_bar)
 
+    def _sync_rss_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("rss_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.rss_button.setVisible(enabled and show_in_bar)
+
+    def _sync_obs_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("obs_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.obs_button.setVisible(enabled and show_in_bar)
+
+    def _sync_crypto_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("crypto_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.crypto_button.setVisible(enabled and show_in_bar)
+
     def _sync_ntfy_button_visibility(self) -> None:
         settings = load_runtime_settings()
         ntfy = settings.get("ntfy", {})
@@ -1612,6 +1938,18 @@ class CyberBar(QWidget):
         enabled = bool(ntfy.get("enabled", False))
         show_in_bar = bool(ntfy.get("show_in_bar", False))
         self.ntfy_button.setVisible(enabled and show_in_bar)
+
+    def _poll_lock_states(self) -> None:
+        caps_on = run_script("lockstatus.sh", "--caps-status") == "on"
+        num_on = run_script("lockstatus.sh", "--num-status") == "on"
+        self._set_lock_button_state(self.caps_lock_button, caps_on, "Caps Lock")
+        self._set_lock_button_state(self.num_lock_button, num_on, "Num Lock")
+        if self._caps_lock_on is not None and caps_on != self._caps_lock_on:
+            self._send_lock_notification("Caps Lock", caps_on, 12345)
+        if self._num_lock_on is not None and num_on != self._num_lock_on:
+            self._send_lock_notification("Num Lock", num_on, 12346)
+        self._caps_lock_on = caps_on
+        self._num_lock_on = num_on
 
     def _poll_caffeine(self) -> None:
         caffeine_on = run_script("caffeine.sh", "status") == "on"
@@ -1822,6 +2160,35 @@ class CyberBar(QWidget):
             self._ai_popup_process = None
             self.ai_button.setChecked(False)
 
+    def _open_region_settings(self) -> None:
+        if not SETTINGS_PAGE.exists():
+            return
+        python_bin = self._python_bin()
+        try:
+            subprocess.Popen(
+                [python_bin, str(SETTINGS_PAGE), "--page", "region"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
+
+    def _toggle_lock_state(self, kind: str) -> None:
+        if not LOCKSTATUS_SCRIPT.exists():
+            return
+        arg = "--toggle-caps" if kind == "caps" else "--toggle-num"
+        try:
+            subprocess.Popen(
+                [str(LOCKSTATUS_SCRIPT), arg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            return
+        QTimer.singleShot(180, self._poll_lock_states)
+
     def _open_christian_widget(self) -> None:
         if not CHRISTIAN_WIDGET.exists():
             return
@@ -1865,16 +2232,78 @@ class CyberBar(QWidget):
             self._pomodoro_widget_process.terminate()
             self._pomodoro_widget_process = None
             return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
         try:
             self._pomodoro_widget_process = subprocess.Popen(
-                [str(python_bin), str(POMODORO_WIDGET)],
+                [widget_python(), str(POMODORO_WIDGET)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
         except Exception:
             self._pomodoro_widget_process = None
+
+    def _open_rss_widget(self) -> None:
+        if not RSS_WIDGET.exists():
+            return
+        if self._rss_widget_process is not None and self._rss_widget_process.poll() is None:
+            self._rss_widget_process.terminate()
+            self._rss_widget_process = None
+            return
+        try:
+            self._rss_widget_process = subprocess.Popen(
+                [widget_python(), str(RSS_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._rss_widget_process = None
+
+    def _open_obs_widget(self) -> None:
+        if not OBS_WIDGET.exists():
+            return
+        if self._obs_widget_process is not None and self._obs_widget_process.poll() is None:
+            self._obs_widget_process.terminate()
+            self._obs_widget_process = None
+            return
+        try:
+            self._obs_widget_process = subprocess.Popen(
+                [widget_python(), str(OBS_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._obs_widget_process = None
+
+    def _open_crypto_widget(self) -> None:
+        if not CRYPTO_WIDGET.exists():
+            return
+        if self._crypto_widget_process is not None and self._crypto_widget_process.poll() is None:
+            self._crypto_widget_process.terminate()
+            self._crypto_widget_process = None
+            return
+        try:
+            self._crypto_widget_process = subprocess.Popen(
+                [widget_python(), str(CRYPTO_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._crypto_widget_process = None
+
+    def _open_vps_widget(self) -> None:
+        if not VPS_WIDGET.exists():
+            return
+        if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
+            self._vps_widget_process.terminate()
+            self._vps_widget_process = None
+            return
+        try:
+            self._vps_widget_process = subprocess.Popen(
+                [widget_python(), str(VPS_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._vps_widget_process = None
 
     def _toggle_ntfy_popup(self) -> None:
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
@@ -1992,6 +2421,14 @@ class CyberBar(QWidget):
             self._christian_widget_process.terminate()
         if self._pomodoro_widget_process is not None and self._pomodoro_widget_process.poll() is None:
             self._pomodoro_widget_process.terminate()
+        if self._rss_widget_process is not None and self._rss_widget_process.poll() is None:
+            self._rss_widget_process.terminate()
+        if self._obs_widget_process is not None and self._obs_widget_process.poll() is None:
+            self._obs_widget_process.terminate()
+        if self._crypto_widget_process is not None and self._crypto_widget_process.poll() is None:
+            self._crypto_widget_process.terminate()
+        if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
+            self._vps_widget_process.terminate()
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
             self._ntfy_popup_process.terminate()
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
