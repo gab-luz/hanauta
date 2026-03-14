@@ -183,6 +183,18 @@ def widget_python() -> str:
     return sys.executable
 
 
+def terminate_background_matches(pattern: str) -> None:
+    try:
+        subprocess.run(
+            ["pkill", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except Exception:
+        pass
+
+
 def detect_font(*families: str) -> str:
     for family in families:
         if QFont(family).exactMatch():
@@ -267,9 +279,15 @@ def load_runtime_settings() -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def load_region_settings() -> dict[str, object]:
-    settings = load_runtime_settings()
-    current = settings.get("region", {})
+def normalize_runtime_settings(payload: object) -> dict[str, object]:
+    settings = payload if isinstance(payload, dict) else {}
+    services = settings.get("services", {})
+    settings["services"] = services if isinstance(services, dict) else {}
+    return settings
+
+
+def load_region_settings_from_payload(settings: object) -> dict[str, object]:
+    current = settings.get("region", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     date_style = str(current.get("date_style", "us")).strip().lower()
     temperature_unit = str(current.get("temperature_unit", "c")).strip().lower()
@@ -281,9 +299,8 @@ def load_region_settings() -> dict[str, object]:
     }
 
 
-def load_bar_settings() -> dict[str, int]:
-    settings = load_runtime_settings()
-    current = settings.get("bar", {})
+def load_bar_settings_from_payload(settings: object) -> dict[str, int]:
+    current = settings.get("bar", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
     offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset"}
@@ -302,6 +319,14 @@ def load_bar_settings() -> dict[str, int]:
         else:
             merged[key] = max(0, min(32, int(merged[key])))
     return merged
+
+
+def load_region_settings() -> dict[str, object]:
+    return load_region_settings_from_payload(load_runtime_settings())
+
+
+def load_bar_settings() -> dict[str, int]:
+    return load_bar_settings_from_payload(load_runtime_settings())
 
 
 class WorkspaceDot(QPushButton):
@@ -658,8 +683,11 @@ class CyberBar(QWidget):
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self._settings_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
-        self.bar_settings = load_bar_settings()
-        self.region_settings = load_region_settings()
+        self.runtime_settings = normalize_runtime_settings(load_runtime_settings())
+        services = self.runtime_settings.get("services", {})
+        self.service_settings = services if isinstance(services, dict) else {}
+        self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
+        self.region_settings = load_region_settings_from_payload(self.runtime_settings)
         self.ui_font = detect_font(
             self.loaded_fonts.get("ui_sans", ""),
             "Inter",
@@ -1943,8 +1971,7 @@ class CyberBar(QWidget):
         self.crypto_button.setVisible(enabled and show_in_bar)
 
     def _sync_ntfy_button_visibility(self) -> None:
-        settings = load_runtime_settings()
-        ntfy = settings.get("ntfy", {})
+        ntfy = self.runtime_settings.get("ntfy", {})
         if not isinstance(ntfy, dict):
             ntfy = {}
         enabled = bool(ntfy.get("enabled", False))
@@ -1952,21 +1979,19 @@ class CyberBar(QWidget):
         self.ntfy_button.setVisible(enabled and show_in_bar)
 
     def _sync_desktop_clock_process(self) -> None:
-        settings = load_runtime_settings()
-        services = settings.get("services", {})
-        if not isinstance(services, dict):
-            services = {}
-        service = services.get("desktop_clock_widget", {})
+        service = self.service_settings.get("desktop_clock_widget", {})
         if not isinstance(service, dict):
             service = {}
         enabled = bool(service.get("enabled", True))
         if not enabled or not DESKTOP_CLOCK_WIDGET.exists():
+            terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
             if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
                 self._desktop_clock_process.terminate()
             self._desktop_clock_process = None
             return
         if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
             return
+        terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
         try:
             self._desktop_clock_process = subprocess.Popen(
                 [widget_python(), str(DESKTOP_CLOCK_WIDGET)],
