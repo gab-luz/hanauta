@@ -1,0 +1,2 @@
+module HanautaControlCenter
+singleton PaneRegistry 1.0 PaneRegistry.qml
