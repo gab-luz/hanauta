@@ -65,6 +65,7 @@ OBS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 CRYPTO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+GAME_MODE_POPUP_SCRIPT = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 
 MATERIAL_ICONS = {
     "airplanemode_active": "\ue195",
@@ -104,6 +105,7 @@ MATERIAL_ICONS = {
     "show_chart": "\ue6e1",
     "storage": "\ue1db",
     "watch": "\ue334",
+    "sports_esports": "\uea28",
 }
 
 DEFAULT_SERVICE_SETTINGS = {
@@ -153,6 +155,11 @@ DEFAULT_SERVICE_SETTINGS = {
     "desktop_clock_widget": {
         "enabled": False,
         "show_in_notification_center": True,
+    },
+    "game_mode": {
+        "enabled": False,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
     },
 }
 
@@ -887,6 +894,8 @@ class NotificationCenter(QWidget):
         layout.addWidget(self._build_vps_launcher_card())
         layout.addSpacing(10)
         layout.addWidget(self._build_desktop_clock_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_game_mode_launcher_card())
         self._sync_service_card_visibility()
         return page
 
@@ -1275,6 +1284,17 @@ class NotificationCenter(QWidget):
         )
         return self.desktop_clock_launcher_card
 
+    def _build_game_mode_launcher_card(self) -> QFrame:
+        self.game_mode_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "Game Mode",
+            "Open the Game Mode popup and control the gamemoded user service.",
+            "sports_esports",
+            "Open",
+            self._open_game_mode_popup,
+        )
+        return self.game_mode_launcher_card
+
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -1512,6 +1532,10 @@ class NotificationCenter(QWidget):
             self.desktop_clock_launcher_card.setVisible(
                 self._service_visible_in_notification_center("desktop_clock_widget")
             )
+        if hasattr(self, "game_mode_launcher_card"):
+            self.game_mode_launcher_card.setVisible(
+                self._service_visible_in_notification_center("game_mode")
+            )
 
     def _open_vpn_widget(self) -> None:
         if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
@@ -1557,6 +1581,11 @@ class NotificationCenter(QWidget):
         if not self._service_enabled("desktop_clock_widget") or not DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
             return
         run_bg_singleton(DESKTOP_CLOCK_WIDGET_SCRIPT)
+
+    def _open_game_mode_popup(self) -> None:
+        if not self._service_enabled("game_mode") or not GAME_MODE_POPUP_SCRIPT.exists():
+            return
+        run_bg_singleton(GAME_MODE_POPUP_SCRIPT)
 
     def _circle_icon_button(self, icon: str, accent: str = "default") -> QPushButton:
         button = QPushButton(material_icon(icon))

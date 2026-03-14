@@ -52,6 +52,8 @@ from pyqt.shared.crypto import (
     should_check as crypto_should_check,
     slug_to_name as crypto_slug_to_name,
 )
+from pyqt.shared.gamemode import service_enabled as game_mode_service_enabled
+from pyqt.shared.gamemode import summary as game_mode_summary
 
 SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
@@ -69,6 +71,7 @@ DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_cloc
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
+GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
@@ -80,6 +83,9 @@ VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
+BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
+BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 LOCKSTATUS_SCRIPT = SCRIPTS_DIR / "lockstatus.sh"
 TRAY_SLOT_WIDTH = 24
 TRAY_SLOT_HEIGHT = 32
@@ -117,6 +123,7 @@ MATERIAL_ICONS = {
     "vpn_key": "\ue0da",
     "wifi": "\ue63e",
     "wifi_off": "\ue648",
+    "sports_esports": "\uea28",
 }
 
 REMINDERS_BAR_GLYPH = "\ue003"
@@ -217,6 +224,30 @@ def detect_font(*families: str) -> str:
 
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
+
+
+def ensure_bar_icon_config() -> None:
+    try:
+        BAR_ICON_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        if not BAR_ICON_CONFIG_FILE.exists() and BAR_ICON_EXAMPLE_FILE.exists():
+            BAR_ICON_CONFIG_FILE.write_text(BAR_ICON_EXAMPLE_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        return
+
+
+def load_bar_icon_overrides() -> dict[str, str]:
+    ensure_bar_icon_config()
+    try:
+        payload = json.loads(BAR_ICON_CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key, value in payload.items():
+        if isinstance(key, str) and isinstance(value, str) and value.strip():
+            result[key.strip()] = value.strip()
+    return result
 
 
 def load_app_fonts() -> dict[str, str]:
@@ -748,6 +779,7 @@ class CyberBar(QWidget):
         self._ntfy_popup_process: Optional[subprocess.Popen] = None
         self._weather_popup_process: Optional[subprocess.Popen] = None
         self._calendar_popup_process: Optional[subprocess.Popen] = None
+        self._game_mode_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
         self._weather_worker: Optional[WeatherWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
@@ -757,12 +789,14 @@ class CyberBar(QWidget):
         self._settings_reload_timer: Optional[QTimer] = None
         self._control_center_launch_pending = False
         self._desktop_clock_launch_attempted = False
+        self._bar_icon_overrides = load_bar_icon_overrides()
         self._caps_lock_on: Optional[bool] = None
         self._num_lock_on: Optional[bool] = None
         self._rss_last_interval_ms = 0
         self._crypto_last_interval_ms = 0
         self._setup_window()
         self._build_ui()
+        self._apply_bar_icon_overrides()
         self._apply_styles()
         self._setup_settings_watcher()
         self._start_polls()
@@ -883,7 +917,7 @@ class CyberBar(QWidget):
         self.date_label.setObjectName("dateLabel")
         self.date_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.date_label.clicked.connect(self._toggle_calendar_popup)
-        self.locale_button = QPushButton(material_icon("public"))
+        self.locale_button = QPushButton(self._icon_text("public"))
         self.locale_button.setObjectName("utilityButton")
         self.locale_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.locale_button.setFont(QFont(self.material_font, 18))
@@ -910,7 +944,7 @@ class CyberBar(QWidget):
         self.media_layout.setContentsMargins(14, 4, 14, 4)
         self.media_layout.setSpacing(8)
 
-        self.media_icon = QLabel(material_icon("music_note"))
+        self.media_icon = QLabel(self._icon_text("music_note"))
         self.media_icon.setObjectName("mediaIcon")
         self.media_icon.setFont(QFont(self.material_font, 16))
         self.media_equalizer = QWidget()
@@ -956,7 +990,7 @@ class CyberBar(QWidget):
         self.status_layout.setContentsMargins(10, 4, 10, 4)
         self.status_layout.setSpacing(8)
 
-        self.net_icon = QPushButton(material_icon("wifi"))
+        self.net_icon = QPushButton(self._icon_text("wifi"))
         self.net_icon.setObjectName("statusIconButton")
         self.net_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.net_icon.setCheckable(True)
@@ -965,7 +999,7 @@ class CyberBar(QWidget):
         self.vpn_icon.setObjectName("statusIconButton")
         self.vpn_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.vpn_icon.setCheckable(True)
-        self.vpn_icon.setText(material_icon("vpn_key"))
+        self.vpn_icon.setText(self._icon_text("vpn_key"))
         self.vpn_icon.clicked.connect(self._toggle_vpn_popup)
         self.christian_button = QPushButton("")
         self.christian_button.setObjectName("statusIconButton")
@@ -987,34 +1021,39 @@ class CyberBar(QWidget):
         self.num_lock_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.num_lock_button.clicked.connect(lambda: self._toggle_lock_state("num"))
         self.num_lock_button.hide()
-        self.pomodoro_button = QPushButton(material_icon("timer"))
+        self.pomodoro_button = QPushButton(self._icon_text("timer"))
         self.pomodoro_button.setObjectName("statusIconButton")
         self.pomodoro_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.pomodoro_button.clicked.connect(self._open_pomodoro_widget)
-        self.rss_button = QPushButton(material_icon("public"))
+        self.rss_button = QPushButton(self._icon_text("public"))
         self.rss_button.setObjectName("statusIconButton")
         self.rss_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.rss_button.clicked.connect(self._open_rss_widget)
-        self.obs_button = QPushButton(material_icon("videocam"))
+        self.obs_button = QPushButton(self._icon_text("videocam"))
         self.obs_button.setObjectName("statusIconButton")
         self.obs_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.obs_button.clicked.connect(self._open_obs_widget)
-        self.crypto_button = QPushButton(material_icon("show_chart"))
+        self.crypto_button = QPushButton(self._icon_text("show_chart"))
         self.crypto_button.setObjectName("statusIconButton")
         self.crypto_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.crypto_button.clicked.connect(self._open_crypto_widget)
-        self.ntfy_button = QPushButton(material_icon("notifications"))
+        self.ntfy_button = QPushButton(self._icon_text("notifications"))
         self.ntfy_button.setObjectName("statusIconButton")
         self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.ntfy_button.setCheckable(True)
         self.ntfy_button.clicked.connect(self._toggle_ntfy_popup)
-        self.battery_icon = QLabel(material_icon("battery_full"))
+        self.game_mode_button = QPushButton(self._icon_text("sports_esports"))
+        self.game_mode_button.setObjectName("statusIconButton")
+        self.game_mode_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.game_mode_button.setCheckable(True)
+        self.game_mode_button.clicked.connect(self._toggle_game_mode_popup)
+        self.battery_icon = QLabel(self._icon_text("battery_full"))
         self.battery_icon.setObjectName("statusIcon")
-        self.caffeine_icon = QLabel(material_icon("coffee"))
+        self.caffeine_icon = QLabel(self._icon_text("coffee"))
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.ntfy_button, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.caps_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
@@ -1030,6 +1069,7 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.obs_button)
         self.status_layout.addWidget(self.crypto_button)
         self.status_layout.addWidget(self.ntfy_button)
+        self.status_layout.addWidget(self.game_mode_button)
         self.status_layout.addWidget(self.caffeine_icon)
         self.status_layout.addWidget(self.battery_icon)
         self.status_layout.addWidget(self.battery_value)
@@ -1068,15 +1108,41 @@ class CyberBar(QWidget):
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._sync_game_mode_button_visibility()
         self._apply_bar_settings()
         self._install_debug_tooltips()
 
     def _icon_button(self, icon_name: str) -> QPushButton:
-        button = QPushButton(material_icon(icon_name))
+        button = QPushButton(self._icon_text(icon_name))
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setFont(QFont(self.material_font, 18))
         button.setToolTip(f"IconButton {icon_name}")
+        button.setProperty("iconKey", icon_name)
         return button
+
+    def _icon_text(self, icon_name: str) -> str:
+        return self._bar_icon_overrides.get(icon_name, material_icon(icon_name))
+
+    def _apply_icon_to_widget(self, widget: QWidget, icon_key: str, fallback_text: str, size: int = 16) -> None:
+        override = self._bar_icon_overrides.get(icon_key, "").strip()
+        if override:
+            path = Path(os.path.expanduser(override))
+            if path.exists() and path.is_file():
+                if isinstance(widget, QPushButton):
+                    widget.setText("")
+                    widget.setIcon(QIcon(str(path)))
+                    widget.setIconSize(QSize(size, size))
+                    return
+                if isinstance(widget, QLabel):
+                    pixmap = QPixmap(str(path)).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    widget.setPixmap(pixmap)
+                    return
+        if isinstance(widget, QPushButton):
+            widget.setIcon(QIcon())
+            widget.setText(override or fallback_text)
+        elif isinstance(widget, QLabel):
+            widget.setPixmap(QPixmap())
+            widget.setText(override or fallback_text)
 
     def _wrap_movable(self, widget: QWidget) -> QWidget:
         wrap = QWidget()
@@ -1100,8 +1166,11 @@ class CyberBar(QWidget):
         watched_files = self._settings_watcher.files()
         if watched_files:
             self._settings_watcher.removePaths(watched_files)
+        ensure_bar_icon_config()
         if SETTINGS_FILE.exists():
             self._settings_watcher.addPath(str(SETTINGS_FILE))
+        if BAR_ICON_CONFIG_FILE.exists():
+            self._settings_watcher.addPath(str(BAR_ICON_CONFIG_FILE))
 
     def _queue_settings_reload(self) -> None:
         if self._settings_reload_timer is None:
@@ -1520,11 +1589,20 @@ class CyberBar(QWidget):
 
     def _reload_settings_if_needed(self, force: bool = False) -> None:
         current_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
-        if not force and current_mtime == self._settings_mtime:
+        icon_mtime = BAR_ICON_CONFIG_FILE.stat().st_mtime if BAR_ICON_CONFIG_FILE.exists() else 0.0
+        icon_changed = getattr(self, "_bar_icon_mtime", 0.0) != icon_mtime
+        if not force and current_mtime == self._settings_mtime and not icon_changed:
             return
         self._settings_mtime = current_mtime
+        self._bar_icon_mtime = icon_mtime
+        self._bar_icon_overrides = load_bar_icon_overrides()
+        self.runtime_settings = normalize_runtime_settings(load_runtime_settings())
+        services = self.runtime_settings.get("services", {})
+        self.service_settings = services if isinstance(services, dict) else {}
         self.region_settings = load_region_settings()
+        self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
         self._apply_bar_settings()
+        self._apply_bar_icon_overrides()
         self._apply_styles()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
@@ -1533,8 +1611,26 @@ class CyberBar(QWidget):
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._sync_game_mode_button_visibility()
         self._sync_desktop_clock_process()
         self._update_locale_button()
+
+    def _apply_bar_icon_overrides(self) -> None:
+        self._apply_icon_to_widget(self.locale_button, "public", material_icon("public"), 16)
+        self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
+        self._apply_icon_to_widget(self.pomodoro_button, "timer", material_icon("timer"), 16)
+        self._apply_icon_to_widget(self.rss_button, "public", material_icon("public"), 16)
+        self._apply_icon_to_widget(self.obs_button, "videocam", material_icon("videocam"), 16)
+        self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("show_chart"), 16)
+        self._apply_icon_to_widget(self.ntfy_button, "notifications", material_icon("notifications"), 16)
+        self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 16)
+        self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
+        self._apply_icon_to_widget(self.btn_clip, "content_paste", material_icon("content_paste"), 16)
+        self._apply_icon_to_widget(self.btn_updates, "system_update", material_icon("system_update"), 16)
+        self._apply_icon_to_widget(self.btn_power, "power_settings_new", material_icon("power_settings_new"), 16)
+        self._apply_icon_to_widget(self.launcher_note, "launcher_note", "♪", 14)
+        self._set_vpn_button_icon(self.vpn_icon.property("active") == True)
+        self._set_christian_button_icon()
 
     def _update_window_mask(self) -> None:
         self.setMask(QRegion(self.rect()))
@@ -1585,6 +1681,10 @@ class CyberBar(QWidget):
         self.ntfy_popup_timer.timeout.connect(self._sync_ntfy_button)
         self.ntfy_popup_timer.start(1000)
 
+        self.game_mode_popup_timer = QTimer(self)
+        self.game_mode_popup_timer.timeout.connect(self._sync_game_mode_button)
+        self.game_mode_popup_timer.start(1000)
+
         self.weather_popup_timer = QTimer(self)
         self.weather_popup_timer.timeout.connect(self._sync_weather_button)
         self.weather_popup_timer.start(1000)
@@ -1615,6 +1715,7 @@ class CyberBar(QWidget):
         self._poll_weather()
         self._poll_rss_notifications()
         self._poll_crypto_notifications()
+        self._sync_game_mode_button()
 
     def _poll_clock(self) -> None:
         now = datetime.now()
@@ -1744,6 +1845,7 @@ class CyberBar(QWidget):
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._sync_game_mode_button_visibility()
         self._sync_weather_visibility()
 
     def _poll_weather(self) -> None:
@@ -1905,7 +2007,7 @@ class CyberBar(QWidget):
 
     def _poll_network(self) -> None:
         connected = run_script("network.sh", "status") == "Connected"
-        self.net_icon.setText(material_icon("wifi" if connected else "wifi_off"))
+        self._apply_icon_to_widget(self.net_icon, "wifi" if connected else "wifi_off", material_icon("wifi" if connected else "wifi_off"), 16)
         vpn_payload = {}
         raw = run_script("vpn.sh", "--status")
         if raw:
@@ -1922,8 +2024,7 @@ class CyberBar(QWidget):
         self.style().polish(self.vpn_icon)
 
     def _set_vpn_button_icon(self, active: bool) -> None:
-        self.vpn_icon.setIcon(QIcon())
-        self.vpn_icon.setText(material_icon("vpn_key"))
+        self._apply_icon_to_widget(self.vpn_icon, "vpn_key", material_icon("vpn_key"), 16)
 
     def _set_christian_button_icon(self) -> None:
         icon = tinted_svg_icon(CHRISTIAN_ICON, QColor(self.theme.primary), 16)
@@ -1932,7 +2033,7 @@ class CyberBar(QWidget):
             self.christian_button.setText("")
             return
         self.christian_button.setIcon(QIcon())
-        self.christian_button.setText(material_icon("auto_awesome"))
+        self.christian_button.setText(self._bar_icon_overrides.get("christian_widget", material_icon("auto_awesome")))
         self.christian_button.setFont(QFont(self.material_font, 16))
 
     def _sync_christian_button_visibility(self) -> None:
@@ -1997,6 +2098,15 @@ class CyberBar(QWidget):
         show_in_bar = bool(ntfy.get("show_in_bar", False))
         self.ntfy_button.setVisible(enabled and show_in_bar)
 
+    def _sync_game_mode_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("game_mode", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", False))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.game_mode_button.setVisible(enabled and show_in_bar)
+
     def _sync_desktop_clock_process(self) -> None:
         service = self.service_settings.get("desktop_clock_widget", {})
         if not isinstance(service, dict):
@@ -2041,6 +2151,7 @@ class CyberBar(QWidget):
     def _poll_caffeine(self) -> None:
         caffeine_on = run_script("caffeine.sh", "status") == "on"
         self.caffeine_icon.setVisible(caffeine_on)
+        self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
 
     def _detect_battery_base(self) -> Optional[Path]:
         power_supply = Path("/sys/class/power_supply")
@@ -2090,7 +2201,7 @@ class CyberBar(QWidget):
         else:
             icon = "battery_alert"
 
-        self.battery_icon.setText(material_icon(icon))
+        self._apply_icon_to_widget(self.battery_icon, icon, material_icon(icon), 16)
         self.battery_value.setText(str(capacity))
         self.battery_icon.show()
         self.battery_value.show()
@@ -2294,6 +2405,13 @@ class CyberBar(QWidget):
         active = self._toggle_singleton_process("_ntfy_popup_process", NTFY_POPUP, python_bin=self._python_bin())
         self.ntfy_button.setChecked(active)
 
+    def _toggle_game_mode_popup(self) -> None:
+        if not GAME_MODE_POPUP.exists():
+            self.game_mode_button.setChecked(False)
+            return
+        active = self._toggle_singleton_process("_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin())
+        self.game_mode_button.setChecked(active)
+
     def _open_launcher(self) -> None:
         if not LAUNCHER_APP.exists():
             return
@@ -2349,6 +2467,17 @@ class CyberBar(QWidget):
             self._ntfy_popup_process = None
         self.ntfy_button.setChecked(active)
 
+    def _sync_game_mode_button(self) -> None:
+        active = self._singleton_active(self._game_mode_popup_process, GAME_MODE_POPUP)
+        if not active:
+            self._game_mode_popup_process = None
+        current = game_mode_summary()
+        self.game_mode_button.setChecked(active)
+        self.game_mode_button.setProperty("active", bool(current.get("active", False)))
+        self.game_mode_button.setToolTip(str(current.get("note", "Game Mode")))
+        self.style().unpolish(self.game_mode_button)
+        self.style().polish(self.game_mode_button)
+
     def _sync_powermenu_button(self) -> None:
         active = self._singleton_active(self._powermenu_process, POWERMENU_APP)
         if not active:
@@ -2385,6 +2514,8 @@ class CyberBar(QWidget):
             self._desktop_clock_process.terminate()
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
             self._ntfy_popup_process.terminate()
+        if self._game_mode_popup_process is not None and self._game_mode_popup_process.poll() is None:
+            self._game_mode_popup_process.terminate()
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
             self._powermenu_process.terminate()
         super().closeEvent(event)
