@@ -60,6 +60,11 @@ VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 REMINDERS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 POMODORO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
+RSS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
+OBS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
+CRYPTO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
+VPS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
+DESKTOP_CLOCK_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 
 MATERIAL_ICONS = {
     "airplanemode_active": "\ue195",
@@ -94,6 +99,11 @@ MATERIAL_ICONS = {
     "lock": "\ue897",
     "auto_awesome": "\ue65f",
     "timer": "\ue425",
+    "public": "\ue80b",
+    "videocam": "\ue04b",
+    "show_chart": "\ue6e1",
+    "storage": "\ue1db",
+    "watch": "\ue334",
 }
 
 DEFAULT_SERVICE_SETTINGS = {
@@ -121,6 +131,26 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": False,
     },
     "pomodoro_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
+    "rss_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
+    "obs_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
+    "crypto_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
+    "vps_widget": {
+        "enabled": False,
+        "show_in_notification_center": True,
+    },
+    "desktop_clock_widget": {
         "enabled": True,
         "show_in_notification_center": True,
     },
@@ -812,6 +842,16 @@ class NotificationCenter(QWidget):
         layout.addWidget(self._build_reminders_launcher_card())
         layout.addSpacing(10)
         layout.addWidget(self._build_pomodoro_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_rss_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_obs_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_crypto_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_vps_launcher_card())
+        layout.addSpacing(10)
+        layout.addWidget(self._build_desktop_clock_launcher_card())
         self._sync_service_card_visibility()
         return page
 
@@ -1145,6 +1185,61 @@ class NotificationCenter(QWidget):
         )
         return self.pomodoro_launcher_card
 
+    def _build_rss_launcher_card(self) -> QFrame:
+        self.rss_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "RSS",
+            "Open the styled RSS reader for manual feeds or OPML-backed sources.",
+            "public",
+            "Open",
+            self._open_rss_widget,
+        )
+        return self.rss_launcher_card
+
+    def _build_obs_launcher_card(self) -> QFrame:
+        self.obs_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "OBS",
+            "Open the livestreaming and recording control surface for OBS WebSocket.",
+            "videocam",
+            "Open",
+            self._open_obs_widget,
+        )
+        return self.obs_launcher_card
+
+    def _build_crypto_launcher_card(self) -> QFrame:
+        self.crypto_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "Crypto Tracker",
+            "Open tracked coins, high-resolution charts, and price alert controls.",
+            "show_chart",
+            "Open",
+            self._open_crypto_widget,
+        )
+        return self.crypto_launcher_card
+
+    def _build_vps_launcher_card(self) -> QFrame:
+        self.vps_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "VPS Care",
+            "Open SSH-powered VPS health checks, updates, and service restart actions.",
+            "storage",
+            "Open",
+            self._open_vps_widget,
+        )
+        return self.vps_launcher_card
+
+    def _build_desktop_clock_launcher_card(self) -> QFrame:
+        self.desktop_clock_launcher_card = ServiceLauncherCard(
+            self.material_font,
+            "Desktop Clock",
+            "Open the Hanauta analog desktop clock with oversized digital numerals.",
+            "watch",
+            "Open",
+            self._open_desktop_clock_widget,
+        )
+        return self.desktop_clock_launcher_card
+
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -1362,6 +1457,26 @@ class NotificationCenter(QWidget):
             self.pomodoro_launcher_card.setVisible(
                 self._service_visible_in_notification_center("pomodoro_widget")
             )
+        if hasattr(self, "rss_launcher_card"):
+            self.rss_launcher_card.setVisible(
+                self._service_visible_in_notification_center("rss_widget")
+            )
+        if hasattr(self, "obs_launcher_card"):
+            self.obs_launcher_card.setVisible(
+                self._service_visible_in_notification_center("obs_widget")
+            )
+        if hasattr(self, "crypto_launcher_card"):
+            self.crypto_launcher_card.setVisible(
+                self._service_visible_in_notification_center("crypto_widget")
+            )
+        if hasattr(self, "vps_launcher_card"):
+            self.vps_launcher_card.setVisible(
+                self._service_visible_in_notification_center("vps_widget")
+            )
+        if hasattr(self, "desktop_clock_launcher_card"):
+            self.desktop_clock_launcher_card.setVisible(
+                self._service_visible_in_notification_center("desktop_clock_widget")
+            )
 
     def _open_vpn_widget(self) -> None:
         if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
@@ -1382,6 +1497,31 @@ class NotificationCenter(QWidget):
         if not self._service_enabled("pomodoro_widget") or not POMODORO_WIDGET_SCRIPT.exists():
             return
         run_bg([sys.executable, str(POMODORO_WIDGET_SCRIPT)])
+
+    def _open_rss_widget(self) -> None:
+        if not self._service_enabled("rss_widget") or not RSS_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(RSS_WIDGET_SCRIPT)])
+
+    def _open_obs_widget(self) -> None:
+        if not self._service_enabled("obs_widget") or not OBS_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(OBS_WIDGET_SCRIPT)])
+
+    def _open_crypto_widget(self) -> None:
+        if not self._service_enabled("crypto_widget") or not CRYPTO_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(CRYPTO_WIDGET_SCRIPT)])
+
+    def _open_vps_widget(self) -> None:
+        if not self._service_enabled("vps_widget") or not VPS_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(VPS_WIDGET_SCRIPT)])
+
+    def _open_desktop_clock_widget(self) -> None:
+        if not self._service_enabled("desktop_clock_widget") or not DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
+            return
+        run_bg([sys.executable, str(DESKTOP_CLOCK_WIDGET_SCRIPT)])
 
     def _circle_icon_button(self, icon: str, accent: str = "default") -> QPushButton:
         button = QPushButton(material_icon(icon))

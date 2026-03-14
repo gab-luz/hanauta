@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 from urllib import error, request
 from urllib import parse
+import locale as pylocale
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QTimer, QStringListModel, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
@@ -37,6 +38,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSlider,
+    QCheckBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -141,6 +143,7 @@ MATERIAL_ICONS = {
     "dock_to_left": "\ue7e6",
     "web_asset": "\ue069",
     "public": "\ue80b",
+    "language": "\ue894",
     "widgets": "\ue1bd",
     "bolt": "\uea0b",
     "desktop_windows": "\ue30c",
@@ -164,6 +167,13 @@ MATERIAL_ICONS = {
     "timer": "\ue425",
     "coffee": "\uefef",
     "auto_awesome": "\ue65f",
+    "rss_feed": "\ue0e5",
+    "videocam": "\ue04b",
+    "sensors": "\ue51e",
+    "storage": "\ue1db",
+    "show_chart": "\ue6e1",
+    "terminal": "\ue31c",
+    "watch": "\ue334",
 }
 
 
@@ -238,6 +248,29 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": True,
         "show_in_bar": False,
     },
+    "rss_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
+    },
+    "obs_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
+    },
+    "crypto_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
+    },
+    "vps_widget": {
+        "enabled": False,
+        "show_in_notification_center": True,
+    },
+    "desktop_clock_widget": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
 }
 
 
@@ -289,6 +322,10 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
         elif key == "pomodoro_widget":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", False))
+            )
+        elif key in {"rss_widget", "obs_widget", "crypto_widget"}:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
@@ -402,13 +439,60 @@ def load_settings_state() -> dict:
             "auto_start_breaks": False,
             "auto_start_focus": False,
         },
+        "rss": {
+            "feed_urls": "",
+            "opml_source": "",
+            "username": "",
+            "password": "",
+            "item_limit": 10,
+            "check_interval_minutes": 15,
+            "notify_new_items": True,
+        },
+        "obs": {
+            "host": "127.0.0.1",
+            "port": 4455,
+            "password": "",
+            "auto_connect": False,
+        },
+        "crypto": {
+            "api_provider": "coingecko",
+            "api_key": "",
+            "tracked_coins": "bitcoin,ethereum",
+            "vs_currency": "usd",
+            "check_interval_minutes": 15,
+            "chart_days": 7,
+            "notify_price_moves": True,
+            "price_up_percent": 3.0,
+            "price_down_percent": 3.0,
+        },
+        "vps": {
+            "host": "",
+            "port": 22,
+            "username": "",
+            "identity_file": "",
+            "app_service": "",
+            "health_command": "uptime && df -h /",
+            "update_command": "sudo apt update && sudo apt upgrade -y",
+        },
+        "clock": {
+            "size": 320,
+            "show_seconds": True,
+            "position_x": -1,
+            "position_y": -1,
+        },
         "display": {
             "layout_mode": "extend",
             "primary": "",
             "outputs": [],
         },
-        "bar": dict(DEFAULT_BAR_SETTINGS),
-        "services": merged_service_settings({}),
+    "region": {
+        "locale_code": "",
+        "use_24_hour": False,
+        "date_style": "us",
+        "temperature_unit": "c",
+    },
+    "bar": dict(DEFAULT_BAR_SETTINGS),
+    "services": merged_service_settings({}),
     }
     try:
         raw = SETTINGS_FILE.read_text(encoding="utf-8")
@@ -516,6 +600,75 @@ def load_settings_state() -> dict:
         pomodoro["long_break_every"] = 4
     pomodoro["auto_start_breaks"] = bool(pomodoro.get("auto_start_breaks", False))
     pomodoro["auto_start_focus"] = bool(pomodoro.get("auto_start_focus", False))
+    rss = dict(payload.get("rss", {}))
+    rss["feed_urls"] = str(rss.get("feed_urls", "")).strip()
+    rss["opml_source"] = str(rss.get("opml_source", "")).strip()
+    rss["username"] = str(rss.get("username", "")).strip()
+    rss["password"] = str(rss.get("password", ""))
+    try:
+        rss["item_limit"] = max(3, min(30, int(rss.get("item_limit", 10))))
+    except Exception:
+        rss["item_limit"] = 10
+    try:
+        rss["check_interval_minutes"] = max(5, min(180, int(rss.get("check_interval_minutes", 15))))
+    except Exception:
+        rss["check_interval_minutes"] = 15
+    rss["notify_new_items"] = bool(rss.get("notify_new_items", True))
+    obs = dict(payload.get("obs", {}))
+    obs["host"] = str(obs.get("host", "127.0.0.1")).strip() or "127.0.0.1"
+    try:
+        obs["port"] = max(1, min(65535, int(obs.get("port", 4455))))
+    except Exception:
+        obs["port"] = 4455
+    obs["password"] = str(obs.get("password", ""))
+    obs["auto_connect"] = bool(obs.get("auto_connect", False))
+    crypto = dict(payload.get("crypto", {}))
+    crypto["api_provider"] = "coingecko"
+    crypto["api_key"] = str(crypto.get("api_key", "")).strip()
+    crypto["tracked_coins"] = str(crypto.get("tracked_coins", "bitcoin,ethereum")).strip()
+    crypto["vs_currency"] = str(crypto.get("vs_currency", "usd")).strip().lower() or "usd"
+    try:
+        crypto["check_interval_minutes"] = max(5, min(180, int(crypto.get("check_interval_minutes", 15))))
+    except Exception:
+        crypto["check_interval_minutes"] = 15
+    try:
+        crypto["chart_days"] = max(1, min(90, int(crypto.get("chart_days", 7))))
+    except Exception:
+        crypto["chart_days"] = 7
+    crypto["notify_price_moves"] = bool(crypto.get("notify_price_moves", True))
+    try:
+        crypto["price_up_percent"] = max(0.5, min(50.0, float(crypto.get("price_up_percent", 3.0))))
+    except Exception:
+        crypto["price_up_percent"] = 3.0
+    try:
+        crypto["price_down_percent"] = max(0.5, min(50.0, float(crypto.get("price_down_percent", 3.0))))
+    except Exception:
+        crypto["price_down_percent"] = 3.0
+    vps = dict(payload.get("vps", {}))
+    vps["host"] = str(vps.get("host", "")).strip()
+    try:
+        vps["port"] = max(1, min(65535, int(vps.get("port", 22))))
+    except Exception:
+        vps["port"] = 22
+    vps["username"] = str(vps.get("username", "")).strip()
+    vps["identity_file"] = str(vps.get("identity_file", "")).strip()
+    vps["app_service"] = str(vps.get("app_service", "")).strip()
+    vps["health_command"] = str(vps.get("health_command", "uptime && df -h /")).strip() or "uptime && df -h /"
+    vps["update_command"] = str(vps.get("update_command", "sudo apt update && sudo apt upgrade -y")).strip() or "sudo apt update && sudo apt upgrade -y"
+    clock = dict(payload.get("clock", {}))
+    try:
+        clock["size"] = max(220, min(520, int(clock.get("size", 320))))
+    except Exception:
+        clock["size"] = 320
+    clock["show_seconds"] = bool(clock.get("show_seconds", True))
+    try:
+        clock["position_x"] = int(clock.get("position_x", -1))
+    except Exception:
+        clock["position_x"] = -1
+    try:
+        clock["position_y"] = int(clock.get("position_y", -1))
+    except Exception:
+        clock["position_y"] = -1
     display = dict(payload.get("display", {}))
     display.setdefault("layout_mode", "extend")
     display.setdefault("primary", "")
@@ -523,6 +676,13 @@ def load_settings_state() -> dict:
     if not isinstance(outputs, list):
         outputs = []
     display["outputs"] = [item for item in outputs if isinstance(item, dict)]
+    region = dict(payload.get("region", {}))
+    region["locale_code"] = str(region.get("locale_code", "")).strip()
+    region["use_24_hour"] = bool(region.get("use_24_hour", False))
+    date_style = str(region.get("date_style", "us")).strip().lower()
+    region["date_style"] = date_style if date_style in {"us", "iso", "eu"} else "us"
+    temp_unit = str(region.get("temperature_unit", "c")).strip().lower()
+    region["temperature_unit"] = temp_unit if temp_unit in {"c", "f"} else "c"
     bar = merged_bar_settings(payload.get("bar", {}))
     services = merged_service_settings(payload.get("services", {}))
     return {
@@ -533,7 +693,13 @@ def load_settings_state() -> dict:
         "calendar": calendar,
         "reminders": reminders,
         "pomodoro": pomodoro,
+        "rss": rss,
+        "obs": obs,
+        "crypto": crypto,
+        "vps": vps,
+        "clock": clock,
         "display": display,
+        "region": region,
         "bar": bar,
         "services": services,
     }
@@ -1645,6 +1811,7 @@ class SettingsWindow(QWidget):
             ("overview", material_icon("grid_view"), "Overview", False),
             ("appearance", material_icon("palette"), "Looks", True),
             ("display", material_icon("desktop_windows"), "Display", False),
+            ("region", material_icon("public"), "Region", False),
             ("bar", material_icon("crop_square"), "Bar", False),
             ("services", material_icon("settings"), "Services", False),
             ("picom", material_icon("shadow"), "Picom", False),
@@ -1667,6 +1834,7 @@ class SettingsWindow(QWidget):
         self.page_stack.addWidget(self._build_overview_page())
         self.page_stack.addWidget(self._build_appearance_page())
         self.page_stack.addWidget(self._build_display_page())
+        self.page_stack.addWidget(self._build_region_page())
         self.page_stack.addWidget(self._build_bar_page())
         self.page_stack.addWidget(self._build_services_page())
         self.page_stack.addWidget(self._build_picom_page())
@@ -1701,6 +1869,9 @@ class SettingsWindow(QWidget):
     def _build_bar_page(self) -> QWidget:
         return self._scroll_page(self._build_bar_screen_card())
 
+    def _build_region_page(self) -> QWidget:
+        return self._scroll_page(self._build_region_card())
+
     def _build_services_page(self) -> QWidget:
         return self._scroll_page(self._build_services_card())
 
@@ -1711,7 +1882,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_picom_card())
 
     def _show_page(self, key: str) -> None:
-        order = {"overview": 0, "appearance": 1, "display": 2, "bar": 3, "services": 4, "picom": 5}
+        order = {"overview": 0, "appearance": 1, "display": 2, "region": 3, "bar": 4, "services": 5, "picom": 6}
         resolved = key if key in order else "appearance"
         self.page_stack.setCurrentIndex(order[resolved])
         for button_key, button in getattr(self, "nav_buttons", {}).items():
@@ -2555,6 +2726,102 @@ class SettingsWindow(QWidget):
         )
         return card
 
+    def _build_region_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("public"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Region & locale")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        header.addWidget(icon)
+        header.addWidget(title)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        detected_locale = (pylocale.getdefaultlocale()[0] if hasattr(pylocale, "getdefaultlocale") else "") or ""
+        self.region_locale_input = QLineEdit(self.settings_state["region"].get("locale_code", detected_locale))
+        self.region_locale_input.setPlaceholderText(detected_locale or "en_US.UTF-8")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("language"),
+                "Locale code",
+                "Used by Hanauta for the locale badge and regional formatting preferences. Example: en_US.UTF-8 or pt_BR.UTF-8.",
+                self.icon_font,
+                self.ui_font,
+                self.region_locale_input,
+            )
+        )
+
+        self.region_24h_switch = SwitchButton(bool(self.settings_state["region"].get("use_24_hour", False)))
+        self.region_24h_switch.toggledValue.connect(self._set_region_use_24_hour)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "24-hour clock",
+                "Use 24-hour time in the bar instead of AM/PM.",
+                self.icon_font,
+                self.ui_font,
+                self.region_24h_switch,
+            )
+        )
+
+        self.region_date_style_combo = QComboBox()
+        self.region_date_style_combo.setObjectName("settingsCombo")
+        self.region_date_style_combo.addItem("US", "us")
+        self.region_date_style_combo.addItem("ISO", "iso")
+        self.region_date_style_combo.addItem("European", "eu")
+        current_date_style = str(self.settings_state["region"].get("date_style", "us"))
+        date_style_index = self.region_date_style_combo.findData(current_date_style)
+        self.region_date_style_combo.setCurrentIndex(max(0, date_style_index))
+        self.region_date_style_combo.currentIndexChanged.connect(self._set_region_date_style)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("calendar_month"),
+                "Date style",
+                "Controls how the bar renders the date label.",
+                self.icon_font,
+                self.ui_font,
+                self.region_date_style_combo,
+            )
+        )
+
+        self.region_temperature_combo = QComboBox()
+        self.region_temperature_combo.setObjectName("settingsCombo")
+        self.region_temperature_combo.addItem("Celsius", "c")
+        self.region_temperature_combo.addItem("Fahrenheit", "f")
+        current_temp_style = str(self.settings_state["region"].get("temperature_unit", "c"))
+        temp_style_index = self.region_temperature_combo.findData(current_temp_style)
+        self.region_temperature_combo.setCurrentIndex(max(0, temp_style_index))
+        self.region_temperature_combo.currentIndexChanged.connect(self._set_region_temperature_unit)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("partly_cloudy_day"),
+                "Temperature unit",
+                "Used by Hanauta weather surfaces when a converted regional unit is needed.",
+                self.icon_font,
+                self.ui_font,
+                self.region_temperature_combo,
+            )
+        )
+
+        self.region_status = QLabel("Regional formatting is ready.")
+        self.region_status.setWordWrap(True)
+        self.region_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.region_status)
+
+        save_button = QPushButton("Save region settings")
+        save_button.setObjectName("primaryButton")
+        save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        save_button.clicked.connect(self._save_region_settings)
+        layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
+        return card
+
     def _build_services_card(self) -> QWidget:
         card = QFrame()
         card.setObjectName("contentCard")
@@ -2582,6 +2849,11 @@ class SettingsWindow(QWidget):
             ("calendar_widget", self._build_calendar_service_section()),
             ("reminders_widget", self._build_reminders_service_section()),
             ("pomodoro_widget", self._build_pomodoro_service_section()),
+            ("rss_widget", self._build_rss_service_section()),
+            ("obs_widget", self._build_obs_service_section()),
+            ("crypto_widget", self._build_crypto_service_section()),
+            ("vps_widget", self._build_vps_service_section()),
+            ("desktop_clock_widget", self._build_desktop_clock_service_section()),
             ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
@@ -3312,6 +3584,491 @@ class SettingsWindow(QWidget):
         self.service_sections["pomodoro_widget"] = section
         return section
 
+    def _build_rss_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.rss_display_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["rss_widget"].get(
+                    "show_in_notification_center",
+                    True,
+                )
+            )
+        )
+        self.rss_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("rss_widget", enabled)
+        )
+        self.service_display_switches["rss_widget"] = self.rss_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose an RSS launcher card in the overview page.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_display_switch,
+            )
+        )
+
+        self.rss_bar_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["rss_widget"].get(
+                    "show_in_bar",
+                    False,
+                )
+            )
+        )
+        self.rss_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("rss_widget", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "Show on bar",
+                "Adds an RSS icon to the bar so the feed reader can be opened directly.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_bar_switch,
+            )
+        )
+
+        self.rss_urls_input = QLineEdit(self.settings_state["rss"].get("feed_urls", ""))
+        self.rss_urls_input.setPlaceholderText("https://feed1.xml, https://feed2.xml")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("web_asset"),
+                "Feed URLs",
+                "Comma-separated RSS or Atom feed URLs if you want to manage feeds manually, including feeds exposed by self-hosted readers like FreshRSS.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_urls_input,
+            )
+        )
+
+        self.rss_opml_input = QLineEdit(self.settings_state["rss"].get("opml_source", ""))
+        self.rss_opml_input.setPlaceholderText("/path/to/feeds.opml or https://service.example/opml")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("folder_open"),
+                "OPML source",
+                "Local or remote OPML export. This works well with self-hosted readers like FreshRSS, which support OPML import and export.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_opml_input,
+            )
+        )
+
+        self.rss_username_input = QLineEdit(self.settings_state["rss"].get("username", ""))
+        self.rss_username_input.setPlaceholderText("Optional username")
+        self.rss_password_input = QLineEdit(self.settings_state["rss"].get("password", ""))
+        self.rss_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.rss_password_input.setPlaceholderText("Optional password")
+        layout.addWidget(SettingsRow(material_icon("person"), "Username", "Used for basic-auth protected OPML or feed sources.", self.icon_font, self.ui_font, self.rss_username_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Password", "Used for basic-auth protected OPML or feed sources.", self.icon_font, self.ui_font, self.rss_password_input))
+
+        self.rss_limit_slider = QSlider(Qt.Orientation.Horizontal)
+        self.rss_limit_slider.setRange(3, 30)
+        self.rss_limit_slider.setValue(int(self.settings_state["rss"].get("item_limit", 10)))
+        self.rss_limit_slider.valueChanged.connect(self._set_rss_item_limit)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Item limit",
+                "How many recent stories the RSS widget should surface at once.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_limit_slider,
+            )
+        )
+
+        self.rss_interval_slider = QSlider(Qt.Orientation.Horizontal)
+        self.rss_interval_slider.setRange(5, 180)
+        self.rss_interval_slider.setValue(int(self.settings_state["rss"].get("check_interval_minutes", 15)))
+        self.rss_interval_slider.valueChanged.connect(self._set_rss_check_interval)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Check interval",
+                "How often Hanauta checks your feeds for new entries and notifications.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_interval_slider,
+            )
+        )
+
+        self.rss_notify_switch = SwitchButton(bool(self.settings_state["rss"].get("notify_new_items", True)))
+        self.rss_notify_switch.toggledValue.connect(self._set_rss_notify_new_items)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Notify on new stories",
+                "Send a desktop notification for newly discovered RSS items, with a button to read them.",
+                self.icon_font,
+                self.ui_font,
+                self.rss_notify_switch,
+            )
+        )
+
+        self.rss_status = QLabel("RSS widget sources are ready.")
+        self.rss_status.setWordWrap(True)
+        self.rss_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.rss_status)
+
+        self.rss_save_button = QPushButton("Save RSS sources")
+        self.rss_save_button.setObjectName("primaryButton")
+        self.rss_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.rss_save_button.clicked.connect(self._save_rss_settings)
+        layout.addWidget(self.rss_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        section = ExpandableServiceSection(
+            "rss_widget",
+            "RSS",
+            "Read headlines from manual feeds or OPML exports, including self-hosted reader exports.",
+            material_icon("web_asset"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("rss_widget"),
+            lambda enabled: self._set_service_enabled("rss_widget", enabled),
+        )
+        self.service_sections["rss_widget"] = section
+        return section
+
+    def _build_obs_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.obs_display_switch = SwitchButton(
+            bool(self.settings_state["services"]["obs_widget"].get("show_in_notification_center", True))
+        )
+        self.obs_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("obs_widget", enabled)
+        )
+        self.service_display_switches["obs_widget"] = self.obs_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose the OBS control surface in the overview page.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_display_switch,
+            )
+        )
+
+        self.obs_bar_switch = SwitchButton(
+            bool(self.settings_state["services"]["obs_widget"].get("show_in_bar", False))
+        )
+        self.obs_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("obs_widget", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("videocam"),
+                "Show on bar",
+                "Adds an OBS icon to the bar so streaming controls are one click away.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_bar_switch,
+            )
+        )
+
+        self.obs_host_input = QLineEdit(self.settings_state["obs"].get("host", "127.0.0.1"))
+        self.obs_port_input = QLineEdit(str(self.settings_state["obs"].get("port", 4455)))
+        self.obs_password_input = QLineEdit(self.settings_state["obs"].get("password", ""))
+        self.obs_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.obs_auto_connect_switch = SwitchButton(bool(self.settings_state["obs"].get("auto_connect", False)))
+        self.obs_auto_connect_switch.toggledValue.connect(self._set_obs_auto_connect)
+        layout.addWidget(SettingsRow(material_icon("public"), "OBS host", "OBS WebSocket host, usually 127.0.0.1.", self.icon_font, self.ui_font, self.obs_host_input))
+        layout.addWidget(SettingsRow(material_icon("sensors"), "OBS port", "OBS WebSocket port. OBS 30+ defaults to 4455.", self.icon_font, self.ui_font, self.obs_port_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "OBS password", "Optional OBS WebSocket password.", self.icon_font, self.ui_font, self.obs_password_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Connect when opened",
+                "Try connecting to OBS as soon as the widget opens.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_auto_connect_switch,
+            )
+        )
+
+        self.obs_status = QLabel("OBS widget is ready for local WebSocket control.")
+        self.obs_status.setWordWrap(True)
+        self.obs_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.obs_status)
+
+        self.obs_save_button = QPushButton("Save OBS settings")
+        self.obs_save_button.setObjectName("primaryButton")
+        self.obs_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.obs_save_button.clicked.connect(self._save_obs_settings)
+        layout.addWidget(self.obs_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        section = ExpandableServiceSection(
+            "obs_widget",
+            "OBS",
+            "Livestreaming and recording controls powered by OBS WebSocket, with scene awareness and stream toggles.",
+            material_icon("videocam"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("obs_widget"),
+            lambda enabled: self._set_service_enabled("obs_widget", enabled),
+        )
+        self.service_sections["obs_widget"] = section
+        return section
+
+    def _build_crypto_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.crypto_display_switch = SwitchButton(
+            bool(self.settings_state["services"]["crypto_widget"].get("show_in_notification_center", True))
+        )
+        self.crypto_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("crypto_widget", enabled)
+        )
+        self.service_display_switches["crypto_widget"] = self.crypto_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose the crypto tracker card in the overview page.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_display_switch,
+            )
+        )
+
+        self.crypto_bar_switch = SwitchButton(
+            bool(self.settings_state["services"]["crypto_widget"].get("show_in_bar", False))
+        )
+        self.crypto_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("crypto_widget", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("show_chart"),
+                "Show on bar",
+                "Adds a crypto icon to the bar so you can open the tracker quickly.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_bar_switch,
+            )
+        )
+
+        self.crypto_coins_input = QLineEdit(self.settings_state["crypto"].get("tracked_coins", "bitcoin,ethereum"))
+        self.crypto_coins_input.setPlaceholderText("bitcoin,ethereum,solana")
+        self.crypto_currency_input = QLineEdit(self.settings_state["crypto"].get("vs_currency", "usd"))
+        self.crypto_currency_input.setPlaceholderText("usd")
+        self.crypto_api_key_input = QLineEdit(self.settings_state["crypto"].get("api_key", ""))
+        self.crypto_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.crypto_api_key_input.setPlaceholderText("Optional CoinGecko Demo API key")
+        layout.addWidget(SettingsRow(material_icon("show_chart"), "Tracked coins", "Comma-separated CoinGecko coin ids like bitcoin, ethereum, solana.", self.icon_font, self.ui_font, self.crypto_coins_input))
+        layout.addWidget(SettingsRow(material_icon("public"), "Quote currency", "The currency used for pricing, such as usd or brl.", self.icon_font, self.ui_font, self.crypto_currency_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "CoinGecko Demo key", "Optional free demo key for higher limits. Hanauta uses CoinGecko for price and chart data.", self.icon_font, self.ui_font, self.crypto_api_key_input))
+
+        self.crypto_interval_slider = QSlider(Qt.Orientation.Horizontal)
+        self.crypto_interval_slider.setRange(5, 180)
+        self.crypto_interval_slider.setValue(int(self.settings_state["crypto"].get("check_interval_minutes", 15)))
+        self.crypto_interval_slider.valueChanged.connect(self._set_crypto_check_interval)
+        layout.addWidget(SettingsRow(material_icon("refresh"), "Check interval", "How often Hanauta checks tracked coins for fresh prices and alert-worthy moves.", self.icon_font, self.ui_font, self.crypto_interval_slider))
+
+        self.crypto_chart_days_slider = QSlider(Qt.Orientation.Horizontal)
+        self.crypto_chart_days_slider.setRange(1, 90)
+        self.crypto_chart_days_slider.setValue(int(self.settings_state["crypto"].get("chart_days", 7)))
+        self.crypto_chart_days_slider.valueChanged.connect(self._set_crypto_chart_days)
+        layout.addWidget(SettingsRow(material_icon("calendar_month"), "Chart days", "How many recent days the high-resolution chart should cover by default.", self.icon_font, self.ui_font, self.crypto_chart_days_slider))
+
+        self.crypto_alert_switch = SwitchButton(bool(self.settings_state["crypto"].get("notify_price_moves", True)))
+        self.crypto_alert_switch.toggledValue.connect(self._set_crypto_notify_price_moves)
+        layout.addWidget(SettingsRow(material_icon("notifications_active"), "Price alerts", "Send notifications when tracked coins move beyond your up/down thresholds.", self.icon_font, self.ui_font, self.crypto_alert_switch))
+
+        self.crypto_up_slider = QSlider(Qt.Orientation.Horizontal)
+        self.crypto_up_slider.setRange(1, 20)
+        self.crypto_up_slider.setValue(int(round(float(self.settings_state["crypto"].get("price_up_percent", 3.0)))))
+        self.crypto_up_slider.valueChanged.connect(self._set_crypto_up_percent)
+        layout.addWidget(SettingsRow(material_icon("bolt"), "Up alert threshold", "Notify when a tracked coin rises by at least this percent since the previous check.", self.icon_font, self.ui_font, self.crypto_up_slider))
+
+        self.crypto_down_slider = QSlider(Qt.Orientation.Horizontal)
+        self.crypto_down_slider.setRange(1, 20)
+        self.crypto_down_slider.setValue(int(round(float(self.settings_state["crypto"].get("price_down_percent", 3.0)))))
+        self.crypto_down_slider.valueChanged.connect(self._set_crypto_down_percent)
+        layout.addWidget(SettingsRow(material_icon("bolt"), "Down alert threshold", "Notify when a tracked coin falls by at least this percent since the previous check.", self.icon_font, self.ui_font, self.crypto_down_slider))
+
+        self.crypto_status = QLabel("Crypto tracker is set to CoinGecko pricing.")
+        self.crypto_status.setWordWrap(True)
+        self.crypto_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.crypto_status)
+
+        self.crypto_save_button = QPushButton("Save crypto settings")
+        self.crypto_save_button.setObjectName("primaryButton")
+        self.crypto_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.crypto_save_button.clicked.connect(self._save_crypto_settings)
+        layout.addWidget(self.crypto_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        section = ExpandableServiceSection(
+            "crypto_widget",
+            "Crypto Tracker",
+            "Track several coins, view a high-resolution chart, and get alerts when prices move.",
+            material_icon("show_chart"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("crypto_widget"),
+            lambda enabled: self._set_service_enabled("crypto_widget", enabled),
+        )
+        self.service_sections["crypto_widget"] = section
+        return section
+
+    def _build_vps_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.vps_display_switch = SwitchButton(
+            bool(self.settings_state["services"]["vps_widget"].get("show_in_notification_center", True))
+        )
+        self.vps_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("vps_widget", enabled)
+        )
+        self.service_display_switches["vps_widget"] = self.vps_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose a VPS operations card in the overview page.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_display_switch,
+            )
+        )
+
+        self.vps_host_input = QLineEdit(self.settings_state["vps"].get("host", ""))
+        self.vps_port_input = QLineEdit(str(self.settings_state["vps"].get("port", 22)))
+        self.vps_username_input = QLineEdit(self.settings_state["vps"].get("username", ""))
+        self.vps_identity_input = QLineEdit(self.settings_state["vps"].get("identity_file", ""))
+        self.vps_service_input = QLineEdit(self.settings_state["vps"].get("app_service", ""))
+        self.vps_health_input = QLineEdit(self.settings_state["vps"].get("health_command", "uptime && df -h /"))
+        self.vps_update_input = QLineEdit(self.settings_state["vps"].get("update_command", "sudo apt update && sudo apt upgrade -y"))
+        layout.addWidget(SettingsRow(material_icon("public"), "Host", "Server host or IP for SSH connections.", self.icon_font, self.ui_font, self.vps_host_input))
+        layout.addWidget(SettingsRow(material_icon("sensors"), "Port", "SSH port for the VPS.", self.icon_font, self.ui_font, self.vps_port_input))
+        layout.addWidget(SettingsRow(material_icon("person"), "Username", "SSH username.", self.icon_font, self.ui_font, self.vps_username_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Identity file", "Optional SSH private key path if you do not want to rely on your default agent.", self.icon_font, self.ui_font, self.vps_identity_input))
+        layout.addWidget(SettingsRow(material_icon("hub"), "App service", "Optional systemd service to restart or check quickly, like caddy or myapp.service.", self.icon_font, self.ui_font, self.vps_service_input))
+        layout.addWidget(SettingsRow(material_icon("terminal"), "Health command", "Command used by the widget to collect uptime, disk, and service health.", self.icon_font, self.ui_font, self.vps_health_input))
+        layout.addWidget(SettingsRow(material_icon("refresh"), "Update command", "Command used when you want Hanauta to run package updates over SSH.", self.icon_font, self.ui_font, self.vps_update_input))
+
+        self.vps_status = QLabel("VPS widget can run SSH health checks and maintenance commands.")
+        self.vps_status.setWordWrap(True)
+        self.vps_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.vps_status)
+
+        self.vps_save_button = QPushButton("Save VPS settings")
+        self.vps_save_button.setObjectName("primaryButton")
+        self.vps_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.vps_save_button.clicked.connect(self._save_vps_settings)
+        layout.addWidget(self.vps_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        section = ExpandableServiceSection(
+            "vps_widget",
+            "VPS Care",
+            "SSH into your VPS health workflow for checks, package updates, and service restarts.",
+            material_icon("storage"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("vps_widget"),
+            lambda enabled: self._set_service_enabled("vps_widget", enabled),
+        )
+        self.service_sections["vps_widget"] = section
+        return section
+
+    def _build_desktop_clock_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.clock_display_switch = SwitchButton(
+            bool(self.settings_state["services"]["desktop_clock_widget"].get("show_in_notification_center", True))
+        )
+        self.clock_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("desktop_clock_widget", enabled)
+        )
+        self.service_display_switches["desktop_clock_widget"] = self.clock_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose the desktop clock launcher in the overview page.",
+                self.icon_font,
+                self.ui_font,
+                self.clock_display_switch,
+            )
+        )
+
+        self.clock_size_slider = QSlider(Qt.Orientation.Horizontal)
+        self.clock_size_slider.setRange(220, 520)
+        self.clock_size_slider.setValue(int(self.settings_state["clock"].get("size", 320)))
+        self.clock_size_slider.valueChanged.connect(self._set_clock_size)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Clock size",
+                "Resize the desktop clock without changing its design language.",
+                self.icon_font,
+                self.ui_font,
+                self.clock_size_slider,
+            )
+        )
+
+        self.clock_seconds_switch = SwitchButton(bool(self.settings_state["clock"].get("show_seconds", True)))
+        self.clock_seconds_switch.toggledValue.connect(self._set_clock_show_seconds)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Show seconds hand",
+                "Display the slim moving seconds hand on the analog clock face.",
+                self.icon_font,
+                self.ui_font,
+                self.clock_seconds_switch,
+            )
+        )
+
+        self.clock_status = QLabel("Desktop clock is ready.")
+        self.clock_status.setWordWrap(True)
+        self.clock_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.clock_status)
+
+        self.clock_reset_button = QPushButton("Reset clock position")
+        self.clock_reset_button.setObjectName("secondaryButton")
+        self.clock_reset_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.clock_reset_button.clicked.connect(self._reset_clock_position)
+        layout.addWidget(self.clock_reset_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        section = ExpandableServiceSection(
+            "desktop_clock_widget",
+            "Desktop Clock",
+            "A Hanauta-native analog and digital desktop clock with a sculpted face and Matugen colors.",
+            material_icon("watch"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("desktop_clock_widget"),
+            lambda enabled: self._set_service_enabled("desktop_clock_widget", enabled),
+        )
+        self.service_sections["desktop_clock_widget"] = section
+        return section
+
     def _build_ntfy_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -3396,7 +4153,7 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
-            if key in {"reminders_widget", "pomodoro_widget"}:
+            if key in {"reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -3418,7 +4175,7 @@ class SettingsWindow(QWidget):
                 if switch is not None:
                     switch.setChecked(bool(service.get(setting_key, False)))
                     switch._apply_state()
-        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget"}:
+        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget"}:
             display_switch = getattr(self, "service_display_switches", {}).get(key)
             if display_switch is not None:
                 display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
@@ -3435,6 +4192,21 @@ class SettingsWindow(QWidget):
                 switch._apply_state()
         if key == "pomodoro_widget":
             switch = getattr(self, "pomodoro_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
+        if key == "rss_widget":
+            switch = getattr(self, "rss_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
+        if key == "obs_widget":
+            switch = getattr(self, "obs_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
+        if key == "crypto_widget":
+            switch = getattr(self, "crypto_bar_switch", None)
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
@@ -3585,6 +4357,143 @@ class SettingsWindow(QWidget):
                 "Focus sessions will auto-start after breaks." if enabled else "Focus sessions now wait for manual start."
             )
 
+    def _set_rss_item_limit(self, value: int) -> None:
+        self.settings_state.setdefault("rss", {})["item_limit"] = max(3, min(30, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "rss_status"):
+            self.rss_status.setText(f"RSS item limit set to {int(value)} story entries.")
+
+    def _set_rss_check_interval(self, value: int) -> None:
+        self.settings_state.setdefault("rss", {})["check_interval_minutes"] = max(5, min(180, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "rss_status"):
+            self.rss_status.setText(f"RSS checks now run every {int(value)} minute(s).")
+
+    def _set_rss_notify_new_items(self, enabled: bool) -> None:
+        self.settings_state.setdefault("rss", {})["notify_new_items"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "rss_status"):
+            self.rss_status.setText("RSS notifications are enabled." if enabled else "RSS notifications are paused.")
+
+    def _save_rss_settings(self) -> None:
+        rss = self.settings_state.setdefault("rss", {})
+        rss["feed_urls"] = self.rss_urls_input.text().strip()
+        rss["opml_source"] = self.rss_opml_input.text().strip()
+        rss["username"] = self.rss_username_input.text().strip()
+        rss["password"] = self.rss_password_input.text()
+        rss["item_limit"] = int(self.rss_limit_slider.value())
+        rss["check_interval_minutes"] = int(self.rss_interval_slider.value()) if hasattr(self, "rss_interval_slider") else 15
+        rss["notify_new_items"] = bool(self.rss_notify_switch.isChecked()) if hasattr(self, "rss_notify_switch") else True
+        save_settings_state(self.settings_state)
+        if hasattr(self, "rss_status"):
+            rss_mode = "manual feeds"
+            if rss["opml_source"]:
+                rss_mode = "OPML sync"
+            self.rss_status.setText(f"RSS sources saved for {rss_mode}. Notifications stay on a {rss['check_interval_minutes']}-minute rhythm.")
+
+    def _set_obs_auto_connect(self, enabled: bool) -> None:
+        self.settings_state.setdefault("obs", {})["auto_connect"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "obs_status"):
+            self.obs_status.setText("OBS widget will connect immediately when opened." if enabled else "OBS widget now waits for a manual connect.")
+
+    def _save_obs_settings(self) -> None:
+        obs = self.settings_state.setdefault("obs", {})
+        obs["host"] = self.obs_host_input.text().strip() or "127.0.0.1"
+        try:
+            obs["port"] = max(1, min(65535, int(self.obs_port_input.text().strip() or "4455")))
+        except Exception:
+            obs["port"] = 4455
+        obs["password"] = self.obs_password_input.text()
+        obs["auto_connect"] = bool(self.obs_auto_connect_switch.isChecked())
+        save_settings_state(self.settings_state)
+        if hasattr(self, "obs_status"):
+            self.obs_status.setText(f"OBS connection saved for {obs['host']}:{obs['port']}.")
+
+    def _set_crypto_check_interval(self, value: int) -> None:
+        self.settings_state.setdefault("crypto", {})["check_interval_minutes"] = max(5, min(180, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "crypto_status"):
+            self.crypto_status.setText(f"Crypto checks now run every {int(value)} minute(s).")
+
+    def _set_crypto_chart_days(self, value: int) -> None:
+        self.settings_state.setdefault("crypto", {})["chart_days"] = max(1, min(90, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "crypto_status"):
+            self.crypto_status.setText(f"Charts will open on the last {int(value)} day(s).")
+
+    def _set_crypto_notify_price_moves(self, enabled: bool) -> None:
+        self.settings_state.setdefault("crypto", {})["notify_price_moves"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "crypto_status"):
+            self.crypto_status.setText("Crypto move notifications are enabled." if enabled else "Crypto move notifications are paused.")
+
+    def _set_crypto_up_percent(self, value: int) -> None:
+        self.settings_state.setdefault("crypto", {})["price_up_percent"] = float(max(1, min(20, int(value))))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "crypto_status"):
+            self.crypto_status.setText(f"Up alerts will trigger at {int(value)}% or more.")
+
+    def _set_crypto_down_percent(self, value: int) -> None:
+        self.settings_state.setdefault("crypto", {})["price_down_percent"] = float(max(1, min(20, int(value))))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "crypto_status"):
+            self.crypto_status.setText(f"Down alerts will trigger at {int(value)}% or more.")
+
+    def _save_crypto_settings(self) -> None:
+        crypto = self.settings_state.setdefault("crypto", {})
+        crypto["api_provider"] = "coingecko"
+        crypto["api_key"] = self.crypto_api_key_input.text().strip()
+        crypto["tracked_coins"] = self.crypto_coins_input.text().strip()
+        crypto["vs_currency"] = self.crypto_currency_input.text().strip().lower() or "usd"
+        crypto["check_interval_minutes"] = int(self.crypto_interval_slider.value())
+        crypto["chart_days"] = int(self.crypto_chart_days_slider.value())
+        crypto["notify_price_moves"] = bool(self.crypto_alert_switch.isChecked())
+        crypto["price_up_percent"] = float(int(self.crypto_up_slider.value()))
+        crypto["price_down_percent"] = float(int(self.crypto_down_slider.value()))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "crypto_status"):
+            self.crypto_status.setText("Crypto tracker settings saved for CoinGecko.")
+
+    def _save_vps_settings(self) -> None:
+        vps = self.settings_state.setdefault("vps", {})
+        vps["host"] = self.vps_host_input.text().strip()
+        try:
+            vps["port"] = max(1, min(65535, int(self.vps_port_input.text().strip() or "22")))
+        except Exception:
+            vps["port"] = 22
+        vps["username"] = self.vps_username_input.text().strip()
+        vps["identity_file"] = self.vps_identity_input.text().strip()
+        vps["app_service"] = self.vps_service_input.text().strip()
+        vps["health_command"] = self.vps_health_input.text().strip() or "uptime && df -h /"
+        vps["update_command"] = self.vps_update_input.text().strip() or "sudo apt update && sudo apt upgrade -y"
+        save_settings_state(self.settings_state)
+        if hasattr(self, "vps_status"):
+            if vps["host"]:
+                self.vps_status.setText(f"VPS connection saved for {vps['username']}@{vps['host']}:{vps['port']}.")
+            else:
+                self.vps_status.setText("VPS settings saved. Add a host when you are ready.")
+
+    def _set_clock_size(self, value: int) -> None:
+        self.settings_state.setdefault("clock", {})["size"] = max(220, min(520, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "clock_status"):
+            self.clock_status.setText(f"Desktop clock size set to {int(value)}px.")
+
+    def _set_clock_show_seconds(self, enabled: bool) -> None:
+        self.settings_state.setdefault("clock", {})["show_seconds"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "clock_status"):
+            self.clock_status.setText("Seconds hand enabled." if enabled else "Seconds hand hidden.")
+
+    def _reset_clock_position(self) -> None:
+        clock = self.settings_state.setdefault("clock", {})
+        clock["position_x"] = -1
+        clock["position_y"] = -1
+        save_settings_state(self.settings_state)
+        if hasattr(self, "clock_status"):
+            self.clock_status.setText("Desktop clock position reset.")
+
     def _save_reminders_settings(self) -> None:
         reminders = self.settings_state.setdefault("reminders", {})
         reminders["tea_label"] = self.tea_label_input.text().strip() or "Tea"
@@ -3628,6 +4537,37 @@ class SettingsWindow(QWidget):
             self.weather_status.setText(
                 "Weather icon enabled on the bar." if enabled else "Weather icon disabled."
             )
+
+    def _set_region_use_24_hour(self, enabled: bool) -> None:
+        self.settings_state.setdefault("region", {})["use_24_hour"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "region_status"):
+            self.region_status.setText("Clock format updated.")
+
+    def _set_region_date_style(self, index: int) -> None:
+        value = self.region_date_style_combo.itemData(index) if hasattr(self, "region_date_style_combo") else "us"
+        self.settings_state.setdefault("region", {})["date_style"] = str(value or "us")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "region_status"):
+            self.region_status.setText("Date style updated.")
+
+    def _set_region_temperature_unit(self, index: int) -> None:
+        value = self.region_temperature_combo.itemData(index) if hasattr(self, "region_temperature_combo") else "c"
+        self.settings_state.setdefault("region", {})["temperature_unit"] = str(value or "c")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "region_status"):
+            self.region_status.setText("Temperature unit updated.")
+
+    def _save_region_settings(self) -> None:
+        region = self.settings_state.setdefault("region", {})
+        region["locale_code"] = self.region_locale_input.text().strip()
+        region["use_24_hour"] = bool(self.region_24h_switch.isChecked())
+        region["date_style"] = str(self.region_date_style_combo.currentData() or "us")
+        region["temperature_unit"] = str(self.region_temperature_combo.currentData() or "c")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "region_status"):
+            locale_label = region["locale_code"] or "system default"
+            self.region_status.setText(f"Region settings saved for {locale_label}.")
 
     def _save_bar_settings(self) -> None:
         self.settings_state["bar"] = merged_bar_settings(self.settings_state.get("bar", {}))
@@ -4513,7 +5453,7 @@ class SettingsWindow(QWidget):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--page", choices=("overview", "appearance", "display", "bar", "services", "picom"), default="appearance")
+    parser.add_argument("--page", choices=("overview", "appearance", "display", "region", "bar", "services", "picom"), default="appearance")
     parser.add_argument("--service-section", default="")
     parser.add_argument("--ensure-settings", action="store_true")
     parser.add_argument("--restore-displays", action="store_true")
