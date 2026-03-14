@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import signal
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+BAR_HEIGHT = 45
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
@@ -90,6 +92,137 @@ def save_clock_position(x: int, y: int) -> None:
     SETTINGS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def run_cmd(cmd: list[str], timeout: float = 2.0) -> str:
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
+def load_bar_height() -> int:
+    try:
+        payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return BAR_HEIGHT
+    bar = payload.get("bar", {})
+    if not isinstance(bar, dict):
+        return BAR_HEIGHT
+    try:
+        return max(32, min(72, int(bar.get("bar_height", BAR_HEIGHT))))
+    except Exception:
+        return BAR_HEIGHT
+
+
+def focused_workspace_rect() -> dict | None:
+    raw = run_cmd(["i3-msg", "-t", "get_workspaces"], timeout=2.0)
+    if not raw:
+        return None
+    try:
+        workspaces = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(workspaces, list):
+        return None
+    for item in workspaces:
+        if isinstance(item, dict) and bool(item.get("focused", False)):
+            rect = item.get("rect", {})
+            return rect if isinstance(rect, dict) else None
+    return None
+    bar = payload.get("bar", {})
+    if not isinstance(bar, dict):
+        return BAR_HEIGHT
+    try:
+        return max(32, min(72, int(bar.get("bar_height", BAR_HEIGHT))))
+    except Exception:
+        return BAR_HEIGHT
+
+
+def _collect_leaf_windows(node: dict, visible_windows: list[dict]) -> None:
+    if not isinstance(node, dict):
+        return
+    nodes = node.get("nodes", [])
+    floating_nodes = node.get("floating_nodes", [])
+    if isinstance(nodes, list):
+        for child in nodes:
+            _collect_leaf_windows(child, visible_windows)
+    if isinstance(floating_nodes, list):
+        for child in floating_nodes:
+            _collect_leaf_windows(child, visible_windows)
+    window = node.get("window")
+    if not window:
+        return
+    visible_windows.append(node)
+
+
+def focused_workspace_has_real_windows() -> bool:
+    workspace_raw = run_cmd(["i3-msg", "-t", "get_workspaces"], timeout=2.0)
+    tree_raw = run_cmd(["i3-msg", "-t", "get_tree"], timeout=3.0)
+    if not workspace_raw or not tree_raw:
+        return False
+    try:
+        workspaces = json.loads(workspace_raw)
+        tree = json.loads(tree_raw)
+    except Exception:
+        return False
+    if not isinstance(workspaces, list):
+        return False
+    focused_workspace_name = ""
+    for item in workspaces:
+        if isinstance(item, dict) and bool(item.get("focused", False)):
+            focused_workspace_name = str(item.get("name", "")).strip()
+            break
+    if not focused_workspace_name:
+        return False
+
+    def find_workspace(node: dict) -> dict | None:
+        if not isinstance(node, dict):
+            return None
+        if node.get("type") == "workspace" and str(node.get("name", "")).strip() == focused_workspace_name:
+            return node
+        for key in ("nodes", "floating_nodes"):
+            children = node.get(key, [])
+            if not isinstance(children, list):
+                continue
+            for child in children:
+                found = find_workspace(child)
+                if found is not None:
+                    return found
+        return None
+
+    workspace = find_workspace(tree)
+    if workspace is None:
+        return False
+    windows: list[dict] = []
+    _collect_leaf_windows(workspace, windows)
+    ignored_classes = {
+        "CyberBar",
+        "CyberDock",
+        "HanautaDesktopClock",
+        "HanautaHotkeys",
+    }
+    ignored_titles = {
+        "CyberBar",
+        "Hanauta Desktop Clock",
+    }
+    for item in windows:
+        props = item.get("window_properties", {})
+        if not isinstance(props, dict):
+            props = {}
+        wm_class = str(props.get("class", "")).strip()
+        title = str(item.get("name", "")).strip()
+        if wm_class in ignored_classes or title in ignored_titles:
+            continue
+        return True
+    return False
+
+
 class DesktopClockWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -101,6 +234,7 @@ class DesktopClockWidget(QWidget):
         self.settings_state = load_settings_state()
         self.drag_offset = QPoint()
         self.dragging = False
+        self.preview_mode = bool(sys.stdin.isatty() or sys.stdout.isatty())
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -123,24 +257,38 @@ class DesktopClockWidget(QWidget):
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
 
+        self.workspace_timer = QTimer(self)
+        self.workspace_timer.timeout.connect(self._sync_workspace_visibility)
+        self.workspace_timer.start(1200)
+
     def _apply_size(self) -> None:
         size = max(220, min(520, int(self.settings_state.get("clock", {}).get("size", 320) or 320)))
         self.setFixedSize(size, size)
 
     def _place_window(self) -> None:
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return
-        available = screen.availableGeometry()
+        workspace_rect = focused_workspace_rect()
         clock_settings = self.settings_state.get("clock", {})
         pos_x = int(clock_settings.get("position_x", -1) or -1)
         pos_y = int(clock_settings.get("position_y", -1) or -1)
         if pos_x >= 0 and pos_y >= 0:
             self.move(pos_x, pos_y)
             return
+        if workspace_rect is not None:
+            area_x = int(workspace_rect.get("x", 0))
+            area_y = int(workspace_rect.get("y", 0))
+            area_width = int(workspace_rect.get("width", self.width()))
+        else:
+            screen = QGuiApplication.primaryScreen()
+            if screen is None:
+                return
+            available = screen.availableGeometry()
+            area_x = available.x()
+            area_y = available.y()
+            area_width = available.width()
+        bar_height = load_bar_height()
         self.move(
-            available.x() + available.width() - self.width() - 64,
-            available.y() + 96,
+            area_x + (area_width - self.width()) // 2,
+            area_y + bar_height + 24,
         )
 
     def _reload_theme_if_needed(self) -> None:
@@ -156,7 +304,17 @@ class DesktopClockWidget(QWidget):
             self._update_window_mask()
         else:
             self.settings_state = current_settings
+        clock_settings = self.settings_state.get("clock", {})
+        if int(clock_settings.get("position_x", -1) or -1) < 0 or int(clock_settings.get("position_y", -1) or -1) < 0:
+            self._place_window()
+        self._sync_workspace_visibility()
         self.update()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._set_window_class()
+        QTimer.singleShot(150, self._apply_i3_window_rules)
+        QTimer.singleShot(200, self._sync_workspace_visibility)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -216,6 +374,52 @@ class DesktopClockWidget(QWidget):
         face_path, _, _, _ = self._face_path()
         polygon = QPolygonF(face_path.toFillPolygon())
         self.setMask(QRegion(polygon.toPolygon()))
+
+    def _set_window_class(self) -> None:
+        try:
+            wid = int(self.winId())
+            subprocess.run(
+                ["xprop", "-id", hex(wid), "-f", "_NET_WM_NAME", "8t", "-set", "_NET_WM_NAME", "Hanauta Desktop Clock"],
+                check=False,
+            )
+            subprocess.run(
+                ["xprop", "-id", hex(wid), "-f", "WM_CLASS", "8s", "-set", "WM_CLASS", "HanautaDesktopClock"],
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def _apply_i3_window_rules(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "i3-msg",
+                    '[title="Hanauta Desktop Clock"]',
+                    "floating enable, sticky enable, border pixel 0",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def _sync_workspace_visibility(self) -> None:
+        if self.preview_mode:
+            if not self.isVisible():
+                self.show()
+            return
+        services = self.settings_state.get("services", {})
+        if isinstance(services, dict):
+            service = services.get("desktop_clock_widget", {})
+            if isinstance(service, dict) and not bool(service.get("enabled", True)):
+                self.hide()
+                return
+        should_show = not focused_workspace_has_real_windows()
+        if should_show:
+            self.show()
+        else:
+            self.hide()
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         del event

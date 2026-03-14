@@ -37,7 +37,7 @@ ROOT = APP_DIR.parents[1]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
 from pyqt.shared.rss import load_cache as load_rss_cache
@@ -196,6 +196,8 @@ def material_icon(name: str) -> str:
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
+        "ui_sans": FONTS_DIR / "InterVariable.ttf",
+        "ui_display": FONTS_DIR / "Outfit-VariableFont_wght.ttf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
         "material_symbols_rounded": FONTS_DIR / "MaterialSymbolsRounded.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
@@ -657,6 +659,12 @@ class CyberBar(QWidget):
         self._settings_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
         self.bar_settings = load_bar_settings()
         self.region_settings = load_region_settings()
+        self.ui_font = detect_font(
+            self.loaded_fonts.get("ui_sans", ""),
+            "Inter",
+            "Noto Sans",
+            "Sans Serif",
+        )
         self.material_font = detect_font(
             self.loaded_fonts.get("material_icons", ""),
             self.loaded_fonts.get("material_icons_outlined", ""),
