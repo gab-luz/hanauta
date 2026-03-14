@@ -9,6 +9,8 @@ This project is intentionally focused on an X11 / XLibre desktop stack. The goal
 ![Hanauta screenshot 1](assets/screenshots/2026-03-11_21-42.png)
 ![Hanauta screenshot 2](assets/screenshots/2026-03-11_21-43.png)
 ![Hanauta screenshot 3](assets/screenshots/2026-03-11_21-53.png)
+Hyprland's clock succesfully ported:
+![Hanauta screenshot 4](assets/screenshots/2026-03-14_13-16.png)
 
 ## Features
 
