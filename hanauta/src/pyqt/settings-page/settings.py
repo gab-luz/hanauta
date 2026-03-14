@@ -424,6 +424,8 @@ def load_settings_state() -> dict:
             "slideshow_enabled": False,
             "theme_mode": "dark",
             "transparency": True,
+            "notification_center_panel_opacity": 84,
+            "notification_center_card_opacity": 92,
             "use_matugen_palette": False,
         },
         "home_assistant": {
@@ -544,6 +546,21 @@ def load_settings_state() -> dict:
     appearance.setdefault("slideshow_enabled", False)
     appearance.setdefault("theme_mode", "dark")
     appearance.setdefault("transparency", True)
+    try:
+        appearance["notification_center_panel_opacity"] = max(
+            35, min(100, int(appearance.get("notification_center_panel_opacity", 84)))
+        )
+    except Exception:
+        appearance["notification_center_panel_opacity"] = 84
+    try:
+        appearance["notification_center_card_opacity"] = max(
+            appearance["notification_center_panel_opacity"],
+            min(100, int(appearance.get("notification_center_card_opacity", 92))),
+        )
+    except Exception:
+        appearance["notification_center_card_opacity"] = max(
+            appearance["notification_center_panel_opacity"], 92
+        )
     appearance.setdefault("use_matugen_palette", False)
     home_assistant = dict(payload.get("home_assistant", {}))
     home_assistant.setdefault("url", "")
@@ -2391,6 +2408,29 @@ class SettingsWindow(QWidget):
             self.ui_font,
             self._make_transparency_switch(),
         )
+        layout.addWidget(transparency)
+        layout.addWidget(
+            self._slider_settings_row(
+                "Control center shell opacity",
+                "Adjust the overall transparency of the notification center panel.",
+                35,
+                100,
+                int(self.settings_state["appearance"].get("notification_center_panel_opacity", 84)),
+                material_icon("opacity"),
+                "notification_center_panel_opacity",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Control center widget opacity",
+                "Control cards, sliders, quick actions, media, KDE Connect, and Home Assistant stay denser than the shell.",
+                35,
+                100,
+                int(self.settings_state["appearance"].get("notification_center_card_opacity", 92)),
+                material_icon("widgets"),
+                "notification_center_card_opacity",
+            )
+        )
         interval = SettingsRow(
             material_icon("image"),
             "Slideshow interval",
@@ -2419,7 +2459,6 @@ class SettingsWindow(QWidget):
             self.ui_font,
             self._make_matugen_switch(),
         )
-        layout.addWidget(transparency)
         layout.addWidget(interval)
         layout.addWidget(matugen_toggle)
         layout.addWidget(matugen)
@@ -5163,6 +5202,42 @@ class SettingsWindow(QWidget):
         self.settings_state["appearance"]["transparency"] = bool(enabled)
         save_settings_state(self.settings_state)
         self._apply_styles()
+
+    def _set_notification_center_panel_opacity(self, value: int) -> None:
+        panel_opacity = max(35, min(100, int(value)))
+        appearance = self.settings_state["appearance"]
+        appearance["notification_center_panel_opacity"] = panel_opacity
+        current_card = int(appearance.get("notification_center_card_opacity", 92))
+        if current_card < panel_opacity:
+            appearance["notification_center_card_opacity"] = panel_opacity
+            if hasattr(self, "notification_center_card_opacity_slider"):
+                self.notification_center_card_opacity_slider.blockSignals(True)
+                self.notification_center_card_opacity_slider.setValue(panel_opacity)
+                self.notification_center_card_opacity_slider.blockSignals(False)
+            if hasattr(self, "notification_center_card_opacity_label"):
+                self.notification_center_card_opacity_label.setText(str(panel_opacity))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(
+                f"Control center shell opacity set to {panel_opacity}%."
+            )
+
+    def _set_notification_center_card_opacity(self, value: int) -> None:
+        panel_opacity = int(self.settings_state["appearance"].get("notification_center_panel_opacity", 84))
+        card_opacity = max(panel_opacity, min(100, int(value)))
+        self.settings_state["appearance"]["notification_center_card_opacity"] = card_opacity
+        if card_opacity != int(value):
+            if hasattr(self, "notification_center_card_opacity_slider"):
+                self.notification_center_card_opacity_slider.blockSignals(True)
+                self.notification_center_card_opacity_slider.setValue(card_opacity)
+                self.notification_center_card_opacity_slider.blockSignals(False)
+            if hasattr(self, "notification_center_card_opacity_label"):
+                self.notification_center_card_opacity_label.setText(str(card_opacity))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(
+                f"Control center widget opacity set to {card_opacity}%."
+            )
 
     def _set_use_matugen_palette(self, enabled: bool) -> None:
         self.settings_state["appearance"]["use_matugen_palette"] = bool(enabled)
