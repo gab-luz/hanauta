@@ -53,6 +53,7 @@ if str(APP_DIR) not in sys.path:
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
+from pyqt.shared.gamemode import summary as gamemode_summary
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
@@ -70,6 +71,9 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PYQT_THEME_DIR = Path.home() / ".local" / "state" / "hanauta" / "theme"
 PYQT_THEME_FILE = PYQT_THEME_DIR / "pyqt_palette.json"
+BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
+BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
+BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 PICOM_DEFAULT_CONFIG = """backend = "glx";
 vsync = true;
 use-damage = true;
@@ -194,6 +198,8 @@ MATERIAL_ICONS = {
     "show_chart": "\ue6e1",
     "terminal": "\ue31c",
     "watch": "\ue334",
+    "sports_esports": "\uea28",
+    "open_in_new": "\ue89e",
 }
 
 
@@ -291,6 +297,11 @@ DEFAULT_SERVICE_SETTINGS = {
         "enabled": False,
         "show_in_notification_center": True,
     },
+    "game_mode": {
+        "enabled": False,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
+    },
 }
 
 
@@ -345,7 +356,7 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
-        elif key in {"rss_widget", "obs_widget", "crypto_widget"}:
+        elif key in {"rss_widget", "obs_widget", "crypto_widget", "game_mode"}:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
@@ -3025,6 +3036,21 @@ class SettingsWindow(QWidget):
                 self.bar_full_radius_slider,
             )
         )
+
+        rice_button = QPushButton("Open icon config")
+        rice_button.setObjectName("secondaryButton")
+        rice_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        rice_button.clicked.connect(self._open_bar_icon_config)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sports_esports"),
+                "Bar icon overrides",
+                f"Rice the bar by editing {BAR_ICON_CONFIG_FILE}. Hanauta reloads the file automatically.",
+                self.icon_font,
+                self.ui_font,
+                rice_button,
+            )
+        )
         return card
 
     def _build_region_card(self) -> QWidget:
@@ -3174,6 +3200,7 @@ class SettingsWindow(QWidget):
             ("crypto_widget", self._build_crypto_service_section()),
             ("vps_widget", self._build_vps_service_section()),
             ("desktop_clock_widget", self._build_desktop_clock_service_section()),
+            ("game_mode", self._build_game_mode_service_section()),
             ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
@@ -4389,6 +4416,76 @@ class SettingsWindow(QWidget):
         self.service_sections["desktop_clock_widget"] = section
         return section
 
+    def _build_game_mode_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.game_mode_display_switch = SwitchButton(
+            bool(self.settings_state["services"]["game_mode"].get("show_in_notification_center", True))
+        )
+        self.game_mode_display_switch.toggledValue.connect(
+            lambda enabled: self._set_service_notification_visibility("game_mode", enabled)
+        )
+        self.service_display_switches["game_mode"] = self.game_mode_display_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show in notification center",
+                "Expose the Game Mode launcher in the notification center overview.",
+                self.icon_font,
+                self.ui_font,
+                self.game_mode_display_switch,
+            )
+        )
+
+        self.game_mode_bar_switch = SwitchButton(
+            bool(self.settings_state["services"]["game_mode"].get("show_in_bar", False))
+        )
+        self.game_mode_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("game_mode", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sports_esports"),
+                "Show on bar",
+                "Adds a Game Mode icon to the bar so the gamemoded popup is always one click away.",
+                self.icon_font,
+                self.ui_font,
+                self.game_mode_bar_switch,
+            )
+        )
+
+        current = gamemode_summary()
+        availability = QLabel(
+            "gamemoded detected and ready."
+            if bool(current.get("available", False))
+            else "gamemoded is not installed yet. Install the gamemode package to use this widget."
+        )
+        availability.setWordWrap(True)
+        availability.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(availability)
+
+        self.game_mode_status = QLabel(str(current.get("note", "Game Mode is idle.")))
+        self.game_mode_status.setWordWrap(True)
+        self.game_mode_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.game_mode_status)
+
+        section = ExpandableServiceSection(
+            "game_mode",
+            "Game Mode",
+            "Launch a compact popup that manages the gamemoded user service and keeps the gaming toggle close at hand.",
+            material_icon("sports_esports"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("game_mode"),
+            lambda enabled: self._set_service_enabled("game_mode", enabled),
+        )
+        self.service_sections["game_mode"] = section
+        return section
+
     def _build_ntfy_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -4473,7 +4570,7 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
-            if key in {"reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget"}:
+            if key in {"reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -4495,7 +4592,7 @@ class SettingsWindow(QWidget):
                 if switch is not None:
                     switch.setChecked(bool(service.get(setting_key, False)))
                     switch._apply_state()
-        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget"}:
+        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget", "game_mode"}:
             display_switch = getattr(self, "service_display_switches", {}).get(key)
             if display_switch is not None:
                 display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
@@ -4530,6 +4627,11 @@ class SettingsWindow(QWidget):
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
+        if key == "game_mode":
+            switch = getattr(self, "game_mode_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -4544,6 +4646,15 @@ class SettingsWindow(QWidget):
             return
         service["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
+
+    def _open_bar_icon_config(self) -> None:
+        try:
+            BAR_ICON_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            if not BAR_ICON_CONFIG_FILE.exists() and BAR_ICON_EXAMPLE_FILE.exists():
+                BAR_ICON_CONFIG_FILE.write_text(BAR_ICON_EXAMPLE_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError:
+            return
+        run_bg(["xdg-open", str(BAR_ICON_CONFIG_FILE)])
 
     def _set_christian_service_flag(self, flag: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault("christian_widget", {})
