@@ -19,6 +19,7 @@ Hyprland's clock succesfully ported:
 - Standalone PyQt6 settings application wired into the bar and notification center
 - Wallpaper-aware theming for the bar and dock through a shared generated palette
 - Matugen integration for extracting palette colors directly from the current wallpaper
+- Wallpaper source sync presets for official Caelestia and End-4 upstream image packs
 - Display management UI with multi-monitor controls, primary display selection, mirror/extend mode, orientation, refresh rate, and resolution
 - Per-monitor wallpaper placement modes including `Fill`, `Fit`, `Center`, `Stretch`, and `Tile`
 - Picom settings tab with reset-to-default support
@@ -96,4 +97,18 @@ Run the full desktop installer:
 - The active desktop UI stack is PyQt6.
 - Eww helper scripts are still reused where they already provide reliable system actions or state.
 - This project is tuned for an opinionated personal desktop, not for every possible Linux environment.
-- Some plugin and widget ideas were also informed by references like `dms-plugins`: https://github.com/AvengeMedia/dms-plugins
+
+## References
+
+These are the main upstream references, inspirations, and compatibility targets used so far while building Hanauta:
+
+- `dms-plugins`: https://github.com/AvengeMedia/dms-plugins
+- `nucleus-shell`: https://github.com/xZepyx/nucleus-shell
+- `caelestia shell`: https://github.com/caelestia-dots/shell
+- `caelestia-dots` legacy repo: https://github.com/GuillaumeDeconinck/caelestia-dots
+- `end-4 dots-hyprland`: https://github.com/end-4/dots-hyprland
+- `end-4 dots-hyprland wiki`: https://github.com/end-4/dots-hyprland-wiki
+- `FreshRSS`: https://github.com/FreshRSS/FreshRSS
+- `FreshRSS docs`: https://freshrss.github.io/FreshRSS/en/
+- `CoinGecko API docs`: https://docs.coingecko.com/reference/simple-price
+- `CoinGecko market chart docs`: https://docs.coingecko.com/reference/coins-id-market-chart
