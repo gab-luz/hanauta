@@ -18,6 +18,7 @@
 #include <QQmlContext>
 #include <QRegularExpression>
 #include <QScreen>
+#include <QSet>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QTimer>
@@ -383,10 +384,18 @@ struct DesktopEntry {
 struct WindowEntry {
     int conId = 0;
     QString wmClass;
+    QString wmInstance;
     QString title;
     bool focused = false;
     QString workspace;
 };
+
+QString windowPrimaryId(const WindowEntry &window) {
+    if (!window.wmClass.isEmpty()) {
+        return window.wmClass;
+    }
+    return window.wmInstance;
+}
 
 void walkTreeNode(const QJsonObject &node, const QString &workspaceName, QList<WindowEntry> *windows) {
     QString currentWorkspace = workspaceName;
@@ -395,12 +404,14 @@ void walkTreeNode(const QJsonObject &node, const QString &workspaceName, QList<W
     }
     if (!node.value("window").isNull()) {
         const QJsonObject properties = node.value("window_properties").toObject();
-        const QString wmClass = normalize(properties.value("class").toString(properties.value("instance").toString()));
+        const QString wmClass = normalize(properties.value("class").toString());
+        const QString wmInstance = normalize(properties.value("instance").toString());
         const int conId = node.value("id").toInt();
-        if (!wmClass.isEmpty() && conId > 0) {
+        if ((!wmClass.isEmpty() || !wmInstance.isEmpty()) && conId > 0) {
             WindowEntry entry;
             entry.conId = conId;
             entry.wmClass = wmClass;
+            entry.wmInstance = wmInstance;
             entry.title = node.value("name").toString(properties.value("title").toString()).trimmed();
             entry.focused = node.value("focused").toBool(false);
             entry.workspace = currentWorkspace;
@@ -498,6 +509,67 @@ QPair<QMap<QString, DesktopEntry>, QMap<QString, QString>> scanDesktopEntries() 
         }
     }
     return {entries, wmToDesktop};
+}
+
+QSet<QString> desktopMatchKeys(const QString &desktopId, const DesktopEntry &entry) {
+    QSet<QString> keys;
+    QString desktopBase = desktopId;
+    desktopBase.replace(".desktop", "");
+
+    const QString normalizedDesktopId = normalize(desktopId);
+    const QString normalizedDesktopBase = normalize(desktopBase);
+    const QString normalizedStartup = normalize(entry.startupWmClass);
+    const QString normalizedName = normalize(entry.name);
+
+    if (!normalizedDesktopId.isEmpty()) {
+        keys.insert(normalizedDesktopId);
+    }
+    if (!normalizedDesktopBase.isEmpty()) {
+        keys.insert(normalizedDesktopBase);
+    }
+    if (!normalizedStartup.isEmpty()) {
+        keys.insert(normalizedStartup);
+    }
+    if (!normalizedName.isEmpty()) {
+        keys.insert(normalizedName);
+    }
+    return keys;
+}
+
+QList<WindowEntry> windowsMatchingDesktop(const QList<WindowEntry> &windows, const QString &desktopId, const DesktopEntry &entry) {
+    const QSet<QString> keys = desktopMatchKeys(desktopId, entry);
+    QList<WindowEntry> matches;
+    for (const WindowEntry &window : windows) {
+        if (keys.contains(window.wmClass) || keys.contains(window.wmInstance)) {
+            matches.append(window);
+        }
+    }
+    return matches;
+}
+
+QString desktopIdForWindow(
+    const WindowEntry &window,
+    const QMap<QString, QString> &pinnedWmMap,
+    const QMap<QString, QString> &wmToDesktop
+) {
+    const QStringList candidates = {
+        window.wmClass,
+        window.wmInstance,
+    };
+    for (const QString &candidate : candidates) {
+        if (candidate.isEmpty()) {
+            continue;
+        }
+        const QString pinnedDesktop = pinnedWmMap.value(candidate);
+        if (!pinnedDesktop.isEmpty()) {
+            return pinnedDesktop;
+        }
+        const QString scannedDesktop = wmToDesktop.value(candidate);
+        if (!scannedDesktop.isEmpty()) {
+            return scannedDesktop;
+        }
+    }
+    return {};
 }
 
 QString resolveIconPath(const QString &iconName) {
@@ -727,7 +799,10 @@ QList<DockItemData> buildDockItems(const DockConfig &config) {
     const QString focusedWorkspace = currentWorkspace();
     QMap<QString, QList<WindowEntry>> windowsByClass;
     for (const WindowEntry &window : visibleWindows) {
-        windowsByClass[window.wmClass].append(window);
+        const QString primaryId = windowPrimaryId(window);
+        if (!primaryId.isEmpty()) {
+            windowsByClass[primaryId].append(window);
+        }
     }
     const auto [desktopEntries, wmToDesktop] = scanDesktopEntries();
     QMap<QString, QString> pinnedWmMap;
@@ -753,7 +828,7 @@ QList<DockItemData> buildDockItems(const DockConfig &config) {
         if (globMatch(wmClass, config.blacklistWm)) {
             return;
         }
-        const QList<WindowEntry> runningWindows = windowsByClass.value(wmClass);
+        const QList<WindowEntry> runningWindows = windowsMatchingDesktop(visibleWindows, desktopId, entry);
         DockItemData item;
         item.desktopId = desktopId;
         item.wmClass = wmClass;
@@ -773,14 +848,12 @@ QList<DockItemData> buildDockItems(const DockConfig &config) {
     }
 
     for (auto it = windowsByClass.begin(); it != windowsByClass.end(); ++it) {
-        const QString wmClass = it.key();
-        if (globMatch(wmClass, config.blacklistWm)) {
+        const QString wmKey = it.key();
+        if (globMatch(wmKey, config.blacklistWm)) {
             continue;
         }
-        QString desktopId = pinnedWmMap.value(wmClass);
-        if (desktopId.isEmpty()) {
-            desktopId = wmToDesktop.value(wmClass);
-        }
+        const WindowEntry representative = it.value().isEmpty() ? WindowEntry{} : it.value().constFirst();
+        const QString desktopId = desktopIdForWindow(representative, pinnedWmMap, wmToDesktop);
         if (!desktopId.isEmpty() && config.pinnedApps.contains(desktopId)) {
             continue;
         }
@@ -789,15 +862,15 @@ QList<DockItemData> buildDockItems(const DockConfig &config) {
             continue;
         }
         DockItemData item;
-        item.itemId = "wm:" + wmClass;
-        item.name = wmClass;
+        item.itemId = "wm:" + wmKey;
+        item.name = wmKey;
         item.iconPath = resolveIconPath("application-x-executable");
         item.running = it.value().size();
         item.focused = std::any_of(it.value().begin(), it.value().end(), [&](const WindowEntry &window) {
             return window.workspace == focusedWorkspace;
         });
         item.pinned = false;
-        item.wmClass = wmClass;
+        item.wmClass = wmKey;
         items.append(item);
     }
 
@@ -823,6 +896,7 @@ class DockBackend final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantMap palette READ palette NOTIFY paletteChanged)
     Q_PROPERTY(QVariantList items READ items NOTIFY itemsChanged)
+    Q_PROPERTY(QVariantMap liveWindowState READ liveWindowState NOTIFY liveWindowStateChanged)
     Q_PROPERTY(QString clockText READ clockText NOTIFY clockTextChanged)
     Q_PROPERTY(QString volumeIcon READ volumeIcon NOTIFY volumeChanged)
     Q_PROPERTY(QString volumeTooltip READ volumeTooltip NOTIFY volumeChanged)
@@ -858,6 +932,7 @@ public:
 
     QVariantMap palette() const { return palette_; }
     QVariantList items() const { return items_; }
+    QVariantMap liveWindowState() const { return liveWindowState_; }
     QString clockText() const { return clockText_; }
     QString volumeIcon() const { return volumeIcon_; }
     QString volumeTooltip() const { return volumeTooltip_; }
@@ -885,6 +960,25 @@ public:
         return materialGlyph(name);
     }
 
+    Q_INVOKABLE bool isWindowGroupRunning(const QString &wmClass) const {
+        const QVariantMap state = liveWindowState_.value(normalize(wmClass)).toMap();
+        return state.value("running").toInt() > 0;
+    }
+
+    Q_INVOKABLE bool isWindowGroupFocused(const QString &wmClass) const {
+        const QVariantMap state = liveWindowState_.value(normalize(wmClass)).toMap();
+        return state.value("focused").toBool();
+    }
+
+    Q_INVOKABLE void activatePreferred(const QString &itemId, const QString &wmClass, bool running) {
+        const QString normalizedWm = normalize(wmClass);
+        if (running && !normalizedWm.isEmpty()) {
+            activateItem("wm:" + normalizedWm);
+            return;
+        }
+        activateItem(itemId);
+    }
+
     Q_INVOKABLE void activateItem(const QString &itemId) {
         const QList<WindowEntry> windows = getOpenWindows();
         if (itemId.startsWith("wm:")) {
@@ -892,7 +986,7 @@ public:
             QList<int> ids;
             QString workspace;
             for (const WindowEntry &window : windows) {
-                if (window.wmClass == wmClass) {
+                if (windowPrimaryId(window) == wmClass) {
                     ids.append(window.conId);
                     if (workspace.isEmpty()) {
                         workspace = window.workspace;
@@ -908,17 +1002,13 @@ public:
 
         const auto [desktopEntries, unusedMap] = scanDesktopEntries();
         const DesktopEntry entry = desktopEntries.value(itemId);
-        QString desktopBase = itemId;
-        desktopBase.replace(".desktop", "");
-        const QString wmClass = normalize(entry.startupWmClass.isEmpty() ? desktopBase : entry.startupWmClass);
+        const QList<WindowEntry> matchingWindows = windowsMatchingDesktop(windows, itemId, entry);
         QList<int> ids;
         QString workspace;
-        for (const WindowEntry &window : windows) {
-            if (window.wmClass == wmClass) {
-                ids.append(window.conId);
-                if (workspace.isEmpty()) {
-                    workspace = window.workspace;
-                }
+        for (const WindowEntry &window : matchingWindows) {
+            ids.append(window.conId);
+            if (workspace.isEmpty()) {
+                workspace = window.workspace;
             }
         }
         if (ids.isEmpty()) {
@@ -1091,6 +1181,7 @@ public:
 signals:
     void paletteChanged();
     void itemsChanged();
+    void liveWindowStateChanged();
     void clockTextChanged();
     void volumeChanged();
     void configChanged();
@@ -1124,6 +1215,23 @@ private slots:
 
     void refreshItems() {
         const QList<DockItemData> built = buildDockItems(config_);
+        QVariantMap nextLiveWindowState;
+        const QList<WindowEntry> windows = getOpenWindows();
+        const QString focusedWorkspace = currentWorkspace();
+        for (const WindowEntry &window : windows) {
+            const QString primary = windowPrimaryId(window);
+            if (primary.isEmpty()) {
+                continue;
+            }
+            QVariantMap state = nextLiveWindowState.value(primary).toMap();
+            state.insert("running", state.value("running").toInt() + 1);
+            if (window.workspace == focusedWorkspace) {
+                state.insert("focused", true);
+            } else if (!state.contains("focused")) {
+                state.insert("focused", false);
+            }
+            nextLiveWindowState.insert(primary, state);
+        }
         QVariantList nextItems;
         for (const DockItemData &item : built) {
             nextItems.append(QVariantMap{
@@ -1136,6 +1244,10 @@ private slots:
                 {"desktopId", item.desktopId},
                 {"wmClass", item.wmClass},
             });
+        }
+        if (nextLiveWindowState != liveWindowState_) {
+            liveWindowState_ = nextLiveWindowState;
+            emit liveWindowStateChanged();
         }
         if (nextItems == items_) {
             return;
@@ -1184,6 +1296,7 @@ private:
     DockConfig config_;
     QVariantMap palette_;
     QVariantList items_;
+    QVariantMap liveWindowState_;
     QString clockText_ = "--:--";
     QString volumeIcon_ = materialGlyph("volume_up");
     QString volumeTooltip_ = "Volume 0%";
