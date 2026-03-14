@@ -65,6 +65,7 @@ RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
 OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
+DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
@@ -700,6 +701,7 @@ class CyberBar(QWidget):
         self._obs_widget_process: Optional[subprocess.Popen] = None
         self._crypto_widget_process: Optional[subprocess.Popen] = None
         self._vps_widget_process: Optional[subprocess.Popen] = None
+        self._desktop_clock_process: Optional[subprocess.Popen] = None
         self._ntfy_popup_process: Optional[subprocess.Popen] = None
         self._weather_popup_process: Optional[subprocess.Popen] = None
         self._calendar_popup_process: Optional[subprocess.Popen] = None
@@ -1408,6 +1410,7 @@ class CyberBar(QWidget):
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._sync_desktop_clock_process()
         self._update_locale_button()
         self._update_window_mask()
 
@@ -1483,6 +1486,7 @@ class CyberBar(QWidget):
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
+        self._sync_desktop_clock_process()
         self._update_locale_button()
 
     def _update_window_mask(self) -> None:
@@ -1946,6 +1950,32 @@ class CyberBar(QWidget):
         enabled = bool(ntfy.get("enabled", False))
         show_in_bar = bool(ntfy.get("show_in_bar", False))
         self.ntfy_button.setVisible(enabled and show_in_bar)
+
+    def _sync_desktop_clock_process(self) -> None:
+        settings = load_runtime_settings()
+        services = settings.get("services", {})
+        if not isinstance(services, dict):
+            services = {}
+        service = services.get("desktop_clock_widget", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        if not enabled or not DESKTOP_CLOCK_WIDGET.exists():
+            if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+                self._desktop_clock_process.terminate()
+            self._desktop_clock_process = None
+            return
+        if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+            return
+        try:
+            self._desktop_clock_process = subprocess.Popen(
+                [widget_python(), str(DESKTOP_CLOCK_WIDGET)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            self._desktop_clock_process = None
 
     def _poll_lock_states(self) -> None:
         caps_on = run_script("lockstatus.sh", "--caps-status") == "on"
@@ -2437,6 +2467,8 @@ class CyberBar(QWidget):
             self._crypto_widget_process.terminate()
         if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
             self._vps_widget_process.terminate()
+        if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+            self._desktop_clock_process.terminate()
         if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
             self._ntfy_popup_process.terminate()
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
