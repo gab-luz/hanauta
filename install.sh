@@ -353,6 +353,7 @@ install_packages_debian() {
     build-essential pkg-config
     libglib2.0-dev libgtk-3-dev
     qt6-base-dev
+    qt6-declarative-dev
     libxkbcommon-x11-0
     libxcb-cursor0
     sassc
@@ -390,6 +391,7 @@ install_packages_arch() {
     python python-pip
     gcc pkgconf glib2
     qt6-base
+    qt6-declarative
     libxkbcommon-x11
     libxcb-cursor
     sassc
@@ -482,6 +484,7 @@ install_notification_packages_debian() {
     build-essential pkg-config
     libglib2.0-dev libgtk-3-dev
     qt6-base-dev
+    qt6-declarative-dev
     libnotify-bin jq curl
     x11-utils x11-xserver-utils
   )
@@ -496,6 +499,7 @@ install_notification_packages_arch() {
     python python-pip
     gcc pkgconf glib2 gtk3
     qt6-base
+    qt6-declarative
     libnotify jq curl
     xorg-xrandr xorg-xsetroot
   )

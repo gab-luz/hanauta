@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
 APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = APP_DIR.parents[1]
 REPO_ROOT = ROOT.parent
+HANAUTA_ROOT = APP_DIR.parent
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
@@ -69,7 +70,7 @@ OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
-DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
+DESKTOP_CLOCK_BINARY = HANAUTA_ROOT / "bin" / "hanauta-clock"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
@@ -77,7 +78,7 @@ GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
-POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
+POWERMENU_APP = HANAUTA_ROOT / "bin" / "hanauta-powermenu"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
 FONTS_DIR = REPO_ROOT / "assets" / "fonts"
 ASSETS_DIR = APP_DIR / "assets"
@@ -2459,8 +2460,14 @@ class CyberBar(QWidget):
             return False
         self._terminate_singleton_process(attr_name, script_path)
         try:
+            if python_bin is not None:
+                command = [python_bin, str(script_path)]
+            elif script_path.suffix == ".py":
+                command = [widget_python(), str(script_path)]
+            else:
+                command = [str(script_path)]
             process = subprocess.Popen(
-                [python_bin or widget_python(), str(script_path)],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -2598,7 +2605,7 @@ class CyberBar(QWidget):
         if not POWERMENU_APP.exists():
             self.btn_power.setChecked(False)
             return
-        active = self._toggle_singleton_process("_powermenu_process", POWERMENU_APP, python_bin=self._python_bin())
+        active = self._toggle_singleton_process("_powermenu_process", POWERMENU_APP)
         self.btn_power.setChecked(active)
 
     def _open_clipboard(self) -> None:
