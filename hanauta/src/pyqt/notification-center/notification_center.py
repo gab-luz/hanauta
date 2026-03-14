@@ -151,7 +151,7 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": True,
     },
     "desktop_clock_widget": {
-        "enabled": True,
+        "enabled": False,
         "show_in_notification_center": True,
     },
 }

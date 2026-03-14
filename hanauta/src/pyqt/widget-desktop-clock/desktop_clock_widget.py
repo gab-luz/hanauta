@@ -135,6 +135,22 @@ def focused_workspace_rect() -> dict | None:
             rect = item.get("rect", {})
             return rect if isinstance(rect, dict) else None
     return None
+
+
+def focused_workspace_name() -> str:
+    raw = run_cmd(["i3-msg", "-t", "get_workspaces"], timeout=2.0)
+    if not raw:
+        return ""
+    try:
+        workspaces = json.loads(raw)
+    except Exception:
+        return ""
+    if not isinstance(workspaces, list):
+        return ""
+    for item in workspaces:
+        if isinstance(item, dict) and bool(item.get("focused", False)):
+            return str(item.get("name", "")).strip()
+    return ""
     bar = payload.get("bar", {})
     if not isinstance(bar, dict):
         return BAR_HEIGHT
@@ -235,6 +251,8 @@ class DesktopClockWidget(QWidget):
         self.drag_offset = QPoint()
         self.dragging = False
         self.preview_mode = bool(sys.stdin.isatty() or sys.stdout.isatty())
+        self._desktop_visible = True
+        self._last_workspace_name = ""
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -395,7 +413,7 @@ class DesktopClockWidget(QWidget):
                 [
                     "i3-msg",
                     '[title="Hanauta Desktop Clock"]',
-                    "floating enable, sticky enable, border pixel 0",
+                    "floating enable, border pixel 0",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -408,7 +426,12 @@ class DesktopClockWidget(QWidget):
         if self.preview_mode:
             if not self.isVisible():
                 self.show()
+            self._set_desktop_visible(True)
             return
+        current_workspace = focused_workspace_name()
+        if current_workspace and current_workspace != self._last_workspace_name:
+            self._last_workspace_name = current_workspace
+            self._move_to_current_workspace()
         services = self.settings_state.get("services", {})
         if isinstance(services, dict):
             service = services.get("desktop_clock_widget", {})
@@ -416,10 +439,29 @@ class DesktopClockWidget(QWidget):
                 self.hide()
                 return
         should_show = not focused_workspace_has_real_windows()
-        if should_show:
+        if not self.isVisible():
             self.show()
-        else:
-            self.hide()
+        self._set_desktop_visible(should_show)
+
+    def _set_desktop_visible(self, visible: bool) -> None:
+        self._desktop_visible = bool(visible)
+        self.setWindowOpacity(1.0 if self._desktop_visible else 0.0)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not self._desktop_visible)
+
+    def _move_to_current_workspace(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "i3-msg",
+                    '[title="Hanauta Desktop Clock"]',
+                    "move container to workspace current",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         del event
@@ -427,12 +469,43 @@ class DesktopClockWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         face_path, center, outer_radius, inner_radius = self._face_path()
-        face_fill = QColor(self.theme.secondary)
-        face_fill.setAlphaF(0.92)
+        if self.theme.use_matugen:
+            face_fill = QColor(self.theme.secondary)
+            face_fill.setAlphaF(0.92)
+            dial_color = QColor(self.theme.on_secondary)
+            dial_color.setAlphaF(0.42)
+            digital_color = QColor(self.theme.on_secondary)
+            digital_color.setAlphaF(0.28)
+            hour_hand_color = QColor(self.theme.on_secondary)
+            hour_hand_color.setAlphaF(0.70)
+            minute_hand_color = QColor(self.theme.primary)
+            minute_hand_color.setAlphaF(0.96)
+            second_hand_color = QColor(self.theme.error)
+            second_hand_color.setAlphaF(0.82)
+            center_outer = QColor(self.theme.primary)
+            center_outer.setAlphaF(0.95)
+            center_inner = QColor(self.theme.primary_container)
+            center_inner.setAlphaF(0.96)
+        else:
+            face_fill = QColor("#415050")
+            face_fill.setAlphaF(0.96)
+            dial_color = QColor("#EEF6F4")
+            dial_color.setAlphaF(0.62)
+            digital_color = QColor("#D6DFDC")
+            digital_color.setAlphaF(0.32)
+            hour_hand_color = QColor("#C8D0CF")
+            hour_hand_color.setAlphaF(0.78)
+            minute_hand_color = QColor("#DFF7F2")
+            minute_hand_color.setAlphaF(0.98)
+            second_hand_color = QColor("#E8A4A0")
+            second_hand_color.setAlphaF(0.94)
+            center_outer = QColor("#BFE5E0")
+            center_outer.setAlphaF(0.98)
+            center_inner = QColor("#F3FCFA")
+            center_inner.setAlphaF(0.98)
+
         painter.fillPath(face_path, face_fill)
 
-        dial_color = QColor(self.theme.on_secondary)
-        dial_color.setAlphaF(0.42)
         tick_pen = QPen(dial_color, max(2.0, outer_radius * 0.012))
         tick_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(tick_pen)
@@ -449,8 +522,6 @@ class DesktopClockWidget(QWidget):
         now = datetime.now()
         hour_text = self._format_hour(now)
         minute_text = now.strftime("%M")
-        digital_color = QColor(self.theme.on_secondary)
-        digital_color.setAlphaF(0.28)
         painter.setPen(digital_color)
         painter.setFont(QFont(self.display_font, max(44, int(outer_radius * 0.46)), QFont.Weight.Bold))
         painter.drawText(self.rect().adjusted(0, int(-outer_radius * 0.18), 0, 0), Qt.AlignmentFlag.AlignCenter, hour_text)
@@ -459,13 +530,6 @@ class DesktopClockWidget(QWidget):
         hour_angle = ((now.hour % 12) + now.minute / 60.0) * (math.tau / 12.0) - math.pi / 2
         minute_angle = (now.minute + now.second / 60.0) * (math.tau / 60.0) - math.pi / 2
         second_angle = now.second * (math.tau / 60.0) - math.pi / 2
-
-        hour_hand_color = QColor(self.theme.on_secondary)
-        hour_hand_color.setAlphaF(0.70)
-        minute_hand_color = QColor(self.theme.primary)
-        minute_hand_color.setAlphaF(0.96)
-        second_hand_color = QColor(self.theme.error)
-        second_hand_color.setAlphaF(0.82)
 
         painter.setPen(QPen(hour_hand_color, max(10.0, outer_radius * 0.072), cap=Qt.PenCapStyle.RoundCap))
         painter.drawLine(center, QPointF(center.x() + math.cos(hour_angle) * inner_radius * 0.42, center.y() + math.sin(hour_angle) * inner_radius * 0.42))
@@ -478,12 +542,8 @@ class DesktopClockWidget(QWidget):
             painter.drawLine(center, QPointF(center.x() + math.cos(second_angle) * inner_radius * 0.70, center.y() + math.sin(second_angle) * inner_radius * 0.70))
 
         painter.setPen(Qt.PenStyle.NoPen)
-        center_outer = QColor(self.theme.primary)
-        center_outer.setAlphaF(0.95)
         painter.setBrush(center_outer)
         painter.drawEllipse(center, max(8.0, outer_radius * 0.05), max(8.0, outer_radius * 0.05))
-        center_inner = QColor(self.theme.primary_container)
-        center_inner.setAlphaF(0.96)
         painter.setBrush(center_inner)
         painter.drawEllipse(center, max(3.0, outer_radius * 0.018), max(3.0, outer_radius * 0.018))
 
