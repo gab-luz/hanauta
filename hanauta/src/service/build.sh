@@ -46,6 +46,10 @@ compile() {
   local src="$1"
   local out="$2"
   shift 2
+  if [ -f "$out" ] && [ "$out" -nt "$src" ]; then
+    printf 'Up to date %s\n' "$out"
+    return
+  fi
   cc "${cc_common[@]}" "$src" -o "$out" "$@"
 }
 
@@ -53,6 +57,10 @@ compile_cpp() {
   local src="$1"
   local out="$2"
   shift 2
+  if [ -f "$out" ] && [ "$out" -nt "$src" ]; then
+    printf 'Up to date %s\n' "$out"
+    return
+  fi
   c++ "${cxx_common[@]}" "$src" -o "$out" "$@"
 }
 
@@ -61,6 +69,10 @@ compile_qt_cpp() {
   local out="$2"
   local moc_out="$3"
   shift 3
+  if [ -f "$out" ] && [ "$out" -nt "$src" ]; then
+    printf 'Up to date %s\n' "$out"
+    return
+  fi
   "$QT6_MOC" "$src" -o "$moc_out"
   c++ "${cxx_common[@]}" "$src" -o "$out" "$@"
 }
@@ -92,8 +104,16 @@ compile_qt_cpp \
   -I"$BUILD_DIR" \
   $(pkg-config --cflags --libs Qt6QuickControls2 Qt6Quick Qt6Qml Qt6Gui Qt6Core)
 
+compile_qt_cpp \
+  "$ROOT_DIR/src/service/hanauta-notification-center.cpp" \
+  "$OUT_DIR/hanauta-notification-center" \
+  "$BUILD_DIR/hanauta-notification-center.moc" \
+  -I"$BUILD_DIR" \
+  $(pkg-config --cflags --libs Qt6QuickControls2 Qt6Quick Qt6Qml Qt6Gui Qt6Core Qt6Network)
+
 printf 'Built %s\n' "$OUT_DIR/hanauta-service"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notifyctl"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notifyd"
 printf 'Built %s\n' "$OUT_DIR/hanauta-clock"
 printf 'Built %s\n' "$OUT_DIR/hanauta-powermenu"
+printf 'Built %s\n' "$OUT_DIR/hanauta-notification-center"
