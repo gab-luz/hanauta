@@ -68,9 +68,14 @@ static int command_history(void) {
     if (!g_file_get_contents(path, &contents, &length, NULL) || contents == NULL) {
         g_print("{\"data\":[[]]}\n");
     } else {
-        g_print("%s", contents);
-        if (length == 0 || contents[length - 1] != '\n') {
-            g_print("\n");
+        gchar *trimmed = g_strstrip(contents);
+        if (!g_str_has_prefix(trimmed, "{") || strstr(trimmed, "\"data\"") == NULL) {
+            g_print("{\"data\":[[]]}\n");
+        } else {
+            g_print("%s", trimmed);
+            if (*trimmed != '\0' && trimmed[strlen(trimmed) - 1] != '\n') {
+                g_print("\n");
+            }
         }
     }
     g_free(contents);

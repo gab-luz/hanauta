@@ -3,6 +3,7 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <gtk/gtk.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -46,6 +47,19 @@ typedef struct {
 
 static NotifyDaemon g_daemon = {0};
 
+typedef struct {
+    gboolean use_matugen;
+    gchar primary[8];
+    gchar on_primary[8];
+    gchar primary_container[8];
+    gchar on_primary_container[8];
+    gchar surface_container[8];
+    gchar surface_container_high[8];
+    gchar on_surface[8];
+    gchar on_surface_variant[8];
+    gchar outline[8];
+} ThemePalette;
+
 static const gchar *INTROSPECTION_XML =
     "<node>"
     "  <interface name='org.freedesktop.Notifications'>"
@@ -82,6 +96,177 @@ static const gchar *INTROSPECTION_XML =
     "    </signal>"
     "  </interface>"
     "</node>";
+
+static void theme_palette_defaults(ThemePalette *theme) {
+    theme->use_matugen = FALSE;
+    g_strlcpy(theme->primary, "#D0BCFF", sizeof(theme->primary));
+    g_strlcpy(theme->on_primary, "#381E72", sizeof(theme->on_primary));
+    g_strlcpy(theme->primary_container, "#4F378B", sizeof(theme->primary_container));
+    g_strlcpy(theme->on_primary_container, "#EADDFF", sizeof(theme->on_primary_container));
+    g_strlcpy(theme->surface_container, "#211F26", sizeof(theme->surface_container));
+    g_strlcpy(theme->surface_container_high, "#2B2930", sizeof(theme->surface_container_high));
+    g_strlcpy(theme->on_surface, "#E6E0E9", sizeof(theme->on_surface));
+    g_strlcpy(theme->on_surface_variant, "#CAC4D0", sizeof(theme->on_surface_variant));
+    g_strlcpy(theme->outline, "#938F99", sizeof(theme->outline));
+}
+
+static gboolean valid_hex_color(const gchar *text) {
+    if (text == NULL || text[0] != '#' || strlen(text) != 7) {
+        return FALSE;
+    }
+    for (gsize i = 1; i < 7; ++i) {
+        if (!g_ascii_isxdigit(text[i])) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static void copy_hex_color(gchar dest[8], const gchar *value, const gchar *fallback) {
+    if (valid_hex_color(value)) {
+        g_strlcpy(dest, value, 8);
+    } else {
+        g_strlcpy(dest, fallback, 8);
+    }
+}
+
+static gchar *theme_file_path(void) {
+    return g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "theme", "pyqt_palette.json", NULL);
+}
+
+static gchar *json_string_value(const gchar *json, const gchar *key) {
+    gchar *pattern = g_strdup_printf("\"%s\"", key);
+    const gchar *found = g_strstr_len(json, -1, pattern);
+    const gchar *cursor = NULL;
+    GString *value = NULL;
+    gboolean escaped = FALSE;
+    gchar *result = NULL;
+    g_free(pattern);
+    if (found == NULL) {
+        return NULL;
+    }
+    cursor = strchr(found, ':');
+    if (cursor == NULL) {
+        return NULL;
+    }
+    cursor += 1;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor += 1;
+    }
+    if (*cursor != '"') {
+        return NULL;
+    }
+    cursor += 1;
+    value = g_string_new("");
+    while (*cursor != '\0') {
+        if (escaped) {
+            g_string_append_c(value, *cursor);
+            escaped = FALSE;
+        } else if (*cursor == '\\') {
+            escaped = TRUE;
+        } else if (*cursor == '"') {
+            break;
+        } else {
+            g_string_append_c(value, *cursor);
+        }
+        cursor += 1;
+    }
+    result = g_string_free(value, FALSE);
+    return result;
+}
+
+static gboolean json_bool_value(const gchar *json, const gchar *key, gboolean fallback) {
+    gchar *pattern = g_strdup_printf("\"%s\"", key);
+    const gchar *found = g_strstr_len(json, -1, pattern);
+    const gchar *cursor = NULL;
+    gboolean result = fallback;
+    g_free(pattern);
+    if (found == NULL) {
+        return fallback;
+    }
+    cursor = strchr(found, ':');
+    if (cursor == NULL) {
+        return fallback;
+    }
+    cursor += 1;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor += 1;
+    }
+    if (g_str_has_prefix(cursor, "true")) {
+        result = TRUE;
+    } else if (g_str_has_prefix(cursor, "false")) {
+        result = FALSE;
+    }
+    return result;
+}
+
+static gchar *hex_to_rgba(const gchar *hex, gdouble alpha) {
+    guint red = 0;
+    guint green = 0;
+    guint blue = 0;
+    gchar component[3] = {0};
+    gdouble clamped = CLAMP(alpha, 0.0, 1.0);
+    if (!valid_hex_color(hex)) {
+        hex = "#000000";
+    }
+    component[0] = hex[1];
+    component[1] = hex[2];
+    red = (guint)strtoul(component, NULL, 16);
+    component[0] = hex[3];
+    component[1] = hex[4];
+    green = (guint)strtoul(component, NULL, 16);
+    component[0] = hex[5];
+    component[1] = hex[6];
+    blue = (guint)strtoul(component, NULL, 16);
+    return g_strdup_printf("rgba(%u,%u,%u,%.2f)", red, green, blue, clamped);
+}
+
+static void load_theme_palette(ThemePalette *theme) {
+    gchar *path = theme_file_path();
+    gchar *contents = NULL;
+    gchar *value = NULL;
+    theme_palette_defaults(theme);
+    if (!g_file_get_contents(path, &contents, NULL, NULL) || contents == NULL) {
+        g_free(path);
+        g_free(contents);
+        return;
+    }
+    theme->use_matugen = json_bool_value(contents, "use_matugen", FALSE);
+    if (!theme->use_matugen) {
+        g_free(path);
+        g_free(contents);
+        return;
+    }
+    value = json_string_value(contents, "primary");
+    copy_hex_color(theme->primary, value, theme->primary);
+    g_free(value);
+    value = json_string_value(contents, "on_primary");
+    copy_hex_color(theme->on_primary, value, theme->on_primary);
+    g_free(value);
+    value = json_string_value(contents, "primary_container");
+    copy_hex_color(theme->primary_container, value, theme->primary_container);
+    g_free(value);
+    value = json_string_value(contents, "on_primary_container");
+    copy_hex_color(theme->on_primary_container, value, theme->on_primary_container);
+    g_free(value);
+    value = json_string_value(contents, "surface_container");
+    copy_hex_color(theme->surface_container, value, theme->surface_container);
+    g_free(value);
+    value = json_string_value(contents, "surface_container_high");
+    copy_hex_color(theme->surface_container_high, value, theme->surface_container_high);
+    g_free(value);
+    value = json_string_value(contents, "on_surface");
+    copy_hex_color(theme->on_surface, value, theme->on_surface);
+    g_free(value);
+    value = json_string_value(contents, "on_surface_variant");
+    copy_hex_color(theme->on_surface_variant, value, theme->on_surface_variant);
+    g_free(value);
+    value = json_string_value(contents, "outline");
+    copy_hex_color(theme->outline, value, theme->outline);
+    g_free(value);
+    g_free(path);
+    g_free(contents);
+}
 
 static gchar *state_dir_path(void) {
     return g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-daemon", NULL);
@@ -256,12 +441,30 @@ static void emit_action(guint id, const gchar *action_key) {
     );
 }
 
+static gint compare_toast_windows(gconstpointer a, gconstpointer b) {
+    const ToastWindow *left = a;
+    const ToastWindow *right = b;
+    if (left->id < right->id) {
+        return -1;
+    }
+    if (left->id > right->id) {
+        return 1;
+    }
+    return 0;
+}
+
 static void reposition_toasts(void) {
-    GdkScreen *screen = gdk_screen_get_default();
-    if (screen == NULL) {
+    GdkDisplay *display = gdk_display_get_default();
+    GdkMonitor *monitor = NULL;
+    GdkRectangle geometry = {0};
+    if (display == NULL) {
         return;
     }
-    gint width = gdk_screen_get_width(screen);
+    monitor = gdk_display_get_primary_monitor(display);
+    if (monitor == NULL) {
+        return;
+    }
+    gdk_monitor_get_geometry(monitor, &geometry);
     gint y = 56;
     GHashTableIter iter;
     gpointer key = NULL;
@@ -271,14 +474,14 @@ static void reposition_toasts(void) {
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         ordered = g_list_prepend(ordered, value);
     }
-    ordered = g_list_sort(ordered, (GCompareFunc)g_direct_equal);
+    ordered = g_list_sort(ordered, compare_toast_windows);
     for (GList *node = ordered; node != NULL; node = node->next) {
         ToastWindow *toast = node->data;
         gint toast_width = 356;
         gint toast_height = 120;
         gtk_widget_show_all(toast->window);
         gtk_window_get_size(GTK_WINDOW(toast->window), &toast_width, &toast_height);
-        gtk_window_move(GTK_WINDOW(toast->window), width - toast_width - 24, y);
+        gtk_window_move(GTK_WINDOW(toast->window), geometry.x + geometry.width - toast_width - 24, geometry.y + y);
         y += toast_height + 10;
     }
     g_list_free(ordered);
@@ -287,7 +490,6 @@ static void reposition_toasts(void) {
 static void dismiss_toast(guint id, guint reason) {
     ToastWindow *toast = g_hash_table_lookup(g_daemon.toasts, GUINT_TO_POINTER(id));
     if (toast == NULL) {
-        emit_closed(id, reason);
         return;
     }
     GtkWidget *window = toast->window;
@@ -328,6 +530,7 @@ static GtkWidget *make_label(const gchar *name, const gchar *text, gdouble xalig
 }
 
 static void show_toast(const NotificationPayload *payload) {
+    ThemePalette theme;
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
     gtk_window_set_skip_taskbar_hint(GTK_WINDOW(window), TRUE);
@@ -378,19 +581,42 @@ static void show_toast(const NotificationPayload *payload) {
         }
     }
 
+    load_theme_palette(&theme);
+    gchar *card_bg = hex_to_rgba(theme.surface_container, 0.94);
+    gchar *card_border = hex_to_rgba(theme.outline, 0.18);
+    gchar *app_label = g_strdup(theme.primary);
+    gchar *summary_color = g_strdup(theme.on_surface);
+    gchar *body_color = hex_to_rgba(theme.on_surface_variant, 0.78);
+    gchar *close_bg = hex_to_rgba(theme.on_surface, 0.08);
+    gchar *close_fg = g_strdup(theme.on_surface);
+    gchar *action_bg = g_strdup(theme.primary);
+    gchar *action_fg = g_strdup(theme.on_primary);
+    gchar *action_hover = g_strdup(theme.primary_container);
+    gchar *action_hover_fg = g_strdup(theme.on_primary_container);
+
     GtkCssProvider *provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(
-        provider,
+    gchar *css = g_strdup_printf(
         "#hanauta-toast-window { background: transparent; }"
-        "#card { background: rgba(26, 26, 28, 0.95); border: 1px solid rgba(255,255,255,0.08); border-radius: 22px; }"
-        "#appLabel { color: #89b4fa; font-weight: 700; }"
-        "#summaryLabel { color: #f5f5f7; font-weight: 700; font-size: 15px; }"
-        "#bodyLabel { color: rgba(245,245,247,0.74); }"
-        "#closeButton { background: rgba(255,255,255,0.08); color: #f5f5f7; border-radius: 12px; padding: 2px 8px; border: none; }"
-        "#actionButton { background: #89b4fa; color: #101114; border-radius: 14px; padding: 6px 12px; border: none; font-weight: 700; }",
-        -1,
-        NULL
+        "#card { background: %s; border: 1px solid %s; border-radius: 24px; }"
+        "#appLabel { color: %s; font-weight: 800; letter-spacing: 0.4px; }"
+        "#summaryLabel { color: %s; font-weight: 800; font-size: 15px; }"
+        "#bodyLabel { color: %s; }"
+        "#closeButton { background: %s; color: %s; border-radius: 12px; padding: 2px 8px; border: none; }"
+        "#actionButton { background: %s; color: %s; border-radius: 16px; padding: 7px 13px; border: none; font-weight: 800; }"
+        "#actionButton:hover { background: %s; color: %s; }",
+        card_bg,
+        card_border,
+        app_label,
+        summary_color,
+        body_color,
+        close_bg,
+        close_fg,
+        action_bg,
+        action_fg,
+        action_hover,
+        action_hover_fg
     );
+    gtk_css_provider_load_from_data(provider, css, -1, NULL);
     GtkStyleContext *context = gtk_widget_get_style_context(window);
     gtk_style_context_add_provider(context, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     gtk_style_context_add_provider_for_screen(
@@ -399,6 +625,18 @@ static void show_toast(const NotificationPayload *payload) {
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
     );
     g_object_unref(provider);
+    g_free(card_bg);
+    g_free(card_border);
+    g_free(app_label);
+    g_free(summary_color);
+    g_free(body_color);
+    g_free(close_bg);
+    g_free(close_fg);
+    g_free(action_bg);
+    g_free(action_fg);
+    g_free(action_hover);
+    g_free(action_hover_fg);
+    g_free(css);
 
     ToastWindow *toast = g_new0(ToastWindow, 1);
     toast->window = window;
@@ -525,9 +763,7 @@ static void handle_method_call(
 }
 
 static const GDBusInterfaceVTable INTERFACE_VTABLE = {
-    handle_method_call,
-    NULL,
-    NULL,
+    .method_call = handle_method_call,
 };
 
 static void on_bus_acquired(GDBusConnection *connection, const gchar *name, gpointer user_data) {
@@ -561,6 +797,7 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
 
 int main(int argc, char **argv) {
     g_daemon.app = gtk_application_new("org.hanauta.Notifyd", G_APPLICATION_NON_UNIQUE);
+    g_application_hold(G_APPLICATION(g_daemon.app));
     g_daemon.toasts = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, toast_window_free);
     g_daemon.history = g_ptr_array_new_with_free_func(history_entry_free);
     g_daemon.next_id = 1;

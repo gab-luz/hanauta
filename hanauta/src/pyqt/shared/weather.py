@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[4]
 ASSETS_DIR = ROOT / "hanauta" / "src" / "assets"
 WEATHER_ICON_DIR = ASSETS_DIR / "weather-icons"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+SERVICE_WEATHER_CACHE = SERVICE_STATE_DIR / "weather.json"
 ANIMATED_ICON_FALLBACKS = {
     "partly-cloudy-day": "partly-cloudy-day-qt",
     "partly-cloudy-night": "partly-cloudy-night-qt",
@@ -115,6 +117,30 @@ def _get_json(url: str, timeout: float = 5.0) -> dict[str, Any]:
     req = request.Request(url, headers={"User-Agent": "Hanauta Weather/1.0"})
     with request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _load_service_weather_cache(city: WeatherCity) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(SERVICE_WEATHER_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    requested = payload.get("requested", {})
+    cached = payload.get("payload", {})
+    if not isinstance(requested, dict) or not isinstance(cached, dict):
+        return None
+    try:
+        lat = float(requested.get("latitude"))
+        lon = float(requested.get("longitude"))
+    except Exception:
+        return None
+    timezone = str(requested.get("timezone", "auto")).strip() or "auto"
+    if abs(lat - city.latitude) > 0.01 or abs(lon - city.longitude) > 0.01:
+        return None
+    if timezone != (city.timezone or "auto"):
+        return None
+    return cached
 
 
 def search_cities(query: str, count: int = 8) -> list[WeatherCity]:
@@ -255,10 +281,12 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
             ),
         }
     )
-    try:
-        payload = _get_json(f"{WEATHER_API}?{params}", timeout=5.0)
-    except Exception:
-        return None
+    payload = _load_service_weather_cache(city)
+    if payload is None:
+        try:
+            payload = _get_json(f"{WEATHER_API}?{params}", timeout=5.0)
+        except Exception:
+            return None
 
     current_payload = payload.get("current", {})
     daily_payload = payload.get("daily", {})

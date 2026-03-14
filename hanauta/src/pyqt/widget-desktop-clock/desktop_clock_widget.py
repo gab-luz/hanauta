@@ -426,7 +426,6 @@ class DesktopClockWidget(QWidget):
         if self.preview_mode:
             if not self.isVisible():
                 self.show()
-            self._set_desktop_visible(True)
             return
         current_workspace = focused_workspace_name()
         if current_workspace and current_workspace != self._last_workspace_name:
@@ -436,17 +435,19 @@ class DesktopClockWidget(QWidget):
         if isinstance(services, dict):
             service = services.get("desktop_clock_widget", {})
             if isinstance(service, dict) and not bool(service.get("enabled", True)):
-                self.hide()
+                self._shutdown()
                 return
-        should_show = not focused_workspace_has_real_windows()
+        if focused_workspace_has_real_windows():
+            self._shutdown()
+            return
         if not self.isVisible():
             self.show()
-        self._set_desktop_visible(should_show)
 
-    def _set_desktop_visible(self, visible: bool) -> None:
-        self._desktop_visible = bool(visible)
-        self.setWindowOpacity(1.0 if self._desktop_visible else 0.0)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not self._desktop_visible)
+    def _shutdown(self) -> None:
+        app = QApplication.instance()
+        self.close()
+        if app is not None:
+            app.quit()
 
     def _move_to_current_workspace(self) -> None:
         try:

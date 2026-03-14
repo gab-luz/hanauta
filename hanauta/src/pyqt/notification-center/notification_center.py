@@ -65,6 +65,7 @@ OBS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 CRYPTO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 GAME_MODE_POPUP_SCRIPT = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 
 MATERIAL_ICONS = {
@@ -229,6 +230,14 @@ def run_bg_singleton(script_path: Path, *args: str) -> None:
         )
     except Exception:
         pass
+
+
+def desktop_clock_command() -> list[str]:
+    if DESKTOP_CLOCK_BINARY.exists():
+        return [str(DESKTOP_CLOCK_BINARY)]
+    if DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
+        return [sys.executable, str(DESKTOP_CLOCK_WIDGET_SCRIPT)]
+    return []
 
 
 def notification_control_command(*args: str) -> list[str]:
@@ -1578,9 +1587,20 @@ class NotificationCenter(QWidget):
         run_bg_singleton(VPS_WIDGET_SCRIPT)
 
     def _open_desktop_clock_widget(self) -> None:
-        if not self._service_enabled("desktop_clock_widget") or not DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
+        if not self._service_enabled("desktop_clock_widget"):
             return
-        run_bg_singleton(DESKTOP_CLOCK_WIDGET_SCRIPT)
+        command = desktop_clock_command()
+        if not command:
+            return
+        try:
+            subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
 
     def _open_game_mode_popup(self) -> None:
         if not self._service_enabled("game_mode") or not GAME_MODE_POPUP_SCRIPT.exists():

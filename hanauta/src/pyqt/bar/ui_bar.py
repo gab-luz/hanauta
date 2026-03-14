@@ -17,7 +17,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap, QRegion
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
 
 APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = APP_DIR.parents[1]
+REPO_ROOT = ROOT.parent
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
@@ -68,6 +69,7 @@ OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
@@ -77,7 +79,7 @@ ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
-FONTS_DIR = ROOT / "assets" / "fonts"
+FONTS_DIR = REPO_ROOT / "assets" / "fonts"
 ASSETS_DIR = APP_DIR / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
@@ -213,6 +215,118 @@ def background_match_exists(pattern: str) -> bool:
     except Exception:
         return False
     return result.returncode == 0
+
+
+def focused_workspace_name() -> str:
+    raw = run_cmd(["i3-msg", "-t", "get_workspaces"])
+    if not raw:
+        return ""
+    try:
+        workspaces = json.loads(raw)
+    except Exception:
+        return ""
+    if not isinstance(workspaces, list):
+        return ""
+    for item in workspaces:
+        if isinstance(item, dict) and bool(item.get("focused", False)):
+            return str(item.get("name", "")).strip()
+    return ""
+
+
+def _collect_leaf_windows(node: dict, visible_windows: list[dict]) -> None:
+    if not isinstance(node, dict):
+        return
+    nodes = node.get("nodes", [])
+    floating_nodes = node.get("floating_nodes", [])
+    if isinstance(nodes, list):
+        for child in nodes:
+            _collect_leaf_windows(child, visible_windows)
+    if isinstance(floating_nodes, list):
+        for child in floating_nodes:
+            _collect_leaf_windows(child, visible_windows)
+    if node.get("window"):
+        visible_windows.append(node)
+
+
+def focused_workspace_has_real_windows() -> bool:
+    workspace_raw = run_cmd(["i3-msg", "-t", "get_workspaces"], timeout=2.0)
+    tree_raw = run_cmd(["i3-msg", "-t", "get_tree"], timeout=3.0)
+    if not workspace_raw or not tree_raw:
+        return False
+    try:
+        workspaces = json.loads(workspace_raw)
+        tree = json.loads(tree_raw)
+    except Exception:
+        return False
+    if not isinstance(workspaces, list):
+        return False
+    current_workspace = ""
+    for item in workspaces:
+        if isinstance(item, dict) and bool(item.get("focused", False)):
+            current_workspace = str(item.get("name", "")).strip()
+            break
+    if not current_workspace:
+        return False
+
+    def find_workspace(node: dict) -> dict | None:
+        if not isinstance(node, dict):
+            return None
+        if node.get("type") == "workspace" and str(node.get("name", "")).strip() == current_workspace:
+            return node
+        for key in ("nodes", "floating_nodes"):
+            children = node.get(key, [])
+            if not isinstance(children, list):
+                continue
+            for child in children:
+                found = find_workspace(child)
+                if found is not None:
+                    return found
+        return None
+
+    workspace = find_workspace(tree)
+    if workspace is None:
+        return False
+    windows: list[dict] = []
+    _collect_leaf_windows(workspace, windows)
+    ignored_classes = {
+        "CyberBar",
+        "CyberDock",
+        "HanautaDesktopClock",
+        "HanautaClock",
+        "HanautaHotkeys",
+    }
+    ignored_titles = {
+        "CyberBar",
+        "Hanauta Desktop Clock",
+        "Hanauta Clock",
+    }
+    for item in windows:
+        props = item.get("window_properties", {})
+        if not isinstance(props, dict):
+            props = {}
+        wm_class = str(props.get("class", "")).strip()
+        title = str(item.get("name", "")).strip()
+        if wm_class in ignored_classes or title in ignored_titles:
+            continue
+        return True
+    return False
+
+
+def desktop_clock_target() -> Path | None:
+    if DESKTOP_CLOCK_BINARY.exists():
+        return DESKTOP_CLOCK_BINARY
+    if DESKTOP_CLOCK_WIDGET.exists():
+        return DESKTOP_CLOCK_WIDGET
+    return None
+
+
+def desktop_clock_command() -> list[str]:
+    target = desktop_clock_target()
+    if target is None:
+        return []
+    if target == DESKTOP_CLOCK_BINARY:
+        return [str(target)]
+    return [widget_python(), str(target)]
 
 
 def detect_font(*families: str) -> str:
@@ -739,15 +853,17 @@ class CyberBar(QWidget):
             "Noto Sans",
             "Sans Serif",
         )
-        self.material_font = detect_font(
-            self.loaded_fonts.get("material_icons", ""),
-            self.loaded_fonts.get("material_icons_outlined", ""),
-            self.loaded_fonts.get("material_symbols_outlined", ""),
-            self.loaded_fonts.get("material_symbols_rounded", ""),
-            "Material Icons",
-            "Material Icons Outlined",
-            "Material Symbols Outlined",
-            "Material Symbols Rounded",
+        self.material_font = (
+            self.loaded_fonts.get("material_icons")
+            or self.loaded_fonts.get("material_icons_outlined")
+            or self.loaded_fonts.get("material_symbols_outlined")
+            or self.loaded_fonts.get("material_symbols_rounded")
+            or detect_font(
+                "Material Icons",
+                "Material Icons Outlined",
+                "Material Symbols Outlined",
+                "Material Symbols Rounded",
+            )
         )
         self.reminders_font = detect_font(
             "Symbols Nerd Font Mono",
@@ -788,7 +904,6 @@ class CyberBar(QWidget):
         self._settings_watcher: Optional[QFileSystemWatcher] = None
         self._settings_reload_timer: Optional[QTimer] = None
         self._control_center_launch_pending = False
-        self._desktop_clock_launch_attempted = False
         self._bar_icon_overrides = load_bar_icon_overrides()
         self._caps_lock_on: Optional[bool] = None
         self._num_lock_on: Optional[bool] = None
@@ -1123,26 +1238,84 @@ class CyberBar(QWidget):
     def _icon_text(self, icon_name: str) -> str:
         return self._bar_icon_overrides.get(icon_name, material_icon(icon_name))
 
+    def _font_supports_text(self, font: QFont, text: str) -> bool:
+        if not text:
+            return False
+        metrics = QFontMetrics(font)
+        for char in text:
+            if char.isspace():
+                continue
+            if not metrics.inFontUcs4(ord(char)):
+                return False
+        return True
+
+    def _custom_icon_font(self, text: str, size: int) -> QFont | None:
+        families = [
+            self.reminders_font,
+            "Symbols Nerd Font Mono",
+            "Symbols Nerd Font",
+            "JetBrainsMono Nerd Font Mono",
+            "JetBrainsMono Nerd Font",
+            "FiraCode Nerd Font Mono",
+            "FiraCode Nerd Font",
+            self.ui_font,
+        ]
+        seen: set[str] = set()
+        for family in families:
+            if not family or family in seen:
+                continue
+            seen.add(family)
+            font = QFont(family, size)
+            if self._font_supports_text(font, text):
+                return font
+        return None
+
+    def _icon_font_for_text(self, icon_key: str, text: str, fallback_text: str, size: int) -> tuple[QFont, bool, str]:
+        override = self._bar_icon_overrides.get(icon_key, "").strip()
+        if override and text == override:
+            if icon_key == "launcher_note":
+                return QFont(self.ui_font, size), False, text
+            custom_font = self._custom_icon_font(text, size)
+            if custom_font is not None:
+                return custom_font, True, text
+            # Fallback to the built-in Material icon when the override glyph is unsupported.
+            return QFont(self.material_font, size), False, fallback_text
+        return QFont(self.material_font, size), False, text
+
     def _apply_icon_to_widget(self, widget: QWidget, icon_key: str, fallback_text: str, size: int = 16) -> None:
         override = self._bar_icon_overrides.get(icon_key, "").strip()
         if override:
             path = Path(os.path.expanduser(override))
             if path.exists() and path.is_file():
                 if isinstance(widget, QPushButton):
+                    widget.setProperty("iconKey", icon_key)
+                    widget.setProperty("nerdIcon", False)
+                    widget.setFont(QFont(self.material_font, size))
                     widget.setText("")
                     widget.setIcon(QIcon(str(path)))
                     widget.setIconSize(QSize(size, size))
                     return
                 if isinstance(widget, QLabel):
+                    widget.setProperty("iconKey", icon_key)
+                    widget.setFont(QFont(self.material_font, size))
                     pixmap = QPixmap(str(path)).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     widget.setPixmap(pixmap)
                     return
         if isinstance(widget, QPushButton):
+            text = override or fallback_text
+            font, nerd_icon, resolved_text = self._icon_font_for_text(icon_key, text, fallback_text, size)
+            widget.setProperty("iconKey", icon_key)
+            widget.setProperty("nerdIcon", nerd_icon)
+            widget.setFont(font)
             widget.setIcon(QIcon())
-            widget.setText(override or fallback_text)
+            widget.setText(resolved_text)
         elif isinstance(widget, QLabel):
+            text = override or fallback_text
+            font, _, resolved_text = self._icon_font_for_text(icon_key, text, fallback_text, size)
+            widget.setProperty("iconKey", icon_key)
+            widget.setFont(font)
             widget.setPixmap(QPixmap())
-            widget.setText(override or fallback_text)
+            widget.setText(resolved_text)
 
     def _wrap_movable(self, widget: QWidget) -> QWidget:
         wrap = QWidget()
@@ -1754,6 +1927,7 @@ class CyberBar(QWidget):
                 button.set_state("occupied")
             else:
                 button.set_state("empty")
+        self._sync_desktop_clock_process()
 
     def _poll_media(self) -> None:
         title = run_script("mpris.sh", "title")
@@ -2112,27 +2286,30 @@ class CyberBar(QWidget):
         if not isinstance(service, dict):
             service = {}
         enabled = bool(service.get("enabled", True))
-        if not enabled or not DESKTOP_CLOCK_WIDGET.exists():
+        target = desktop_clock_target()
+        should_run = enabled and target is not None and not focused_workspace_has_real_windows()
+        if not should_run:
             terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
+            terminate_background_matches(str(DESKTOP_CLOCK_BINARY))
             if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
                 self._desktop_clock_process.terminate()
             self._desktop_clock_process = None
-            self._desktop_clock_launch_attempted = False
             return
         if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
             return
-        if self._desktop_clock_launch_attempted:
+        terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
+        terminate_background_matches(str(DESKTOP_CLOCK_BINARY))
+        command = desktop_clock_command()
+        if not command:
             self._desktop_clock_process = None
             return
-        terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
         try:
             self._desktop_clock_process = subprocess.Popen(
-                [widget_python(), str(DESKTOP_CLOCK_WIDGET)],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-            self._desktop_clock_launch_attempted = True
         except Exception:
             self._desktop_clock_process = None
 

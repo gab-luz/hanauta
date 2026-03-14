@@ -74,6 +74,8 @@ PYQT_THEME_FILE = PYQT_THEME_DIR / "pyqt_palette.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
 BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
+DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
+DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 PICOM_DEFAULT_CONFIG = """backend = "glx";
 vsync = true;
 use-damage = true;
@@ -107,6 +109,7 @@ shadow-exclude = [
   "class_g = 'Rofi'",
   "class_g = 'Conky'",
   "name = 'Hanauta Desktop Clock'",
+  "name = 'Hanauta Clock'",
 ];
 
 rounded-corners-exclude = [
@@ -115,7 +118,8 @@ rounded-corners-exclude = [
   "class_g = 'Conky'",
   "class_g = 'mpv'",
   "name = 'PyQt Notification Center'",
-  "name = 'Hanauta Desktop Clock'"
+  "name = 'Hanauta Desktop Clock'",
+  "name = 'Hanauta Clock'"
   
 ];
 
@@ -4344,6 +4348,7 @@ class SettingsWindow(QWidget):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
+        native_clock = DESKTOP_CLOCK_BINARY.exists()
 
         self.clock_display_switch = SwitchButton(
             bool(self.settings_state["services"]["desktop_clock_widget"].get("show_in_notification_center", True))
@@ -4391,21 +4396,37 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.clock_status = QLabel("Desktop clock is ready.")
+        if native_clock:
+            clock_status_text = "Desktop clock is ready. Settings will launch the native Qt clock binary."
+        else:
+            clock_status_text = "Desktop clock is ready. Settings will fall back to the PyQt clock until the native binary is built."
+        self.clock_status = QLabel(clock_status_text)
         self.clock_status.setWordWrap(True)
         self.clock_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.clock_status)
+
+        actions_row = QHBoxLayout()
+        actions_row.setContentsMargins(0, 0, 0, 0)
+        actions_row.setSpacing(10)
+
+        self.clock_open_button = QPushButton("Open clock now")
+        self.clock_open_button.setObjectName("primaryButton")
+        self.clock_open_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.clock_open_button.clicked.connect(self._launch_desktop_clock)
+        actions_row.addWidget(self.clock_open_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.clock_reset_button = QPushButton("Reset clock position")
         self.clock_reset_button.setObjectName("secondaryButton")
         self.clock_reset_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.clock_reset_button.clicked.connect(self._reset_clock_position)
-        layout.addWidget(self.clock_reset_button, 0, Qt.AlignmentFlag.AlignLeft)
+        actions_row.addWidget(self.clock_reset_button, 0, Qt.AlignmentFlag.AlignLeft)
+        actions_row.addStretch(1)
+        layout.addLayout(actions_row)
 
         section = ExpandableServiceSection(
             "desktop_clock_widget",
             "Desktop Clock",
-            "A Hanauta-native analog and digital desktop clock with a sculpted face and Matugen colors.",
+            "A Hanauta-native analog and digital desktop clock with a sculpted face, Matugen colors, and a native Qt clock binary by default.",
             material_icon("watch"),
             self.icon_font,
             self.ui_font,
@@ -4924,6 +4945,36 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         if hasattr(self, "clock_status"):
             self.clock_status.setText("Desktop clock position reset.")
+
+    def _desktop_clock_command(self) -> list[str]:
+        if DESKTOP_CLOCK_BINARY.exists():
+            return [str(DESKTOP_CLOCK_BINARY)]
+        if DESKTOP_CLOCK_WIDGET.exists():
+            return [sys.executable, str(DESKTOP_CLOCK_WIDGET)]
+        return []
+
+    def _launch_desktop_clock(self) -> None:
+        command = self._desktop_clock_command()
+        if not command:
+            if hasattr(self, "clock_status"):
+                self.clock_status.setText("No desktop clock executable was found. Build `hanauta/bin/hanauta-clock` or keep the PyQt fallback installed.")
+            return
+        try:
+            subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            if hasattr(self, "clock_status"):
+                self.clock_status.setText(
+                    "Opened the native Qt clock."
+                    if command[0] == str(DESKTOP_CLOCK_BINARY)
+                    else "Opened the PyQt desktop clock fallback."
+                )
+        except Exception:
+            if hasattr(self, "clock_status"):
+                self.clock_status.setText("Desktop clock could not be launched.")
 
     def _save_reminders_settings(self) -> None:
         reminders = self.settings_state.setdefault("reminders", {})
