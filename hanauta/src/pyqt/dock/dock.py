@@ -115,6 +115,7 @@ def detect_font(*families: str) -> str:
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
+        "ui_sans": FONTS_DIR / "InterVariable.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
@@ -833,7 +834,7 @@ class DockSettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         title = QLabel("Dock Settings")
-        title.setFont(QFont("Noto Sans", 16, QFont.Weight.DemiBold))
+        title.setFont(QFont("Rubik", 16, QFont.Weight.DemiBold))
         layout.addWidget(title)
 
         self.auto_hide = QCheckBox("Enable auto-hide")
@@ -1091,7 +1092,7 @@ class CyberDock(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
-        self.ui_font = detect_font("Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.ui_font = detect_font("Rubik", self.loaded_fonts.get("ui_sans", ""), "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.mono_font = detect_font("JetBrains Mono", "DejaVu Sans Mono", "Monospace")
         self.config = load_dock_config()
         self._last_items_json = ""
@@ -1372,11 +1373,12 @@ class CyberDock(QWidget):
             }}
             QLabel {{
                 color: {theme.text};
+                font-family: "{self.ui_font}";
             }}
             #dockUtilityButton {{
                 background: transparent;
                 border: none;
-                border-radius: 18px;
+                border-radius: 999px;
                 color: {theme.icon};
                 font-family: "{self.material_font}";
             }}
@@ -1386,7 +1388,7 @@ class CyberDock(QWidget):
             #dockClock {{
                 color: {theme.text_muted};
                 font-size: 11px;
-                font-weight: 700;
+                font-weight: 600;
                 padding: 0 8px;
             }}
             """

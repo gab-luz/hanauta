@@ -119,8 +119,8 @@ class RssWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         fonts = load_app_fonts()
-        self.ui_font = detect_font(fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
-        self.display_font = detect_font(fonts.get("ui_display", ""), "Outfit", self.ui_font)
+        self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
+        self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
         self.icon_font = detect_font(fonts.get("material_icons", ""), "Material Icons", self.ui_font)
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
@@ -164,13 +164,13 @@ class RssWidget(QWidget):
         titles.setSpacing(3)
         eyebrow = QLabel("RSS WIDGET")
         eyebrow.setObjectName("eyebrow")
-        eyebrow.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+        eyebrow.setFont(QFont(self.ui_font, 8, QFont.Weight.DemiBold))
         title = QLabel("Read and return")
         title.setObjectName("title")
-        title.setFont(QFont(self.display_font, 24, QFont.Weight.Bold))
+        title.setFont(QFont(self.display_font, 22, QFont.Weight.DemiBold))
         self.subtitle = QLabel("Headlines from manual feeds or OPML-backed self-hosted exports.")
         self.subtitle.setObjectName("subtitle")
-        self.subtitle.setFont(QFont(self.ui_font, 10))
+        self.subtitle.setFont(QFont(self.ui_font, 9))
         self.subtitle.setWordWrap(True)
         titles.addWidget(eyebrow)
         titles.addWidget(title)
@@ -260,13 +260,13 @@ class RssWidget(QWidget):
                 font-family: "{self.ui_font}";
             }}
             QFrame#panel {{
-                background: {rgba(theme.surface_container, 0.97)};
-                border: 1px solid {rgba(theme.outline, 0.86)};
+                background: {rgba(theme.surface_container, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 28px;
             }}
             QLabel#eyebrow {{
                 color: {theme.primary};
-                letter-spacing: 0.12em;
+                letter-spacing: 1.3px;
             }}
             QLabel#title, QLabel#heroTitle, QLabel#cardTitle {{
                 color: {theme.text};
@@ -275,29 +275,25 @@ class RssWidget(QWidget):
                 color: {theme.text_muted};
             }}
             QFrame#heroCard, QFrame#articleCard {{
-                background: {rgba(theme.surface_container_high, 0.92)};
-                border: 1px solid {rgba(theme.outline, 0.24)};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 22px;
             }}
             QFrame#heroCard {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {rgba(theme.primary, 0.18)},
-                    stop:1 {rgba(theme.surface_container_high, 0.98)}
-                );
+                background: {rgba(theme.surface_container_high, 0.90)};
             }}
             QPushButton#iconButton {{
-                background: {rgba(theme.primary, 0.14)};
+                background: {rgba(theme.surface_container_high, 0.88)};
                 color: {theme.primary};
-                border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 19px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 font-family: "{self.icon_font}";
             }}
             QPushButton#secondaryButton {{
-                background: {rgba(theme.primary, 0.14)};
-                color: {theme.primary};
-                border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 14px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 padding: 8px 12px;
             }}
             """

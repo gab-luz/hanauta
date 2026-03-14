@@ -195,6 +195,19 @@ def terminate_background_matches(pattern: str) -> None:
         pass
 
 
+def background_match_exists(pattern: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except Exception:
+        return False
+    return result.returncode == 0
+
+
 def detect_font(*families: str) -> str:
     for family in families:
         if QFont(family).exactMatch():
@@ -689,6 +702,7 @@ class CyberBar(QWidget):
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
         self.region_settings = load_region_settings_from_payload(self.runtime_settings)
         self.ui_font = detect_font(
+            "Rubik",
             self.loaded_fonts.get("ui_sans", ""),
             "Inter",
             "Noto Sans",
@@ -719,6 +733,7 @@ class CyberBar(QWidget):
         self._media_playing = False
         self._cava_process: Optional[QProcess] = None
         self._ai_popup_process: Optional[subprocess.Popen] = None
+        self._launcher_process: Optional[subprocess.Popen] = None
         self._control_center_process: Optional[subprocess.Popen] = None
         self._wifi_popup_process: Optional[subprocess.Popen] = None
         self._vpn_popup_process: Optional[subprocess.Popen] = None
@@ -741,6 +756,7 @@ class CyberBar(QWidget):
         self._settings_watcher: Optional[QFileSystemWatcher] = None
         self._settings_reload_timer: Optional[QTimer] = None
         self._control_center_launch_pending = False
+        self._desktop_clock_launch_attempted = False
         self._caps_lock_on: Optional[bool] = None
         self._num_lock_on: Optional[bool] = None
         self._rss_last_interval_ms = 0
@@ -1184,18 +1200,18 @@ class CyberBar(QWidget):
         status_icon_color = theme.primary
         status_hover_color = theme.text
         status_active_color = theme.primary
-        chip_bg = "transparent" if merge_all_chips else theme.chip_bg
-        chip_border = "transparent" if merge_all_chips else theme.chip_border
-        media_bg = "transparent" if merge_all_chips else theme.panel_bg
-        media_border = "transparent" if merge_all_chips else theme.panel_border
-        full_bar_bg = theme.panel_bg if merge_all_chips else "transparent"
-        full_bar_border = theme.panel_border if merge_all_chips else "transparent"
+        chip_bg = "transparent" if merge_all_chips else rgba(theme.surface_container_high, 0.78)
+        chip_border = "transparent" if merge_all_chips else rgba(theme.outline, 0.18)
+        media_bg = "transparent" if merge_all_chips else rgba(theme.surface_container, 0.86)
+        media_border = "transparent" if merge_all_chips else rgba(theme.outline, 0.20)
+        full_bar_bg = rgba(theme.surface_container, 0.90) if merge_all_chips else "transparent"
+        full_bar_border = rgba(theme.outline, 0.20) if merge_all_chips else "transparent"
         self.setStyleSheet(
             f"""
             QWidget {{
                 background: transparent;
                 color: {theme.text};
-                font-family: "Inter", "Noto Sans", sans-serif;
+                font-family: "{self.ui_font}";
                 font-size: 12px;
             }}
             #barSurface {{
@@ -1230,20 +1246,22 @@ class CyberBar(QWidget):
                 max-height: 20px;
             }}
             QLabel#launcherNote {{
-                font-family: "Inter";
-                font-size: 14px;
+                font-family: "{self.ui_font}";
+                font-size: 13px;
                 font-weight: 700;
+                letter-spacing: 0.3px;
                 padding-bottom: 3px;
             }}
             QLabel#launcherText {{
-                font-family: "Inter";
-                font-size: 11px;
-                font-weight: 700;
+                font-family: "{self.ui_font}";
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 0.6px;
                 padding-bottom: 3px;
             }}
             #launcherChip:hover {{
-                background: {theme.hover_bg};
-                border: 1px solid {theme.app_focused_border};
+                background: {rgba(theme.surface_container_high, 0.92)};
+                border: 1px solid {rgba(theme.primary, 0.20)};
             }}
             #workspaceLabel {{
                 color: {theme.text_muted};
@@ -1377,12 +1395,12 @@ class CyberBar(QWidget):
             #timeLabel {{
                 color: {theme.text};
                 font-size: 12px;
-                font-weight: 700;
+                font-weight: 600;
                 padding-right: 2px;
             }}
             #dateLabel {{
                 color: {theme.text_muted};
-                font-size: 11px;
+                font-size: 10px;
                 font-weight: 600;
             }}
             #batteryValue {{
@@ -1443,9 +1461,10 @@ class CyberBar(QWidget):
         self._update_window_mask()
 
     def _update_launcher_wordmark_colors(self, hovered: bool = False) -> None:
-        color = self.theme.text if hovered else self.theme.primary
-        self.launcher_note.setStyleSheet(f"color: {color};")
-        self.launcher_text.setStyleSheet(f"color: {color};")
+        note_color = self.theme.text if hovered else self.theme.primary
+        text_color = self.theme.text if hovered else self.theme.text_muted
+        self.launcher_note.setStyleSheet(f"color: {note_color};")
+        self.launcher_text.setStyleSheet(f"color: {text_color};")
 
     def _format_time_text(self, moment: datetime) -> str:
         if bool(self.region_settings.get("use_24_hour", False)):
@@ -1988,8 +2007,12 @@ class CyberBar(QWidget):
             if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
                 self._desktop_clock_process.terminate()
             self._desktop_clock_process = None
+            self._desktop_clock_launch_attempted = False
             return
         if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+            return
+        if self._desktop_clock_launch_attempted:
+            self._desktop_clock_process = None
             return
         terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
         try:
@@ -1999,6 +2022,7 @@ class CyberBar(QWidget):
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
+            self._desktop_clock_launch_attempted = True
         except Exception:
             self._desktop_clock_process = None
 
@@ -2078,8 +2102,13 @@ class CyberBar(QWidget):
     def _toggle_notifications(self) -> None:
         if self._control_center_launch_pending:
             return
-        if self._control_center_process is not None and self._control_center_process.poll() is None:
-            self._control_center_process.terminate()
+        active = (
+            self._control_center_process is not None and self._control_center_process.poll() is None
+        ) or background_match_exists(str(NOTIFICATION_CENTER))
+        if active:
+            terminate_background_matches(str(NOTIFICATION_CENTER))
+            if self._control_center_process is not None and self._control_center_process.poll() is None:
+                self._control_center_process.terminate()
             self._control_center_process = None
             self.btn_control_center.setChecked(False)
             return
@@ -2094,6 +2123,7 @@ class CyberBar(QWidget):
         QTimer.singleShot(450, self._finish_control_center_launch)
         try:
             python_bin = self._python_bin()
+            terminate_background_matches(str(NOTIFICATION_CENTER))
             self._control_center_process = subprocess.Popen(
                 [python_bin, str(NOTIFICATION_CENTER)],
                 stdout=subprocess.DEVNULL,
@@ -2117,117 +2147,87 @@ class CyberBar(QWidget):
             return str(python_bin)
         return sys.executable
 
-    def _toggle_weather_popup(self) -> None:
-        if self._weather_popup_process is not None and self._weather_popup_process.poll() is None:
-            self._weather_popup_process.terminate()
-            self._weather_popup_process = None
-            return
+    def _singleton_active(self, process: Optional[subprocess.Popen], script_path: Path) -> bool:
+        return (
+            process is not None and process.poll() is None
+        ) or background_match_exists(str(script_path))
 
-        if not WEATHER_POPUP.exists():
-            return
+    def _terminate_singleton_process(self, attr_name: str, script_path: Path) -> None:
+        process = getattr(self, attr_name, None)
+        if process is not None and process.poll() is None:
+            process.terminate()
+        terminate_background_matches(str(script_path))
+        setattr(self, attr_name, None)
 
+    def _launch_singleton_process(
+        self,
+        attr_name: str,
+        script_path: Path,
+        *,
+        python_bin: Optional[str] = None,
+    ) -> bool:
+        if not script_path.exists():
+            setattr(self, attr_name, None)
+            return False
+        self._terminate_singleton_process(attr_name, script_path)
         try:
-            self._weather_popup_process = subprocess.Popen(
-                [sys.executable, str(WEATHER_POPUP)],
+            process = subprocess.Popen(
+                [python_bin or widget_python(), str(script_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                start_new_session=True,
             )
         except Exception:
-            self._weather_popup_process = None
+            setattr(self, attr_name, None)
+            return False
+        setattr(self, attr_name, process)
+        return True
+
+    def _toggle_singleton_process(
+        self,
+        attr_name: str,
+        script_path: Path,
+        *,
+        python_bin: Optional[str] = None,
+    ) -> bool:
+        if self._singleton_active(getattr(self, attr_name, None), script_path):
+            self._terminate_singleton_process(attr_name, script_path)
+            return False
+        return self._launch_singleton_process(attr_name, script_path, python_bin=python_bin)
+
+    def _toggle_weather_popup(self) -> None:
+        self._toggle_singleton_process("_weather_popup_process", WEATHER_POPUP, python_bin=self._python_bin())
 
     def _toggle_calendar_popup(self) -> None:
-        if self._calendar_popup_process is not None and self._calendar_popup_process.poll() is None:
-            self._calendar_popup_process.terminate()
-            self._calendar_popup_process = None
-            return
-
-        if not CALENDAR_POPUP.exists():
-            return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._calendar_popup_process = subprocess.Popen(
-                [str(python_bin), str(CALENDAR_POPUP)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._calendar_popup_process = None
+        self._toggle_singleton_process("_calendar_popup_process", CALENDAR_POPUP, python_bin=self._python_bin())
 
     def _toggle_wifi_popup(self) -> None:
-        if self._wifi_popup_process is not None and self._wifi_popup_process.poll() is None:
-            self._wifi_popup_process.terminate()
-            self._wifi_popup_process = None
-            self.net_icon.setChecked(False)
-            return
-
+        active = self._toggle_singleton_process("_wifi_popup_process", WIFI_CONTROL, python_bin=self._python_bin())
         if not WIFI_CONTROL.exists():
             self.net_icon.setChecked(False)
             return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._wifi_popup_process = subprocess.Popen(
-                [str(python_bin), str(WIFI_CONTROL)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.net_icon.setChecked(True)
-        except Exception:
-            self._wifi_popup_process = None
-            self.net_icon.setChecked(False)
+        self.net_icon.setChecked(active)
 
     def _toggle_vpn_popup(self) -> None:
-        if self._vpn_popup_process is not None and self._vpn_popup_process.poll() is None:
-            self._vpn_popup_process.terminate()
-            self._vpn_popup_process = None
-            self.vpn_icon.setChecked(False)
-            return
-
+        active = self._toggle_singleton_process("_vpn_popup_process", VPN_CONTROL, python_bin=self._python_bin())
         if not VPN_CONTROL.exists():
             self.vpn_icon.setChecked(False)
             return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._vpn_popup_process = subprocess.Popen(
-                [str(python_bin), str(VPN_CONTROL)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.vpn_icon.setChecked(True)
-        except Exception:
-            self._vpn_popup_process = None
-            self.vpn_icon.setChecked(False)
+        self.vpn_icon.setChecked(active)
 
     def _toggle_ai_popup(self) -> None:
-        if self._ai_popup_process is not None and self._ai_popup_process.poll() is None:
-            self._ai_popup_process.terminate()
-            self._ai_popup_process = None
-            self.ai_button.setChecked(False)
-            return
-
+        active = self._toggle_singleton_process("_ai_popup_process", AI_POPUP, python_bin=self._python_bin())
         if not AI_POPUP.exists():
             self.ai_button.setChecked(False)
             return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._ai_popup_process = subprocess.Popen(
-                [str(python_bin), str(AI_POPUP)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.ai_button.setChecked(True)
-        except Exception:
-            self._ai_popup_process = None
-            self.ai_button.setChecked(False)
+        self.ai_button.setChecked(active)
 
     def _open_region_settings(self) -> None:
         if not SETTINGS_PAGE.exists():
             return
         python_bin = self._python_bin()
         try:
+            terminate_background_matches(str(SETTINGS_PAGE))
             subprocess.Popen(
                 [python_bin, str(SETTINGS_PAGE), "--page", "region"],
                 stdout=subprocess.DEVNULL,
@@ -2255,167 +2255,56 @@ class CyberBar(QWidget):
     def _open_christian_widget(self) -> None:
         if not CHRISTIAN_WIDGET.exists():
             return
-        if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
-            self._christian_widget_process.terminate()
-            self._christian_widget_process = None
-            return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._christian_widget_process = subprocess.Popen(
-                [str(python_bin), str(CHRISTIAN_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._christian_widget_process = None
+        self._toggle_singleton_process("_christian_widget_process", CHRISTIAN_WIDGET, python_bin=self._python_bin())
 
     def _open_reminders_widget(self) -> None:
         if not REMINDERS_WIDGET.exists():
             return
-        if self._reminders_widget_process is not None and self._reminders_widget_process.poll() is None:
-            self._reminders_widget_process.terminate()
-            self._reminders_widget_process = None
-            return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._reminders_widget_process = subprocess.Popen(
-                [str(python_bin), str(REMINDERS_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._reminders_widget_process = None
+        self._toggle_singleton_process("_reminders_widget_process", REMINDERS_WIDGET, python_bin=self._python_bin())
 
     def _open_pomodoro_widget(self) -> None:
         if not POMODORO_WIDGET.exists():
             return
-        if self._pomodoro_widget_process is not None and self._pomodoro_widget_process.poll() is None:
-            self._pomodoro_widget_process.terminate()
-            self._pomodoro_widget_process = None
-            return
-        try:
-            self._pomodoro_widget_process = subprocess.Popen(
-                [widget_python(), str(POMODORO_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._pomodoro_widget_process = None
+        self._toggle_singleton_process("_pomodoro_widget_process", POMODORO_WIDGET)
 
     def _open_rss_widget(self) -> None:
         if not RSS_WIDGET.exists():
             return
-        if self._rss_widget_process is not None and self._rss_widget_process.poll() is None:
-            self._rss_widget_process.terminate()
-            self._rss_widget_process = None
-            return
-        try:
-            self._rss_widget_process = subprocess.Popen(
-                [widget_python(), str(RSS_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._rss_widget_process = None
+        self._toggle_singleton_process("_rss_widget_process", RSS_WIDGET)
 
     def _open_obs_widget(self) -> None:
         if not OBS_WIDGET.exists():
             return
-        if self._obs_widget_process is not None and self._obs_widget_process.poll() is None:
-            self._obs_widget_process.terminate()
-            self._obs_widget_process = None
-            return
-        try:
-            self._obs_widget_process = subprocess.Popen(
-                [widget_python(), str(OBS_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._obs_widget_process = None
+        self._toggle_singleton_process("_obs_widget_process", OBS_WIDGET)
 
     def _open_crypto_widget(self) -> None:
         if not CRYPTO_WIDGET.exists():
             return
-        if self._crypto_widget_process is not None and self._crypto_widget_process.poll() is None:
-            self._crypto_widget_process.terminate()
-            self._crypto_widget_process = None
-            return
-        try:
-            self._crypto_widget_process = subprocess.Popen(
-                [widget_python(), str(CRYPTO_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._crypto_widget_process = None
+        self._toggle_singleton_process("_crypto_widget_process", CRYPTO_WIDGET)
 
     def _open_vps_widget(self) -> None:
         if not VPS_WIDGET.exists():
             return
-        if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
-            self._vps_widget_process.terminate()
-            self._vps_widget_process = None
-            return
-        try:
-            self._vps_widget_process = subprocess.Popen(
-                [widget_python(), str(VPS_WIDGET)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self._vps_widget_process = None
+        self._toggle_singleton_process("_vps_widget_process", VPS_WIDGET)
 
     def _toggle_ntfy_popup(self) -> None:
-        if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
-            self._ntfy_popup_process.terminate()
-            self._ntfy_popup_process = None
-            self.ntfy_button.setChecked(False)
-            return
         if not NTFY_POPUP.exists():
             self.ntfy_button.setChecked(False)
             return
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._ntfy_popup_process = subprocess.Popen(
-                [str(python_bin), str(NTFY_POPUP)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.ntfy_button.setChecked(True)
-        except Exception:
-            self._ntfy_popup_process = None
-            self.ntfy_button.setChecked(False)
+        active = self._toggle_singleton_process("_ntfy_popup_process", NTFY_POPUP, python_bin=self._python_bin())
+        self.ntfy_button.setChecked(active)
 
     def _open_launcher(self) -> None:
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        if LAUNCHER_APP.exists():
-            run_bg([str(python_bin), str(LAUNCHER_APP)])
+        if not LAUNCHER_APP.exists():
+            return
+        self._toggle_singleton_process("_launcher_process", LAUNCHER_APP, python_bin=self._python_bin())
 
     def _toggle_powermenu(self) -> None:
-        if self._powermenu_process is not None and self._powermenu_process.poll() is None:
-            self._powermenu_process.terminate()
-            self._powermenu_process = None
-            self.btn_power.setChecked(False)
-            return
-
         if not POWERMENU_APP.exists():
             self.btn_power.setChecked(False)
             return
-
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        try:
-            self._powermenu_process = subprocess.Popen(
-                [str(python_bin), str(POWERMENU_APP)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.btn_power.setChecked(True)
-        except Exception:
-            self._powermenu_process = None
-            self.btn_power.setChecked(False)
+        active = self._toggle_singleton_process("_powermenu_process", POWERMENU_APP, python_bin=self._python_bin())
+        self.btn_power.setChecked(active)
 
     def _open_clipboard(self) -> None:
         run_bg([str(ROOT / "scripts" / "openapps"), "--clip"])
@@ -2424,7 +2313,7 @@ class CyberBar(QWidget):
         run_bg([str(ROOT / "scripts" / "openapps"), "--checkupdates"])
 
     def _sync_ai_button(self) -> None:
-        active = self._ai_popup_process is not None and self._ai_popup_process.poll() is None
+        active = self._singleton_active(self._ai_popup_process, AI_POPUP)
         if not active:
             self._ai_popup_process = None
         self.ai_button.setChecked(active)
@@ -2432,36 +2321,36 @@ class CyberBar(QWidget):
     def _sync_control_center_button(self) -> None:
         active = self._control_center_launch_pending or (
             self._control_center_process is not None and self._control_center_process.poll() is None
-        )
+        ) or background_match_exists(str(NOTIFICATION_CENTER))
         if not active:
             self._control_center_process = None
         self.btn_control_center.setChecked(active)
 
     def _sync_wifi_button(self) -> None:
-        active = self._wifi_popup_process is not None and self._wifi_popup_process.poll() is None
+        active = self._singleton_active(self._wifi_popup_process, WIFI_CONTROL)
         if not active:
             self._wifi_popup_process = None
         self.net_icon.setChecked(active)
 
     def _sync_vpn_button(self) -> None:
-        active = self._vpn_popup_process is not None and self._vpn_popup_process.poll() is None
+        active = self._singleton_active(self._vpn_popup_process, VPN_CONTROL)
         if not active:
             self._vpn_popup_process = None
         self.vpn_icon.setChecked(active)
 
     def _sync_weather_button(self) -> None:
-        active = self._weather_popup_process is not None and self._weather_popup_process.poll() is None
+        active = self._singleton_active(self._weather_popup_process, WEATHER_POPUP)
         if not active:
             self._weather_popup_process = None
 
     def _sync_ntfy_button(self) -> None:
-        active = self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None
+        active = self._singleton_active(self._ntfy_popup_process, NTFY_POPUP)
         if not active:
             self._ntfy_popup_process = None
         self.ntfy_button.setChecked(active)
 
     def _sync_powermenu_button(self) -> None:
-        active = self._powermenu_process is not None and self._powermenu_process.poll() is None
+        active = self._singleton_active(self._powermenu_process, POWERMENU_APP)
         if not active:
             self._powermenu_process = None
         self.btn_power.setChecked(active)

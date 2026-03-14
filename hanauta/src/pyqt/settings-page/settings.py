@@ -48,7 +48,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 
 ROOT = APP_DIR.parents[1]
@@ -1623,12 +1623,15 @@ class SettingsWindow(QWidget):
         super().__init__()
         self.fonts = load_app_fonts()
         self.ui_font = detect_font(
+            "Rubik",
             self.fonts.get("ui_sans_medium", ""),
             self.fonts.get("ui_sans", ""),
             "Google Sans",
+            "Inter",
             "Noto Sans",
         )
         self.display_font = detect_font(
+            "Rubik",
             self.fonts.get("ui_display_medium", ""),
             self.fonts.get("ui_display", ""),
             "Google Sans Display",
@@ -2746,7 +2749,26 @@ class SettingsWindow(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
-        detected_locale = (pylocale.getdefaultlocale()[0] if hasattr(pylocale, "getdefaultlocale") else "") or ""
+        detected_locale = ""
+        try:
+            current_locale = pylocale.setlocale(pylocale.LC_TIME, None)
+            if current_locale and current_locale.upper() != "C":
+                detected_locale = current_locale
+        except Exception:
+            detected_locale = ""
+        if not detected_locale:
+            try:
+                locale_pair = pylocale.getlocale()
+            except Exception:
+                locale_pair = (None, None)
+            if locale_pair and locale_pair[0]:
+                detected_locale = locale_pair[0]
+                try:
+                    encoding = pylocale.getencoding()
+                except Exception:
+                    encoding = ""
+                if encoding and "." not in detected_locale:
+                    detected_locale = f"{detected_locale}.{encoding}"
         self.region_locale_input = QLineEdit(self.settings_state["region"].get("locale_code", detected_locale))
         self.region_locale_input.setPlaceholderText(detected_locale or "en_US.UTF-8")
         layout.addWidget(
@@ -5169,37 +5191,24 @@ class SettingsWindow(QWidget):
                 font-family: "{self.ui_font}";
             }}
             QFrame#shell {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {theme.surface},
-                    stop:0.58 {theme.surface_container},
-                    stop:1 {shell_bg_end}
-                );
-                border: 1px solid {theme.panel_border};
+                background: {rgba(theme.surface_container, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 20px;
             }}
             QFrame#topHeader {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {theme.media_active_start},
-                    stop:1 {theme.panel_bg}
-                );
-                border-bottom: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.92)};
+                border-bottom: 1px solid {rgba(theme.outline, 0.16)};
                 border-top-left-radius: 20px;
                 border-top-right-radius: 20px;
             }}
             QFrame#sidebar {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {theme.surface_container_high},
-                    stop:1 {theme.surface_container}
-                );
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.86)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 20px;
             }}
             QFrame#headerLeadChip, QFrame#sidebarNavSection {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 16px;
             }}
             QLabel#headerLeadIcon {{
@@ -5222,27 +5231,23 @@ class SettingsWindow(QWidget):
                 background: transparent;
             }}
             QPushButton[iconButton="true"] {{
-                background: transparent;
+                background: {rgba(theme.surface_container_high, 0.88)};
                 color: {theme.icon};
-                border: 1px solid transparent;
-                border-radius: 16px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
             }}
             QPushButton[iconButton="true"]:hover {{
                 background: {theme.hover_bg};
-                border-color: {theme.chip_border};
+                border-color: {rgba(theme.outline, 0.16)};
             }}
             QFrame#contentCard {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QFrame#appearanceCard {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {theme.surface_container_high},
-                    stop:1 {theme.surface_container}
-                );
-                border: 1px solid {theme.panel_border};
+                background: {rgba(theme.surface_container, 0.92)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 24px;
             }}
             QLabel#appearanceTitle {{
@@ -5252,13 +5257,13 @@ class SettingsWindow(QWidget):
                 color: {theme.text_muted};
             }}
             QFrame#appearanceHeroWrap {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.86)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 20px;
             }}
             QFrame#appearanceActionColumn, QFrame#appearanceAccentFrame {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.86)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QLabel#appearanceSectionLabel {{
@@ -5290,8 +5295,8 @@ class SettingsWindow(QWidget):
                 font-family: "{self.icon_font}";
             }}
             QPushButton#actionCard {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 16px;
                 color: {theme.text};
                 text-align: left;
@@ -5312,9 +5317,9 @@ class SettingsWindow(QWidget):
             QPushButton#segmentedChip {{
                 padding: 0 14px;
                 min-height: 32px;
-                border-radius: 16px;
-                border: 1px solid {theme.app_running_border};
-                background: {theme.app_running_bg};
+                border-radius: 999px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                background: {rgba(theme.surface_container_high, 0.88)};
                 color: {theme.text};
             }}
             QPushButton#segmentedChip:hover {{
@@ -5326,8 +5331,8 @@ class SettingsWindow(QWidget):
                 border-color: {theme.app_focused_border};
             }}
             QPushButton#themeModeCard {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
                 color: {theme.text};
             }}
@@ -5346,18 +5351,18 @@ class SettingsWindow(QWidget):
                 font-family: "{self.icon_font}";
             }}
             QFrame#settingsRow {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QFrame#serviceSection {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QPushButton#serviceHeaderButton {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 16px;
                 text-align: left;
             }}
@@ -5375,9 +5380,9 @@ class SettingsWindow(QWidget):
             QComboBox#settingsCombo {{
                 min-height: 38px;
                 padding: 0 12px;
-                background: {theme.surface_container};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 14px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.text};
             }}
             QComboBox#settingsCombo::drop-down {{

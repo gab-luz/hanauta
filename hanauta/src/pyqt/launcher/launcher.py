@@ -449,6 +449,7 @@ class LauncherWindow(QWidget):
             "Material Symbols Rounded",
         )
         self.ui_font = detect_font("Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.ui_font = detect_font("Rubik", self.ui_font, "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.mono_font = detect_font("JetBrains Mono", "DejaVu Sans Mono", "Monospace")
         self.theme = load_theme_palette()
         self.use_matugen = matugen_enabled()
@@ -608,15 +609,16 @@ class LauncherWindow(QWidget):
                 QWidget {{
                     color: {theme.text};
                     background: transparent;
+                    font-family: "{self.ui_font}";
                 }}
                 QFrame#panel {{
-                    background: {theme.panel_bg};
-                    border: 1px solid {theme.panel_border};
+                    background: {rgba(theme.surface_container, 0.94)};
+                    border: 1px solid {rgba(theme.outline, 0.20)};
                     border-radius: 28px;
                 }}
                 QFrame#sidebar {{
-                    background: {rgba(theme.surface_container_high, 0.72)};
-                    border-right: 1px solid {theme.chip_border};
+                    background: {rgba(theme.surface_container_high, 0.84)};
+                    border-right: 1px solid {rgba(theme.outline, 0.16)};
                     border-top-left-radius: 28px;
                     border-bottom-left-radius: 28px;
                 }}
@@ -633,15 +635,15 @@ class LauncherWindow(QWidget):
                     text-align: left;
                 }}
                 QPushButton:hover {{
-                    background: {theme.hover_bg};
+                    background: {rgba(theme.primary, 0.10)};
                 }}
                 QPushButton:checked {{
-                    background: {theme.primary_container};
+                    background: {rgba(theme.primary_container, 0.92)};
                 }}
                 QFrame#searchWrap {{
-                    background: {theme.chip_bg};
-                    border-radius: 18px;
-                    border: 1px solid {theme.chip_border};
+                    background: {rgba(theme.surface_container_high, 0.92)};
+                    border-radius: 999px;
+                    border: 1px solid {rgba(theme.outline, 0.16)};
                 }}
                 QLineEdit {{
                     background: transparent;
@@ -651,13 +653,13 @@ class LauncherWindow(QWidget):
                     selection-color: {theme.active_text};
                 }}
                 QScrollArea#resultsScroll {{
-                    background: {rgba(theme.surface_container, 0.88)};
+                    background: {rgba(theme.surface_container, 0.78)};
                     border: none;
                     border-radius: 22px;
                 }}
                 QScrollArea#resultsScroll > QWidget > QWidget,
                 QWidget#resultsHost {{
-                    background: {rgba(theme.surface_container, 0.88)};
+                    background: {rgba(theme.surface_container, 0.78)};
                     border-radius: 22px;
                 }}
                 QScrollBar:vertical {{
@@ -674,16 +676,17 @@ class LauncherWindow(QWidget):
         self.setStyleSheet(
             """
             QFrame#panel {
-                background: rgba(28, 27, 31, 0.97);
-                border: 1px solid rgba(147,143,153,0.15);
+                background: rgba(28, 27, 31, 0.95);
+                border: 1px solid rgba(147,143,153,0.14);
                 border-radius: 28px;
             }
             QWidget {
                 color: #f5f2f7;
                 background: transparent;
+                font-family: "Rubik", "Inter", "Noto Sans", sans-serif;
             }
             QFrame#sidebar {
-                background: rgba(43,41,48,0.44);
+                background: rgba(43,41,48,0.72);
                 border-right: 1px solid rgba(255,255,255,0.05);
                 border-top-left-radius: 28px;
                 border-bottom-left-radius: 28px;
@@ -701,14 +704,14 @@ class LauncherWindow(QWidget):
                 text-align: left;
             }
             QPushButton:hover {
-                background: rgba(255,255,255,0.05);
+                background: rgba(208,188,255,0.08);
             }
             QPushButton:checked {
-                background: #d0bcff;
+                background: rgba(208,188,255,0.88);
             }
             QFrame#searchWrap {
-                background: rgba(43,41,48,0.86);
-                border-radius: 18px;
+                background: rgba(43,41,48,0.92);
+                border-radius: 999px;
                 border: 1px solid rgba(255,255,255,0.05);
             }
             QLineEdit {

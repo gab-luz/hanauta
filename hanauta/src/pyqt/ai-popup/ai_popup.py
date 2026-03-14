@@ -73,6 +73,8 @@ apply_theme_globals()
 
 def load_ui_font() -> str:
     font_dir = APP_DIR.parents[1] / "assets" / "fonts"
+    if QFont("Rubik").exactMatch():
+        return "Rubik"
     for name in ("InterVariable.ttf", "Inter-Regular.ttf", "Inter.ttf"):
         font_id = QFontDatabase.addApplicationFont(str(font_dir / name))
         if font_id >= 0:
@@ -138,20 +140,20 @@ class BackendPill(QPushButton):
         self.setStyleSheet(
             f"""
             QPushButton {{
-                background: rgba(255,255,255,0.04);
+                background: {CARD_BG_SOFT};
                 color: {TEXT_MID};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 17px;
+                border-radius: 999px;
                 padding: 0;
             }}
             QPushButton:hover {{
-                background: rgba(255,255,255,0.08);
+                background: {THEME.hover_bg};
                 color: {TEXT};
             }}
             QPushButton:checked {{
                 background: {ACCENT_SOFT};
                 color: {ACCENT};
-                border: 1px solid rgba(255,255,255,0.10);
+                border: 1px solid {THEME.app_focused_border};
             }}
             """
         )
@@ -245,7 +247,7 @@ class BackendSettingsDialog(QDialog):
                 background: {INPUT_BG};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 14px;
+                border-radius: 999px;
                 padding: 8px 10px;
             }}
             QComboBox QAbstractItemView {{
@@ -270,15 +272,15 @@ class BackendSettingsDialog(QDialog):
             }}
             QPushButton {{
                 min-height: 34px;
-                background: {CARD_BG};
+                background: {CARD_BG_SOFT};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 14px;
+                border-radius: 999px;
                 padding: 0 14px;
                 font-weight: 600;
             }}
             QPushButton:hover {{
-                background: {ACCENT_SOFT};
+                background: {THEME.hover_bg};
                 border: 1px solid {THEME.app_focused_border};
             }}
             QPushButton:pressed {{
@@ -332,11 +334,11 @@ class BackendSettingsDialog(QDialog):
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self._save_current_backend)
         self.test_button.setStyleSheet(
-            f"QPushButton {{ background: {ACCENT_SOFT}; color: {ACCENT}; border: 1px solid {THEME.app_focused_border}; }}"
+            f"QPushButton {{ background: {CARD_BG_SOFT}; color: {TEXT}; border: 1px solid {BORDER_SOFT}; border-radius: 999px; }}"
             f"QPushButton:hover {{ background: {THEME.hover_bg}; color: {TEXT}; }}"
         )
         self.save_button.setStyleSheet(
-            f"QPushButton {{ background: {ACCENT}; color: {THEME.active_text}; border: 1px solid {ACCENT}; }}"
+            f"QPushButton {{ background: {ACCENT}; color: {THEME.active_text}; border: 1px solid {ACCENT}; border-radius: 999px; }}"
             f"QPushButton:hover {{ background: {THEME.secondary}; color: {THEME.active_text}; }}"
         )
         actions.addWidget(self.test_button)
@@ -420,7 +422,7 @@ class HeaderBadge(QFrame):
             QFrame {{
                 background: {bg};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 12px;
+                border-radius: 999px;
             }}
             QLabel {{
                 color: {fg};
@@ -443,10 +445,10 @@ class ActionIcon(QToolButton):
                 background: transparent;
                 color: {TEXT_DIM};
                 border: none;
-                border-radius: 14px;
+                border-radius: 999px;
             }}
             QToolButton:hover {{
-                background: rgba(255,255,255,0.08);
+                background: {THEME.hover_bg};
                 color: {TEXT};
             }}
             """
@@ -567,15 +569,15 @@ class MessageCard(FadeCard):
         chip.setStyleSheet(
             f"""
             QPushButton {{
-                background: {CARD_BG};
+                background: {CARD_BG_SOFT};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 15px;
+                border-radius: 999px;
                 padding: 7px 12px;
                 text-align: left;
             }}
             QPushButton:hover {{
-                background: rgba(255,255,255,0.08);
+                background: {THEME.hover_bg};
             }}
             """
         )
@@ -613,7 +615,7 @@ class ComposerBar(QFrame):
                 background: {INPUT_BG};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 18px;
+                border-radius: 999px;
                 font-size: 12px;
                 padding: 0 14px;
             }}
@@ -624,7 +626,7 @@ class ComposerBar(QFrame):
                 background: {ACCENT};
                 color: {THEME.active_text};
                 border: none;
-                border-radius: 16px;
+                border-radius: 999px;
                 padding: 0 16px;
                 font-size: 11px;
                 font-weight: 700;
@@ -700,8 +702,8 @@ class SidebarPanel(QFrame):
             f"""
             QFrame#sidebarPanel {{
                 background: {PANEL_BG};
-                border: 1px solid {THEME.app_focused_border};
-                border-radius: 26px;
+                border: 1px solid {BORDER};
+                border-radius: 30px;
             }}
             """
         )
@@ -784,9 +786,9 @@ class SidebarPanel(QFrame):
         title_wrap.setSpacing(2)
 
         title = QLabel("Hanauta AI")
-        title.setFont(QFont(self.ui_font, 16, QFont.Weight.DemiBold))
+        title.setFont(QFont(self.ui_font, 15, QFont.Weight.DemiBold))
         subtitle = QLabel("Backend-aware native chat sidebar.")
-        subtitle.setFont(QFont(self.ui_font, 10))
+        subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet(f"color: {TEXT_DIM};")
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
@@ -810,7 +812,7 @@ class SidebarPanel(QFrame):
             QFrame {{
                 background: {CARD_BG_SOFT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 18px;
+                border-radius: 20px;
             }}
             """
         )

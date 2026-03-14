@@ -243,8 +243,8 @@ class DesktopClockWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         fonts = load_app_fonts()
-        self.ui_font = detect_font(fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
-        self.display_font = detect_font(fonts.get("ui_display", ""), "Outfit", self.ui_font)
+        self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
+        self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self.settings_state = load_settings_state()
