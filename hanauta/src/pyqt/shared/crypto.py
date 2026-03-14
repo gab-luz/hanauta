@@ -10,6 +10,8 @@ from urllib import error, parse, request
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "crypto"
 STATE_FILE = STATE_DIR / "tracker.json"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+SERVICE_CRYPTO_CACHE = SERVICE_STATE_DIR / "crypto.json"
 COINGECKO_API = "https://api.coingecko.com/api/v3"
 
 
@@ -68,10 +70,50 @@ def request_json(url: str, api_key: str = ""):
         return json.loads(response.read().decode("utf-8"))
 
 
+def _load_service_prices(settings: dict) -> dict[str, dict] | None:
+    try:
+        payload = json.loads(SERVICE_CRYPTO_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("payload", {})
+    if not isinstance(raw, dict):
+        return None
+    crypto = settings.get("crypto", {})
+    ids = coin_ids(settings)
+    vs_currency = str(crypto.get("vs_currency", "usd")).strip().lower() or "usd"
+    cached_currency = str(payload.get("vs_currency", "")).strip().lower()
+    tracked = [item.strip().lower() for item in str(payload.get("tracked_coins", "")).split(",") if item.strip()]
+    if cached_currency != vs_currency:
+        return None
+    if tracked != ids:
+        return None
+    results: dict[str, dict] = {}
+    for coin_id in ids:
+        item = raw.get(coin_id, {})
+        if not isinstance(item, dict):
+            continue
+        price = item.get(vs_currency)
+        if price is None:
+            continue
+        results[coin_id] = {
+            "id": coin_id,
+            "price": float(price),
+            "change_24h": float(item.get(f"{vs_currency}_24h_change", 0.0) or 0.0),
+            "updated_at": int(item.get("last_updated_at", 0) or 0),
+            "currency": vs_currency.upper(),
+        }
+    return results
+
+
 def fetch_prices(settings: dict) -> dict[str, dict]:
     ids = coin_ids(settings)
     if not ids:
         return {}
+    cached = _load_service_prices(settings)
+    if cached is not None:
+        return cached
     crypto = settings.get("crypto", {})
     vs_currency = str(crypto.get("vs_currency", "usd")).strip().lower() or "usd"
     params = parse.urlencode(
