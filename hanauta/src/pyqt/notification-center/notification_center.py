@@ -43,7 +43,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
 ROOT = APP_DIR.parents[1]
@@ -197,6 +197,33 @@ def run_bg(cmd: list[str]) -> None:
         pass
 
 
+def terminate_background_matches(pattern: str) -> None:
+    try:
+        subprocess.run(
+            ["pkill", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except Exception:
+        pass
+
+
+def run_bg_singleton(script_path: Path, *args: str) -> None:
+    if not script_path.exists():
+        return
+    terminate_background_matches(str(script_path))
+    try:
+        subprocess.Popen(
+            [sys.executable, str(script_path), *args],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
 def notification_control_command(*args: str) -> list[str]:
     local = BIN_DIR / "hanauta-notifyctl"
     if local.exists():
@@ -218,6 +245,7 @@ def material_icon(name: str) -> str:
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
+        "ui_sans": FONTS_DIR / "InterVariable.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
@@ -727,6 +755,13 @@ class NotificationCenter(QWidget):
             "Material Icons Outlined",
             "Material Symbols Outlined",
             "Material Symbols Rounded",
+        )
+        self.ui_font = detect_font(
+            "Rubik",
+            self.loaded_fonts.get("ui_sans", ""),
+            "Inter",
+            "Noto Sans",
+            "Sans Serif",
         )
         self.mono_font = detect_font(
             "JetBrains Mono", "JetBrainsMono Nerd Font", "DejaVu Sans Mono"
@@ -1481,47 +1516,47 @@ class NotificationCenter(QWidget):
     def _open_vpn_widget(self) -> None:
         if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(VPN_CONTROL_SCRIPT)])
+        run_bg_singleton(VPN_CONTROL_SCRIPT)
 
     def _open_christian_widget(self) -> None:
         if not self._service_enabled("christian_widget") or not CHRISTIAN_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(CHRISTIAN_WIDGET_SCRIPT)])
+        run_bg_singleton(CHRISTIAN_WIDGET_SCRIPT)
 
     def _open_reminders_widget(self) -> None:
         if not self._service_enabled("reminders_widget") or not REMINDERS_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(REMINDERS_WIDGET_SCRIPT)])
+        run_bg_singleton(REMINDERS_WIDGET_SCRIPT)
 
     def _open_pomodoro_widget(self) -> None:
         if not self._service_enabled("pomodoro_widget") or not POMODORO_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(POMODORO_WIDGET_SCRIPT)])
+        run_bg_singleton(POMODORO_WIDGET_SCRIPT)
 
     def _open_rss_widget(self) -> None:
         if not self._service_enabled("rss_widget") or not RSS_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(RSS_WIDGET_SCRIPT)])
+        run_bg_singleton(RSS_WIDGET_SCRIPT)
 
     def _open_obs_widget(self) -> None:
         if not self._service_enabled("obs_widget") or not OBS_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(OBS_WIDGET_SCRIPT)])
+        run_bg_singleton(OBS_WIDGET_SCRIPT)
 
     def _open_crypto_widget(self) -> None:
         if not self._service_enabled("crypto_widget") or not CRYPTO_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(CRYPTO_WIDGET_SCRIPT)])
+        run_bg_singleton(CRYPTO_WIDGET_SCRIPT)
 
     def _open_vps_widget(self) -> None:
         if not self._service_enabled("vps_widget") or not VPS_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(VPS_WIDGET_SCRIPT)])
+        run_bg_singleton(VPS_WIDGET_SCRIPT)
 
     def _open_desktop_clock_widget(self) -> None:
         if not self._service_enabled("desktop_clock_widget") or not DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(DESKTOP_CLOCK_WIDGET_SCRIPT)])
+        run_bg_singleton(DESKTOP_CLOCK_WIDGET_SCRIPT)
 
     def _circle_icon_button(self, icon: str, accent: str = "default") -> QPushButton:
         button = QPushButton(material_icon(icon))
@@ -1547,11 +1582,11 @@ class NotificationCenter(QWidget):
             QWidget {{
                 background: transparent;
                 color: {theme.text};
-                font-family: "Inter", "Noto Sans", sans-serif;
+                font-family: "{self.ui_font}";
             }}
             #glassPanel {{
                 background: {theme.panel_bg};
-                border: 1px solid {theme.panel_border};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 26px;
             }}
             #pageStack {{
@@ -1572,9 +1607,9 @@ class NotificationCenter(QWidget):
                 color: {theme.text_muted};
             }}
             #circleIconButton {{
-                background: {theme.app_running_bg};
+                background: {rgba(theme.surface_container_high, 0.88)};
                 border: none;
-                border-radius: 20px;
+                border-radius: 999px;
                 color: {theme.icon};
                 font-family: "{self.material_font}";
             }}
@@ -1592,8 +1627,8 @@ class NotificationCenter(QWidget):
                 background: transparent;
             }}
             #infoCard, #settingsContentWrap, #sidebar {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 20px;
             }}
             #sectionIcon {{
@@ -1602,7 +1637,7 @@ class NotificationCenter(QWidget):
             }}
             #sectionTitle, #settingsTitle, #settingsSectionTitle {{
                 font-size: 14px;
-                font-weight: 700;
+                font-weight: 600;
                 color: {theme.text};
             }}
             #sectionSubtitle, #settingsSectionSubtitle, #statusHint {{
@@ -1635,9 +1670,9 @@ class NotificationCenter(QWidget):
                 font-weight: 600;
             }}
             #softButton {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 14px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.text};
                 padding: 10px 14px;
                 font-weight: 600;
@@ -1646,8 +1681,8 @@ class NotificationCenter(QWidget):
                 background: {theme.hover_bg};
             }}
             #actionTile {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 16px;
             }}
             #actionTile:hover {{
@@ -1667,9 +1702,9 @@ class NotificationCenter(QWidget):
                 font-size: 9px;
             }}
             #compactIconAction {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 17px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.icon};
                 font-family: "{self.material_font}";
             }}
@@ -1682,9 +1717,9 @@ class NotificationCenter(QWidget):
                 color: {theme.primary};
             }}
             #settingsInput {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 14px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.text};
                 padding: 12px 14px;
             }}
@@ -1701,12 +1736,12 @@ class NotificationCenter(QWidget):
                 font-size: 16px;
             }}
             #appearancePreset {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 16px;
                 color: {theme.text};
                 padding: 16px 18px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #appearancePreset:hover {{
                 background: {theme.hover_bg};
@@ -1734,8 +1769,8 @@ class NotificationCenter(QWidget):
                 margin: 0;
             }}
             #mediaCard {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 20px;
             }}
             #cover {{
@@ -1745,7 +1780,7 @@ class NotificationCenter(QWidget):
             }}
             #mediaTitle {{
                 font-size: 14px;
-                font-weight: 700;
+                font-weight: 600;
                 color: {theme.text};
             }}
             #mediaArtist {{
@@ -2206,7 +2241,7 @@ class NotificationCenter(QWidget):
     def _launch_settings_page(self, page: str) -> None:
         if not SETTINGS_PAGE_SCRIPT.exists():
             return
-        run_bg([sys.executable, str(SETTINGS_PAGE_SCRIPT), "--page", page])
+        run_bg_singleton(SETTINGS_PAGE_SCRIPT, "--page", page)
         self.hide()
 
     def _set_accent(self, key: str) -> None:

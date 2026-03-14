@@ -49,6 +49,7 @@ from pyqt.shared.weather import (
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
+        "ui_sans": FONTS_DIR / "InterVariable.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
@@ -190,8 +191,8 @@ class WeatherPopup(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.loaded_fonts = load_app_fonts()
-        self.ui_font = detect_font("Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
-        self.display_font = detect_font("Outfit", "Inter", "Noto Sans", "Sans Serif")
+        self.ui_font = detect_font("Rubik", self.loaded_fonts.get("ui_sans", ""), "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.display_font = detect_font("Rubik", self.loaded_fonts.get("ui_sans", ""), "Outfit", "Inter", "Noto Sans", "Sans Serif")
         self.icon_font = detect_font(
             self.loaded_fonts.get("material_icons", ""),
             self.loaded_fonts.get("material_icons_outlined", ""),
@@ -248,13 +249,13 @@ class WeatherPopup(QWidget):
         titles.setSpacing(3)
         eyebrow = QLabel("WEATHER")
         eyebrow.setObjectName("eyebrow")
-        eyebrow.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+        eyebrow.setFont(QFont(self.ui_font, 8, QFont.Weight.DemiBold))
         title = QLabel("Forecast")
         title.setObjectName("title")
-        title.setFont(QFont(self.display_font, 24, QFont.Weight.Bold))
+        title.setFont(QFont(self.display_font, 22, QFont.Weight.DemiBold))
         subtitle = QLabel("Open-Meteo forecast for your selected city.")
         subtitle.setObjectName("subtitle")
-        subtitle.setFont(QFont(self.ui_font, 10))
+        subtitle.setFont(QFont(self.ui_font, 9))
         titles.addWidget(eyebrow)
         titles.addWidget(title)
         titles.addWidget(subtitle)
@@ -285,16 +286,16 @@ class WeatherPopup(QWidget):
         self.current_icon = AnimatedWeatherIcon(86)
         self.current_temp = QLabel("--")
         self.current_temp.setObjectName("currentTemp")
-        self.current_temp.setFont(QFont(self.display_font, 32, QFont.Weight.Bold))
+        self.current_temp.setFont(QFont(self.display_font, 30, QFont.Weight.DemiBold))
         info = QVBoxLayout()
         info.setContentsMargins(0, 0, 0, 0)
         info.setSpacing(2)
         self.current_condition = QLabel("Loading…")
         self.current_condition.setObjectName("condition")
-        self.current_condition.setFont(QFont(self.ui_font, 14, QFont.Weight.Medium))
+        self.current_condition.setFont(QFont(self.ui_font, 13, QFont.Weight.Medium))
         self.city_label = QLabel("Choose a city in settings")
         self.city_label.setObjectName("city")
-        self.city_label.setFont(QFont(self.ui_font, 11))
+        self.city_label.setFont(QFont(self.ui_font, 10))
         info.addWidget(self.current_temp)
         info.addWidget(self.current_condition)
         info.addWidget(self.city_label)
@@ -382,20 +383,16 @@ class WeatherPopup(QWidget):
             QWidget {{
                 background: transparent;
                 color: {theme.text};
-                font-family: "Inter", "Noto Sans", sans-serif;
+                font-family: "{self.ui_font}";
             }}
             QFrame#panel {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {rgba(theme.surface_container_high, 0.98)},
-                    stop:1 {rgba(theme.surface_container, 0.98)}
-                );
-                border: 1px solid {theme.panel_border};
+                background: {rgba(theme.surface_container, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 28px;
             }}
             QLabel#eyebrow {{
                 color: {theme.primary};
-                letter-spacing: 2px;
+                letter-spacing: 1.3px;
             }}
             QLabel#title {{
                 color: {theme.text};
@@ -404,12 +401,8 @@ class WeatherPopup(QWidget):
                 color: {theme.text_muted};
             }}
             QFrame#hero {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {rgba(theme.primary_container, 0.34)},
-                    stop:1 {rgba(theme.surface_container_high, 0.92)}
-                );
-                border: 1px solid {rgba(theme.primary, 0.18)};
+                background: {rgba(theme.surface_container_high, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 22px;
             }}
             QLabel#currentTemp {{
@@ -419,8 +412,8 @@ class WeatherPopup(QWidget):
                 color: {theme.text};
             }}
             QFrame#sunWrap, QFrame#metricCard, QFrame#forecastRow {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QLabel#sunTitle, QLabel#metricTitle, QLabel#forecastMeta {{
@@ -433,22 +426,22 @@ class WeatherPopup(QWidget):
                 color: {theme.text_muted};
             }}
             QPushButton#secondaryButton {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 16px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.text};
                 padding: 0 14px;
                 min-height: 34px;
                 font-size: 11px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             QPushButton#secondaryButton:hover {{
                 background: {theme.hover_bg};
             }}
             QPushButton#iconButton {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 16px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.primary};
                 min-width: 34px;
                 max-width: 34px;

@@ -374,7 +374,7 @@ class WifiControlPopup(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
-        self.ui_font = detect_font("Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.ui_font = detect_font("Rubik", "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self.scan_worker: WifiScanWorker | None = None
@@ -545,16 +545,16 @@ class WifiControlPopup(QWidget):
             QWidget {{
                 background: transparent;
                 color: {theme.text};
-                font-family: "Inter", "Noto Sans", sans-serif;
+                font-family: "{self.ui_font}";
             }}
             QFrame#panel {{
-                background: {theme.panel_bg};
-                border: 1px solid {theme.panel_border};
+                background: {rgba(theme.surface_container, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 24px;
             }}
             QLabel#kickerLabel, QLabel#sectionKicker {{
                 color: {theme.text_muted};
-                letter-spacing: 1.8px;
+                letter-spacing: 1.2px;
                 text-transform: uppercase;
             }}
             QLabel#titleLabel {{
@@ -565,8 +565,8 @@ class WifiControlPopup(QWidget):
                 line-height: 1.35em;
             }}
             QFrame#hero {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 20px;
             }}
             QLabel#connectionLabel {{
@@ -581,8 +581,8 @@ class WifiControlPopup(QWidget):
                 font-family: "{self.material_font}";
             }}
             QFrame#passwordFrame {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QLabel#selectionLabel {{
@@ -598,21 +598,21 @@ class WifiControlPopup(QWidget):
                 line-height: 1.35em;
             }}
             QLineEdit#passwordEdit {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 14px;
+                background: {rgba(theme.surface_container, 0.76)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.text};
                 padding: 10px 12px;
                 selection-background-color: {theme.hover_bg};
                 font-size: 10px;
             }}
             QLineEdit#passwordEdit:focus {{
-                border: 1px solid {theme.app_focused_border};
+                border: 1px solid {rgba(theme.primary, 0.24)};
             }}
             QPushButton#iconButton {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 18px;
+                background: {rgba(theme.surface_container_high, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.icon};
                 min-width: 36px;
                 max-width: 36px;
@@ -626,11 +626,11 @@ class WifiControlPopup(QWidget):
             QPushButton#primaryButton {{
                 background: {theme.primary};
                 border: none;
-                border-radius: 16px;
+                border-radius: 999px;
                 color: {theme.active_text};
                 font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 0.5px;
+                font-weight: 600;
+                letter-spacing: 0.2px;
                 padding: 0 16px;
             }}
             QPushButton#primaryButton:hover {{
@@ -642,13 +642,13 @@ class WifiControlPopup(QWidget):
                 color: {theme.inactive};
             }}
             QPushButton#secondaryButton {{
-                background: {theme.app_running_bg};
-                border: 1px solid {theme.app_running_border};
-                border-radius: 16px;
+                background: {rgba(theme.surface_container_high, 0.86)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {theme.text};
                 font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 0.5px;
+                font-weight: 600;
+                letter-spacing: 0.2px;
                 padding: 0 14px;
             }}
             QPushButton#secondaryButton:hover {{
@@ -658,8 +658,8 @@ class WifiControlPopup(QWidget):
                 color: {theme.inactive};
             }}
             QScrollArea#networkScroll {{
-                background: {theme.chip_bg};
-                border: 1px solid {theme.chip_border};
+                background: {rgba(theme.surface_container, 0.78)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 20px;
             }}
             QScrollArea#networkScroll > QWidget > QWidget,

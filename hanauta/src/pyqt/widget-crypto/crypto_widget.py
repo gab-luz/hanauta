@@ -140,8 +140,8 @@ class CryptoWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         fonts = load_app_fonts()
-        self.ui_font = detect_font(fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
-        self.display_font = detect_font(fonts.get("ui_display", ""), "Outfit", self.ui_font)
+        self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
+        self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
         self.icon_font = detect_font(fonts.get("material_icons", ""), "Material Icons", self.ui_font)
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
@@ -180,10 +180,10 @@ class CryptoWidget(QWidget):
         titles = QVBoxLayout()
         eyebrow = QLabel("CRYPTO TRACKER")
         eyebrow.setObjectName("eyebrow")
-        eyebrow.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+        eyebrow.setFont(QFont(self.ui_font, 8, QFont.Weight.DemiBold))
         title = QLabel("Watch the market breathe")
         title.setObjectName("title")
-        title.setFont(QFont(self.display_font, 24, QFont.Weight.Bold))
+        title.setFont(QFont(self.display_font, 22, QFont.Weight.DemiBold))
         self.subtitle = QLabel("High-resolution price moves with multiple tracked coins.")
         self.subtitle.setObjectName("subtitle")
         self.subtitle.setWordWrap(True)
@@ -216,7 +216,7 @@ class CryptoWidget(QWidget):
         hero_layout.setSpacing(6)
         self.hero_title = QLabel("No pricing yet")
         self.hero_title.setObjectName("heroTitle")
-        self.hero_title.setFont(QFont(self.display_font, 18, QFont.Weight.DemiBold))
+        self.hero_title.setFont(QFont(self.display_font, 17, QFont.Weight.DemiBold))
         self.hero_detail = QLabel("Refresh to fetch CoinGecko market data.")
         self.hero_detail.setObjectName("heroDetail")
         self.hero_detail.setWordWrap(True)
@@ -302,13 +302,13 @@ class CryptoWidget(QWidget):
                 font-family: "{self.ui_font}";
             }}
             QFrame#panel {{
-                background: {rgba(theme.surface_container, 0.97)};
-                border: 1px solid {rgba(theme.outline, 0.86)};
+                background: {rgba(theme.surface_container, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 28px;
             }}
             QLabel#eyebrow {{
                 color: {theme.primary};
-                letter-spacing: 0.12em;
+                letter-spacing: 1.3px;
             }}
             QLabel#title, QLabel#heroTitle, QLabel#statValue {{
                 color: {theme.text};
@@ -317,24 +317,24 @@ class CryptoWidget(QWidget):
                 color: {theme.text_muted};
             }}
             QFrame#heroCard, QFrame#statCard {{
-                background: {rgba(theme.surface_container_high, 0.92)};
-                border: 1px solid {rgba(theme.outline, 0.24)};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 22px;
             }}
             QFrame#heroCard {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {rgba(theme.primary, 0.18)}, stop:1 {rgba(theme.surface_container_high, 0.98)});
+                background: {rgba(theme.surface_container_high, 0.90)};
             }}
             QPushButton#iconButton {{
-                background: {rgba(theme.primary, 0.14)};
+                background: {rgba(theme.surface_container_high, 0.88)};
                 color: {theme.primary};
-                border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 19px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 font-family: "{self.icon_font}";
             }}
             QComboBox#settingsCombo {{
                 background: {rgba(theme.surface_container_high, 0.88)};
-                border: 1px solid {rgba(theme.outline, 0.24)};
-                border-radius: 14px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 padding: 9px 12px;
             }}
             """

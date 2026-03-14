@@ -272,8 +272,8 @@ class CalendarPopup(QWidget):
     def __init__(self) -> None:
         super().__init__()
         fonts = load_app_fonts()
-        self.ui_font = detect_font(fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
-        self.display_font = detect_font(fonts.get("ui_display", ""), "Outfit", self.ui_font)
+        self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
+        self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
         self.icon_font = detect_font(fonts.get("material_icons", ""), "Material Icons", self.ui_font)
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
@@ -325,15 +325,15 @@ class CalendarPopup(QWidget):
 
         eyebrow = QLabel("CALENDAR SUITE")
         eyebrow.setObjectName("eyebrow")
-        eyebrow.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+        eyebrow.setFont(QFont(self.ui_font, 8, QFont.Weight.DemiBold))
 
         title = QLabel("Monthly rhythm")
         title.setObjectName("title")
-        title.setFont(QFont(self.display_font, 26, QFont.Weight.Bold))
+        title.setFont(QFont(self.display_font, 24, QFont.Weight.DemiBold))
 
         self.subtitle = QLabel("Styled around your qcal events and reminder flow.")
         self.subtitle.setObjectName("subtitle")
-        self.subtitle.setFont(QFont(self.ui_font, 10))
+        self.subtitle.setFont(QFont(self.ui_font, 9))
         self.subtitle.setWordWrap(True)
 
         titles.addWidget(eyebrow)
@@ -504,13 +504,13 @@ class CalendarPopup(QWidget):
     def _apply_styles(self) -> None:
         theme = self.theme
         panel_bg = rgba(theme.surface_container, 0.97)
-        outline = rgba(theme.outline, 0.88)
+        outline = rgba(theme.outline, 0.20)
         text = theme.text
         muted = theme.text_muted
         primary = theme.primary
         soft_primary = rgba(primary, 0.16)
-        card = rgba(theme.surface_container_high, 0.92)
-        glass = rgba(theme.surface_container_high, 0.74)
+        card = rgba(theme.surface_container_high, 0.82)
+        glass = rgba(theme.surface_container_high, 0.88)
 
         self.setStyleSheet(
             f"""
@@ -525,7 +525,7 @@ class CalendarPopup(QWidget):
             }}
             QLabel#eyebrow {{
                 color: {primary};
-                letter-spacing: 0.12em;
+                letter-spacing: 1.3px;
             }}
             QLabel#title, QLabel#selectionTitle, QLabel#heroTitle {{
                 color: {text};
@@ -534,25 +534,20 @@ class CalendarPopup(QWidget):
                 color: {muted};
             }}
             QFrame#heroCard {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {rgba(primary, 0.22)},
-                    stop:0.55 {rgba(theme.surface_container_high, 0.94)},
-                    stop:1 {rgba(theme.surface_container_high, 0.98)}
-                );
-                border: 1px solid {rgba(primary, 0.24)};
+                background: {rgba(theme.surface_container_high, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 22px;
             }}
             QLabel#statBadge, QLabel#countBadge, QLabel#timeBadge {{
                 color: {primary};
-                background: {soft_primary};
-                border: 1px solid {rgba(primary, 0.20)};
-                border-radius: 12px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 padding: 6px 10px;
             }}
             QFrame#calendarFrame, QFrame#eventCard {{
                 background: {card};
-                border: 1px solid {rgba(theme.outline, 0.24)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 22px;
             }}
             QLabel#eventMeta, QLabel#eventHint {{
@@ -596,8 +591,8 @@ class CalendarPopup(QWidget):
             }}
             QPushButton#iconButton {{
                 background: {glass};
-                border: 1px solid {rgba(primary, 0.18)};
-                border-radius: 19px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 color: {primary};
                 font-family: "{self.icon_font}";
             }}
@@ -605,10 +600,10 @@ class CalendarPopup(QWidget):
                 background: {rgba(primary, 0.20)};
             }}
             QPushButton#secondaryButton, QPushButton#eventActionButton {{
-                background: {soft_primary};
-                color: {primary};
-                border: 1px solid {rgba(primary, 0.18)};
-                border-radius: 14px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 padding: 8px 12px;
                 font-weight: 600;
             }}

@@ -194,8 +194,8 @@ class PomodoroWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         fonts = load_app_fonts()
-        self.ui_font = detect_font(fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
-        self.display_font = detect_font(fonts.get("ui_display", ""), "Outfit", self.ui_font)
+        self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
+        self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
         self.icon_font = detect_font(fonts.get("material_icons", ""), "Material Icons", self.ui_font)
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
@@ -251,10 +251,10 @@ class PomodoroWidget(QWidget):
         titles.setSpacing(3)
         title = QLabel("Pomodoro Timer")
         title.setObjectName("title")
-        title.setFont(QFont(self.display_font, 21, QFont.Weight.Bold))
+        title.setFont(QFont(self.display_font, 20, QFont.Weight.DemiBold))
         self.subtitle = QLabel("")
         self.subtitle.setObjectName("subtitle")
-        self.subtitle.setFont(QFont(self.ui_font, 10))
+        self.subtitle.setFont(QFont(self.ui_font, 9))
         titles.addWidget(title)
         titles.addWidget(self.subtitle)
         header.addLayout(titles, 1)
@@ -286,7 +286,7 @@ class PomodoroWidget(QWidget):
         self.time_label.setObjectName("timeLabel")
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.time_label.setGeometry(30, 74, 164, 42)
-        self.time_label.setFont(QFont(self.display_font, 28, QFont.Weight.Bold))
+        self.time_label.setFont(QFont(self.display_font, 27, QFont.Weight.DemiBold))
 
         self.mode_label = QLabel("Work", self.ring)
         self.mode_label.setObjectName("modeLabel")
@@ -396,8 +396,8 @@ class PomodoroWidget(QWidget):
                 font-family: "{self.ui_font}";
             }}
             QFrame#panel {{
-                background: {rgba(theme.surface_container, 0.97)};
-                border: 1px solid {rgba(theme.outline, 0.82)};
+                background: {rgba(theme.surface_container, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 30px;
             }}
             QLabel#title {{
@@ -407,17 +407,12 @@ class PomodoroWidget(QWidget):
                 color: {theme.text_muted};
             }}
             QFrame#heroCard, QFrame#statsCard {{
-                background: {rgba(theme.surface_container_high, 0.92)};
-                border: 1px solid {rgba(theme.outline, 0.24)};
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 24px;
             }}
             QFrame#heroCard {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {rgba(theme.primary, 0.16)},
-                    stop:0.55 {rgba(theme.surface_container_high, 0.98)},
-                    stop:1 {rgba(theme.secondary, 0.12)}
-                );
+                background: {rgba(theme.surface_container_high, 0.90)};
             }}
             QLabel#timeLabel {{
                 color: {theme.primary};
@@ -431,24 +426,24 @@ class PomodoroWidget(QWidget):
                 color: {theme.text};
             }}
             QPushButton#iconButton {{
-                background: {rgba(theme.primary, 0.14)};
+                background: {rgba(theme.surface_container_high, 0.88)};
                 color: {theme.primary};
-                border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 19px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 font-family: "{self.icon_font}";
             }}
             QPushButton#actionButton {{
-                background: {rgba(theme.primary, 0.12)};
+                background: {rgba(theme.surface_container_high, 0.88)};
                 color: {theme.primary};
-                border: 1px solid {rgba(theme.primary, 0.16)};
-                border-radius: 22px;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 font-family: "{self.icon_font}";
             }}
             QPushButton#modeButton {{
-                background: {rgba(theme.primary, 0.10)};
-                color: {theme.primary};
-                border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 16px;
+                background: {rgba(theme.surface_container_high, 0.88)};
+                color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
                 padding: 12px 14px;
                 font-weight: 600;
             }}
