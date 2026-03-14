@@ -176,6 +176,7 @@ DEFAULT_BAR_SETTINGS = {
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
+    "bar_height": 45,
     "chip_radius": 0,
     "merge_all_chips": False,
     "full_bar_radius": 18,
@@ -197,6 +198,8 @@ def merged_bar_settings(payload: object) -> dict[str, int]:
             merged[key] = int(default)
         if key in offset_keys:
             merged[key] = max(-8, min(8, int(merged[key])))
+        elif key == "bar_height":
+            merged[key] = max(32, min(72, int(merged[key])))
         elif key in radius_keys:
             merged[key] = max(0, min(32, int(merged[key])))
     return merged
@@ -501,6 +504,10 @@ def load_settings_state() -> dict:
 def save_settings_state(settings: dict) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+
+def ensure_settings_state() -> None:
+    save_settings_state(load_settings_state())
 
 
 def restore_saved_wallpaper() -> None:
@@ -2394,6 +2401,15 @@ class SettingsWindow(QWidget):
         self.bar_status_offset_slider.setFixedWidth(164)
         self.bar_status_offset_slider.valueChanged.connect(self._set_bar_status_offset)
 
+        self.bar_height_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_height_slider.setRange(32, 72)
+        self.bar_height_slider.setValue(int(self.settings_state["bar"].get("bar_height", 40)))
+        self.bar_height_slider.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.bar_height_slider.setInvertedAppearance(False)
+        self.bar_height_slider.setInvertedControls(False)
+        self.bar_height_slider.setFixedWidth(164)
+        self.bar_height_slider.valueChanged.connect(self._set_bar_height)
+
         self.bar_chip_radius_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_chip_radius_slider.setRange(0, 32)
         self.bar_chip_radius_slider.setValue(int(self.settings_state["bar"].get("chip_radius", 0)))
@@ -2457,6 +2473,16 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_status_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("dock_to_left"),
+                "Bar height",
+                "Increase or reduce the overall bar height whether you use separate chips or the merged full bar.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_height_slider,
             )
         )
         layout.addWidget(
@@ -3383,6 +3409,10 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("bar", {})["status_offset"] = int(value)
         self._save_bar_settings()
 
+    def _set_bar_height(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["bar_height"] = int(value)
+        self._save_bar_settings()
+
     def _set_bar_chip_radius(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["chip_radius"] = int(value)
         self._save_bar_settings()
@@ -4241,10 +4271,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--page", choices=("overview", "appearance", "display", "bar", "services", "picom"), default="appearance")
     parser.add_argument("--service-section", default="")
+    parser.add_argument("--ensure-settings", action="store_true")
     parser.add_argument("--restore-displays", action="store_true")
     parser.add_argument("--restore-wallpaper", action="store_true")
     parser.add_argument("--restore-vpn", action="store_true")
     args, _ = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
+    if args.ensure_settings:
+        ensure_settings_state()
+        return 0
     if args.restore_displays:
         restore_saved_displays()
         return 0

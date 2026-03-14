@@ -588,6 +588,41 @@ install_local_binaries() {
   fi
 }
 
+ensure_hanauta_settings() {
+  local settings_script="$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py"
+  local state_dir="$HOME/.local/state/hanauta/notification-center"
+  local settings_file="$state_dir/settings.json"
+  local backup_file=""
+  local had_existing=false
+
+  if [ ! -f "$settings_script" ]; then
+    warn "Settings script not found at $settings_script; skipping settings migration"
+    return 0
+  fi
+
+  mkdir -p "$state_dir"
+
+  if [ -f "$settings_file" ]; then
+    had_existing=true
+    backup_file="$state_dir/settings.backup-$(date +%Y%m%d-%H%M%S).json"
+    cp "$settings_file" "$backup_file"
+    info "Backed up existing Hanauta settings to $backup_file"
+  else
+    info "Creating initial Hanauta settings file with bundled defaults"
+  fi
+
+  if python3 "$settings_script" --ensure-settings; then
+    if [ "$had_existing" = true ]; then
+      success "Hanauta settings preserved and merged with any new defaults"
+    else
+      success "Hanauta settings created"
+    fi
+  else
+    error "Failed to prepare Hanauta settings"
+    return 1
+  fi
+}
+
 print_summary() {
   echo ""
   echo -e "${GREEN}${BOLD}========================================${NC}"
@@ -680,6 +715,7 @@ main() {
   setup_python_venv
   copy_dotfiles
   ensure_dock_defaults
+  ensure_hanauta_settings
   link_configs
   make_exec
   install_local_binaries
