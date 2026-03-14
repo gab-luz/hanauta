@@ -40,6 +40,7 @@ static constexpr auto qt_meta_stringdata_ZN11DockBackendE = QtMocHelpers::string
     "paletteChanged",
     "",
     "itemsChanged",
+    "liveWindowStateChanged",
     "clockTextChanged",
     "volumeChanged",
     "configChanged",
@@ -49,8 +50,13 @@ static constexpr auto qt_meta_stringdata_ZN11DockBackendE = QtMocHelpers::string
     "refreshVolume",
     "glyph",
     "name",
-    "activateItem",
+    "isWindowGroupRunning",
+    "wmClass",
+    "isWindowGroupFocused",
+    "activatePreferred",
     "itemId",
+    "running",
+    "activateItem",
     "openNewItem",
     "openLauncher",
     "toggleMute",
@@ -70,6 +76,7 @@ static constexpr auto qt_meta_stringdata_ZN11DockBackendE = QtMocHelpers::string
     "palette",
     "items",
     "QVariantList",
+    "liveWindowState",
     "clockText",
     "volumeIcon",
     "volumeTooltip",
@@ -94,38 +101,43 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11DockBackendE[] = {
       12,       // revision
        0,       // classname
        0,    0, // classinfo
-      18,   14, // methods
-      15,  164, // properties
+      22,   14, // methods
+      16,  202, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
-       5,       // signalCount
+       6,       // signalCount
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,  122,    2, 0x06,   16 /* Public */,
-       3,    0,  123,    2, 0x06,   17 /* Public */,
-       4,    0,  124,    2, 0x06,   18 /* Public */,
-       5,    0,  125,    2, 0x06,   19 /* Public */,
-       6,    0,  126,    2, 0x06,   20 /* Public */,
+       1,    0,  146,    2, 0x06,   17 /* Public */,
+       3,    0,  147,    2, 0x06,   18 /* Public */,
+       4,    0,  148,    2, 0x06,   19 /* Public */,
+       5,    0,  149,    2, 0x06,   20 /* Public */,
+       6,    0,  150,    2, 0x06,   21 /* Public */,
+       7,    0,  151,    2, 0x06,   22 /* Public */,
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-       7,    0,  127,    2, 0x08,   21 /* Private */,
-       8,    0,  128,    2, 0x08,   22 /* Private */,
-       9,    0,  129,    2, 0x08,   23 /* Private */,
-      10,    0,  130,    2, 0x08,   24 /* Private */,
+       8,    0,  152,    2, 0x08,   23 /* Private */,
+       9,    0,  153,    2, 0x08,   24 /* Private */,
+      10,    0,  154,    2, 0x08,   25 /* Private */,
+      11,    0,  155,    2, 0x08,   26 /* Private */,
 
  // methods: name, argc, parameters, tag, flags, initial metatype offsets
-      11,    1,  131,    2, 0x102,   25 /* Public | MethodIsConst  */,
-      13,    1,  134,    2, 0x02,   27 /* Public */,
-      15,    1,  137,    2, 0x02,   29 /* Public */,
-      16,    0,  140,    2, 0x02,   31 /* Public */,
-      17,    0,  141,    2, 0x02,   32 /* Public */,
-      18,    1,  142,    2, 0x02,   33 /* Public */,
-      20,    3,  145,    2, 0x102,   35 /* Public | MethodIsConst  */,
-      25,    5,  152,    2, 0x02,   39 /* Public */,
-      30,    0,  163,    2, 0x02,   45 /* Public */,
+      12,    1,  156,    2, 0x102,   27 /* Public | MethodIsConst  */,
+      14,    1,  159,    2, 0x102,   29 /* Public | MethodIsConst  */,
+      16,    1,  162,    2, 0x102,   31 /* Public | MethodIsConst  */,
+      17,    3,  165,    2, 0x02,   33 /* Public */,
+      20,    1,  172,    2, 0x02,   37 /* Public */,
+      21,    1,  175,    2, 0x02,   39 /* Public */,
+      22,    0,  178,    2, 0x02,   41 /* Public */,
+      23,    0,  179,    2, 0x02,   42 /* Public */,
+      24,    1,  180,    2, 0x02,   43 /* Public */,
+      26,    3,  183,    2, 0x102,   45 /* Public | MethodIsConst  */,
+      31,    5,  190,    2, 0x02,   49 /* Public */,
+      36,    0,  201,    2, 0x02,   55 /* Public */,
 
  // signals: parameters
+    QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
@@ -139,32 +151,36 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11DockBackendE[] = {
     QMetaType::Void,
 
  // methods: parameters
-    QMetaType::QString, QMetaType::QString,   12,
-    QMetaType::Void, QMetaType::QString,   14,
-    QMetaType::Void, QMetaType::QString,   14,
+    QMetaType::QString, QMetaType::QString,   13,
+    QMetaType::Bool, QMetaType::QString,   15,
+    QMetaType::Bool, QMetaType::QString,   15,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString, QMetaType::Bool,   18,   15,   19,
+    QMetaType::Void, QMetaType::QString,   18,
+    QMetaType::Void, QMetaType::QString,   18,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   19,
-    0x80000000 | 21, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   22,   23,   24,
-    QMetaType::Void, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   26,   27,   28,   29,   24,
+    QMetaType::Void, QMetaType::Int,   25,
+    0x80000000 | 27, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   28,   29,   30,
+    QMetaType::Void, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   32,   33,   34,   35,   30,
     QMetaType::Void,
 
  // properties: name, type, flags, notifyId, revision
-      31, 0x80000000 | 21, 0x00015009, uint(0), 0,
-      32, 0x80000000 | 33, 0x00015009, uint(1), 0,
-      34, QMetaType::QString, 0x00015001, uint(2), 0,
-      35, QMetaType::QString, 0x00015001, uint(3), 0,
-      36, QMetaType::QString, 0x00015001, uint(3), 0,
-      37, QMetaType::Bool, 0x00015103, uint(4), 0,
-      38, QMetaType::Bool, 0x00015103, uint(4), 0,
-      39, QMetaType::QString, 0x00015103, uint(4), 0,
-      40, QMetaType::Int, 0x00015103, uint(4), 0,
-      41, QMetaType::QString, 0x00015103, uint(4), 0,
-      42, QMetaType::Int, 0x00015103, uint(4), 0,
-      43, QMetaType::Int, 0x00015103, uint(4), 0,
-      44, QMetaType::QString, 0x00015401, uint(-1), 0,
-      45, QMetaType::QString, 0x00015401, uint(-1), 0,
-      46, QMetaType::QString, 0x00015401, uint(-1), 0,
+      37, 0x80000000 | 27, 0x00015009, uint(0), 0,
+      38, 0x80000000 | 39, 0x00015009, uint(1), 0,
+      40, 0x80000000 | 27, 0x00015009, uint(2), 0,
+      41, QMetaType::QString, 0x00015001, uint(3), 0,
+      42, QMetaType::QString, 0x00015001, uint(4), 0,
+      43, QMetaType::QString, 0x00015001, uint(4), 0,
+      44, QMetaType::Bool, 0x00015103, uint(5), 0,
+      45, QMetaType::Bool, 0x00015103, uint(5), 0,
+      46, QMetaType::QString, 0x00015103, uint(5), 0,
+      47, QMetaType::Int, 0x00015103, uint(5), 0,
+      48, QMetaType::QString, 0x00015103, uint(5), 0,
+      49, QMetaType::Int, 0x00015103, uint(5), 0,
+      50, QMetaType::Int, 0x00015103, uint(5), 0,
+      51, QMetaType::QString, 0x00015401, uint(-1), 0,
+      52, QMetaType::QString, 0x00015401, uint(-1), 0,
+      53, QMetaType::QString, 0x00015401, uint(-1), 0,
 
        0        // eod
 };
@@ -180,6 +196,8 @@ Q_CONSTINIT const QMetaObject DockBackend::staticMetaObject = { {
         QtPrivate::TypeAndForceComplete<QVariantMap, std::true_type>,
         // property 'items'
         QtPrivate::TypeAndForceComplete<QVariantList, std::true_type>,
+        // property 'liveWindowState'
+        QtPrivate::TypeAndForceComplete<QVariantMap, std::true_type>,
         // property 'clockText'
         QtPrivate::TypeAndForceComplete<QString, std::true_type>,
         // property 'volumeIcon'
@@ -212,6 +230,8 @@ Q_CONSTINIT const QMetaObject DockBackend::staticMetaObject = { {
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'itemsChanged'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'liveWindowStateChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'clockTextChanged'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'volumeChanged'
@@ -229,6 +249,17 @@ Q_CONSTINIT const QMetaObject DockBackend::staticMetaObject = { {
         // method 'glyph'
         QtPrivate::TypeAndForceComplete<QString, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'isWindowGroupRunning'
+        QtPrivate::TypeAndForceComplete<bool, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'isWindowGroupFocused'
+        QtPrivate::TypeAndForceComplete<bool, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'activatePreferred'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        QtPrivate::TypeAndForceComplete<bool, std::false_type>,
         // method 'activateItem'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
@@ -267,24 +298,30 @@ void DockBackend::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         switch (_id) {
         case 0: _t->paletteChanged(); break;
         case 1: _t->itemsChanged(); break;
-        case 2: _t->clockTextChanged(); break;
-        case 3: _t->volumeChanged(); break;
-        case 4: _t->configChanged(); break;
-        case 5: _t->refreshPalette(); break;
-        case 6: _t->refreshItems(); break;
-        case 7: _t->refreshClock(); break;
-        case 8: _t->refreshVolume(); break;
-        case 9: { QString _r = _t->glyph((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
+        case 2: _t->liveWindowStateChanged(); break;
+        case 3: _t->clockTextChanged(); break;
+        case 4: _t->volumeChanged(); break;
+        case 5: _t->configChanged(); break;
+        case 6: _t->refreshPalette(); break;
+        case 7: _t->refreshItems(); break;
+        case 8: _t->refreshClock(); break;
+        case 9: _t->refreshVolume(); break;
+        case 10: { QString _r = _t->glyph((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
             if (_a[0]) *reinterpret_cast< QString*>(_a[0]) = std::move(_r); }  break;
-        case 10: _t->activateItem((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 11: _t->openNewItem((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 12: _t->openLauncher(); break;
-        case 13: _t->toggleMute(); break;
-        case 14: _t->changeVolume((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 15: { QVariantMap _r = _t->targetGeometry((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<bool>>(_a[3])));
+        case 11: { bool _r = _t->isWindowGroupRunning((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
+            if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
+        case 12: { bool _r = _t->isWindowGroupFocused((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
+            if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
+        case 13: _t->activatePreferred((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<bool>>(_a[3]))); break;
+        case 14: _t->activateItem((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 15: _t->openNewItem((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 16: _t->openLauncher(); break;
+        case 17: _t->toggleMute(); break;
+        case 18: _t->changeVolume((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 19: { QVariantMap _r = _t->targetGeometry((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<bool>>(_a[3])));
             if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
-        case 16: _t->syncWindowGeometry((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[3])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[4])),(*reinterpret_cast< std::add_pointer_t<bool>>(_a[5]))); break;
-        case 17: _t->openDockConfig(); break;
+        case 20: _t->syncWindowGeometry((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[3])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[4])),(*reinterpret_cast< std::add_pointer_t<bool>>(_a[5]))); break;
+        case 21: _t->openDockConfig(); break;
         default: ;
         }
     }
@@ -306,22 +343,29 @@ void DockBackend::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         }
         {
             using _q_method_type = void (DockBackend::*)();
-            if (_q_method_type _q_method = &DockBackend::clockTextChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+            if (_q_method_type _q_method = &DockBackend::liveWindowStateChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
                 *result = 2;
                 return;
             }
         }
         {
             using _q_method_type = void (DockBackend::*)();
-            if (_q_method_type _q_method = &DockBackend::volumeChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+            if (_q_method_type _q_method = &DockBackend::clockTextChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
                 *result = 3;
                 return;
             }
         }
         {
             using _q_method_type = void (DockBackend::*)();
-            if (_q_method_type _q_method = &DockBackend::configChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+            if (_q_method_type _q_method = &DockBackend::volumeChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
                 *result = 4;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (DockBackend::*)();
+            if (_q_method_type _q_method = &DockBackend::configChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 5;
                 return;
             }
         }
@@ -331,32 +375,33 @@ void DockBackend::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         switch (_id) {
         case 0: *reinterpret_cast< QVariantMap*>(_v) = _t->palette(); break;
         case 1: *reinterpret_cast< QVariantList*>(_v) = _t->items(); break;
-        case 2: *reinterpret_cast< QString*>(_v) = _t->clockText(); break;
-        case 3: *reinterpret_cast< QString*>(_v) = _t->volumeIcon(); break;
-        case 4: *reinterpret_cast< QString*>(_v) = _t->volumeTooltip(); break;
-        case 5: *reinterpret_cast< bool*>(_v) = _t->autoHide(); break;
-        case 6: *reinterpret_cast< bool*>(_v) = _t->iconsLeft(); break;
-        case 7: *reinterpret_cast< QString*>(_v) = _t->position(); break;
-        case 8: *reinterpret_cast< int*>(_v) = _t->dockWidth(); break;
-        case 9: *reinterpret_cast< QString*>(_v) = _t->dockWidthUnit(); break;
-        case 10: *reinterpret_cast< int*>(_v) = _t->itemHeight(); break;
-        case 11: *reinterpret_cast< int*>(_v) = _t->transparency(); break;
-        case 12: *reinterpret_cast< QString*>(_v) = _t->materialFontFamily(); break;
-        case 13: *reinterpret_cast< QString*>(_v) = _t->uiFontFamily(); break;
-        case 14: *reinterpret_cast< QString*>(_v) = _t->monoFontFamily(); break;
+        case 2: *reinterpret_cast< QVariantMap*>(_v) = _t->liveWindowState(); break;
+        case 3: *reinterpret_cast< QString*>(_v) = _t->clockText(); break;
+        case 4: *reinterpret_cast< QString*>(_v) = _t->volumeIcon(); break;
+        case 5: *reinterpret_cast< QString*>(_v) = _t->volumeTooltip(); break;
+        case 6: *reinterpret_cast< bool*>(_v) = _t->autoHide(); break;
+        case 7: *reinterpret_cast< bool*>(_v) = _t->iconsLeft(); break;
+        case 8: *reinterpret_cast< QString*>(_v) = _t->position(); break;
+        case 9: *reinterpret_cast< int*>(_v) = _t->dockWidth(); break;
+        case 10: *reinterpret_cast< QString*>(_v) = _t->dockWidthUnit(); break;
+        case 11: *reinterpret_cast< int*>(_v) = _t->itemHeight(); break;
+        case 12: *reinterpret_cast< int*>(_v) = _t->transparency(); break;
+        case 13: *reinterpret_cast< QString*>(_v) = _t->materialFontFamily(); break;
+        case 14: *reinterpret_cast< QString*>(_v) = _t->uiFontFamily(); break;
+        case 15: *reinterpret_cast< QString*>(_v) = _t->monoFontFamily(); break;
         default: break;
         }
     }
     if (_c == QMetaObject::WriteProperty) {
         void *_v = _a[0];
         switch (_id) {
-        case 5: _t->setAutoHide(*reinterpret_cast< bool*>(_v)); break;
-        case 6: _t->setIconsLeft(*reinterpret_cast< bool*>(_v)); break;
-        case 7: _t->setPosition(*reinterpret_cast< QString*>(_v)); break;
-        case 8: _t->setDockWidth(*reinterpret_cast< int*>(_v)); break;
-        case 9: _t->setDockWidthUnit(*reinterpret_cast< QString*>(_v)); break;
-        case 10: _t->setItemHeight(*reinterpret_cast< int*>(_v)); break;
-        case 11: _t->setTransparency(*reinterpret_cast< int*>(_v)); break;
+        case 6: _t->setAutoHide(*reinterpret_cast< bool*>(_v)); break;
+        case 7: _t->setIconsLeft(*reinterpret_cast< bool*>(_v)); break;
+        case 8: _t->setPosition(*reinterpret_cast< QString*>(_v)); break;
+        case 9: _t->setDockWidth(*reinterpret_cast< int*>(_v)); break;
+        case 10: _t->setDockWidthUnit(*reinterpret_cast< QString*>(_v)); break;
+        case 11: _t->setItemHeight(*reinterpret_cast< int*>(_v)); break;
+        case 12: _t->setTransparency(*reinterpret_cast< int*>(_v)); break;
         default: break;
         }
     }
@@ -381,20 +426,20 @@ int DockBackend::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 18)
+        if (_id < 22)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 18;
+        _id -= 22;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 18)
+        if (_id < 22)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 18;
+        _id -= 22;
     }
     if (_c == QMetaObject::ReadProperty || _c == QMetaObject::WriteProperty
             || _c == QMetaObject::ResetProperty || _c == QMetaObject::BindableProperty
             || _c == QMetaObject::RegisterPropertyMetaType) {
         qt_static_metacall(this, _c, _id, _a);
-        _id -= 15;
+        _id -= 16;
     }
     return _id;
 }
@@ -412,20 +457,26 @@ void DockBackend::itemsChanged()
 }
 
 // SIGNAL 2
-void DockBackend::clockTextChanged()
+void DockBackend::liveWindowStateChanged()
 {
     QMetaObject::activate(this, &staticMetaObject, 2, nullptr);
 }
 
 // SIGNAL 3
-void DockBackend::volumeChanged()
+void DockBackend::clockTextChanged()
 {
     QMetaObject::activate(this, &staticMetaObject, 3, nullptr);
 }
 
 // SIGNAL 4
-void DockBackend::configChanged()
+void DockBackend::volumeChanged()
 {
     QMetaObject::activate(this, &staticMetaObject, 4, nullptr);
+}
+
+// SIGNAL 5
+void DockBackend::configChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 5, nullptr);
 }
 QT_WARNING_POP
