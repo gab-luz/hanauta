@@ -22,6 +22,7 @@ from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QCalendarWidget,
     QFrame,
     QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
@@ -54,8 +55,12 @@ ASSETS_DIR = APP_DIR / "assets"
 BIN_DIR = ROOT / "bin"
 HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
+STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
+LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
+NOTIFICATION_HISTORY_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon" / "history.json"
+QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
@@ -487,6 +492,53 @@ def post_home_assistant_json(base_url: str, token: str, path: str, payload: dict
         return None, "Unable to reach Home Assistant."
 
 
+def load_notification_history(limit: int = 3) -> list[dict]:
+    try:
+        payload = json.loads(NOTIFICATION_HISTORY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        payload = None
+    history: list[dict] = []
+    if isinstance(payload, list):
+        history = [item for item in payload if isinstance(item, dict)]
+    elif isinstance(payload, dict):
+        raw = payload.get("data", [])
+        if isinstance(raw, list) and raw and isinstance(raw[0], list):
+            for item in raw[0]:
+                if not isinstance(item, dict):
+                    continue
+                history.append(
+                    {
+                        "id": item.get("id", 0),
+                        "app_name": str(item.get("app_name", {}).get("data", "")) if isinstance(item.get("app_name"), dict) else str(item.get("app_name", "")),
+                        "summary": str(item.get("summary", {}).get("data", "")) if isinstance(item.get("summary"), dict) else str(item.get("summary", "")),
+                        "body": str(item.get("body", {}).get("data", "")) if isinstance(item.get("body"), dict) else str(item.get("body", "")),
+                    }
+                )
+    history = [item for item in history if item.get("summary") or item.get("body")]
+    history.reverse()
+    return history[:limit]
+
+
+def load_calendar_events(limit: int = 2) -> list[dict]:
+    if not QCAL_WRAPPER.exists():
+        return []
+    try:
+        result = subprocess.run(
+            [sys.executable, str(QCAL_WRAPPER), "list", "--days", "14"],
+            capture_output=True,
+            text=True,
+            timeout=3.5,
+            check=False,
+        )
+        payload = json.loads(result.stdout or "{}")
+    except Exception:
+        return []
+    events = payload.get("events", []) if isinstance(payload, dict) else []
+    if not isinstance(events, list):
+        return []
+    return [item for item in events if isinstance(item, dict)][:limit]
+
+
 class QuickSettingButton(QFrame):
     def __init__(self, material_font: str, title: str, icon: str, callback):
         super().__init__()
@@ -759,6 +811,146 @@ class ElidedLabel(QLabel):
         super().setText(elided)
 
 
+class GameCarouselCard(QFrame):
+    def __init__(self, ui_font: str, material_font: str) -> None:
+        super().__init__()
+        self.ui_font = ui_font
+        self.material_font = material_font
+        self.setObjectName("gameCarouselCard")
+        self._slides: list[QFrame] = []
+        self._dots: list[QLabel] = []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        self.kicker = QLabel("Recently played")
+        self.kicker.setObjectName("gameKicker")
+        self.title = QLabel("Game Hub")
+        self.title.setObjectName("gameCarouselTitle")
+        header_text = QVBoxLayout()
+        header_text.setContentsMargins(0, 0, 0, 0)
+        header_text.setSpacing(2)
+        header_text.addWidget(self.kicker)
+        header_text.addWidget(self.title)
+        header.addLayout(header_text, 1)
+
+        self.prev_button = QPushButton(material_icon("arrow_back"))
+        self.prev_button.setObjectName("compactIconAction")
+        self.prev_button.setFont(QFont(self.material_font, 17))
+        self.prev_button.setFixedSize(34, 34)
+        self.prev_button.clicked.connect(self.previous_slide)
+        self.next_button = QPushButton(material_icon("chevron_right"))
+        self.next_button.setObjectName("compactIconAction")
+        self.next_button.setFont(QFont(self.material_font, 17))
+        self.next_button.setFixedSize(34, 34)
+        self.next_button.clicked.connect(self.next_slide)
+        header.addWidget(self.prev_button)
+        header.addWidget(self.next_button)
+        layout.addLayout(header)
+
+        self.stack = QStackedWidget()
+        self.stack.setObjectName("gameStack")
+        layout.addWidget(self.stack)
+
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setSpacing(6)
+        self.caption = QLabel("")
+        self.caption.setObjectName("gameCaption")
+        footer.addWidget(self.caption, 1)
+        self.dots_wrap = QHBoxLayout()
+        self.dots_wrap.setContentsMargins(0, 0, 0, 0)
+        self.dots_wrap.setSpacing(5)
+        footer.addLayout(self.dots_wrap)
+        layout.addLayout(footer)
+
+    def add_slide(self, title: str, stats: list[str], logo_path: Path, platform: str, accent: str) -> None:
+        slide = QFrame()
+        slide.setObjectName("gameSlide")
+        slide.setProperty("accentColor", accent)
+        slide_layout = QVBoxLayout(slide)
+        slide_layout.setContentsMargins(18, 18, 18, 18)
+        slide_layout.setSpacing(10)
+
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(8)
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(3)
+        title_label = QLabel(title)
+        title_label.setObjectName("gameSlideTitle")
+        platform_label = QLabel(platform)
+        platform_label.setObjectName("gameSlidePlatform")
+        title_wrap.addWidget(title_label)
+        title_wrap.addWidget(platform_label)
+        top.addLayout(title_wrap, 1)
+
+        chip = QLabel(stats[0] if stats else "")
+        chip.setObjectName("gameStatChip")
+        top.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
+        slide_layout.addLayout(top)
+
+        stats_row = QHBoxLayout()
+        stats_row.setContentsMargins(0, 0, 0, 0)
+        stats_row.setSpacing(8)
+        for text in stats[1:] or ["No telemetry yet"]:
+            stat = QLabel(text)
+            stat.setObjectName("gameStatLabel")
+            stats_row.addWidget(stat)
+        stats_row.addStretch(1)
+        slide_layout.addLayout(stats_row)
+        slide_layout.addStretch(1)
+
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(0, 0, 0, 0)
+        bottom.setSpacing(8)
+        hint = QLabel("Last played across your launchers")
+        hint.setObjectName("gameSlideHint")
+        bottom.addWidget(hint, 1, Qt.AlignmentFlag.AlignBottom)
+        logo = QLabel()
+        logo.setObjectName("gamePlatformLogo")
+        logo.setPixmap(render_svg_pixmap(logo_path, 22))
+        bottom.addWidget(logo, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        slide_layout.addLayout(bottom)
+
+        self.stack.addWidget(slide)
+        self._slides.append(slide)
+        dot = QLabel("•")
+        dot.setObjectName("carouselDot")
+        self._dots.append(dot)
+        self.dots_wrap.addWidget(dot)
+        self._refresh_state()
+
+    def _refresh_state(self) -> None:
+        index = self.stack.currentIndex()
+        if index < 0:
+            return
+        for offset, dot in enumerate(self._dots):
+            dot.setProperty("active", offset == index)
+            dot.style().unpolish(dot)
+            dot.style().polish(dot)
+        self.caption.setText(f"{index + 1}/{max(1, self.stack.count())}")
+        self.prev_button.setEnabled(self.stack.count() > 1)
+        self.next_button.setEnabled(self.stack.count() > 1)
+
+    def next_slide(self) -> None:
+        if self.stack.count() < 2:
+            return
+        self.stack.setCurrentIndex((self.stack.currentIndex() + 1) % self.stack.count())
+        self._refresh_state()
+
+    def previous_slide(self) -> None:
+        if self.stack.count() < 2:
+            return
+        self.stack.setCurrentIndex((self.stack.currentIndex() - 1) % self.stack.count())
+        self._refresh_state()
+
+
 class NotificationCenter(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -793,6 +985,8 @@ class NotificationCenter(QWidget):
         self._media_status = "Stopped"
         self._media_track_key = ""
         self._media_last_sync = monotonic()
+        self._calendar_events: list[dict] = []
+        self._notification_history: list[dict] = []
         self.settings_state = load_notification_settings()
         self.theme_palette = load_theme_palette()
         self._theme_mtime = palette_mtime()
@@ -824,7 +1018,7 @@ class NotificationCenter(QWidget):
         self._start_polls()
 
     def _build_window(self) -> None:
-        self.setWindowTitle("PyQt Notification Center")
+        self.setWindowTitle("Hanauta Control Center")
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
@@ -832,7 +1026,7 @@ class NotificationCenter(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.screen_geo = QApplication.primaryScreen().availableGeometry()
-        self.compact_size = (350, min(820, self.screen_geo.height() - 80))
+        self.compact_size = (920, min(860, self.screen_geo.height() - 68))
         self.settings_size = (min(864, self.screen_geo.width() - 72), self.compact_size[1])
         self._apply_window_mode("compact")
 
@@ -871,43 +1065,139 @@ class NotificationCenter(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        section_spacing = 3
-        sliders_to_media_spacing = 1
+        layout.setSpacing(14)
 
         layout.addLayout(self._build_header())
-        layout.addSpacing(section_spacing)
-        layout.addLayout(self._build_quick_settings())
-        layout.addSpacing(section_spacing)
-        layout.addLayout(self._build_sliders())
-        layout.addSpacing(sliders_to_media_spacing)
-        layout.addWidget(self._build_media_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_phone_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_home_assistant_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_vpn_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_christian_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_reminders_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_pomodoro_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_rss_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_obs_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_crypto_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_vps_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_desktop_clock_launcher_card())
-        layout.addSpacing(10)
-        layout.addWidget(self._build_game_mode_launcher_card())
+
+        columns = QHBoxLayout()
+        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setSpacing(14)
+
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)
+        left_layout.addWidget(self._build_quick_settings_card())
+        left_layout.addWidget(self._build_compact_sliders_card())
+        left_layout.addWidget(self._build_game_carousel_card())
+        left_layout.addWidget(self._build_phone_card())
+        left_layout.addWidget(self._build_home_assistant_card())
+        left_layout.addStretch(1)
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(12)
+        right_layout.addWidget(self._build_calendar_card())
+        right_layout.addWidget(self._build_events_card(), 1)
+        right_layout.addWidget(self._build_notifications_card(), 1)
+
+        columns.addWidget(left, 11)
+        columns.addWidget(right, 9)
+        layout.addLayout(columns, 1)
         self._sync_service_card_visibility()
         return page
+
+    def _section_shell(self, title: str, subtitle: str, object_name: str = "overviewSection") -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName(object_name)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        header = QVBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(2)
+        title_label = QLabel(title)
+        title_label.setObjectName("sectionTitle")
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("sectionSubtitle")
+        subtitle_label.setWordWrap(True)
+        header.addWidget(title_label)
+        header.addWidget(subtitle_label)
+        layout.addLayout(header)
+        return card, layout
+
+    def _build_quick_settings_card(self) -> QFrame:
+        card, layout = self._section_shell("Connectivity", "Small toggles for the controls you reach most.")
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+
+        self.quick_buttons = {
+            "wifi": QuickSettingButton(self.material_font, "Wi-Fi", "wifi", self._toggle_wifi),
+            "bluetooth": QuickSettingButton(self.material_font, "Bluetooth", "bluetooth", self._toggle_bluetooth),
+            "dnd": QuickSettingButton(self.material_font, "DND", "do_not_disturb_on", self._toggle_dnd),
+            "airplane": QuickSettingButton(self.material_font, "Airplane", "airplanemode_active", self._toggle_airplane),
+            "night": QuickSettingButton(self.material_font, "Night", "nightlight", self._toggle_night),
+            "caffeine": QuickSettingButton(self.material_font, "Caffeine", "coffee", self._toggle_caffeine),
+        }
+        positions = [("wifi", 0, 0), ("bluetooth", 0, 1), ("dnd", 0, 2), ("airplane", 1, 0), ("night", 1, 1), ("caffeine", 1, 2)]
+        for key, row, col in positions:
+            button = self.quick_buttons[key]
+            button.setMinimumHeight(70)
+            grid.addWidget(button, row, col)
+        layout.addLayout(grid)
+        return card
+
+    def _build_compact_sliders_card(self) -> QFrame:
+        card, layout = self._section_shell("Levels", "Brightness and volume in a tighter footprint.")
+        self.brightness_slider = self._slider_row("brightness_medium", "brightness", compact=True)
+        self.volume_slider = self._slider_row("volume_up", "volume", compact=True)
+        layout.addWidget(self.brightness_slider["wrap"])
+        layout.addWidget(self.volume_slider["wrap"])
+        return card
+
+    def _build_game_carousel_card(self) -> QFrame:
+        self.game_carousel = GameCarouselCard(self.ui_font, self.material_font)
+        self.game_carousel.add_slide(
+            "Cyberpunk 2077",
+            ["60% completed", "42h total", "Night City route"],
+            LUTRIS_ICON,
+            "Lutris library",
+            self.theme_palette.primary,
+        )
+        self.game_carousel.add_slide(
+            "Minecraft",
+            ["18% completed", "13h total", "Modded survival"],
+            STEAM_ICON,
+            "Steam library",
+            self.theme_palette.secondary,
+        )
+        return self.game_carousel
+
+    def _build_calendar_card(self) -> QFrame:
+        card, layout = self._section_shell("Calendar", "A compact month view for upcoming plans.")
+        self.calendar_widget = QCalendarWidget()
+        self.calendar_widget.setObjectName("miniCalendar")
+        self.calendar_widget.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        self.calendar_widget.setGridVisible(False)
+        layout.addWidget(self.calendar_widget)
+        return card
+
+    def _hidden_scroll(self, name: str) -> tuple[QScrollArea, QWidget, QVBoxLayout]:
+        scroll = QScrollArea()
+        scroll.setObjectName(name)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        container = QWidget()
+        inner = QVBoxLayout(container)
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setSpacing(8)
+        scroll.setWidget(container)
+        return scroll, container, inner
+
+    def _build_events_card(self) -> QFrame:
+        card, layout = self._section_shell("Upcoming events", "Only the next two items stay visible here.")
+        self.events_scroll, self.events_container, self.events_layout = self._hidden_scroll("eventsScroll")
+        layout.addWidget(self.events_scroll, 1)
+        return card
+
+    def _build_notifications_card(self) -> QFrame:
+        card, layout = self._section_shell("Last notifications", "A compact feed of the three most recent alerts.")
+        self.notifications_scroll, self.notifications_container, self.notifications_layout = self._hidden_scroll("notificationsScroll")
+        layout.addWidget(self.notifications_scroll, 1)
+        return card
 
     def _build_header(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -1007,21 +1297,21 @@ class NotificationCenter(QWidget):
         layout.addWidget(self.volume_slider["wrap"])
         return layout
 
-    def _slider_row(self, icon: str, kind: str) -> dict[str, QWidget | QSlider]:
+    def _slider_row(self, icon: str, kind: str, compact: bool = False) -> dict[str, QWidget | QSlider]:
         wrap = QFrame()
-        wrap.setObjectName("sliderWrap")
+        wrap.setObjectName("compactSliderWrap" if compact else "sliderWrap")
         row = QHBoxLayout(wrap)
-        row.setContentsMargins(14, 0, 14, 0)
-        row.setSpacing(10)
+        row.setContentsMargins(12, 0, 12, 0)
+        row.setSpacing(8)
 
         icon_label = QLabel(material_icon(icon))
         icon_label.setObjectName("sliderIcon")
-        icon_label.setFont(QFont(self.material_font, 18))
+        icon_label.setFont(QFont(self.material_font, 16 if compact else 18))
         icon_label.setFixedWidth(24)
 
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(0, 100)
-        slider.setObjectName("wideSlider")
+        slider.setObjectName("compactSlider" if compact else "wideSlider")
         slider.valueChanged.connect(
             lambda value, mode=kind: self._queue_slider_commit(mode, value)
         )
@@ -1632,15 +1922,20 @@ class NotificationCenter(QWidget):
             QWidget {{
                 background: transparent;
                 color: {theme.text};
-                font-family: "{self.ui_font}";
+                font-family: "Inter", "Noto Sans", sans-serif;
             }}
             #glassPanel {{
                 background: {theme.panel_bg};
-                border: 1px solid {rgba(theme.outline, 0.20)};
-                border-radius: 26px;
+                border: 1px solid {theme.panel_border};
+                border-radius: 28px;
             }}
             #pageStack {{
                 background: transparent;
+            }}
+            #overviewSection, #infoCard, #settingsContentWrap, #sidebar, #gameCarouselCard {{
+                background: {theme.chip_bg};
+                border: 1px solid {theme.chip_border};
+                border-radius: 22px;
             }}
             #avatar {{
                 background: qlineargradient(x1:0, y1:1, x2:1, y2:0, stop:0 {theme.primary}, stop:1 {theme.tertiary});
@@ -1673,21 +1968,16 @@ class NotificationCenter(QWidget):
             #circleIconButton[accent="power"]:hover {{
                 background: {theme.error};
             }}
-            #sliderWrap {{
+            #sliderWrap, #compactSliderWrap {{
                 background: transparent;
-            }}
-            #infoCard, #settingsContentWrap, #sidebar {{
-                background: {rgba(theme.surface_container_high, 0.82)};
-                border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 20px;
             }}
             #sectionIcon {{
                 color: {theme.primary};
                 font-family: "{self.material_font}";
             }}
             #sectionTitle, #settingsTitle, #settingsSectionTitle {{
-                font-size: 14px;
-                font-weight: 600;
+                font-size: 15px;
+                font-weight: 700;
                 color: {theme.text};
             }}
             #sectionSubtitle, #settingsSectionSubtitle, #statusHint {{
@@ -1800,23 +2090,130 @@ class NotificationCenter(QWidget):
                 color: {theme.primary};
                 font-family: "{self.material_font}";
             }}
+            #wideSlider::groove:horizontal, #compactSlider::groove:horizontal {{
+                background: {rgba(theme.on_surface_variant, 0.12)};
+                border-radius: 16px;
+            }}
             #wideSlider::groove:horizontal {{
-                background: {theme.app_running_bg};
                 height: 42px;
-                border-radius: 21px;
             }}
-            #wideSlider::sub-page:horizontal {{
+            #compactSlider::groove:horizontal {{
+                height: 22px;
+            }}
+            #wideSlider::sub-page:horizontal, #compactSlider::sub-page:horizontal {{
                 background: {theme.primary};
-                border-radius: 21px;
+                border-radius: 16px;
             }}
-            #wideSlider::add-page:horizontal {{
-                background: {theme.app_running_bg};
-                border-radius: 21px;
+            #wideSlider::add-page:horizontal, #compactSlider::add-page:horizontal {{
+                background: {rgba(theme.on_surface_variant, 0.12)};
+                border-radius: 16px;
             }}
-            #wideSlider::handle:horizontal {{
+            #wideSlider::handle:horizontal, #compactSlider::handle:horizontal {{
                 background: transparent;
                 width: 0px;
                 margin: 0;
+            }}
+            #gameStack {{
+                background: transparent;
+                border: none;
+            }}
+            #gameSlide {{
+                background: qlineargradient(x1:0, y1:1, x2:1, y2:0,
+                    stop:0 {rgba(theme.surface_container_high, 0.92)},
+                    stop:1 {rgba(theme.primary_container, 0.82)});
+                border: 1px solid {rgba(theme.primary, 0.22)};
+                border-radius: 20px;
+                min-height: 146px;
+            }}
+            #gameKicker {{
+                color: {theme.text_muted};
+                font-size: 10px;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+            }}
+            #gameCarouselTitle, #gameSlideTitle {{
+                color: {theme.text};
+                font-size: 15px;
+                font-weight: 700;
+            }}
+            #gameSlidePlatform, #gameCaption, #feedCardMeta {{
+                color: {theme.text_muted};
+                font-size: 10px;
+                font-weight: 600;
+            }}
+            #gameStatChip {{
+                background: {theme.primary};
+                color: {theme.active_text};
+                border-radius: 12px;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: 700;
+            }}
+            #gameStatLabel {{
+                color: {theme.primary};
+                background: {rgba(theme.primary, 0.14)};
+                border: 1px solid {rgba(theme.primary, 0.18)};
+                border-radius: 12px;
+                padding: 6px 10px;
+                font-size: 10px;
+                font-weight: 600;
+            }}
+            #gameSlideHint {{
+                color: {theme.inactive};
+                font-size: 10px;
+            }}
+            #carouselDot {{
+                color: {rgba(theme.on_surface_variant, 0.30)};
+                font-size: 16px;
+            }}
+            #carouselDot[active="true"] {{
+                color: {theme.primary};
+            }}
+            #miniCalendar {{
+                background: transparent;
+                selection-background-color: {theme.primary};
+                selection-color: {theme.active_text};
+            }}
+            #miniCalendar QToolButton {{
+                color: {theme.text};
+                font-weight: 700;
+                background: transparent;
+                border: none;
+            }}
+            #miniCalendar QAbstractItemView:enabled {{
+                color: {theme.text};
+                background: transparent;
+                selection-background-color: {theme.primary};
+                selection-color: {theme.active_text};
+            }}
+            #feedCard {{
+                background: {rgba(theme.surface_container_high, 0.76)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 16px;
+            }}
+            #feedCardIcon {{
+                color: {theme.primary};
+                font-family: "{self.material_font}";
+            }}
+            #feedCardTitle {{
+                color: {theme.text};
+                font-size: 12px;
+                font-weight: 700;
+            }}
+            #feedCardBody {{
+                color: {theme.text_muted};
+                font-size: 11px;
+            }}
+            #eventsScroll, #notificationsScroll {{
+                background: transparent;
+                border: none;
+            }}
+            #eventsScroll QScrollBar:vertical, #notificationsScroll QScrollBar:vertical {{
+                width: 0px;
+                background: transparent;
+            }}
+            #eventsScroll QScrollBar::handle:vertical, #notificationsScroll QScrollBar::handle:vertical {{
+                background: transparent;
             }}
             #mediaCard {{
                 background: {rgba(theme.surface_container_high, 0.82)};
@@ -1882,6 +2279,8 @@ class NotificationCenter(QWidget):
         border: str | None = None,
         accent: str | None = None,
     ) -> None:
+        if not hasattr(self, "media_base"):
+            return
         theme = self.theme_palette
         start = start or theme.media_active_start
         end = end or theme.media_active_end
@@ -1931,6 +2330,8 @@ class NotificationCenter(QWidget):
         )
 
     def _sync_media_card_layers(self) -> None:
+        if not hasattr(self, "media_card"):
+            return
         media_rect = self.media_card.rect()
         self.media_base.setGeometry(media_rect)
         self.media_scrim.setGeometry(media_rect)
@@ -1947,9 +2348,10 @@ class NotificationCenter(QWidget):
         self.ha_timer.timeout.connect(self._refresh_home_assistant_entities)
         self.ha_timer.start(15000)
 
-        self.media_progress_timer = QTimer(self)
-        self.media_progress_timer.timeout.connect(self._poll_media_progress)
-        self.media_progress_timer.start(1000)
+        if hasattr(self, "media_card"):
+            self.media_progress_timer = QTimer(self)
+            self.media_progress_timer.timeout.connect(self._poll_media_progress)
+            self.media_progress_timer.start(1000)
 
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
@@ -1985,9 +2387,9 @@ class NotificationCenter(QWidget):
         self._poll_header()
         self._poll_quick_settings()
         self._poll_sliders()
-        self._poll_media_metadata()
-        self._poll_media_progress()
         self._poll_phone()
+        self._poll_calendar_events()
+        self._poll_notification_history()
         self._refresh_system_overview()
         self._render_home_assistant_tiles()
 
@@ -2038,6 +2440,96 @@ class NotificationCenter(QWidget):
             if label is not None:
                 label.setText(value)
 
+    def _clear_layout_widgets(self, layout: QVBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            child_layout = item.layout()
+            if widget is not None:
+                widget.deleteLater()
+            elif child_layout is not None:
+                while child_layout.count():
+                    child = child_layout.takeAt(0)
+                    if child.widget() is not None:
+                        child.widget().deleteLater()
+
+    def _list_item_card(self, title: str, subtitle: str, meta: str, kind: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("feedCard")
+        row = QHBoxLayout(card)
+        row.setContentsMargins(12, 12, 12, 12)
+        row.setSpacing(10)
+
+        icon = QLabel(material_icon(kind))
+        icon.setObjectName("feedCardIcon")
+        icon.setFont(QFont(self.material_font, 16))
+        icon.setFixedWidth(20)
+        row.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
+
+        text = QVBoxLayout()
+        text.setContentsMargins(0, 0, 0, 0)
+        text.setSpacing(3)
+        title_label = QLabel(title)
+        title_label.setObjectName("feedCardTitle")
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("feedCardBody")
+        subtitle_label.setWordWrap(True)
+        meta_label = QLabel(meta)
+        meta_label.setObjectName("feedCardMeta")
+        text.addWidget(title_label)
+        text.addWidget(subtitle_label)
+        text.addWidget(meta_label)
+        row.addLayout(text, 1)
+        return card
+
+    def _poll_calendar_events(self) -> None:
+        self._calendar_events = load_calendar_events(2)
+        self._clear_layout_widgets(self.events_layout)
+        if not self._calendar_events:
+            self.events_layout.addWidget(
+                self._list_item_card(
+                    "No upcoming events",
+                    "Connect a CalDAV calendar to populate this area.",
+                    "Nothing scheduled in the next 14 days",
+                    "calendar_today",
+                )
+            )
+            self.events_layout.addStretch(1)
+            return
+        for event in self._calendar_events:
+            title = str(event.get("title", "Untitled event"))
+            start_text = str(event.get("start", ""))
+            try:
+                moment = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+                meta = moment.strftime("%a • %d %b • %H:%M")
+            except Exception:
+                meta = start_text or "Upcoming"
+            location = str(event.get("location", "")).strip()
+            subtitle = location or "Calendar event"
+            self.events_layout.addWidget(self._list_item_card(title, subtitle, meta, "calendar_today"))
+        self.events_layout.addStretch(1)
+
+    def _poll_notification_history(self) -> None:
+        self._notification_history = load_notification_history(3)
+        self._clear_layout_widgets(self.notifications_layout)
+        if not self._notification_history:
+            self.notifications_layout.addWidget(
+                self._list_item_card(
+                    "No recent notifications",
+                    "Your notification history will appear here once the daemon records alerts.",
+                    "History is currently empty",
+                    "notifications",
+                )
+            )
+            self.notifications_layout.addStretch(1)
+            return
+        for item in self._notification_history:
+            title = str(item.get("summary", "Notification")).strip() or "Notification"
+            body = str(item.get("body", "")).replace("\n", " ").strip() or str(item.get("app_name", "No details"))
+            app_name = str(item.get("app_name", "System")).strip() or "System"
+            self.notifications_layout.addWidget(self._list_item_card(title, body, app_name, "notifications"))
+        self.notifications_layout.addStretch(1)
+
     def _poll_quick_settings(self) -> None:
         wifi_on = run_script("network.sh", "status") == "Connected"
         wifi_ssid = run_script("network.sh", "ssid") or "Disconnected"
@@ -2085,6 +2577,8 @@ class NotificationCenter(QWidget):
         self._syncing_sliders = False
 
     def _poll_media_metadata(self) -> None:
+        if not hasattr(self, "media_title"):
+            return
         title = run_script("mpris.sh", "title") or "No music"
         artist = run_script("mpris.sh", "artist") or "No artist"
         status = run_script("mpris.sh", "status") or "Stopped"
@@ -2127,6 +2621,8 @@ class NotificationCenter(QWidget):
             QTimer.singleShot(delay, self._poll_media_progress)
 
     def _poll_media_progress(self) -> None:
+        if not hasattr(self, "elapsed"):
+            return
         player = self._media_player or run_script("mpris.sh", "player")
         if not player:
             self._media_position_ms = 0
@@ -2173,6 +2669,8 @@ class NotificationCenter(QWidget):
         self._render_media_progress()
 
     def _render_media_progress(self) -> None:
+        if not hasattr(self, "elapsed"):
+            return
         self.elapsed.setText(format_millis(self._media_position_ms))
         self.total.setText(format_millis(self._media_duration_ms))
 
@@ -2203,6 +2701,8 @@ class NotificationCenter(QWidget):
         run_script_bg("volume.sh", "set", str(self._pending_volume))
 
     def _set_cover_art(self, cover_path: Path) -> None:
+        if not hasattr(self, "cover"):
+            return
         pixmap = QPixmap(str(cover_path))
         if pixmap.isNull():
             self.cover.setPixmap(QPixmap())
@@ -2230,6 +2730,8 @@ class NotificationCenter(QWidget):
         self.cover.setPixmap(rounded)
 
     def _update_media_palette_from_cover(self, cover_path: Path) -> None:
+        if not hasattr(self, "media_base"):
+            return
         palette = self._extract_cover_palette(cover_path)
         if palette is None:
             self._apply_media_palette()
@@ -2523,7 +3025,7 @@ class NotificationCenter(QWidget):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("PyQt Notification Center")
+    app.setApplicationName("Hanauta Control Center")
     window = NotificationCenter()
     window.show()
     return app.exec()
