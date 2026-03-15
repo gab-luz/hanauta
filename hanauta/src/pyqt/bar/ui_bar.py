@@ -14,7 +14,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -145,8 +145,10 @@ DEFAULT_BAR_SETTINGS = {
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
+    "tray_offset": 0,
     "bar_height": 45,
     "chip_radius": 0,
+    "tray_tint_with_matugen": True,
     "merge_all_chips": False,
     "full_bar_radius": 18,
 }
@@ -472,7 +474,7 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, int]:
     current = settings.get("bar", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
-    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset"}
+    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
         if isinstance(default, bool):
             merged[key] = bool(current.get(key, default))
@@ -652,16 +654,23 @@ class StatusNotifierWatcher(QObject):
 
 
 class StatusNotifierItemButton(QPushButton):
-    def __init__(self, item_id: str, bus: QDBusConnection, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        item_id: str,
+        bus: QDBusConnection,
+        parent: QWidget | None = None,
+        icon_tint_getter: Callable[[], QColor | None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.item_id = item_id
         self.bus = bus
+        self._icon_tint_getter = icon_tint_getter
         self.service, self.path = self._parse_item_id(item_id)
         self.iface = QDBusInterface(self.service, self.path, "org.kde.StatusNotifierItem", self.bus)
         self.setObjectName("trayButton")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setIconSize(QSize(18, 18))
-        self.setFixedSize(24, 24)
+        self.setIconSize(QSize(16, 16))
+        self.setFixedSize(22, 22)
         self.refresh()
         for signal_name in ("NewIcon", "NewTitle", "NewToolTip", "NewStatus"):
             self.bus.connect(self.service, self.path, "org.kde.StatusNotifierItem", signal_name, self.refresh)
@@ -704,6 +713,26 @@ class StatusNotifierItemButton(QPushButton):
             return QIcon()
         return QIcon(QPixmap.fromImage(image.copy()))
 
+    def _tint_icon(self, icon: QIcon) -> QIcon:
+        if icon.isNull() or self._icon_tint_getter is None:
+            return icon
+        color = self._icon_tint_getter()
+        if color is None:
+            return icon
+        pixmap = icon.pixmap(self.iconSize())
+        if pixmap.isNull():
+            return icon
+        tinted = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+        painter = QPainter(tinted)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(tinted.rect(), color)
+        painter.end()
+        return QIcon(QPixmap.fromImage(tinted))
+
+    def _event_position(self, event) -> tuple[int, int]:
+        point = event.globalPosition().toPoint()
+        return point.x(), point.y()
+
     @pyqtSlot()
     def refresh(self) -> None:
         tooltip = self._dbus_property("ToolTip", ("", [], "", ""))
@@ -722,6 +751,7 @@ class StatusNotifierItemButton(QPushButton):
         icon = QIcon.fromTheme(str(icon_name))
         if icon.isNull():
             icon = self._icon_from_pixmaps(self._dbus_property("IconPixmap", []))
+        icon = self._tint_icon(icon)
         if not icon.isNull():
             self.setIcon(icon)
             self.setText("")
@@ -730,20 +760,21 @@ class StatusNotifierItemButton(QPushButton):
             self.setText(str(title)[:1].upper())
         self.setVisible(status != "Passive")
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        x, y = self._event_position(event)
         if event.button() == Qt.MouseButton.RightButton:
-            self.iface.call("ContextMenu", 0, 0)
+            self.iface.call("ContextMenu", x, y)
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton:
-            self.iface.call("SecondaryActivate", 0, 0)
+            self.iface.call("SecondaryActivate", x, y)
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton:
-            self.iface.call("Activate", 0, 0)
+            self.iface.call("Activate", x, y)
             event.accept()
             return
-        super().mousePressEvent(event)
+        super().mouseReleaseEvent(event)
 
 
 class StatusNotifierTray(QFrame):
@@ -755,12 +786,15 @@ class StatusNotifierTray(QFrame):
         self.host_service = f"org.kde.StatusNotifierHost-{os.getpid()}-1"
         self._watcher_process: subprocess.Popen[str] | None = None
         self._watcher_signals_connected = False
+        self._icon_tint: QColor | None = None
         self.buttons: dict[str, StatusNotifierItemButton] = {}
         self.proxy: QDBusInterface | None = None
 
         self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(8, 4, 8, 4)
+        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(4)
+        self.layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.setVisible(False)
 
         self._ensure_watcher()
@@ -841,9 +875,9 @@ class StatusNotifierTray(QFrame):
             self.buttons[item_id].refresh()
             self._sync_visibility()
             return
-        button = StatusNotifierItemButton(item_id, self.bus, self)
+        button = StatusNotifierItemButton(item_id, self.bus, self, self.icon_tint)
         self.buttons[item_id] = button
-        self.layout.addWidget(button)
+        self.layout.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
         self._sync_visibility()
 
     @pyqtSlot(str)
@@ -898,6 +932,14 @@ class StatusNotifierTray(QFrame):
             return default
         value = reply.arguments()[0]
         return default if value is None else value
+
+    def icon_tint(self) -> QColor | None:
+        return QColor(self._icon_tint) if self._icon_tint is not None else None
+
+    def set_icon_tint(self, color: QColor | None) -> None:
+        self._icon_tint = QColor(color) if color is not None else None
+        for button in self.buttons.values():
+            button.refresh()
 
 
 class WeatherWorker(QThread):
@@ -1280,9 +1322,10 @@ class CyberBar(QWidget):
         self.tray_host = StatusNotifierTray(self)
         self.tray_host.setProperty("embedded", True)
         self.tray_host.setToolTip("Qt StatusNotifier tray")
+        self.tray_wrap = self._wrap_movable(self.tray_host)
         self.status_layout.addWidget(self.btn_clip)
         self.status_layout.addWidget(self.btn_updates)
-        self.status_layout.addWidget(self.tray_host)
+        self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
         self.status_layout.addWidget(self.btn_power)
         self.status_wrap = self._wrap_movable(self.status_chip)
         self.right_layout.addWidget(self.status_wrap)
@@ -1509,6 +1552,7 @@ class CyberBar(QWidget):
         self._apply_vertical_offset(self.datetime_wrap, self.bar_settings.get("datetime_offset", 0))
         self._apply_vertical_offset(self.media_wrap, self.bar_settings.get("media_offset", 0))
         self._apply_vertical_offset(self.status_wrap, self.bar_settings.get("status_offset", 0))
+        self._apply_vertical_offset(self.tray_wrap, self.bar_settings.get("tray_offset", 0))
 
     def _apply_styles(self) -> None:
         theme = self.theme
@@ -1520,6 +1564,8 @@ class CyberBar(QWidget):
         status_icon_color = theme.primary
         status_hover_color = theme.text
         status_active_color = theme.primary
+        tint_tray_icons = bool(self.bar_settings.get("tray_tint_with_matugen", True)) and bool(theme.use_matugen)
+        self.tray_host.set_icon_tint(QColor(theme.primary) if tint_tray_icons else None)
         chip_bg = "transparent" if merge_all_chips else rgba(theme.surface_container_high, 0.78)
         chip_border = "transparent" if merge_all_chips else rgba(theme.outline, 0.18)
         media_bg = "transparent" if merge_all_chips else rgba(theme.surface_container, 0.86)
