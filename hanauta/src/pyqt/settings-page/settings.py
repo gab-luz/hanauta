@@ -219,8 +219,10 @@ DEFAULT_BAR_SETTINGS = {
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
+    "tray_offset": 0,
     "bar_height": 45,
     "chip_radius": 0,
+    "tray_tint_with_matugen": True,
     "merge_all_chips": False,
     "full_bar_radius": 18,
 }
@@ -229,10 +231,10 @@ DEFAULT_BAR_SETTINGS = {
 def merged_bar_settings(payload: object) -> dict[str, int]:
     current = payload if isinstance(payload, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
-    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset"}
+    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
     radius_keys = {"chip_radius", "full_bar_radius"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
-        if key == "merge_all_chips":
+        if isinstance(default, bool):
             merged[key] = bool(current.get(key, default)) if isinstance(current, dict) else bool(default)
             continue
         try:
@@ -3005,6 +3007,12 @@ class SettingsWindow(QWidget):
         self.bar_status_offset_slider.setFixedWidth(164)
         self.bar_status_offset_slider.valueChanged.connect(self._set_bar_status_offset)
 
+        self.bar_tray_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_tray_offset_slider.setRange(-8, 8)
+        self.bar_tray_offset_slider.setValue(int(self.settings_state["bar"].get("tray_offset", 0)))
+        self.bar_tray_offset_slider.setFixedWidth(164)
+        self.bar_tray_offset_slider.valueChanged.connect(self._set_bar_tray_offset)
+
         self.bar_height_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_height_slider.setRange(32, 72)
         self.bar_height_slider.setValue(int(self.settings_state["bar"].get("bar_height", 40)))
@@ -3022,6 +3030,9 @@ class SettingsWindow(QWidget):
 
         self.bar_full_merge_switch = SwitchButton(bool(self.settings_state["bar"].get("merge_all_chips", False)))
         self.bar_full_merge_switch.toggledValue.connect(self._set_bar_merge_all_chips)
+
+        self.bar_tray_tint_switch = SwitchButton(bool(self.settings_state["bar"].get("tray_tint_with_matugen", True)))
+        self.bar_tray_tint_switch.toggledValue.connect(self._set_bar_tray_tint_with_matugen)
 
         self.bar_full_radius_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_full_radius_slider.setRange(0, 32)
@@ -3077,6 +3088,26 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_status_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Tray offset",
+                "Nudge only the tray icons up or down to line them up with the rest of the status icons.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_tray_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("palette"),
+                "Tint tray icons",
+                "Tint tray icons with the current Matugen primary color when the Matugen palette is enabled.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_tray_tint_switch,
             )
         )
         layout.addWidget(
@@ -5156,6 +5187,10 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("bar", {})["status_offset"] = int(value)
         self._save_bar_settings()
 
+    def _set_bar_tray_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["tray_offset"] = int(value)
+        self._save_bar_settings()
+
     def _set_bar_height(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["bar_height"] = int(value)
         self._save_bar_settings()
@@ -5166,6 +5201,10 @@ class SettingsWindow(QWidget):
 
     def _set_bar_merge_all_chips(self, enabled: bool) -> None:
         self.settings_state.setdefault("bar", {})["merge_all_chips"] = bool(enabled)
+        self._save_bar_settings()
+
+    def _set_bar_tray_tint_with_matugen(self, enabled: bool) -> None:
+        self.settings_state.setdefault("bar", {})["tray_tint_with_matugen"] = bool(enabled)
         self._save_bar_settings()
 
     def _set_bar_full_radius(self, value: int) -> None:
