@@ -167,6 +167,17 @@ Because of those results, the repository keeps PyQt6 widgets as the active deskt
 ./install.sh --vscodium  # VSCodium
 ```
 
+### Rebuild Popup Binaries
+```bash
+./hanauta/build-popup-widgets.sh
+```
+
+That rebuilds the compiled Nuitka popup/widget binaries that the Python bar prefers through `hanauta/bin`, with a simple per-target progress bar. You can also rebuild a subset, for example:
+
+```bash
+./hanauta/build-popup-widgets.sh hanauta-wifi-control hanauta-vpn-control hanauta-game-mode-popup
+```
+
 ## 📚 Credits & Inspiration
 
 - [dms-plugins](https://github.com/AvengeMedia/dms-plugins)

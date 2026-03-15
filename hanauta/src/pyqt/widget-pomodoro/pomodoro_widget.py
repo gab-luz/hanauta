@@ -33,6 +33,7 @@ if str(APP_DIR) not in sys.path:
 
 from pyqt.shared.runtime import entry_command, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 
 MATERIAL_ICONS = {
@@ -261,7 +262,7 @@ class PomodoroWidget(QWidget):
         actions.setSpacing(8)
         self.settings_button = self._icon_button("settings")
         self.settings_button.clicked.connect(self._open_settings)
-        self.close_button = self._icon_button("close")
+        self.close_button = create_close_button(material_icon("close"), self.material_font)
         self.close_button.clicked.connect(self.close)
         actions.addWidget(self.settings_button)
         actions.addWidget(self.close_button)

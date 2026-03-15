@@ -2539,18 +2539,18 @@ class CyberBar(QWidget):
         self._toggle_singleton_process("_calendar_popup_process", CALENDAR_POPUP, python_bin=self._python_bin())
 
     def _toggle_wifi_popup(self) -> None:
-        active = self._toggle_singleton_process("_wifi_popup_process", WIFI_CONTROL, python_bin=self._python_bin())
         if not WIFI_CONTROL.exists():
             self.net_icon.setChecked(False)
             return
-        self.net_icon.setChecked(active)
+        self._toggle_singleton_process("_wifi_popup_process", WIFI_CONTROL, python_bin=self._python_bin())
+        QTimer.singleShot(150, self._sync_wifi_button)
 
     def _toggle_vpn_popup(self) -> None:
-        active = self._toggle_singleton_process("_vpn_popup_process", VPN_CONTROL, python_bin=self._python_bin())
         if not VPN_CONTROL.exists():
             self.vpn_icon.setChecked(False)
             return
-        self.vpn_icon.setChecked(active)
+        self._toggle_singleton_process("_vpn_popup_process", VPN_CONTROL, python_bin=self._python_bin())
+        QTimer.singleShot(150, self._sync_vpn_button)
 
     def _toggle_ai_popup(self) -> None:
         active = self._toggle_singleton_process("_ai_popup_process", AI_POPUP, python_bin=self._python_bin())
@@ -2633,9 +2633,8 @@ class CyberBar(QWidget):
         if not GAME_MODE_POPUP.exists():
             self.game_mode_button.setChecked(False)
             return
-        active = self._toggle_singleton_process("_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin())
-        self.game_mode_button.setChecked(active)
-        self._sync_game_mode_button()
+        self._toggle_singleton_process("_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin())
+        QTimer.singleShot(150, self._sync_game_mode_button)
 
     def _open_launcher(self) -> None:
         if not LAUNCHER_APP.exists():
@@ -2669,21 +2668,44 @@ class CyberBar(QWidget):
             self._control_center_process = None
         self.btn_control_center.setChecked(active)
 
-    def _sync_wifi_button(self) -> None:
-        active = self._singleton_active(self._wifi_popup_process, WIFI_CONTROL)
+    def _sync_popup_button(
+        self,
+        button: QPushButton,
+        process_attr: str,
+        script_path: Path,
+        window_titles: tuple[str, ...],
+        *,
+        tooltip: str | None = None,
+    ) -> bool:
+        process = getattr(self, process_attr, None)
+        active = self._singleton_active(process, script_path)
         if not active:
-            self._wifi_popup_process = None
-        window_active = self._tree_has_window(("Wi-Fi Control",))
-        self.net_icon.setChecked(window_active)
-        self.net_icon.setProperty("active", window_active)
+            setattr(self, process_attr, None)
+        window_active = self._tree_has_window(window_titles)
+        button.setChecked(window_active)
+        button.setProperty("active", window_active)
+        if tooltip is not None:
+            button.setToolTip(tooltip)
+        self.style().unpolish(button)
+        self.style().polish(button)
+        button.update()
+        return window_active
+
+    def _sync_wifi_button(self) -> None:
+        self._sync_popup_button(
+            self.net_icon,
+            "_wifi_popup_process",
+            WIFI_CONTROL,
+            ("Wi-Fi Control",),
+        )
 
     def _sync_vpn_button(self) -> None:
-        active = self._singleton_active(self._vpn_popup_process, VPN_CONTROL)
-        if not active:
-            self._vpn_popup_process = None
-        window_active = self._tree_has_window(("WireGuard",))
-        self.vpn_icon.setChecked(window_active)
-        self.vpn_icon.setProperty("active", window_active)
+        self._sync_popup_button(
+            self.vpn_icon,
+            "_vpn_popup_process",
+            VPN_CONTROL,
+            ("WireGuard",),
+        )
 
     def _sync_weather_button(self) -> None:
         active = self._singleton_active(self._weather_popup_process, WEATHER_POPUP)
@@ -2697,16 +2719,14 @@ class CyberBar(QWidget):
         self.ntfy_button.setChecked(active)
 
     def _sync_game_mode_button(self) -> None:
-        active = self._singleton_active(self._game_mode_popup_process, GAME_MODE_POPUP)
-        if not active:
-            self._game_mode_popup_process = None
         current = game_mode_summary()
-        window_active = self._tree_has_window(("Hanauta Game Mode",))
-        self.game_mode_button.setChecked(window_active)
-        self.game_mode_button.setProperty("active", window_active)
-        self.game_mode_button.setToolTip(str(current.get("note", "Game Mode")))
-        self.style().unpolish(self.game_mode_button)
-        self.style().polish(self.game_mode_button)
+        self._sync_popup_button(
+            self.game_mode_button,
+            "_game_mode_popup_process",
+            GAME_MODE_POPUP,
+            ("Hanauta Game Mode",),
+            tooltip=str(current.get("note", "Game Mode")),
+        )
 
     def _sync_powermenu_button(self) -> None:
         active = self._singleton_active(self._powermenu_process, POWERMENU_APP)

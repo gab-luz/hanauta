@@ -47,13 +47,11 @@ entries=(
 )
 
 requested=("$@")
+selected_entries=()
 
 for entry in "${entries[@]}"; do
   script_rel="${entry%%:*}"
   name="${entry##*:}"
-  script_path="$ROOT/$script_rel"
-  script_stem="$(basename "${script_rel%.py}")"
-  dist_exe="$NUITKA_DIR/$script_stem.dist/$name"
   if [[ ${#requested[@]} -gt 0 ]]; then
     matched=false
     for requested_name in "${requested[@]}"; do
@@ -66,19 +64,68 @@ for entry in "${entries[@]}"; do
       continue
     fi
   fi
+  selected_entries+=("$entry")
+done
+
+if [[ ${#selected_entries[@]} -eq 0 ]]; then
+  echo "No matching Nuitka targets requested." >&2
+  exit 1
+fi
+
+render_progress() {
+  local current="$1"
+  local total="$2"
+  local label="$3"
+  local width=28
+  local filled=0
+  local empty=0
+  local i
+
+  if (( total > 0 )); then
+    filled=$(( current * width / total ))
+  fi
+  empty=$(( width - filled ))
+
+  printf '[%d/%d] [' "$current" "$total"
+  for ((i = 0; i < filled; i++)); do
+    printf '#'
+  done
+  for ((i = 0; i < empty; i++)); do
+    printf '-'
+  done
+  printf '] %s\n' "$label"
+}
+
+total_entries="${#selected_entries[@]}"
+current_entry=0
+
+for entry in "${selected_entries[@]}"; do
+  current_entry=$((current_entry + 1))
+  script_rel="${entry%%:*}"
+  name="${entry##*:}"
+  script_path="$ROOT/$script_rel"
+  script_stem="$(basename "${script_rel%.py}")"
+  dist_exe="$NUITKA_DIR/$script_stem.dist/$name"
+
   if [[ ! -f "$script_path" ]]; then
+    render_progress "$current_entry" "$total_entries" "skipping missing $name"
     echo "Skipping missing script: $script_path" >&2
     continue
   fi
   if [[ -x "$dist_exe" ]]; then
+    render_progress "$current_entry" "$total_entries" "reusing $name"
     ln -sfn "nuitka/$script_stem.dist/$name" "$BIN_DIR/$name"
     continue
   fi
 
+  render_progress "$current_entry" "$total_entries" "building $name"
+
   rm -rf \
     "$NUITKA_DIR/$name.build" \
+    "$NUITKA_DIR/$script_stem.build" \
     "$NUITKA_DIR/$script_stem.dist" \
-    "$NUITKA_DIR/$name.onefile-build"
+    "$NUITKA_DIR/$name.onefile-build" \
+    "$NUITKA_DIR/$script_stem.onefile-build"
 
   PYTHONPATH="$PYQT_SRC${PYTHONPATH:+:$PYTHONPATH}" "$VENV_PYTHON" -m nuitka \
     --standalone \

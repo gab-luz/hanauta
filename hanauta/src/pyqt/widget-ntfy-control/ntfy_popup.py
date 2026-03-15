@@ -35,6 +35,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 FONTS_DIR = ROOT / "assets" / "fonts"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
@@ -42,6 +43,7 @@ SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-cen
 MATERIAL_ICONS = {
     "notifications": "\ue7f4",
     "send": "\ue163",
+    "close": "\ue5cd",
 }
 
 
@@ -190,6 +192,11 @@ class NtfyPopup(QWidget):
         icon.setFont(QFont(self.material_font, 18))
         header.addWidget(title, 1)
         header.addWidget(icon)
+        self.close_button = create_close_button(material_icon("close"), self.material_font)
+        self.close_button.setProperty("iconButton", True)
+        self.close_button.setFixedSize(36, 36)
+        self.close_button.clicked.connect(self.close)
+        header.addWidget(self.close_button)
         layout.addLayout(header)
 
         subtitle = QLabel("Publish a message to your configured ntfy topic.")
@@ -243,6 +250,17 @@ class NtfyPopup(QWidget):
             }}
             QLabel#subtitleLabel, QLabel#statusLabel {{
                 color: {theme.text_muted};
+            }}
+            QPushButton#iconButton {{
+                background: transparent;
+                border: none;
+                border-radius: 999px;
+                color: {theme.text_muted};
+                font-family: "{self.material_font}";
+            }}
+            QPushButton#iconButton:hover {{
+                background: {theme.hover_bg};
+                color: {theme.text};
             }}
             QLineEdit, QTextEdit {{
                 background: {theme.chip_bg};

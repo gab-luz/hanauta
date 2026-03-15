@@ -53,6 +53,7 @@ if str(APP_DIR) not in sys.path:
 
 from pyqt.shared.runtime import entry_command
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
 
@@ -2070,10 +2071,12 @@ class SettingsWindow(QWidget):
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
 
-        close_button = QPushButton(material_icon("close"))
-        close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_button = create_close_button(
+            material_icon("close"),
+            self.icon_font,
+            font_size=16,
+        )
         close_button.setFixedSize(32, 32)
-        close_button.setFont(QFont(self.icon_font, 16))
         close_button.setProperty("iconButton", True)
         close_button.clicked.connect(self.close)
 
