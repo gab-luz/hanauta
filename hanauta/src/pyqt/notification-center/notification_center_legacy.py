@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sqlite3
 import subprocess
 import sys
 from dataclasses import replace
@@ -61,6 +63,7 @@ STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 NOTIFICATION_HISTORY_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon" / "history.json"
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
+LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
@@ -539,6 +542,128 @@ def load_calendar_events(limit: int = 2) -> list[dict]:
     return [item for item in events if isinstance(item, dict)][:limit]
 
 
+def format_playtime_hours(hours: float) -> str:
+    if hours <= 0:
+        return "0m total"
+    whole_hours = int(hours)
+    minutes = int(round((hours - whole_hours) * 60))
+    if whole_hours <= 0:
+        return f"{minutes}m total"
+    if minutes <= 0:
+        return f"{whole_hours}h total"
+    return f"{whole_hours}h {minutes}m total"
+
+
+def format_completion_hint(hours: float, seed: int) -> str:
+    if hours <= 0:
+        return "Fresh install"
+    percent = min(96, max(8, int(hours * 4) + (seed % 17)))
+    return f"{percent}% completed"
+
+
+def load_lutris_game_slides(limit: int = 2) -> list[dict]:
+    if not LUTRIS_DB.exists():
+        return []
+    try:
+        connection = sqlite3.connect(LUTRIS_DB)
+        cursor = connection.cursor()
+        rows = list(
+            cursor.execute(
+                """
+                SELECT name, playtime, lastplayed, runner, platform
+                FROM games
+                WHERE installed = 1
+                ORDER BY lastplayed DESC, playtime DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        )
+    except Exception:
+        rows = []
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+    slides: list[dict] = []
+    for name, playtime, lastplayed, runner, platform in rows:
+        hours = float(playtime or 0.0)
+        label_seed = int(lastplayed or 0)
+        platform_label = f"Lutris • {runner or platform or 'Library'}"
+        slides.append(
+            {
+                "title": str(name or "Lutris game"),
+                "stats": [
+                    format_completion_hint(hours, label_seed),
+                    format_playtime_hours(hours),
+                    str(platform or runner or "Installed"),
+                ],
+                "logo": LUTRIS_ICON,
+                "platform": platform_label,
+                "accent": "primary",
+                "playtime_hours": hours,
+            }
+        )
+    return slides
+
+
+def _candidate_steam_roots() -> list[Path]:
+    roots = [
+        Path.home() / ".steam",
+        Path.home() / ".local" / "share" / "Steam",
+        Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam",
+        Path.home() / "snap" / "steam" / "common" / ".local" / "share" / "Steam",
+    ]
+    unique: list[Path] = []
+    for root in roots:
+        if root not in unique:
+            unique.append(root)
+    return unique
+
+
+def _steam_localconfig_paths() -> list[Path]:
+    results: list[Path] = []
+    for root in _candidate_steam_roots():
+        if not root.exists():
+            continue
+        results.extend(root.glob("userdata/*/config/localconfig.vdf"))
+    return results
+
+
+def load_steam_game_slides(limit: int = 2) -> list[dict]:
+    app_pattern = re.compile(r'"(\d+)"\s*\{[^{}]*?"name"\s*"([^"]+)"[^{}]*?"Playtime"\s*"(\d+)"', re.DOTALL)
+    slides: list[dict] = []
+    for config_path in _steam_localconfig_paths():
+        try:
+            raw = config_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for appid, name, minutes_text in app_pattern.findall(raw):
+            minutes = int(minutes_text or "0")
+            if minutes <= 0:
+                continue
+            hours = minutes / 60.0
+            slides.append(
+                {
+                    "title": name,
+                    "stats": [
+                        format_completion_hint(hours, int(appid)),
+                        format_playtime_hours(hours),
+                        f"App {appid}",
+                    ],
+                    "logo": STEAM_ICON,
+                    "platform": "Steam library",
+                    "accent": "secondary",
+                    "playtime_hours": hours,
+                }
+            )
+        if slides:
+            break
+    slides.sort(key=lambda item: float(item.get("playtime_hours", 0.0)), reverse=True)
+    return slides[:limit]
+
+
 class QuickSettingButton(QFrame):
     def __init__(self, material_font: str, title: str, icon: str, callback):
         super().__init__()
@@ -819,24 +944,21 @@ class GameCarouselCard(QFrame):
         self.setObjectName("gameCarouselCard")
         self._slides: list[QFrame] = []
         self._dots: list[QLabel] = []
+        self._auto_timer = QTimer(self)
+        self._auto_timer.setInterval(5000)
+        self._auto_timer.timeout.connect(self.next_slide)
+        self._auto_timer.start()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
         self.kicker = QLabel("Recently games played")
         self.kicker.setObjectName("gameKicker")
-        self.title = QLabel("")
-        self.title.setObjectName("gameCarouselTitle")
-        header_text = QVBoxLayout()
-        header_text.setContentsMargins(0, 0, 0, 0)
-        header_text.setSpacing(2)
-        header_text.addWidget(self.kicker)
-        header_text.addWidget(self.title)
-        header.addLayout(header_text, 1)
+        header.addWidget(self.kicker, 1)
 
         self.prev_button = QPushButton(material_icon("arrow_back"))
         self.prev_button.setObjectName("compactIconAction")
@@ -848,6 +970,8 @@ class GameCarouselCard(QFrame):
         self.next_button.setFont(QFont(self.material_font, 17))
         self.next_button.setFixedSize(34, 34)
         self.next_button.clicked.connect(self.next_slide)
+        self.prev_button.clicked.connect(self._restart_autoplay)
+        self.next_button.clicked.connect(self._restart_autoplay)
         header.addWidget(self.prev_button)
         header.addWidget(self.next_button)
         layout.addLayout(header)
@@ -870,10 +994,10 @@ class GameCarouselCard(QFrame):
 
     def add_slide(self, title: str, stats: list[str], logo_path: Path, platform: str, accent: str) -> None:
         slide = QFrame()
-        slide.setObjectName("gameSlide")
+        slide.setObjectName("gameSlideInner")
         slide.setProperty("accentColor", accent)
         slide_layout = QVBoxLayout(slide)
-        slide_layout.setContentsMargins(18, 18, 18, 18)
+        slide_layout.setContentsMargins(0, 0, 0, 0)
         slide_layout.setSpacing(10)
 
         top = QHBoxLayout()
@@ -949,6 +1073,11 @@ class GameCarouselCard(QFrame):
             return
         self.stack.setCurrentIndex((self.stack.currentIndex() - 1) % self.stack.count())
         self._refresh_state()
+
+    def _restart_autoplay(self) -> None:
+        if self.stack.count() < 2:
+            return
+        self._auto_timer.start()
 
 
 class NotificationCenter(QWidget):
@@ -1146,30 +1275,48 @@ class NotificationCenter(QWidget):
         card, layout = self._section_shell("Levels", "")
         self.brightness_slider = self._slider_row("brightness_medium", "brightness", compact=True)
         self.volume_slider = self._slider_row("volume_up", "volume", compact=True)
-        layout.addWidget(self.brightness_slider["wrap"])
-        layout.addWidget(self.volume_slider["wrap"])
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(self.brightness_slider["wrap"], 1)
+        row.addWidget(self.volume_slider["wrap"], 1)
+        layout.addLayout(row)
         return card
 
     def _build_game_carousel_card(self) -> QFrame:
         self.game_carousel = GameCarouselCard(self.ui_font, self.material_font)
-        self.game_carousel.add_slide(
-            "Cyberpunk 2077",
-            ["60% completed", "42h total", "Night City route"],
-            LUTRIS_ICON,
-            "Lutris library",
-            self.theme_palette.primary,
-        )
-        self.game_carousel.add_slide(
-            "Minecraft",
-            ["18% completed", "13h total", "Modded survival"],
-            STEAM_ICON,
-            "Steam library",
-            self.theme_palette.secondary,
-        )
+        slides = load_lutris_game_slides(2)
+        slides.extend(load_steam_game_slides(2))
+        if not slides:
+            slides = [
+                {
+                    "title": "Cyberpunk 2077",
+                    "stats": ["60% completed", "42h total", "Night City route"],
+                    "logo": LUTRIS_ICON,
+                    "platform": "Lutris library",
+                    "accent": "primary",
+                },
+                {
+                    "title": "Minecraft",
+                    "stats": ["18% completed", "13h total", "Modded survival"],
+                    "logo": STEAM_ICON,
+                    "platform": "Steam library",
+                    "accent": "secondary",
+                },
+            ]
+        for slide in slides[:4]:
+            accent = self.theme_palette.primary if slide.get("accent") == "primary" else self.theme_palette.secondary
+            self.game_carousel.add_slide(
+                str(slide.get("title", "Game")),
+                list(slide.get("stats", [])),
+                Path(slide.get("logo", LUTRIS_ICON)),
+                str(slide.get("platform", "Library")),
+                accent,
+            )
         return self.game_carousel
 
     def _build_calendar_card(self) -> QFrame:
-        card, layout = self._section_shell("Calendar", "A compact month view for upcoming plans.")
+        card, layout = self._section_shell("Calendar", "")
         self.calendar_widget = QCalendarWidget()
         self.calendar_widget.setObjectName("miniCalendar")
         self.calendar_widget.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
@@ -1190,13 +1337,13 @@ class NotificationCenter(QWidget):
         return scroll, container, inner
 
     def _build_events_card(self) -> QFrame:
-        card, layout = self._section_shell("Upcoming events", "Only the next two items stay visible here.")
+        card, layout = self._section_shell("Upcoming events", "")
         self.events_scroll, self.events_container, self.events_layout = self._hidden_scroll("eventsScroll")
         layout.addWidget(self.events_scroll, 1)
         return card
 
     def _build_notifications_card(self) -> QFrame:
-        card, layout = self._section_shell("Last notifications", "A compact feed of the three most recent alerts.")
+        card, layout = self._section_shell("Last notifications", "")
         self.notifications_scroll, self.notifications_container, self.notifications_layout = self._hidden_scroll("notificationsScroll")
         layout.addWidget(self.notifications_scroll, 1)
         return card
@@ -2092,6 +2239,11 @@ class NotificationCenter(QWidget):
                 color: {theme.primary};
                 font-family: "{self.material_font}";
             }}
+            #compactSliderWrap {{
+                background: {rgba(theme.surface_container_high, 0.34)};
+                border: 1px solid {rgba(theme.outline, 0.12)};
+                border-radius: 16px;
+            }}
             #wideSlider::groove:horizontal, #compactSlider::groove:horizontal {{
                 background: {rgba(theme.on_surface_variant, 0.12)};
                 border-radius: 16px;
@@ -2100,7 +2252,7 @@ class NotificationCenter(QWidget):
                 height: 42px;
             }}
             #compactSlider::groove:horizontal {{
-                height: 22px;
+                height: 18px;
             }}
             #wideSlider::sub-page:horizontal, #compactSlider::sub-page:horizontal {{
                 background: {theme.primary};
@@ -2119,17 +2271,22 @@ class NotificationCenter(QWidget):
                 background: transparent;
                 border: none;
             }}
-            #gameSlide {{
+            #gameCarouselCard {{
                 background: qlineargradient(x1:0, y1:1, x2:1, y2:0,
                     stop:0 {rgba(theme.surface_container_high, 0.92)},
-                    stop:1 {rgba(theme.primary_container, 0.82)});
-                border: 1px solid {rgba(theme.primary, 0.22)};
-                border-radius: 20px;
-                min-height: 146px;
+                    stop:1 {rgba(theme.primary_container, 0.72)});
+                border: 1px solid {rgba(theme.primary, 0.18)};
+                border-radius: 22px;
+            }}
+            #gameSlideInner {{
+                background: transparent;
+                border: none;
+                min-height: 120px;
             }}
             #gameKicker {{
-                color: {theme.text_muted};
-                font-size: 10px;
+                color: {theme.text};
+                font-size: 12px;
+                font-weight: 700;
                 letter-spacing: 1px;
                 text-transform: uppercase;
             }}
