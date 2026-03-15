@@ -226,9 +226,11 @@ Window {
                             width: 60
                             height: appButtonHeight
 
+                            property string itemId: String(modelData.itemId || "")
                             property string itemWmClass: String(modelData.wmClass || "")
-                            property bool itemFocused: backend.isWindowGroupFocused(itemWmClass) || !!modelData.focused
-                            property bool itemRunning: backend.isWindowGroupRunning(itemWmClass) || (modelData.running || 0) > 0
+                            property string activationTarget: String(modelData.activationTarget || itemId)
+                            property bool itemFocused: !!modelData.focused
+                            property bool itemRunning: (modelData.running || 0) > 0
                             property bool itemHovered: pointerArea.containsMouse
 
                             function shellColor() {
@@ -321,9 +323,9 @@ Window {
                                 hoverEnabled: true
                                 onClicked: function(mouse) {
                                     if (mouse.button === Qt.MiddleButton) {
-                                        backend.openNewItem(modelData.itemId)
+                                        backend.openNewItem(itemId)
                                     } else {
-                                        backend.activatePreferred(modelData.itemId, itemWmClass, itemRunning)
+                                        backend.activateItem(activationTarget)
                                     }
                                 }
                             }
