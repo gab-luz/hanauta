@@ -577,7 +577,6 @@ link_configs() {
 make_exec() {
   local root="$HOME/.config/i3"
   chmod +x "$root/bspwmrc" 2>/dev/null || true
-  chmod +x "$root/scripts/start-eww-ui" 2>/dev/null || true
   chmod +x "$root/scripts/openapps" 2>/dev/null || true
   chmod +x "$root/scripts/fix-plank" 2>/dev/null || true
   chmod +x "$root/scripts/floating" 2>/dev/null || true
@@ -586,7 +585,7 @@ make_exec() {
     if head -c 2 "$f" 2>/dev/null | grep -q '^#!'; then
       chmod +x "$f" 2>/dev/null || true
     fi
-  done < <(find "$root/scripts" "$root/hanauta/src/eww/scripts" -type f -print0 2>/dev/null)
+  done < <(find "$root/scripts" "$root/hanauta/scripts" -type f -print0 2>/dev/null)
 
   if [ -d "$root/bin" ]; then
     find "$root/bin" -maxdepth 1 -type f -exec chmod +x {} \; 2>/dev/null || true

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+print_workspaces() {
+    local buf=""
+    local state_json
+
+    state_json="$(i3-msg -t get_workspaces 2>/dev/null | jq -c '
+        reduce .[] as $ws ({}; .[($ws.num|tostring)] =
+            (if $ws.focused then "focused"
+             else "occupied" end))
+    ' 2>/dev/null)"
+
+    if [ -z "$state_json" ]; then
+        state_json='{}'
+    fi
+
+    for ws in 1 2 3 4 5 6; do
+        state="$(printf '%s' "$state_json" | jq -r --arg ws "$ws" '.[$ws] // "empty"' 2>/dev/null)"
+        if [ -z "$state" ]; then
+            state="empty"
+        fi
+
+        buf+="(button :class \"workspace-dot ${state}\" :onclick \"i3-msg workspace number ${ws}\" :tooltip \"Workspace ${ws}\" \"\")"
+    done
+
+    echo "(box :orientation \"h\" :class \"works\" :halign \"center\" :space-evenly false :spacing 8 ${buf})"
+}
+
+print_workspaces
+i3-msg -t subscribe -m '["workspace"]' | while read -r _ ; do
+    print_workspaces
+done

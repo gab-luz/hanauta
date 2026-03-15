@@ -57,7 +57,7 @@ from pyqt.shared.crypto import (
 from pyqt.shared.gamemode import service_enabled as game_mode_service_enabled
 from pyqt.shared.gamemode import summary as game_mode_summary
 
-SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
+SCRIPTS_DIR = ROOT / "scripts"
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
 AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
 WIFI_CONTROL_PY = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"

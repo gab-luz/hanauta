@@ -1,0 +1,48 @@
+#!/bin/bash
+
+detect_pm() {
+  if command -v yay >/dev/null 2>&1; then
+    echo "arch"
+  elif command -v pacman >/dev/null 2>&1; then
+    echo "arch"
+  elif command -v apt-get >/dev/null 2>&1; then
+    echo "debian"
+  else
+    echo "unknown"
+  fi
+}
+
+count_updates_arch() {
+  if command -v checkupdates >/dev/null 2>&1; then
+    checkupdates 2>/dev/null | wc -l
+  else
+    pacman -Qu 2>/dev/null | wc -l
+  fi
+}
+
+count_updates_debian() {
+  apt list --upgradeable 2>/dev/null | tail -n +2 | wc -l
+}
+
+updates=0
+pm="$(detect_pm)"
+case "$pm" in
+  arch) updates="$(count_updates_arch)" ;;
+  debian) updates="$(count_updates_debian)" ;;
+  *) updates=0 ;;
+esac
+
+case "$1" in
+--up)
+  if [ "$updates" -gt 0 ]; then
+    if [ "$pm" = "arch" ]; then
+      alacritty -e $SHELL -c 'yay -Syu'
+    elif [ "$pm" = "debian" ]; then
+      alacritty -e $SHELL -c 'sudo apt update && sudo apt upgrade'
+    fi
+  fi
+  ;;
+--get)
+  echo "$updates"
+  ;;
+esac

@@ -142,7 +142,7 @@ Because of those results, the repository keeps PyQt6 widgets as the active deskt
 │   │   ├── hanauta-notifyctl.c
 │   │   ├── hanauta-notifyd.c
 │   │   └── archive/qt-qml-experiments/  # Archived Qt/QML widget experiments
-│   ├── src/eww/scripts/  # Helper scripts
+│   ├── scripts/          # Helper scripts (moved from eww)
 │   └── vscode-wallpaper-theme/  # Editor theming
 └── install.sh          # Installation script
 ```

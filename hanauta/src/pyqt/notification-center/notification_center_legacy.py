@@ -45,7 +45,7 @@ if str(APP_DIR) not in sys.path:
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
-SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
+SCRIPTS_DIR = ROOT / "scripts"
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
 FALLBACK_COVER = ROOT / "assets" / "fallback.webp"

@@ -33,7 +33,7 @@ if str(APP_DIR) not in sys.path:
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
-SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
+SCRIPTS_DIR = ROOT / "scripts"
 FONTS_DIR = ROOT / "assets" / "fonts"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"

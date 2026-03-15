@@ -12,7 +12,7 @@
 
 - Prefer native Qt widgets and layouts. Do not embed HTML to build the bar or notification center.
 - Keep the bar and notification center visually aligned with the corresponding `idea.html` mockups, but implement them in Python code.
-- Reuse existing helper scripts under `hanauta/src/eww/scripts/` for system state and actions when they already provide the needed behavior.
+- Reuse existing helper scripts under `hanauta/scripts/` for system state and actions when they already provide the needed behavior.
 - When changing polling behavior, keep intervals pragmatic:
   - clock around `1s`
   - media around `2s`
@@ -29,12 +29,12 @@
 
 ## Shared Script Notes
 
-- Media state and playback controls use `hanauta/src/eww/scripts/mpris.sh`.
-- Network state uses `hanauta/src/eww/scripts/network.sh`.
-- Bluetooth state uses `hanauta/src/eww/scripts/bluetooth`.
-- Volume uses `hanauta/src/eww/scripts/volume.sh`.
-- Brightness uses `hanauta/src/eww/scripts/brightness.sh`.
-- Redshift/night light uses `hanauta/src/eww/scripts/redshift`.
+- Media state and playback controls use `hanauta/scripts/mpris.sh`.
+- Network state uses `hanauta/scripts/network.sh`.
+- Bluetooth state uses `hanauta/scripts/bluetooth`.
+- Volume uses `hanauta/scripts/volume.sh`.
+- Brightness uses `hanauta/scripts/brightness.sh`.
+- Redshift/night light uses `hanauta/scripts/redshift`.
 - Background script launches must return quickly. If a helper performs a longer action, fork it and detach stdout/stderr.
 - Any numeric script output consumed by Qt sliders or status widgets should fall back to a valid number instead of an empty string.
 

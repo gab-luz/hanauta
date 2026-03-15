@@ -1,0 +1,31 @@
+#!/bin/bash
+
+DATE="$(date +'%d-%m-%y_%H:%M:%S')"
+DIR="$HOME/Pictures/screenshots"
+PIC="$DIR/$DATE.png"
+
+[ ! -d "$DIR" ] && mkdir -pv "$DIR"
+
+full() {
+	maim -u "$PIC"
+}
+crop() {
+	maim --select "$PIC"
+}
+abort() {
+	notify-send -a "Screenshot" -i dialog-error "Error" "something went wrong"
+	exit 1
+}
+
+case "$1" in
+--full)
+	full || abort
+	xclip -selection c -t image/png "$PIC"
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
+	;;
+--crop)
+	crop || abort
+	xclip -selection c -t image/png "$PIC"
+	notify-send -u normal -a "Screenshot" -i "$PIC" "Screenshot" "Copied to clipboard"
+	;;
+esac
