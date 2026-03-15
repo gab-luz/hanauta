@@ -43,10 +43,11 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command, entry_patterns
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
-SCRIPTS_DIR = ROOT / "scripts"
 ROOT = APP_DIR.parents[1]
+SCRIPTS_DIR = ROOT / "scripts"
 FONTS_DIR = ROOT / "assets" / "fonts"
 FALLBACK_COVER = ROOT / "assets" / "fallback.webp"
 ASSETS_DIR = APP_DIR / "assets"
@@ -218,12 +219,14 @@ def terminate_background_matches(pattern: str) -> None:
 
 
 def run_bg_singleton(script_path: Path, *args: str) -> None:
-    if not script_path.exists():
+    command = entry_command(script_path, *args)
+    if not command:
         return
-    terminate_background_matches(str(script_path))
+    for pattern in entry_patterns(script_path):
+        terminate_background_matches(pattern)
     try:
         subprocess.Popen(
-            [sys.executable, str(script_path), *args],
+            command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -235,9 +238,7 @@ def run_bg_singleton(script_path: Path, *args: str) -> None:
 def desktop_clock_command() -> list[str]:
     if DESKTOP_CLOCK_BINARY.exists():
         return [str(DESKTOP_CLOCK_BINARY)]
-    if DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
-        return [sys.executable, str(DESKTOP_CLOCK_WIDGET_SCRIPT)]
-    return []
+    return entry_command(DESKTOP_CLOCK_WIDGET_SCRIPT)
 
 
 def notification_control_command(*args: str) -> list[str]:
@@ -1061,7 +1062,7 @@ class NotificationCenter(QWidget):
         text = QVBoxLayout(text_wrap)
         text.setContentsMargins(0, 2, 0, 0)
         text.setSpacing(2)
-        self.media_title = QLabel("Press Start")
+        self.media_title = QLabel("No music")
         self.media_title.setObjectName("mediaTitle")
         self.media_title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.media_title.setMinimumWidth(1)
@@ -2084,7 +2085,7 @@ class NotificationCenter(QWidget):
         self._syncing_sliders = False
 
     def _poll_media_metadata(self) -> None:
-        title = run_script("mpris.sh", "title") or "Press Start"
+        title = run_script("mpris.sh", "title") or "No music"
         artist = run_script("mpris.sh", "artist") or "No artist"
         status = run_script("mpris.sh", "status") or "Stopped"
         player = run_script("mpris.sh", "player")

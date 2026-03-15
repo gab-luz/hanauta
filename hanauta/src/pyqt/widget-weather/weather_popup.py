@@ -35,6 +35,7 @@ SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.weather import (
     AnimatedWeatherIcon,
@@ -590,9 +591,11 @@ class WeatherPopup(QWidget):
             return
         try:
             import subprocess
-
+            command = entry_command(SETTINGS_PAGE_SCRIPT, "--page", "services", "--service-section", "weather")
+            if not command:
+                return
             subprocess.Popen(
-                [sys.executable, str(SETTINGS_PAGE_SCRIPT), "--page", "services", "--service-section", "weather"],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

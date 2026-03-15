@@ -14,7 +14,7 @@ Item {
         property string monoFontFamily: "JetBrains Mono"
         property int volume: 0
         property string mediaCover: ""
-        property string mediaTitle: "Press Start"
+        property string mediaTitle: "No music"
         property string mediaArtist: "No artist"
         property real mediaProgress: 0
         property string mediaElapsed: "0:00"
