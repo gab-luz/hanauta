@@ -64,6 +64,7 @@ SETTINGS_FILE = STATE_DIR / "settings.json"
 NOTIFICATION_HISTORY_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon" / "history.json"
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
+LUTRIS_COVERART_DIR = Path.home() / ".local" / "share" / "lutris" / "coverart"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
@@ -570,7 +571,7 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
         rows = list(
             cursor.execute(
                 """
-                SELECT name, playtime, lastplayed, runner, platform
+                SELECT name, slug, playtime, lastplayed, runner, platform
                 FROM games
                 WHERE installed = 1
                 ORDER BY lastplayed DESC, playtime DESC
@@ -587,10 +588,14 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
         except Exception:
             pass
     slides: list[dict] = []
-    for name, playtime, lastplayed, runner, platform in rows:
+    for name, slug, playtime, lastplayed, runner, platform in rows:
         hours = float(playtime or 0.0)
         label_seed = int(lastplayed or 0)
         platform_label = f"Lutris • {runner or platform or 'Library'}"
+        cover_path = LUTRIS_COVERART_DIR / f"{slug}.jpg" if slug else Path()
+        if not cover_path.exists() and slug:
+            png_path = LUTRIS_COVERART_DIR / f"{slug}.png"
+            cover_path = png_path if png_path.exists() else Path()
         slides.append(
             {
                 "title": str(name or "Lutris game"),
@@ -603,6 +608,7 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
                 "platform": platform_label,
                 "accent": "primary",
                 "playtime_hours": hours,
+                "cover": cover_path,
             }
         )
     return slides
@@ -656,6 +662,7 @@ def load_steam_game_slides(limit: int = 2) -> list[dict]:
                     "platform": "Steam library",
                     "accent": "secondary",
                     "playtime_hours": hours,
+                    "cover": Path(),
                 }
             )
         if slides:
@@ -992,7 +999,35 @@ class GameCarouselCard(QFrame):
         footer.addLayout(self.dots_wrap)
         layout.addLayout(footer)
 
-    def add_slide(self, title: str, stats: list[str], logo_path: Path, platform: str, accent: str) -> None:
+    def _cover_pixmap(self, path: Path, width: int = 86, height: int = 114) -> QPixmap:
+        fallback = QPixmap(width, height)
+        fallback.fill(Qt.GlobalColor.transparent)
+        if not path.exists():
+            return fallback
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return fallback
+        scaled = pixmap.scaled(
+            width,
+            height,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        x = max(0, (scaled.width() - width) // 2)
+        y = max(0, (scaled.height() - height) // 2)
+        cropped = scaled.copy(x, y, width, height)
+        rounded = QPixmap(width, height)
+        rounded.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(rounded)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        clip = QPainterPath()
+        clip.addRoundedRect(0.0, 0.0, float(width), float(height), 18.0, 18.0)
+        painter.setClipPath(clip)
+        painter.drawPixmap(0, 0, cropped)
+        painter.end()
+        return rounded
+
+    def add_slide(self, title: str, stats: list[str], logo_path: Path, platform: str, accent: str, cover_path: Path | None = None) -> None:
         slide = QFrame()
         slide.setObjectName("gameSlideInner")
         slide.setProperty("accentColor", accent)
@@ -1002,32 +1037,34 @@ class GameCarouselCard(QFrame):
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(8)
+        top.setSpacing(12)
+        cover = QLabel()
+        cover.setObjectName("gameCover")
+        cover.setFixedSize(86, 114)
+        cover.setPixmap(self._cover_pixmap(cover_path or Path()))
+        top.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
+
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(3)
+        title_wrap.setSpacing(6)
         title_label = QLabel(title)
         title_label.setObjectName("gameSlideTitle")
         platform_label = QLabel(platform)
         platform_label.setObjectName("gameSlidePlatform")
         title_wrap.addWidget(title_label)
         title_wrap.addWidget(platform_label)
-        top.addLayout(title_wrap, 1)
-
-        chip = QLabel(stats[0] if stats else "")
-        chip.setObjectName("gameStatChip")
-        top.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
-        slide_layout.addLayout(top)
-
-        stats_row = QHBoxLayout()
-        stats_row.setContentsMargins(0, 0, 0, 0)
-        stats_row.setSpacing(8)
-        for text in stats[1:] or ["No telemetry yet"]:
+        chip_row = QHBoxLayout()
+        chip_row.setContentsMargins(0, 0, 0, 0)
+        chip_row.setSpacing(8)
+        stat_values = stats or ["No telemetry yet"]
+        for idx, text in enumerate(stat_values):
             stat = QLabel(text)
-            stat.setObjectName("gameStatLabel")
-            stats_row.addWidget(stat)
-        stats_row.addStretch(1)
-        slide_layout.addLayout(stats_row)
+            stat.setObjectName("gameStatChip" if idx == 0 else "gameStatLabel")
+            chip_row.addWidget(stat)
+        chip_row.addStretch(1)
+        title_wrap.addLayout(chip_row)
+        top.addLayout(title_wrap, 1)
+        slide_layout.addLayout(top)
         slide_layout.addStretch(1)
 
         bottom = QHBoxLayout()
@@ -1312,6 +1349,7 @@ class NotificationCenter(QWidget):
                 Path(slide.get("logo", LUTRIS_ICON)),
                 str(slide.get("platform", "Library")),
                 accent,
+                Path(slide.get("cover", Path())),
             )
         return self.game_carousel
 
