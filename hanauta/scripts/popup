@@ -1,0 +1,11 @@
+#!/bin/bash
+
+open_updates() {
+	$HOME/.config/i3/hanauta/scripts/updates up
+}
+
+case $1 in
+--updates)
+	open_updates
+	;;
+esac
