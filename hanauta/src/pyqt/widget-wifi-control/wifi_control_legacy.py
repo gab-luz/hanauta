@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 
 from pyqt.shared.runtime import fonts_root, scripts_root, source_root
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
@@ -437,6 +438,7 @@ class WifiControlPopup(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setFixedSize(408, 624)
         self.setWindowTitle("Wi-Fi Control")
 
@@ -491,7 +493,7 @@ class WifiControlPopup(QWidget):
         self.refresh_button = self._icon_button("refresh")
         self.refresh_button.clicked.connect(self.refresh_networks)
         head.addWidget(self.refresh_button)
-        self.close_button = self._icon_button("close")
+        self.close_button = create_close_button(material_icon("close"), self.material_font)
         self.close_button.clicked.connect(self.close)
         head.addWidget(self.close_button)
         layout.addLayout(head)
@@ -812,6 +814,18 @@ class WifiControlPopup(QWidget):
         self._panel_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._panel_animation.start()
 
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self.scan_worker is not None and self.scan_worker.isRunning():
+            self.scan_worker.quit()
+            self.scan_worker.wait(250)
+        if self.action_worker is not None and self.action_worker.isRunning():
+            self.action_worker.quit()
+            self.action_worker.wait(250)
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        super().closeEvent(event)
+
     def refresh_networks(self) -> None:
         if self.scan_worker is not None and self.scan_worker.isRunning():
             return
@@ -923,6 +937,7 @@ class WifiControlPopup(QWidget):
 
 def main() -> int:
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(True)
     signal.signal(signal.SIGINT, lambda *_args: app.quit())
     signal_timer = QTimer()
     signal_timer.timeout.connect(lambda: None)

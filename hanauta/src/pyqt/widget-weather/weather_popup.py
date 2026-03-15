@@ -30,6 +30,7 @@ from pathlib import Path
 
 from pyqt.shared.runtime import entry_command
 from pyqt.shared.runtime import fonts_root, source_root
+from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.weather import (
     AnimatedWeatherIcon,
@@ -275,6 +276,12 @@ class WeatherPopup(QWidget):
         self.settings_button.setFont(QFont(self.icon_font, 18))
         self.settings_button.clicked.connect(self._open_weather_settings)
         header.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.close_button = create_close_button("\ue5cd", self.icon_font)
+        self.close_button.setProperty("iconButton", True)
+        self.close_button.setFixedSize(36, 36)
+        self.close_button.clicked.connect(self.close)
+        header.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
 
         self.hero = QFrame()

@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 
 from pyqt.shared.runtime import fonts_root, scripts_root, source_root
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
@@ -250,11 +251,21 @@ class VpnControlPopup(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.resize(360, 248)
 
         screen = QApplication.primaryScreen()
         geo = screen.availableGeometry()
         self.move(geo.x() + geo.width() - self.width() - 14, geo.y() + 50)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._toggle_worker is not None and self._toggle_worker.isRunning():
+            self._toggle_worker.quit()
+            self._toggle_worker.wait(250)
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        super().closeEvent(event)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -285,10 +296,7 @@ class VpnControlPopup(QWidget):
         header.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
         header.addLayout(header_text, 1)
 
-        self.close_button = QPushButton(material_icon("close"))
-        self.close_button.setObjectName("iconButton")
-        self.close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.close_button.setFont(QFont(self.material_font, 18))
+        self.close_button = create_close_button(material_icon("close"), self.material_font, font_size=18)
         self.close_button.clicked.connect(self.close)
         header.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
@@ -578,6 +586,7 @@ def main() -> int:
     if not service_enabled():
         return 0
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(True)
     app.setStyle("Fusion")
 
     palette = QPalette()

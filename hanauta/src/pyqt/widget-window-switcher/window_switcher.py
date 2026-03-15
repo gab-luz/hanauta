@@ -37,6 +37,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 IGNORED_CLASSES = {
     "CyberBar",
@@ -472,10 +473,12 @@ class WindowSwitcher(QWidget):
         titles.addWidget(subtitle)
         header.addLayout(titles, 1)
 
-        close_button = QPushButton(material_icon("close"))
-        close_button.setObjectName("closeButton")
-        close_button.setFont(QFont(self.material_font, 20))
-        close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_button = create_close_button(
+            material_icon("close"),
+            self.material_font,
+            font_size=20,
+            object_name="closeButton",
+        )
         close_button.clicked.connect(self.close)
         header.addWidget(close_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)

@@ -37,6 +37,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.runtime import entry_command, python_executable
+from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 
@@ -350,6 +351,11 @@ class CalendarPopup(QWidget):
         self.settings_button.clicked.connect(self._open_settings)
         actions.addWidget(self.refresh_button)
         actions.addWidget(self.settings_button)
+        self.close_button = create_close_button("\ue5cd", self.icon_font)
+        self.close_button.setProperty("iconButton", True)
+        self.close_button.setFixedSize(36, 36)
+        self.close_button.clicked.connect(self.close)
+        actions.addWidget(self.close_button)
         header.addLayout(actions)
         layout.addLayout(header)
 

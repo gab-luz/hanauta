@@ -21,6 +21,7 @@ if str(APP_DIR) not in sys.path:
 from pyqt.shared.runtime import entry_command
 from pyqt.shared.gamemode import service_enabled, set_active, summary
 from pyqt.shared.theme import load_theme_palette, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 
 MATERIAL_ICONS = {
@@ -93,6 +94,7 @@ class GameModePopup(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.resize(360, 220)
 
         shadow = QGraphicsDropShadowEffect(self)
@@ -126,10 +128,8 @@ class GameModePopup(QWidget):
         subtitle.setObjectName("subtitle")
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
-        close_btn = QPushButton(material_icon("close"))
-        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn = create_close_button(material_icon("close"), self.icon_font, font_size=16)
         close_btn.setProperty("iconButton", True)
-        close_btn.setFont(QFont(self.icon_font, 16))
         close_btn.setFixedSize(32, 32)
         close_btn.clicked.connect(self.close)
         header.addWidget(icon)
@@ -166,6 +166,12 @@ class GameModePopup(QWidget):
 
         self._apply_styles()
         self._refresh()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        super().closeEvent(event)
 
     def _apply_styles(self) -> None:
         theme = self.theme
@@ -248,6 +254,7 @@ def main() -> int:
     if not service_enabled():
         return 0
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(True)
     widget = GameModePopup()
     widget.show()
     return app.exec()

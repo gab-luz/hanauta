@@ -38,6 +38,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.theme import load_theme_palette, palette_mtime
+from pyqt.shared.button_helpers import create_close_button
 
 THEME = load_theme_palette()
 AI_ASSETS_DIR = APP_DIR / "pyqt" / "ai-popup" / "assets"
@@ -82,6 +83,22 @@ def load_ui_font() -> str:
             if families:
                 return families[0]
     return "Inter"
+
+
+def load_material_icon_font() -> str:
+    font_dir = APP_DIR.parents[1] / "assets" / "fonts"
+    for name in (
+        "MaterialIcons-Regular.ttf",
+        "MaterialIconsOutlined-Regular.otf",
+        "MaterialSymbolsOutlined.ttf",
+        "MaterialSymbolsRounded.ttf",
+    ):
+        font_id = QFontDatabase.addApplicationFont(str(font_dir / name))
+        if font_id >= 0:
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if families:
+                return families[0]
+    return "Material Icons"
 
 
 @dataclass
@@ -683,6 +700,7 @@ class SidebarPanel(QFrame):
     def __init__(self, ui_font: str) -> None:
         super().__init__()
         self.ui_font = ui_font
+        self.icon_font = load_material_icon_font()
         self.profiles = [
             BackendProfile("gemini", "Gemini", "gemini", "gemini-2.0-flash", "Google", "gemini", True),
             BackendProfile("koboldcpp", "KoboldCpp", "openai_compat", "koboldcpp", "127.0.0.1:5001", "koboldcpp"),
@@ -797,6 +815,27 @@ class SidebarPanel(QFrame):
         settings_button = ActionIcon("⚙", "Backend settings", self.ui_font)
         settings_button.clicked.connect(self._open_backend_settings)
         top.addWidget(settings_button)
+
+        close_button = create_close_button("\ue5cd", self.icon_font)
+        close_button.setToolTip("Close")
+        close_button.setProperty("iconButton", True)
+        close_button.setFixedSize(34, 34)
+        close_button.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: transparent;
+                color: {TEXT_DIM};
+                border: none;
+                border-radius: 999px;
+            }}
+            QPushButton:hover {{
+                background: {THEME.hover_bg};
+                color: {TEXT};
+            }}
+            """
+        )
+        close_button.clicked.connect(self.window().close)
+        top.addWidget(close_button)
         layout.addLayout(top)
 
         self.header_status = QLabel("Configure backends with the gear icon.")

@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
 
 from pyqt.shared.runtime import fonts_root, project_root, source_root
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.button_helpers import create_close_button
 
 ROOT = project_root()
 APP_DIR = source_root()
@@ -354,10 +355,12 @@ class HotkeysOverlay(QWidget):
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
 
-        close_button = QPushButton(material_icon("close"))
-        close_button.setObjectName("closeButton")
-        close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        close_button.setFont(QFont(self.material_font, 22))
+        close_button = create_close_button(
+            material_icon("close"),
+            self.material_font,
+            font_size=22,
+            object_name="closeButton",
+        )
         close_button.clicked.connect(self.close)
 
         header.addLayout(title_wrap, 1)
