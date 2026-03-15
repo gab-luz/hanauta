@@ -30,15 +30,15 @@ from PyQt6.QtWidgets import (
 )
 
 
-APP_DIR = Path(__file__).resolve().parents[2]
-ROOT = APP_DIR.parents[1]
+from pyqt.shared.runtime import fonts_root, scripts_root, source_root
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
+APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
-
-SCRIPTS_DIR = ROOT / "scripts"
-FONTS_DIR = ROOT / "assets" / "fonts"
+SCRIPTS_DIR = scripts_root()
+FONTS_DIR = fonts_root()
 SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 SERVICE_WIFI_CACHE = SERVICE_STATE_DIR / "wifi.json"
 

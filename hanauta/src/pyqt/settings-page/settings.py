@@ -427,6 +427,8 @@ def load_settings_state() -> dict:
             "transparency": True,
             "notification_center_panel_opacity": 84,
             "notification_center_card_opacity": 92,
+            "notification_toast_max_width": 356,
+            "notification_toast_max_height": 280,
             "use_matugen_palette": False,
         },
         "home_assistant": {
@@ -562,6 +564,18 @@ def load_settings_state() -> dict:
         appearance["notification_center_card_opacity"] = max(
             appearance["notification_center_panel_opacity"], 92
         )
+    try:
+        appearance["notification_toast_max_width"] = max(
+            260, min(640, int(appearance.get("notification_toast_max_width", 356)))
+        )
+    except Exception:
+        appearance["notification_toast_max_width"] = 356
+    try:
+        appearance["notification_toast_max_height"] = max(
+            160, min(640, int(appearance.get("notification_toast_max_height", 280)))
+        )
+    except Exception:
+        appearance["notification_toast_max_height"] = 280
     appearance.setdefault("use_matugen_palette", False)
     home_assistant = dict(payload.get("home_assistant", {}))
     home_assistant.setdefault("url", "")
@@ -2430,6 +2444,28 @@ class SettingsWindow(QWidget):
                 int(self.settings_state["appearance"].get("notification_center_card_opacity", 92)),
                 material_icon("widgets"),
                 "notification_center_card_opacity",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Notification max width",
+                "Limit how wide desktop notifications can grow on screen.",
+                260,
+                640,
+                int(self.settings_state["appearance"].get("notification_toast_max_width", 356)),
+                material_icon("crop_square"),
+                "notification_toast_max_width",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Notification max height",
+                "Limit how tall desktop notifications can grow before content is clipped.",
+                160,
+                640,
+                int(self.settings_state["appearance"].get("notification_toast_max_height", 280)),
+                material_icon("crop_square"),
+                "notification_toast_max_height",
             )
         )
         interval = SettingsRow(
@@ -5241,6 +5277,20 @@ class SettingsWindow(QWidget):
             self.appearance_status.setText(
                 f"Control center widget opacity set to {card_opacity}%."
             )
+
+    def _set_notification_toast_max_width(self, value: int) -> None:
+        toast_width = max(260, min(640, int(value)))
+        self.settings_state["appearance"]["notification_toast_max_width"] = toast_width
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(f"Notification width limit set to {toast_width}px.")
+
+    def _set_notification_toast_max_height(self, value: int) -> None:
+        toast_height = max(160, min(640, int(value)))
+        self.settings_state["appearance"]["notification_toast_max_height"] = toast_height
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(f"Notification height limit set to {toast_height}px.")
 
     def _set_use_matugen_palette(self, enabled: bool) -> None:
         self.settings_state["appearance"]["use_matugen_palette"] = bool(enabled)

@@ -12,9 +12,9 @@ from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QWidget
 
+from pyqt.shared.runtime import source_root
 
-ROOT = Path(__file__).resolve().parents[4]
-ASSETS_DIR = ROOT / "hanauta" / "src" / "assets"
+ASSETS_DIR = source_root() / "assets"
 WEATHER_ICON_DIR = ASSETS_DIR / "weather-icons"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"

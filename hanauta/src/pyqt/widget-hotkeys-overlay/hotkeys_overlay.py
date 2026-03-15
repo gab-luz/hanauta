@@ -37,14 +37,15 @@ from PyQt6.QtWidgets import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[4]
-APP_DIR = Path(__file__).resolve().parents[2]
+from pyqt.shared.runtime import fonts_root, project_root, source_root
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
+ROOT = project_root()
+APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
-
-FONTS_DIR = ROOT / "assets" / "fonts"
+FONTS_DIR = fonts_root()
 I3_CONFIG = ROOT / "config"
 
 MATERIAL_ICONS = {

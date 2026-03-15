@@ -60,10 +60,10 @@ exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x pi
 exec_always --no-startup-id ~/.config/i3/startup.sh
 
 # CyberDock
-exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-dock" ]; then exec "$HOME/.config/i3/hanauta/bin/hanauta-dock"; else exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; fi'
+exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; fi'
 
 # CyberBar (PyQt6 top bar)
-exec_always --no-startup-id sh -c 'pkill -x hanauta-bar 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-bar" ]; then exec "$HOME/.config/i3/hanauta/bin/hanauta-bar" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; else exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; fi'
+exec_always --no-startup-id sh -c 'pkill -x hanauta-bar 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; fi'
 # Eww startup removed; PyQt bar and dock are the active shell UI
 
 # Window rules (translated from bspwm rules)
@@ -127,9 +127,9 @@ bindsym --release Print exec --no-startup-id flameshot gui
 # Window switcher (ALT+TAB)
 bindsym Mod1+Tab exec --no-startup-id "$HOME/.config/i3/scripts/alt_tab.sh"
 # Open hotkeys overlay
-bindsym Mod1+F1 exec --no-startup-id sh -c 'if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-hotkeys-overlay" ]; then exec "$HOME/.config/i3/hanauta/bin/hanauta-hotkeys-overlay"; else exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/widget-hotkeys-overlay/hotkeys_overlay.py"; fi'
+bindsym Mod1+F1 exec --no-startup-id "$HOME/.config/i3/hanauta/bin/hanauta-hotkeys-overlay"
 # Openapps launcher (from bspwm)
-bindsym $mod+space exec --no-startup-id sh -c 'if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-launcher" ]; then exec "$HOME/.config/i3/hanauta/bin/hanauta-launcher"; else exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/launcher/launcher.py"; fi'
+bindsym $mod+space exec --no-startup-id "$HOME/.config/i3/hanauta/bin/hanauta-launcher"
 # Desktop menu (right click)
 # Close focused window
 bindsym $mod+q kill

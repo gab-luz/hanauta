@@ -31,15 +31,16 @@ from PyQt6.QtWidgets import (
 )
 
 
-APP_DIR = Path(__file__).resolve().parents[2]
-ROOT = Path(__file__).resolve().parents[4]
-FONTS_DIR = ROOT / "assets" / "fonts"
+from pyqt.shared.runtime import fonts_root, project_root, source_root
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
+APP_DIR = source_root()
+ROOT = project_root()
+FONTS_DIR = fonts_root()
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
-
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 MATERIAL_ICONS = {
     "apps": "\ue5c3",

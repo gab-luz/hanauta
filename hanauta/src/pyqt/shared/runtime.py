@@ -39,6 +39,16 @@ def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def current_executable_path() -> Path:
+    argv0 = str(sys.argv[0]).strip()
+    if argv0:
+        try:
+            return Path(argv0).resolve()
+        except Exception:
+            pass
+    return Path(__file__).resolve()
+
+
 def project_root() -> Path:
     if is_frozen():
         exe_path = Path(sys.argv[0]).resolve()
@@ -56,6 +66,18 @@ def hanauta_root() -> Path:
 
 def source_root() -> Path:
     return hanauta_root() / "src"
+
+
+def assets_root() -> Path:
+    return project_root() / "assets"
+
+
+def fonts_root() -> Path:
+    return assets_root() / "fonts"
+
+
+def scripts_root() -> Path:
+    return hanauta_root() / "scripts"
 
 
 def python_executable() -> str:

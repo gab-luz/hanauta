@@ -28,14 +28,8 @@ from PyQt6.QtWidgets import (
 from pathlib import Path
 
 
-APP_DIR = Path(__file__).resolve().parents[2]
-ROOT = APP_DIR.parents[1]
-FONTS_DIR = ROOT / "assets" / "fonts"
-SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
-if str(APP_DIR) not in sys.path:
-    sys.path.append(str(APP_DIR))
-
 from pyqt.shared.runtime import entry_command
+from pyqt.shared.runtime import fonts_root, source_root
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.weather import (
     AnimatedWeatherIcon,
@@ -45,6 +39,13 @@ from pyqt.shared.weather import (
     fetch_forecast,
     static_icon_path,
 )
+
+APP_DIR = source_root()
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+FONTS_DIR = fonts_root()
+SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 
 
 def load_app_fonts() -> dict[str, str]:
