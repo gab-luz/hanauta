@@ -227,6 +227,21 @@ QList<WifiNetwork> listNetworks() {
 }
 
 QString currentSsid() {
+    const QString deviceStatus = runCommandText({"nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"}, 4000);
+    const QStringList deviceLines = deviceStatus.split('\n', Qt::SkipEmptyParts);
+    for (const QString &line : deviceLines) {
+        const QStringList parts = line.split(':');
+        if (parts.size() < 4) {
+            continue;
+        }
+        if (parts.value(1).trimmed() == "wifi" && parts.value(2).trimmed().startsWith("connected")) {
+            const QString connection = unescapeNmcli(parts.mid(3).join(":"));
+            if (!connection.isEmpty()) {
+                return connection;
+            }
+        }
+    }
+
     const QString output = runCommandText({"nmcli", "-t", "-f", "ACTIVE,SSID", "dev", "wifi"}, 4000);
     const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
     for (const QString &line : lines) {
