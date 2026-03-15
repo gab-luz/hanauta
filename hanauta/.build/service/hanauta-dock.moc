@@ -50,12 +50,11 @@ static constexpr auto qt_meta_stringdata_ZN11DockBackendE = QtMocHelpers::string
     "refreshVolume",
     "glyph",
     "name",
-    "isWindowGroupRunning",
-    "wmClass",
-    "isWindowGroupFocused",
-    "activatePreferred",
+    "isItemRunning",
     "itemId",
-    "running",
+    "wmClass",
+    "isItemFocused",
+    "activatePreferred",
     "activateItem",
     "openNewItem",
     "openLauncher",
@@ -102,7 +101,7 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11DockBackendE[] = {
        0,       // classname
        0,    0, // classinfo
       22,   14, // methods
-      16,  202, // properties
+      16,  204, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
@@ -124,17 +123,17 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11DockBackendE[] = {
 
  // methods: name, argc, parameters, tag, flags, initial metatype offsets
       12,    1,  156,    2, 0x102,   27 /* Public | MethodIsConst  */,
-      14,    1,  159,    2, 0x102,   29 /* Public | MethodIsConst  */,
-      16,    1,  162,    2, 0x102,   31 /* Public | MethodIsConst  */,
-      17,    3,  165,    2, 0x02,   33 /* Public */,
-      20,    1,  172,    2, 0x02,   37 /* Public */,
-      21,    1,  175,    2, 0x02,   39 /* Public */,
-      22,    0,  178,    2, 0x02,   41 /* Public */,
-      23,    0,  179,    2, 0x02,   42 /* Public */,
-      24,    1,  180,    2, 0x02,   43 /* Public */,
-      26,    3,  183,    2, 0x102,   45 /* Public | MethodIsConst  */,
-      31,    5,  190,    2, 0x02,   49 /* Public */,
-      36,    0,  201,    2, 0x02,   55 /* Public */,
+      14,    2,  159,    2, 0x102,   29 /* Public | MethodIsConst  */,
+      17,    2,  164,    2, 0x102,   32 /* Public | MethodIsConst  */,
+      18,    2,  169,    2, 0x02,   35 /* Public */,
+      19,    1,  174,    2, 0x02,   38 /* Public */,
+      20,    1,  177,    2, 0x02,   40 /* Public */,
+      21,    0,  180,    2, 0x02,   42 /* Public */,
+      22,    0,  181,    2, 0x02,   43 /* Public */,
+      23,    1,  182,    2, 0x02,   44 /* Public */,
+      25,    3,  185,    2, 0x102,   46 /* Public | MethodIsConst  */,
+      30,    5,  192,    2, 0x02,   50 /* Public */,
+      35,    0,  203,    2, 0x02,   56 /* Public */,
 
  // signals: parameters
     QMetaType::Void,
@@ -152,35 +151,35 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11DockBackendE[] = {
 
  // methods: parameters
     QMetaType::QString, QMetaType::QString,   13,
-    QMetaType::Bool, QMetaType::QString,   15,
-    QMetaType::Bool, QMetaType::QString,   15,
-    QMetaType::Void, QMetaType::QString, QMetaType::QString, QMetaType::Bool,   18,   15,   19,
-    QMetaType::Void, QMetaType::QString,   18,
-    QMetaType::Void, QMetaType::QString,   18,
+    QMetaType::Bool, QMetaType::QString, QMetaType::QString,   15,   16,
+    QMetaType::Bool, QMetaType::QString, QMetaType::QString,   15,   16,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString,   15,   16,
+    QMetaType::Void, QMetaType::QString,   15,
+    QMetaType::Void, QMetaType::QString,   15,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   25,
-    0x80000000 | 27, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   28,   29,   30,
-    QMetaType::Void, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   32,   33,   34,   35,   30,
+    QMetaType::Void, QMetaType::Int,   24,
+    0x80000000 | 26, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   27,   28,   29,
+    QMetaType::Void, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Int, QMetaType::Bool,   31,   32,   33,   34,   29,
     QMetaType::Void,
 
  // properties: name, type, flags, notifyId, revision
-      37, 0x80000000 | 27, 0x00015009, uint(0), 0,
-      38, 0x80000000 | 39, 0x00015009, uint(1), 0,
-      40, 0x80000000 | 27, 0x00015009, uint(2), 0,
-      41, QMetaType::QString, 0x00015001, uint(3), 0,
+      36, 0x80000000 | 26, 0x00015009, uint(0), 0,
+      37, 0x80000000 | 38, 0x00015009, uint(1), 0,
+      39, 0x80000000 | 26, 0x00015009, uint(2), 0,
+      40, QMetaType::QString, 0x00015001, uint(3), 0,
+      41, QMetaType::QString, 0x00015001, uint(4), 0,
       42, QMetaType::QString, 0x00015001, uint(4), 0,
-      43, QMetaType::QString, 0x00015001, uint(4), 0,
+      43, QMetaType::Bool, 0x00015103, uint(5), 0,
       44, QMetaType::Bool, 0x00015103, uint(5), 0,
-      45, QMetaType::Bool, 0x00015103, uint(5), 0,
-      46, QMetaType::QString, 0x00015103, uint(5), 0,
-      47, QMetaType::Int, 0x00015103, uint(5), 0,
-      48, QMetaType::QString, 0x00015103, uint(5), 0,
+      45, QMetaType::QString, 0x00015103, uint(5), 0,
+      46, QMetaType::Int, 0x00015103, uint(5), 0,
+      47, QMetaType::QString, 0x00015103, uint(5), 0,
+      48, QMetaType::Int, 0x00015103, uint(5), 0,
       49, QMetaType::Int, 0x00015103, uint(5), 0,
-      50, QMetaType::Int, 0x00015103, uint(5), 0,
+      50, QMetaType::QString, 0x00015401, uint(-1), 0,
       51, QMetaType::QString, 0x00015401, uint(-1), 0,
       52, QMetaType::QString, 0x00015401, uint(-1), 0,
-      53, QMetaType::QString, 0x00015401, uint(-1), 0,
 
        0        // eod
 };
@@ -249,17 +248,18 @@ Q_CONSTINIT const QMetaObject DockBackend::staticMetaObject = { {
         // method 'glyph'
         QtPrivate::TypeAndForceComplete<QString, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
-        // method 'isWindowGroupRunning'
+        // method 'isItemRunning'
         QtPrivate::TypeAndForceComplete<bool, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
-        // method 'isWindowGroupFocused'
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'isItemFocused'
         QtPrivate::TypeAndForceComplete<bool, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
         // method 'activatePreferred'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
-        QtPrivate::TypeAndForceComplete<bool, std::false_type>,
         // method 'activateItem'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
@@ -308,11 +308,11 @@ void DockBackend::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         case 9: _t->refreshVolume(); break;
         case 10: { QString _r = _t->glyph((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
             if (_a[0]) *reinterpret_cast< QString*>(_a[0]) = std::move(_r); }  break;
-        case 11: { bool _r = _t->isWindowGroupRunning((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
+        case 11: { bool _r = _t->isItemRunning((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
-        case 12: { bool _r = _t->isWindowGroupFocused((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
+        case 12: { bool _r = _t->isItemFocused((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
-        case 13: _t->activatePreferred((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<bool>>(_a[3]))); break;
+        case 13: _t->activatePreferred((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2]))); break;
         case 14: _t->activateItem((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
         case 15: _t->openNewItem((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
         case 16: _t->openLauncher(); break;

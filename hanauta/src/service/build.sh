@@ -111,9 +111,17 @@ compile_qt_cpp \
   -I"$BUILD_DIR" \
   $(pkg-config --cflags --libs Qt6QuickControls2 Qt6Quick Qt6Qml Qt6Gui Qt6Core Qt6Network)
 
+compile_qt_cpp \
+  "$ROOT_DIR/src/service/hanauta-wifi-control.cpp" \
+  "$OUT_DIR/hanauta-wifi-control" \
+  "$BUILD_DIR/hanauta-wifi-control.moc" \
+  -I"$BUILD_DIR" \
+  $(pkg-config --cflags --libs Qt6QuickControls2 Qt6Quick Qt6Qml Qt6Gui Qt6Core)
+
 printf 'Built %s\n' "$OUT_DIR/hanauta-service"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notifyctl"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notifyd"
 printf 'Built %s\n' "$OUT_DIR/hanauta-clock"
 printf 'Built %s\n' "$OUT_DIR/hanauta-powermenu"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notification-center"
+printf 'Built %s\n' "$OUT_DIR/hanauta-wifi-control"

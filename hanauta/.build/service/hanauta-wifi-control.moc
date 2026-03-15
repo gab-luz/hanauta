@@ -1,0 +1,396 @@
+/****************************************************************************
+** Meta object code from reading C++ file 'hanauta-wifi-control.cpp'
+**
+** Created by: The Qt Meta Object Compiler version 68 (Qt 6.8.2)
+**
+** WARNING! All changes made in this file will be lost!
+*****************************************************************************/
+
+#include <QtCore/qmetatype.h>
+
+#include <QtCore/qtmochelpers.h>
+
+#include <memory>
+
+
+#include <QtCore/qxptype_traits.h>
+#if !defined(Q_MOC_OUTPUT_REVISION)
+#error "The header file 'hanauta-wifi-control.cpp' doesn't include <QObject>."
+#elif Q_MOC_OUTPUT_REVISION != 68
+#error "This file was generated using the moc from 6.8.2. It"
+#error "cannot be used with the include files from this version of Qt."
+#error "(The moc has changed too much.)"
+#endif
+
+#ifndef Q_CONSTINIT
+#define Q_CONSTINIT
+#endif
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+QT_WARNING_DISABLE_GCC("-Wuseless-cast")
+namespace {
+struct qt_meta_tag_ZN11WifiBackendE_t {};
+} // unnamed namespace
+
+
+#ifdef QT_MOC_HAS_STRINGDATA
+static constexpr auto qt_meta_stringdata_ZN11WifiBackendE = QtMocHelpers::stringData(
+    "WifiBackend",
+    "paletteChanged",
+    "",
+    "networksChanged",
+    "summaryChanged",
+    "selectionChanged",
+    "statusChanged",
+    "busyChanged",
+    "glyph",
+    "name",
+    "popupGeometry",
+    "QVariantMap",
+    "width",
+    "height",
+    "refreshNetworks",
+    "selectNetwork",
+    "ssid",
+    "connectSelected",
+    "password",
+    "disconnectCurrent",
+    "toggleRadio",
+    "closeWindow",
+    "palette",
+    "networks",
+    "QVariantList",
+    "currentConnectionLabel",
+    "currentConnectionMeta",
+    "currentConnectionIcon",
+    "radioButtonText",
+    "selectedSsid",
+    "selectionHint",
+    "selectedSecure",
+    "selectedInUse",
+    "connectButtonText",
+    "statusText",
+    "busy",
+    "materialFontFamily",
+    "uiFontFamily",
+    "monoFontFamily"
+);
+#else  // !QT_MOC_HAS_STRINGDATA
+#error "qtmochelpers.h not found or too old."
+#endif // !QT_MOC_HAS_STRINGDATA
+
+Q_CONSTINIT static const uint qt_meta_data_ZN11WifiBackendE[] = {
+
+ // content:
+      12,       // revision
+       0,       // classname
+       0,    0, // classinfo
+      14,   14, // methods
+      16,  122, // properties
+       0,    0, // enums/sets
+       0,    0, // constructors
+       0,       // flags
+       6,       // signalCount
+
+ // signals: name, argc, parameters, tag, flags, initial metatype offsets
+       1,    0,   98,    2, 0x06,   17 /* Public */,
+       3,    0,   99,    2, 0x06,   18 /* Public */,
+       4,    0,  100,    2, 0x06,   19 /* Public */,
+       5,    0,  101,    2, 0x06,   20 /* Public */,
+       6,    0,  102,    2, 0x06,   21 /* Public */,
+       7,    0,  103,    2, 0x06,   22 /* Public */,
+
+ // methods: name, argc, parameters, tag, flags, initial metatype offsets
+       8,    1,  104,    2, 0x102,   23 /* Public | MethodIsConst  */,
+      10,    2,  107,    2, 0x102,   25 /* Public | MethodIsConst  */,
+      14,    0,  112,    2, 0x02,   28 /* Public */,
+      15,    1,  113,    2, 0x02,   29 /* Public */,
+      17,    1,  116,    2, 0x02,   31 /* Public */,
+      19,    0,  119,    2, 0x02,   33 /* Public */,
+      20,    0,  120,    2, 0x02,   34 /* Public */,
+      21,    0,  121,    2, 0x02,   35 /* Public */,
+
+ // signals: parameters
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+
+ // methods: parameters
+    QMetaType::QString, QMetaType::QString,    9,
+    0x80000000 | 11, QMetaType::Int, QMetaType::Int,   12,   13,
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::QString,   16,
+    QMetaType::Void, QMetaType::QString,   18,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+
+ // properties: name, type, flags, notifyId, revision
+      22, 0x80000000 | 11, 0x00015009, uint(0), 0,
+      23, 0x80000000 | 24, 0x00015009, uint(1), 0,
+      25, QMetaType::QString, 0x00015001, uint(2), 0,
+      26, QMetaType::QString, 0x00015001, uint(2), 0,
+      27, QMetaType::QString, 0x00015001, uint(2), 0,
+      28, QMetaType::QString, 0x00015001, uint(2), 0,
+      29, QMetaType::QString, 0x00015001, uint(3), 0,
+      30, QMetaType::QString, 0x00015001, uint(3), 0,
+      31, QMetaType::Bool, 0x00015001, uint(3), 0,
+      32, QMetaType::Bool, 0x00015001, uint(3), 0,
+      33, QMetaType::QString, 0x00015001, uint(3), 0,
+      34, QMetaType::QString, 0x00015001, uint(4), 0,
+      35, QMetaType::Bool, 0x00015001, uint(5), 0,
+      36, QMetaType::QString, 0x00015401, uint(-1), 0,
+      37, QMetaType::QString, 0x00015401, uint(-1), 0,
+      38, QMetaType::QString, 0x00015401, uint(-1), 0,
+
+       0        // eod
+};
+
+Q_CONSTINIT const QMetaObject WifiBackend::staticMetaObject = { {
+    QMetaObject::SuperData::link<QObject::staticMetaObject>(),
+    qt_meta_stringdata_ZN11WifiBackendE.offsetsAndSizes,
+    qt_meta_data_ZN11WifiBackendE,
+    qt_static_metacall,
+    nullptr,
+    qt_incomplete_metaTypeArray<qt_meta_tag_ZN11WifiBackendE_t,
+        // property 'palette'
+        QtPrivate::TypeAndForceComplete<QVariantMap, std::true_type>,
+        // property 'networks'
+        QtPrivate::TypeAndForceComplete<QVariantList, std::true_type>,
+        // property 'currentConnectionLabel'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'currentConnectionMeta'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'currentConnectionIcon'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'radioButtonText'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'selectedSsid'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'selectionHint'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'selectedSecure'
+        QtPrivate::TypeAndForceComplete<bool, std::true_type>,
+        // property 'selectedInUse'
+        QtPrivate::TypeAndForceComplete<bool, std::true_type>,
+        // property 'connectButtonText'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'statusText'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'busy'
+        QtPrivate::TypeAndForceComplete<bool, std::true_type>,
+        // property 'materialFontFamily'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'uiFontFamily'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // property 'monoFontFamily'
+        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
+        // Q_OBJECT / Q_GADGET
+        QtPrivate::TypeAndForceComplete<WifiBackend, std::true_type>,
+        // method 'paletteChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'networksChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'summaryChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'selectionChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'statusChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'busyChanged'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'glyph'
+        QtPrivate::TypeAndForceComplete<QString, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'popupGeometry'
+        QtPrivate::TypeAndForceComplete<QVariantMap, std::false_type>,
+        QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        // method 'refreshNetworks'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'selectNetwork'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'connectSelected'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        // method 'disconnectCurrent'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'toggleRadio'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'closeWindow'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>
+    >,
+    nullptr
+} };
+
+void WifiBackend::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
+{
+    auto *_t = static_cast<WifiBackend *>(_o);
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        switch (_id) {
+        case 0: _t->paletteChanged(); break;
+        case 1: _t->networksChanged(); break;
+        case 2: _t->summaryChanged(); break;
+        case 3: _t->selectionChanged(); break;
+        case 4: _t->statusChanged(); break;
+        case 5: _t->busyChanged(); break;
+        case 6: { QString _r = _t->glyph((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1])));
+            if (_a[0]) *reinterpret_cast< QString*>(_a[0]) = std::move(_r); }  break;
+        case 7: { QVariantMap _r = _t->popupGeometry((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 8: _t->refreshNetworks(); break;
+        case 9: _t->selectNetwork((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 10: _t->connectSelected((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 11: _t->disconnectCurrent(); break;
+        case 12: _t->toggleRadio(); break;
+        case 13: _t->closeWindow(); break;
+        default: ;
+        }
+    }
+    if (_c == QMetaObject::IndexOfMethod) {
+        int *result = reinterpret_cast<int *>(_a[0]);
+        {
+            using _q_method_type = void (WifiBackend::*)();
+            if (_q_method_type _q_method = &WifiBackend::paletteChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 0;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WifiBackend::*)();
+            if (_q_method_type _q_method = &WifiBackend::networksChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 1;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WifiBackend::*)();
+            if (_q_method_type _q_method = &WifiBackend::summaryChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 2;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WifiBackend::*)();
+            if (_q_method_type _q_method = &WifiBackend::selectionChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 3;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WifiBackend::*)();
+            if (_q_method_type _q_method = &WifiBackend::statusChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 4;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WifiBackend::*)();
+            if (_q_method_type _q_method = &WifiBackend::busyChanged; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 5;
+                return;
+            }
+        }
+    }
+    if (_c == QMetaObject::ReadProperty) {
+        void *_v = _a[0];
+        switch (_id) {
+        case 0: *reinterpret_cast< QVariantMap*>(_v) = _t->palette(); break;
+        case 1: *reinterpret_cast< QVariantList*>(_v) = _t->networks(); break;
+        case 2: *reinterpret_cast< QString*>(_v) = _t->currentConnectionLabel(); break;
+        case 3: *reinterpret_cast< QString*>(_v) = _t->currentConnectionMeta(); break;
+        case 4: *reinterpret_cast< QString*>(_v) = _t->currentConnectionIcon(); break;
+        case 5: *reinterpret_cast< QString*>(_v) = _t->radioButtonText(); break;
+        case 6: *reinterpret_cast< QString*>(_v) = _t->selectedSsid(); break;
+        case 7: *reinterpret_cast< QString*>(_v) = _t->selectionHint(); break;
+        case 8: *reinterpret_cast< bool*>(_v) = _t->selectedSecure(); break;
+        case 9: *reinterpret_cast< bool*>(_v) = _t->selectedInUse(); break;
+        case 10: *reinterpret_cast< QString*>(_v) = _t->connectButtonText(); break;
+        case 11: *reinterpret_cast< QString*>(_v) = _t->statusText(); break;
+        case 12: *reinterpret_cast< bool*>(_v) = _t->busy(); break;
+        case 13: *reinterpret_cast< QString*>(_v) = _t->materialFontFamily(); break;
+        case 14: *reinterpret_cast< QString*>(_v) = _t->uiFontFamily(); break;
+        case 15: *reinterpret_cast< QString*>(_v) = _t->monoFontFamily(); break;
+        default: break;
+        }
+    }
+}
+
+const QMetaObject *WifiBackend::metaObject() const
+{
+    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
+}
+
+void *WifiBackend::qt_metacast(const char *_clname)
+{
+    if (!_clname) return nullptr;
+    if (!strcmp(_clname, qt_meta_stringdata_ZN11WifiBackendE.stringdata0))
+        return static_cast<void*>(this);
+    return QObject::qt_metacast(_clname);
+}
+
+int WifiBackend::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
+{
+    _id = QObject::qt_metacall(_c, _id, _a);
+    if (_id < 0)
+        return _id;
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        if (_id < 14)
+            qt_static_metacall(this, _c, _id, _a);
+        _id -= 14;
+    }
+    if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
+        if (_id < 14)
+            *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
+        _id -= 14;
+    }
+    if (_c == QMetaObject::ReadProperty || _c == QMetaObject::WriteProperty
+            || _c == QMetaObject::ResetProperty || _c == QMetaObject::BindableProperty
+            || _c == QMetaObject::RegisterPropertyMetaType) {
+        qt_static_metacall(this, _c, _id, _a);
+        _id -= 16;
+    }
+    return _id;
+}
+
+// SIGNAL 0
+void WifiBackend::paletteChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 0, nullptr);
+}
+
+// SIGNAL 1
+void WifiBackend::networksChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 1, nullptr);
+}
+
+// SIGNAL 2
+void WifiBackend::summaryChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 2, nullptr);
+}
+
+// SIGNAL 3
+void WifiBackend::selectionChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 3, nullptr);
+}
+
+// SIGNAL 4
+void WifiBackend::statusChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 4, nullptr);
+}
+
+// SIGNAL 5
+void WifiBackend::busyChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 5, nullptr);
+}
+QT_WARNING_POP

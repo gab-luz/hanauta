@@ -960,21 +960,50 @@ public:
         return materialGlyph(name);
     }
 
-    Q_INVOKABLE bool isWindowGroupRunning(const QString &wmClass) const {
+    Q_INVOKABLE bool isItemRunning(const QString &itemId, const QString &wmClass) const {
+        const QList<WindowEntry> windows = getOpenWindows();
+        if (!itemId.isEmpty() && !itemId.startsWith("wm:")) {
+            const auto [desktopEntries, unusedMap] = scanDesktopEntries();
+            const DesktopEntry entry = desktopEntries.value(itemId);
+            return !windowsMatchingDesktop(windows, itemId, entry).isEmpty();
+        }
         const QVariantMap state = liveWindowState_.value(normalize(wmClass)).toMap();
         return state.value("running").toInt() > 0;
     }
 
-    Q_INVOKABLE bool isWindowGroupFocused(const QString &wmClass) const {
+    Q_INVOKABLE bool isItemFocused(const QString &itemId, const QString &wmClass) const {
+        const QList<WindowEntry> windows = getOpenWindows();
+        if (!itemId.isEmpty() && !itemId.startsWith("wm:")) {
+            const auto [desktopEntries, unusedMap] = scanDesktopEntries();
+            const DesktopEntry entry = desktopEntries.value(itemId);
+            const QList<WindowEntry> matches = windowsMatchingDesktop(windows, itemId, entry);
+            const QString focusedWorkspace = currentWorkspace();
+            return std::any_of(matches.begin(), matches.end(), [&](const WindowEntry &window) {
+                return window.workspace == focusedWorkspace;
+            });
+        }
         const QVariantMap state = liveWindowState_.value(normalize(wmClass)).toMap();
         return state.value("focused").toBool();
     }
 
-    Q_INVOKABLE void activatePreferred(const QString &itemId, const QString &wmClass, bool running) {
+    Q_INVOKABLE void activatePreferred(const QString &itemId, const QString &wmClass) {
         const QString normalizedWm = normalize(wmClass);
-        if (running && !normalizedWm.isEmpty()) {
-            activateItem("wm:" + normalizedWm);
-            return;
+        if (!normalizedWm.isEmpty()) {
+            const QList<WindowEntry> windows = getOpenWindows();
+            QList<int> ids;
+            QString workspace;
+            for (const WindowEntry &window : windows) {
+                if (windowPrimaryId(window) == normalizedWm || window.wmClass == normalizedWm || window.wmInstance == normalizedWm) {
+                    ids.append(window.conId);
+                    if (workspace.isEmpty()) {
+                        workspace = window.workspace;
+                    }
+                }
+            }
+            if (!ids.isEmpty()) {
+                focusConIdOnWorkspace(nextFocusId("wm:" + normalizedWm, ids, focusedConId()), workspace);
+                return;
+            }
         }
         activateItem(itemId);
     }
@@ -1234,6 +1263,10 @@ private slots:
         }
         QVariantList nextItems;
         for (const DockItemData &item : built) {
+            const QString activationTarget =
+                (item.running > 0 && !item.wmClass.isEmpty())
+                    ? QStringLiteral("wm:%1").arg(item.wmClass)
+                    : item.itemId;
             nextItems.append(QVariantMap{
                 {"itemId", item.itemId},
                 {"name", item.name},
@@ -1243,6 +1276,7 @@ private slots:
                 {"pinned", item.pinned},
                 {"desktopId", item.desktopId},
                 {"wmClass", item.wmClass},
+                {"activationTarget", activationTarget},
             });
         }
         if (nextLiveWindowState != liveWindowState_) {
