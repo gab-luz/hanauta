@@ -1069,7 +1069,7 @@ private:
         const QString art = scriptOutput(repoRoot_, "mpris.sh", {"coverloc"});
         mediaPlayer_ = player;
         mediaStatus_ = status.isEmpty() ? QStringLiteral("Stopped") : status;
-        mediaTitle_ = title.isEmpty() ? QStringLiteral("Press Start") : title;
+        mediaTitle_ = title.isEmpty() ? QStringLiteral("No music") : title;
         mediaArtist_ = artist.isEmpty() ? QStringLiteral("No artist") : artist;
         if (!art.isEmpty() && QFileInfo::exists(art)) {
             mediaCover_ = QUrl::fromLocalFile(art).toString();
@@ -1220,7 +1220,7 @@ private:
     int volume_ = 82;
     int pendingBrightness_ = 67;
     int pendingVolume_ = 82;
-    QString mediaTitle_ = "Press Start";
+    QString mediaTitle_ = "No music";
     QString mediaArtist_ = "No artist";
     QString mediaStatus_ = "Stopped";
     QString mediaCover_;

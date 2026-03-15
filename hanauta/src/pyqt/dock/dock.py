@@ -53,12 +53,13 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command, entry_target
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 FONTS_DIR = ROOT / "assets" / "fonts"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 DOCK_CONFIG = ROOT / "hanauta" / "src" / "pyqt" / "dock" / "dock.toml"
-VOLUME_SCRIPT = ROOT / "hanauta" / "src" / "eww" / "scripts" / "volume.sh"
+VOLUME_SCRIPT = ROOT / "hanauta" / "scripts" / "volume.sh"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "hanauta-dock"
 ICON_CACHE_PATH = CACHE_DIR / "icon_cache.json"
 STATE_PATH = CACHE_DIR / "state.json"
@@ -519,7 +520,8 @@ def get_next_focus_id(key: str, ids: list[int], focused: Optional[int]) -> int:
 
 
 def self_command(command: str, arg: str) -> str:
-    return f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))} {command} {shlex.quote(arg)}"
+    target = entry_target(Path(__file__).resolve())
+    return f"{shlex.quote(str(target))} {command} {shlex.quote(arg)}"
 
 
 def build_dock_items(config: dict) -> list[DockItem]:
@@ -1428,7 +1430,9 @@ class CyberDock(QWidget):
 
     def _open_launcher(self) -> None:
         if LAUNCHER_APP.exists():
-            run_bg([sys.executable, str(LAUNCHER_APP)])
+            command = entry_command(LAUNCHER_APP)
+            if command:
+                run_bg(command)
 
     def _open_settings(self) -> None:
         dialog = DockSettingsDialog(

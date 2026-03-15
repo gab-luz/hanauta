@@ -27,12 +27,12 @@ APP_DIR = Path(__file__).resolve().parents[2]
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.rss import collect_entries, load_settings_state
+from pyqt.shared.runtime import entry_command, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from PyQt6.QtCore import QUrl
 
@@ -76,9 +76,7 @@ def material_icon(name: str) -> str:
 
 
 def python_bin() -> str:
-    if VENV_PYTHON.exists():
-        return str(VENV_PYTHON)
-    return sys.executable
+    return python_executable()
 
 
 class ArticleCard(QFrame):
@@ -338,15 +336,11 @@ class RssWidget(QWidget):
         if not SETTINGS_PAGE_SCRIPT.exists():
             return
         try:
+            command = entry_command(SETTINGS_PAGE_SCRIPT, "--page", "services", "--service-section", "rss_widget")
+            if not command:
+                return
             subprocess.Popen(
-                [
-                    python_bin(),
-                    str(SETTINGS_PAGE_SCRIPT),
-                    "--page",
-                    "services",
-                    "--service-section",
-                    "rss_widget",
-                ],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

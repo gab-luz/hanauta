@@ -32,11 +32,11 @@ FONTS_DIR = ROOT / "assets" / "fonts"
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 
@@ -80,15 +80,16 @@ def material_icon(name: str) -> str:
 
 
 def _python_bin() -> str:
-    if VENV_PYTHON.exists():
-        return str(VENV_PYTHON)
-    return sys.executable
+    return python_executable()
 
 
 def run_wrapper(*args: str) -> dict:
     try:
+        command = entry_command(QCAL_WRAPPER, *args)
+        if not command:
+            return {"error": "Unable to load calendar data."}
         proc = subprocess.run(
-            [_python_bin(), str(QCAL_WRAPPER), *args],
+            command,
             capture_output=True,
             text=True,
             timeout=20,
@@ -670,8 +671,11 @@ class RemindersWidget(QWidget):
     def _open_settings(self) -> None:
         if not SETTINGS_PAGE_SCRIPT.exists():
             return
+        command = entry_command(SETTINGS_PAGE_SCRIPT, "--page", "services", "--service-section", "reminders_widget")
+        if not command:
+            return
         subprocess.Popen(
-            [sys.executable, str(SETTINGS_PAGE_SCRIPT), "--page", "services", "--service-section", "reminders_widget"],
+            command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
