@@ -125,7 +125,9 @@ Window {
                 }
 
                 Rectangle {
+                    id: currentNetworkCard
                     Layout.fillWidth: true
+                    implicitHeight: currentNetworkContent.implicitHeight + 32
                     radius: 20
                     color: colors.cardBg
                     border.width: 1
@@ -141,6 +143,7 @@ Window {
                     }
 
                     ColumnLayout {
+                        id: currentNetworkContent
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 10
@@ -188,38 +191,82 @@ Window {
                             }
                         }
 
-                        Button {
-                            text: backend.radioButtonText
-                            enabled: !backend.busy
-                            onClicked: backend.toggleRadio()
-                            Layout.alignment: Qt.AlignLeft
-                            background: Rectangle {
-                                radius: 999
-                                color: parent.hovered ? colors.hoverBg : colors.buttonMutedBg
-                                border.width: 1
-                                border.color: colors.runningBorder
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 8
+                            rowSpacing: 0
+
+                            Button {
+                                text: backend.radioButtonText
+                                enabled: !backend.busy
+                                onClicked: backend.toggleRadio()
+                                Layout.fillWidth: true
+                                implicitHeight: 38
+                                leftPadding: 16
+                                rightPadding: 16
+                                topPadding: 9
+                                bottomPadding: 9
+                                background: Rectangle {
+                                    radius: 999
+                                    color: parent.hovered ? colors.hoverBg : colors.accentButtonBg
+                                    border.width: 1
+                                    border.color: colors.accentButtonBorder
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: colors.onPrimaryContainer
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
                             }
-                            contentItem: Text {
-                                text: parent.text
-                                color: colors.text
-                                font.family: backend.uiFontFamily
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
+
+                            Button {
+                                text: "Disconnect"
+                                enabled: !backend.busy
+                                onClicked: backend.disconnectCurrent()
+                                Layout.fillWidth: true
+                                implicitHeight: 38
+                                leftPadding: 14
+                                rightPadding: 14
+                                topPadding: 9
+                                bottomPadding: 9
+                                background: Rectangle {
+                                    radius: 999
+                                    color: parent.hovered ? colors.hoverBg : colors.dangerBg
+                                    border.width: 1
+                                    border.color: colors.dangerBorder
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: colors.danger
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
                             }
                         }
                     }
                 }
 
                 Rectangle {
+                    id: selectedNetworkCard
                     Layout.fillWidth: true
+                    implicitHeight: selectedNetworkContent.implicitHeight + 28
                     radius: 18
                     color: colors.cardAltBg
                     border.width: 1
                     border.color: colors.runningBorder
 
                     ColumnLayout {
+                        id: selectedNetworkContent
                         anchors.fill: parent
                         anchors.margins: 14
                         spacing: 10
@@ -266,51 +313,30 @@ Window {
                             }
                         }
 
-                        RowLayout {
+                        Button {
+                            text: backend.connectButtonText
+                            enabled: !backend.busy && backend.selectedSsid.length > 0
+                            onClicked: backend.connectSelected(passwordField.text)
                             Layout.fillWidth: true
-                            spacing: 8
-
-                            Button {
-                                text: "Disconnect"
-                                enabled: !backend.busy
-                                onClicked: backend.disconnectCurrent()
-                                background: Rectangle {
-                                    radius: 999
-                                    color: parent.hovered ? colors.hoverBg : colors.buttonMutedBg
-                                    border.width: 1
-                                    border.color: colors.runningBorder
-                                }
-                                contentItem: Text {
-                                    text: parent.text
-                                    color: colors.text
-                                    font.family: backend.uiFontFamily
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
+                            implicitHeight: 36
+                            leftPadding: 16
+                            rightPadding: 16
+                            topPadding: 8
+                            bottomPadding: 8
+                            background: Rectangle {
+                                radius: 999
+                                color: parent.enabled ? colors.primary : colors.runningBg
+                                border.width: 0
                             }
-
-                            Item { Layout.fillWidth: true }
-
-                            Button {
-                                text: backend.connectButtonText
-                                enabled: !backend.busy && backend.selectedSsid.length > 0
-                                onClicked: backend.connectSelected(passwordField.text)
-                                background: Rectangle {
-                                    radius: 999
-                                    color: parent.enabled ? colors.primary : colors.runningBg
-                                    border.width: 0
-                                }
-                                contentItem: Text {
-                                    text: parent.text
-                                    color: parent.enabled ? colors.onPrimary : colors.textMuted
-                                    font.family: backend.uiFontFamily
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
+                            contentItem: Text {
+                                text: parent.text
+                                color: parent.enabled ? colors.onPrimary : colors.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
                             }
                         }
                     }
@@ -333,91 +359,98 @@ Window {
                     border.width: 1
                     border.color: colors.runningBorder
 
-                    ScrollView {
+                    ListView {
+                        id: networkList
                         anchors.fill: parent
                         anchors.margins: 1
                         clip: true
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        spacing: 8
+                        model: backend.networks
+                        boundsBehavior: Flickable.StopAtBounds
+                        topMargin: 6
+                        bottomMargin: 6
+                        leftMargin: 6
+                        rightMargin: 6
 
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 8
+                        ScrollBar.vertical: ScrollBar {
+                            policy: ScrollBar.AsNeeded
+                        }
 
-                            Repeater {
-                                model: backend.networks
+                        delegate: Rectangle {
+                            id: networkRow
+                            required property var modelData
+                            property bool hovered: rowArea.containsMouse
+                            width: networkList.width - networkList.leftMargin - networkList.rightMargin
+                            radius: 16
+                            color: hovered ? colors.hoverBg : (modelData.inUse ? Qt.alpha(colors.primary, 0.12) : colors.runningBg)
+                            border.width: 1
+                            border.color: hovered ? colors.accentButtonBorder : (modelData.inUse ? Qt.alpha(colors.primary, 0.28) : colors.runningBorder)
+                            implicitHeight: Math.max(74, networkRowLayout.implicitHeight + 28)
 
-                                delegate: Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.leftMargin: 6
-                                    Layout.rightMargin: 6
-                                    Layout.topMargin: 6
-                                    radius: 16
-                                    color: modelData.inUse ? Qt.alpha(colors.primary, 0.12) : colors.runningBg
-                                    border.width: 1
-                                    border.color: modelData.inUse ? Qt.alpha(colors.primary, 0.28) : colors.runningBorder
-                                    implicitHeight: 74
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        onClicked: backend.selectNetwork(modelData.ssid)
-                                    }
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        Rectangle {
-                                            Layout.preferredWidth: 38
-                                            Layout.preferredHeight: 38
-                                            radius: 17
-                                            color: colors.runningBg
-                                            border.width: 1
-                                            border.color: colors.runningBorder
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData.signalGlyph
-                                                color: colors.primary
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 16
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 3
-
-                                            Text {
-                                                text: modelData.ssid
-                                                color: colors.text
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
-                                                font.weight: Font.DemiBold
-                                            }
-
-                                            Text {
-                                                text: modelData.detail
-                                                color: colors.textMuted
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 8
-                                                wrapMode: Text.WordWrap
-                                            }
-                                        }
-
-                                        Text {
-                                            text: modelData.trailGlyph
-                                            color: modelData.inUse ? colors.primary : colors.textMuted
-                                            font.family: backend.materialFontFamily
-                                            font.pixelSize: 14
-                                        }
-                                    }
-                                }
+                            MouseArea {
+                                id: rowArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: backend.selectNetwork(networkRow.modelData.ssid)
                             }
 
-                            Item {
-                                Layout.fillHeight: true
-                                implicitHeight: 6
+                            RowLayout {
+                                id: networkRowLayout
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 12
+
+                                Rectangle {
+                                    Layout.preferredWidth: 38
+                                    Layout.preferredHeight: 38
+                                    radius: 17
+                                    color: colors.runningBg
+                                    border.width: 1
+                                    border.color: colors.runningBorder
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: networkRow.modelData.signalGlyph
+                                        color: colors.primary
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 16
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: networkRow.modelData.ssid
+                                        color: colors.text
+                                        font.family: backend.uiFontFamily
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: networkRow.modelData.detail
+                                        color: colors.textMuted
+                                        font.family: backend.uiFontFamily
+                                        font.pixelSize: 8
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                Text {
+                                    text: networkRow.modelData.trailGlyph
+                                    color: networkRow.modelData.inUse ? colors.primary : colors.textMuted
+                                    font.family: backend.materialFontFamily
+                                    font.pixelSize: 14
+                                }
                             }
                         }
                     }

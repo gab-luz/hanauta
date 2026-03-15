@@ -73,8 +73,7 @@ static constexpr auto qt_meta_stringdata_ZN11WifiBackendE = QtMocHelpers::string
     "statusText",
     "busy",
     "materialFontFamily",
-    "uiFontFamily",
-    "monoFontFamily"
+    "uiFontFamily"
 );
 #else  // !QT_MOC_HAS_STRINGDATA
 #error "qtmochelpers.h not found or too old."
@@ -87,29 +86,29 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11WifiBackendE[] = {
        0,       // classname
        0,    0, // classinfo
       14,   14, // methods
-      16,  122, // properties
+      15,  122, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
        6,       // signalCount
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,   98,    2, 0x06,   17 /* Public */,
-       3,    0,   99,    2, 0x06,   18 /* Public */,
-       4,    0,  100,    2, 0x06,   19 /* Public */,
-       5,    0,  101,    2, 0x06,   20 /* Public */,
-       6,    0,  102,    2, 0x06,   21 /* Public */,
-       7,    0,  103,    2, 0x06,   22 /* Public */,
+       1,    0,   98,    2, 0x06,   16 /* Public */,
+       3,    0,   99,    2, 0x06,   17 /* Public */,
+       4,    0,  100,    2, 0x06,   18 /* Public */,
+       5,    0,  101,    2, 0x06,   19 /* Public */,
+       6,    0,  102,    2, 0x06,   20 /* Public */,
+       7,    0,  103,    2, 0x06,   21 /* Public */,
 
  // methods: name, argc, parameters, tag, flags, initial metatype offsets
-       8,    1,  104,    2, 0x102,   23 /* Public | MethodIsConst  */,
-      10,    2,  107,    2, 0x102,   25 /* Public | MethodIsConst  */,
-      14,    0,  112,    2, 0x02,   28 /* Public */,
-      15,    1,  113,    2, 0x02,   29 /* Public */,
-      17,    1,  116,    2, 0x02,   31 /* Public */,
-      19,    0,  119,    2, 0x02,   33 /* Public */,
-      20,    0,  120,    2, 0x02,   34 /* Public */,
-      21,    0,  121,    2, 0x02,   35 /* Public */,
+       8,    1,  104,    2, 0x102,   22 /* Public | MethodIsConst  */,
+      10,    2,  107,    2, 0x102,   24 /* Public | MethodIsConst  */,
+      14,    0,  112,    2, 0x02,   27 /* Public */,
+      15,    1,  113,    2, 0x02,   28 /* Public */,
+      17,    1,  116,    2, 0x02,   30 /* Public */,
+      19,    0,  119,    2, 0x02,   32 /* Public */,
+      20,    0,  120,    2, 0x02,   33 /* Public */,
+      21,    0,  121,    2, 0x02,   34 /* Public */,
 
  // signals: parameters
     QMetaType::Void,
@@ -145,7 +144,6 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11WifiBackendE[] = {
       35, QMetaType::Bool, 0x00015001, uint(5), 0,
       36, QMetaType::QString, 0x00015401, uint(-1), 0,
       37, QMetaType::QString, 0x00015401, uint(-1), 0,
-      38, QMetaType::QString, 0x00015401, uint(-1), 0,
 
        0        // eod
 };
@@ -186,8 +184,6 @@ Q_CONSTINIT const QMetaObject WifiBackend::staticMetaObject = { {
         // property 'materialFontFamily'
         QtPrivate::TypeAndForceComplete<QString, std::true_type>,
         // property 'uiFontFamily'
-        QtPrivate::TypeAndForceComplete<QString, std::true_type>,
-        // property 'monoFontFamily'
         QtPrivate::TypeAndForceComplete<QString, std::true_type>,
         // Q_OBJECT / Q_GADGET
         QtPrivate::TypeAndForceComplete<WifiBackend, std::true_type>,
@@ -315,7 +311,6 @@ void WifiBackend::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         case 12: *reinterpret_cast< bool*>(_v) = _t->busy(); break;
         case 13: *reinterpret_cast< QString*>(_v) = _t->materialFontFamily(); break;
         case 14: *reinterpret_cast< QString*>(_v) = _t->uiFontFamily(); break;
-        case 15: *reinterpret_cast< QString*>(_v) = _t->monoFontFamily(); break;
         default: break;
         }
     }
@@ -353,7 +348,7 @@ int WifiBackend::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
             || _c == QMetaObject::ResetProperty || _c == QMetaObject::BindableProperty
             || _c == QMetaObject::RegisterPropertyMetaType) {
         qt_static_metacall(this, _c, _id, _a);
-        _id -= 16;
+        _id -= 15;
     }
     return _id;
 }
