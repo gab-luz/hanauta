@@ -15,15 +15,15 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
+from pathlib import Path
 
 try:
     import tomllib
 except Exception:  # pragma: no cover
     tomllib = None
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt, QTimer
+from PyQt6.QtCore import QEasingCurve, QProcess, QPropertyAnimation, QRect, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -47,19 +47,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from pyqt.shared.runtime import current_executable_path, entry_command, fonts_root, is_frozen, project_root, python_executable, scripts_root, source_root
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
-ROOT = Path(__file__).resolve().parents[4]
-APP_DIR = Path(__file__).resolve().parents[2]
+ROOT = project_root()
+APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.runtime import entry_command, entry_target
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
-
-FONTS_DIR = ROOT / "assets" / "fonts"
+FONTS_DIR = fonts_root()
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
-DOCK_CONFIG = ROOT / "hanauta" / "src" / "pyqt" / "dock" / "dock.toml"
-VOLUME_SCRIPT = ROOT / "hanauta" / "scripts" / "volume.sh"
+DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
+VOLUME_SCRIPT = scripts_root() / "volume.sh"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "hanauta-dock"
 ICON_CACHE_PATH = CACHE_DIR / "icon_cache.json"
 STATE_PATH = CACHE_DIR / "state.json"
@@ -83,8 +82,6 @@ MATERIAL_ICONS = {
     "volume_off": "\ue04f",
     "volume_up": "\ue050",
 }
-
-
 def run_cmd(cmd: list[str], timeout: float = 3.0) -> str:
     try:
         result = subprocess.run(
@@ -100,6 +97,13 @@ def run_cmd(cmd: list[str], timeout: float = 3.0) -> str:
 
 
 def run_bg(cmd: list[str]) -> None:
+    if not cmd:
+        return
+    try:
+        if QProcess.startDetached(cmd[0], cmd[1:]):
+            return
+    except Exception:
+        pass
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
@@ -520,8 +524,12 @@ def get_next_focus_id(key: str, ids: list[int], focused: Optional[int]) -> int:
 
 
 def self_command(command: str, arg: str) -> str:
-    target = entry_target(Path(__file__).resolve())
-    return f"{shlex.quote(str(target))} {command} {shlex.quote(arg)}"
+    if is_frozen():
+        target = current_executable_path()
+        return f"{shlex.quote(str(target))} {command} {shlex.quote(arg)}"
+    target = Path(__file__).resolve()
+    interpreter = python_executable()
+    return f"{shlex.quote(interpreter)} {shlex.quote(str(target))} {command} {shlex.quote(arg)}"
 
 
 def build_dock_items(config: dict) -> list[DockItem]:
@@ -567,6 +575,8 @@ def build_dock_items(config: dict) -> list[DockItem]:
         icon_name = entry.icon if entry else ""
         icon_path = resolve_icon_path(icon_name, icon_cache) or resolve_icon_path(FALLBACK_ICON_NAMES[0], icon_cache)
         on_current_workspace = any(workspace_by_con_id.get(window.con_id) == current_workspace for window in running_windows)
+        # Prefer focusing the live window class when the app is already running.
+        click_command = self_command("activate-wm", wm_class) if running_windows else self_command("activate", desktop_id)
         return DockItem(
             item_id=desktop_id,
             name=name,
@@ -574,7 +584,7 @@ def build_dock_items(config: dict) -> list[DockItem]:
             running=len(running_windows),
             focused=on_current_workspace,
             pinned=pinned_flag,
-            cmd_click=self_command("activate", desktop_id),
+            cmd_click=click_command,
             cmd_new=self_command("new", desktop_id),
         )
 
@@ -685,6 +695,7 @@ class DockAppButton(QFrame):
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setFixedSize(icon_box, icon_box)
+        self.icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         pixmap = QPixmap(item.icon)
         if not pixmap.isNull():
             icon_size = min(34, max(30, icon_box - 12))
@@ -696,6 +707,7 @@ class DockAppButton(QFrame):
 
         self.dot = QFrame()
         self.dot.setFixedSize(6, 6)
+        self.dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.dot, 0, Qt.AlignmentFlag.AlignCenter)

@@ -31,15 +31,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-
-APP_DIR = Path(__file__).resolve().parents[2]
-ROOT = APP_DIR.parents[1]
-REPO_ROOT = ROOT.parent
-HANAUTA_ROOT = APP_DIR.parent
-if str(APP_DIR) not in sys.path:
-    sys.path.append(str(APP_DIR))
-
-from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, python_executable
+from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, fonts_root, hanauta_root, project_root, python_executable, scripts_root, source_root
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
@@ -58,7 +50,13 @@ from pyqt.shared.crypto import (
 from pyqt.shared.gamemode import service_enabled as game_mode_service_enabled
 from pyqt.shared.gamemode import summary as game_mode_summary
 
-SCRIPTS_DIR = ROOT / "scripts"
+APP_DIR = source_root()
+ROOT = project_root()
+REPO_ROOT = project_root()
+HANAUTA_ROOT = hanauta_root()
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
 AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
 WIFI_CONTROL_PY = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
@@ -83,8 +81,9 @@ ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = HANAUTA_ROOT / "bin" / "hanauta-powermenu"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
-FONTS_DIR = REPO_ROOT / "assets" / "fonts"
-ASSETS_DIR = APP_DIR / "assets"
+SCRIPTS_DIR = scripts_root()
+FONTS_DIR = fonts_root()
+ASSETS_DIR = source_root() / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
@@ -172,21 +171,26 @@ def run_script_bg(script_name: str, *args: str) -> None:
     script_path = SCRIPTS_DIR / script_name
     if not script_path.exists():
         return
+    run_bg([str(script_path), *args])
+
+
+def run_bg_detached(cmd: list[str]) -> bool:
+    if not cmd:
+        return False
     try:
-        subprocess.Popen(
-            [str(script_path), *args],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if QProcess.startDetached(cmd[0], cmd[1:]):
+            return True
     except Exception:
         pass
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+    except Exception:
+        return False
 
 
 def run_bg(cmd: list[str]) -> None:
-    try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+    run_bg_detached(cmd)
 
 
 def widget_python() -> str:
@@ -2416,12 +2420,9 @@ class CyberBar(QWidget):
             command = entry_command(NOTIFICATION_CENTER)
             if not command:
                 raise RuntimeError("Notification center entrypoint not found")
-            self._control_center_process = subprocess.Popen(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            if not run_bg_detached(command):
+                raise RuntimeError("Failed to launch notification center")
+            self._control_center_process = None
         except Exception:
             self._control_center_process = None
             self._control_center_launch_pending = False
@@ -2437,8 +2438,6 @@ class CyberBar(QWidget):
         return python_executable()
 
     def _singleton_active(self, process: Optional[subprocess.Popen], script_path: Path) -> bool:
-        if process is not None and process.poll() is None:
-            return True
         return any(background_match_exists(pattern) for pattern in entry_patterns(script_path))
 
     def _terminate_singleton_process(self, attr_name: str, script_path: Path) -> None:
@@ -2469,16 +2468,12 @@ class CyberBar(QWidget):
                 command = [str(script_path)]
             if not command:
                 raise RuntimeError(f"No launch command available for {script_path}")
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            if not run_bg_detached(command):
+                raise RuntimeError(f"Failed to launch {script_path}")
         except Exception:
             setattr(self, attr_name, None)
             return False
-        setattr(self, attr_name, process)
+        setattr(self, attr_name, None)
         return True
 
     def _toggle_singleton_process(
@@ -2523,15 +2518,13 @@ class CyberBar(QWidget):
     def _open_region_settings(self) -> None:
         if not SETTINGS_PAGE.exists():
             return
-        python_bin = self._python_bin()
         try:
-            terminate_background_matches(str(SETTINGS_PAGE))
-            subprocess.Popen(
-                [python_bin, str(SETTINGS_PAGE), "--page", "region"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            for pattern in entry_patterns(SETTINGS_PAGE):
+                terminate_background_matches(pattern)
+            command = entry_command(SETTINGS_PAGE, "--page", "region")
+            if not command:
+                return
+            run_bg_detached(command)
         except Exception:
             pass
 
@@ -2612,10 +2605,10 @@ class CyberBar(QWidget):
         self.btn_power.setChecked(active)
 
     def _open_clipboard(self) -> None:
-        run_bg([str(ROOT / "scripts" / "openapps"), "--clip"])
+        run_bg([str(SCRIPTS_DIR / "openapps"), "--clip"])
 
     def _check_updates(self) -> None:
-        run_bg([str(ROOT / "scripts" / "openapps"), "--checkupdates"])
+        run_bg([str(SCRIPTS_DIR / "openapps"), "--checkupdates"])
 
     def _sync_ai_button(self) -> None:
         active = self._singleton_active(self._ai_popup_process, AI_POPUP)

@@ -6,6 +6,12 @@
 - Primary UI entry points:
   - `hanauta/src/pyqt/bar/ui_bar.py`
   - `hanauta/src/pyqt/notification-center/notification_center.py`
+- The active top-level shell currently uses Python source for:
+  - `hanauta/src/pyqt/bar/ui_bar.py`
+  - `hanauta/src/pyqt/dock/dock.py`
+- Many secondary PyQt widgets/popups are still launched from Nuitka binaries under `hanauta/bin`.
+- Do not assume the active shell is fully Nuitka-compiled.
+- `hanauta-bar` and `hanauta-dock` exist, but they are not the current default because the compiled shell windows had input/click regressions in this environment.
 - Do not reintroduce Eww startup, Eww window toggles, or Eww-specific widget/config work unless the user explicitly asks for it.
 
 ## PyQt6 UI Rules
@@ -55,6 +61,8 @@
 ## i3 Integration
 
 - i3 should start the PyQt bar, not Eww.
+- i3 currently starts the bar and dock through Python with `PYTHONPATH` pointing at `hanauta/src`.
+- Keep the hybrid launch model unless the user explicitly asks to revisit Nuitka for the shell itself.
 - Do not add Eww daemon startup back into `config` or `startup.sh`.
 - If bar visibility across workspaces regresses, check both:
   - i3 `for_window` rules
