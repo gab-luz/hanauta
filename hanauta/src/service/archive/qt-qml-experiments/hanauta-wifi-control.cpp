@@ -1,7 +1,9 @@
 #include <QCoreApplication>
 #include <QCursor>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QJsonDocument>
@@ -92,11 +94,7 @@ void loadFonts() {
     const QString root = repoRoot();
     const QStringList fonts = {
         root + "/assets/fonts/InterVariable.ttf",
-        root + "/assets/fonts/Outfit-VariableFont_wght.ttf",
         root + "/assets/fonts/MaterialIcons-Regular.ttf",
-        root + "/assets/fonts/MaterialIconsOutlined-Regular.otf",
-        root + "/assets/fonts/MaterialSymbolsOutlined.ttf",
-        root + "/assets/fonts/MaterialSymbolsRounded.ttf",
     };
     for (const QString &path : fonts) {
         if (QFile::exists(path)) {
@@ -183,11 +181,7 @@ struct WifiNetwork {
     }
 };
 
-QList<WifiNetwork> listNetworks() {
-    const QString output = runCommandText(
-        {"nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto"},
-        12000
-    );
+QList<WifiNetwork> parseNetworks(const QString &output) {
     QList<WifiNetwork> rows;
     QSet<QString> seen;
     const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
@@ -291,9 +285,9 @@ public:
     explicit WifiBackend(QObject *parent = nullptr)
         : QObject(parent) {
         refreshPalette();
-        refreshNetworks();
-        connect(&themeTimer_, &QTimer::timeout, this, &WifiBackend::refreshPalette);
-        themeTimer_.start(3000);
+        QTimer::singleShot(0, this, &WifiBackend::refreshNetworks);
+        connect(&themeTimer_, &QTimer::timeout, this, &WifiBackend::refreshPaletteIfNeeded);
+        themeTimer_.start(15000);
     }
 
     ~WifiBackend() override {
@@ -357,7 +351,7 @@ public:
                 setStatusText(error);
                 return;
             }
-            applyNetworks(listNetworks());
+            applyNetworks(parseNetworks(output));
         });
         connect(scanProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
             if (scanProcess_ != nullptr) {
@@ -423,9 +417,18 @@ signals:
     void busyChanged();
 
 private:
+    void refreshPaletteIfNeeded() {
+        const QFileInfo info(paletteFilePath());
+        const QDateTime modified = info.exists() ? info.lastModified() : QDateTime();
+        if (modified.isValid() && modified == paletteLastModified_) {
+            return;
+        }
+        refreshPalette();
+    }
+
     void refreshPalette() {
         const ThemePalette theme = loadTheme();
-        palette_ = {
+        const QVariantMap nextPalette = {
             {"panelBg", rgba(theme.surfaceContainer, 0.94)},
             {"panelBorder", rgba(theme.outline, 0.20)},
             {"cardBg", rgba(theme.surfaceContainerHigh, 0.90)},
@@ -451,6 +454,12 @@ private:
             {"accentButtonBorder", rgba(theme.primary, 0.22)},
             {"heroGlow", rgba(blend(theme.primary, theme.secondary, 0.35), 0.20)},
         };
+        const QFileInfo info(paletteFilePath());
+        paletteLastModified_ = info.exists() ? info.lastModified() : QDateTime();
+        if (palette_ == nextPalette) {
+            return;
+        }
+        palette_ = nextPalette;
         emit paletteChanged();
     }
 
@@ -587,6 +596,7 @@ private:
     QString statusText_ = "Scanning available networks...";
     bool busy_ = false;
     QTimer themeTimer_;
+    QDateTime paletteLastModified_;
     QProcess *scanProcess_ = nullptr;
     QProcess *actionProcess_ = nullptr;
 };

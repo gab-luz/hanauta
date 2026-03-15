@@ -59,8 +59,8 @@ exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x pi
 # I need to load the startup file from this folder
 exec_always --no-startup-id ~/.config/i3/startup.sh
 
-# CyberDock (native C++ dock test)
-exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; exec "$HOME/.config/i3/hanauta/bin/hanauta-dock"'
+# CyberDock
+exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"'
 
 # CyberBar (PyQt6 top bar)
 exec_always --no-startup-id sh -c 'pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"'
@@ -89,7 +89,7 @@ for_window [class=GLava] resize set 1920 1080
 
 # CyberDock window rules
 for_window [class="CyberDock"] floating enable, border pixel 0, sticky enable
-# Dock placement is currently handled by the native hanauta-dock test binary.
+# Dock placement is handled by CyberDock itself.
 
 # CyberBar window rules
 for_window [class="CyberBar"] floating enable, border pixel 0, sticky enable
