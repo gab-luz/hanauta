@@ -1,8 +1,6 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import QtQuick.Effects
 
 Window {
     id: root
@@ -36,15 +34,6 @@ Window {
             color: colors.panelBg
             border.width: 1
             border.color: colors.panelBorder
-
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: colors.shadow
-                shadowVerticalOffset: 14
-                shadowBlur: 1
-                shadowScale: 1.08
-            }
 
             ColumnLayout {
                 anchors.fill: parent
@@ -84,42 +73,57 @@ Window {
                         }
                     }
 
-                    ToolButton {
-                        enabled: !backend.busy
-                        text: backend.glyph("refresh")
-                        onClicked: backend.refreshNetworks()
-                        background: Rectangle {
-                            radius: width / 2
-                            color: parent.hovered ? colors.hoverBg : colors.cardBg
-                            border.width: 1
-                            border.color: colors.runningBorder
-                        }
-                        contentItem: Text {
-                            text: parent.text
-                            color: colors.icon
+                    Rectangle {
+                        id: refreshButton
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        radius: width / 2
+                        color: refreshArea.containsMouse ? colors.hoverBg : colors.cardBg
+                        border.width: 1
+                        border.color: colors.runningBorder
+                        opacity: backend.busy ? 0.55 : 1.0
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: backend.glyph("refresh")
+                            color: backend.busy ? colors.textMuted : colors.icon
                             font.family: backend.materialFontFamily
                             font.pixelSize: 18
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
+                        }
+                        MouseArea {
+                            id: refreshArea
+                            anchors.fill: parent
+                            enabled: !backend.busy
+                            hoverEnabled: true
+                            onClicked: backend.refreshNetworks()
                         }
                     }
 
-                    ToolButton {
-                        text: backend.glyph("close")
-                        onClicked: backend.closeWindow()
-                        background: Rectangle {
-                            radius: width / 2
-                            color: parent.hovered ? colors.hoverBg : colors.cardBg
-                            border.width: 1
-                            border.color: colors.runningBorder
-                        }
-                        contentItem: Text {
-                            text: parent.text
+                    Rectangle {
+                        id: closeButton
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        radius: width / 2
+                        color: closeArea.containsMouse ? colors.hoverBg : colors.cardBg
+                        border.width: 1
+                        border.color: colors.runningBorder
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: backend.glyph("close")
                             color: colors.icon
                             font.family: backend.materialFontFamily
                             font.pixelSize: 18
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
+                        }
+                        MouseArea {
+                            id: closeArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: backend.closeWindow()
                         }
                     }
                 }
@@ -197,24 +201,19 @@ Window {
                             columnSpacing: 8
                             rowSpacing: 0
 
-                            Button {
-                                text: backend.radioButtonText
-                                enabled: !backend.busy
-                                onClicked: backend.toggleRadio()
+                            Rectangle {
+                                id: radioButton
                                 Layout.fillWidth: true
                                 implicitHeight: 38
-                                leftPadding: 16
-                                rightPadding: 16
-                                topPadding: 9
-                                bottomPadding: 9
-                                background: Rectangle {
-                                    radius: 999
-                                    color: parent.hovered ? colors.hoverBg : colors.accentButtonBg
-                                    border.width: 1
-                                    border.color: colors.accentButtonBorder
-                                }
-                                contentItem: Text {
-                                    text: parent.text
+                                radius: 999
+                                color: radioArea.containsMouse ? colors.hoverBg : colors.accentButtonBg
+                                border.width: 1
+                                border.color: colors.accentButtonBorder
+                                opacity: backend.busy ? 0.55 : 1.0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: backend.radioButtonText
                                     color: colors.onPrimaryContainer
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 11
@@ -223,26 +222,29 @@ Window {
                                     verticalAlignment: Text.AlignVCenter
                                     elide: Text.ElideRight
                                 }
+
+                                MouseArea {
+                                    id: radioArea
+                                    anchors.fill: parent
+                                    enabled: !backend.busy
+                                    hoverEnabled: true
+                                    onClicked: backend.toggleRadio()
+                                }
                             }
 
-                            Button {
-                                text: "Disconnect"
-                                enabled: !backend.busy
-                                onClicked: backend.disconnectCurrent()
+                            Rectangle {
+                                id: disconnectButton
                                 Layout.fillWidth: true
                                 implicitHeight: 38
-                                leftPadding: 14
-                                rightPadding: 14
-                                topPadding: 9
-                                bottomPadding: 9
-                                background: Rectangle {
-                                    radius: 999
-                                    color: parent.hovered ? colors.hoverBg : colors.dangerBg
-                                    border.width: 1
-                                    border.color: colors.dangerBorder
-                                }
-                                contentItem: Text {
-                                    text: parent.text
+                                radius: 999
+                                color: disconnectArea.containsMouse ? colors.hoverBg : colors.dangerBg
+                                border.width: 1
+                                border.color: colors.dangerBorder
+                                opacity: backend.busy ? 0.55 : 1.0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Disconnect"
                                     color: colors.danger
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 11
@@ -250,6 +252,14 @@ Window {
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
                                     elide: Text.ElideRight
+                                }
+
+                                MouseArea {
+                                    id: disconnectArea
+                                    anchors.fill: parent
+                                    enabled: !backend.busy
+                                    hoverEnabled: true
+                                    onClicked: backend.disconnectCurrent()
                                 }
                             }
                         }
@@ -296,47 +306,72 @@ Window {
                             wrapMode: Text.WordWrap
                         }
 
-                        TextField {
+                        Rectangle {
                             id: passwordField
                             visible: backend.selectedSecure && !backend.selectedInUse
                             enabled: visible && !backend.busy
-                            echoMode: TextInput.Password
-                            placeholderText: "Password if required"
-                            color: colors.text
-                            font.family: backend.uiFontFamily
-                            font.pixelSize: 10
-                            background: Rectangle {
-                                radius: 999
-                                color: colors.inputBg
-                                border.width: 1
-                                border.color: parent.activeFocus ? colors.primary : colors.runningBorder
+                            Layout.fillWidth: true
+                            implicitHeight: 38
+                            radius: 999
+                            color: colors.inputBg
+                            border.width: 1
+                            border.color: passwordInput.activeFocus ? colors.primary : colors.runningBorder
+
+                            TextInput {
+                                id: passwordInput
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                verticalAlignment: Text.AlignVCenter
+                                echoMode: TextInput.Password
+                                color: colors.text
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 10
+                                enabled: passwordField.enabled
+                                clip: true
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                visible: passwordInput.text.length === 0 && !passwordInput.activeFocus
+                                text: "Password if required"
+                                color: colors.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 10
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: passwordField.enabled
+                                onClicked: passwordInput.forceActiveFocus()
                             }
                         }
 
-                        Button {
-                            text: backend.connectButtonText
-                            enabled: !backend.busy && backend.selectedSsid.length > 0
-                            onClicked: backend.connectSelected(passwordField.text)
+                        Rectangle {
+                            id: connectButton
                             Layout.fillWidth: true
                             implicitHeight: 36
-                            leftPadding: 16
-                            rightPadding: 16
-                            topPadding: 8
-                            bottomPadding: 8
-                            background: Rectangle {
-                                radius: 999
-                                color: parent.enabled ? colors.primary : colors.runningBg
-                                border.width: 0
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                color: parent.enabled ? colors.onPrimary : colors.textMuted
+                            radius: 999
+                            color: (!backend.busy && backend.selectedSsid.length > 0) ? colors.primary : colors.runningBg
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: backend.connectButtonText
+                                color: (!backend.busy && backend.selectedSsid.length > 0) ? colors.onPrimary : colors.textMuted
                                 font.family: backend.uiFontFamily
                                 font.pixelSize: 11
                                 font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 elide: Text.ElideRight
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: !backend.busy && backend.selectedSsid.length > 0
+                                onClicked: backend.connectSelected(passwordInput.text)
                             }
                         }
                     }
@@ -371,10 +406,6 @@ Window {
                         bottomMargin: 6
                         leftMargin: 6
                         rightMargin: 6
-
-                        ScrollBar.vertical: ScrollBar {
-                            policy: ScrollBar.AsNeeded
-                        }
 
                         delegate: Rectangle {
                             id: networkRow

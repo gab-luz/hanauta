@@ -10,6 +10,7 @@ typedef struct {
     gchar *state_dir;
     gchar *weather_path;
     gchar *crypto_path;
+    gchar *wifi_path;
     gchar *status_path;
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
@@ -214,7 +215,8 @@ static void write_status_json(const gchar *status, const gchar *details) {
         "  \"details\": %s,\n"
         "  \"updated_at\": %s,\n"
         "  \"weather_cache\": \"service/weather.json\",\n"
-        "  \"crypto_cache\": \"service/crypto.json\"\n"
+        "  \"crypto_cache\": \"service/crypto.json\",\n"
+        "  \"wifi_cache\": \"service/wifi.json\"\n"
         "}\n",
         status_q,
         details_q,
@@ -331,6 +333,158 @@ cleanup:
     if (now != NULL) {
         g_date_time_unref(now);
     }
+    return ok;
+}
+
+static gboolean refresh_wifi(void) {
+    const gchar *scan_argv[] = {
+        "nmcli",
+        "-t",
+        "-f",
+        "IN-USE,SSID,SIGNAL,SECURITY",
+        "dev",
+        "wifi",
+        "list",
+        "--rescan",
+        "auto",
+        NULL
+    };
+    const gchar *radio_argv[] = {"nmcli", "radio", "wifi", NULL};
+    gchar *scan_output = NULL;
+    gchar *radio_output = NULL;
+    gchar *updated_at = NULL;
+    gchar *current_q = NULL;
+    gchar *radio_q = NULL;
+    gchar *json = NULL;
+    GDateTime *now = NULL;
+    GString *networks = g_string_new("[\n");
+    GHashTable *seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    GError *error = NULL;
+    gchar *current_ssid = g_strdup("");
+    gboolean radio_enabled = FALSE;
+    gboolean first = TRUE;
+    gboolean ok = FALSE;
+
+    scan_output = run_capture(&error, scan_argv);
+    if (scan_output == NULL) {
+        write_status_json("degraded", error != NULL ? error->message : "Wi-Fi scan failed.");
+        g_clear_error(&error);
+        goto cleanup;
+    }
+
+    radio_output = run_capture(&error, radio_argv);
+    if (radio_output == NULL) {
+        write_status_json("degraded", error != NULL ? error->message : "Wi-Fi radio state refresh failed.");
+        g_clear_error(&error);
+        goto cleanup;
+    }
+    radio_enabled = g_ascii_strcasecmp(g_strstrip(radio_output), "enabled") == 0;
+
+    gchar **lines = g_strsplit(scan_output, "\n", -1);
+    for (gchar **line = lines; line != NULL && *line != NULL; ++line) {
+        gchar *trimmed = g_strstrip(*line);
+        gchar **parts = NULL;
+        gchar *ssid = NULL;
+        const gchar *in_use = NULL;
+        gint signal = 0;
+        gchar *security = NULL;
+        gchar *ssid_q = NULL;
+        gchar *security_q = NULL;
+        gboolean secure = FALSE;
+
+        if (trimmed[0] == '\0') {
+            continue;
+        }
+
+        parts = g_strsplit(trimmed, ":", 4);
+        if (g_strv_length(parts) < 4) {
+            g_strfreev(parts);
+            continue;
+        }
+
+        in_use = g_strstrip(parts[0]);
+        ssid = g_strdup(g_strstrip(parts[1]));
+        g_strdelimit(ssid, "\\", '\\');
+        if (ssid[0] == '\0' || g_hash_table_contains(seen, ssid)) {
+            g_free(ssid);
+            g_strfreev(parts);
+            continue;
+        }
+        g_hash_table_add(seen, g_strdup(ssid));
+        if (g_strcmp0(in_use, "*") == 0) {
+            g_free(current_ssid);
+            current_ssid = g_strdup(ssid);
+        }
+        signal = (gint)g_ascii_strtoll(g_strstrip(parts[2]), NULL, 10);
+        security = g_strdup(g_strstrip(parts[3]));
+        secure = security[0] != '\0' && g_strcmp0(security, "--") != 0;
+
+        ssid_q = escape_json_string(ssid);
+        security_q = escape_json_string(security[0] != '\0' ? security : "--");
+        g_string_append_printf(
+            networks,
+            "%s    {\n"
+            "      \"ssid\": %s,\n"
+            "      \"signal\": %d,\n"
+            "      \"security\": %s,\n"
+            "      \"in_use\": %s,\n"
+            "      \"secure\": %s\n"
+            "    }",
+            first ? "" : ",\n",
+            ssid_q,
+            signal,
+            security_q,
+            g_strcmp0(in_use, "*") == 0 ? "true" : "false",
+            secure ? "true" : "false"
+        );
+        first = FALSE;
+
+        g_free(ssid);
+        g_free(security);
+        g_free(ssid_q);
+        g_free(security_q);
+        g_strfreev(parts);
+    }
+    g_strfreev(lines);
+    g_string_append(networks, "\n  ]");
+
+    now = g_date_time_new_now_local();
+    updated_at = g_date_time_format(now, "%Y-%m-%dT%H:%M:%S%z");
+    current_q = escape_json_string(current_ssid);
+    radio_q = escape_json_string(radio_enabled ? "enabled" : "disabled");
+    json = g_strdup_printf(
+        "{\n"
+        "  \"source\": \"nmcli\",\n"
+        "  \"updated_at\": \"%s\",\n"
+        "  \"current_ssid\": %s,\n"
+        "  \"radio\": %s,\n"
+        "  \"networks\": %s\n"
+        "}\n",
+        updated_at,
+        current_q,
+        radio_q,
+        networks->str
+    );
+    ok = g_file_set_contents(g_service.wifi_path, json, -1, NULL);
+
+cleanup:
+    g_free(scan_output);
+    g_free(radio_output);
+    g_free(updated_at);
+    g_free(current_q);
+    g_free(radio_q);
+    g_free(json);
+    g_free(current_ssid);
+    if (now != NULL) {
+        g_date_time_unref(now);
+    }
+    if (networks != NULL) {
+        g_string_free(networks, TRUE);
+    }
+    if (seen != NULL) {
+        g_hash_table_unref(seen);
+    }
+    g_clear_error(&error);
     return ok;
 }
 
@@ -474,11 +628,13 @@ cleanup:
 
 static gboolean refresh_all(gpointer user_data) {
     (void)user_data;
+    gboolean wifi_ok = refresh_wifi();
     gboolean weather_ok = refresh_weather();
     gboolean crypto_ok = refresh_crypto();
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok;
     write_status_json(
-        weather_ok || crypto_ok ? "running" : "idle",
-        weather_ok || crypto_ok ? "Background caches refreshed." : "Waiting for enabled services."
+        any_ok ? "running" : "idle",
+        any_ok ? "Background caches refreshed." : "Waiting for enabled services."
     );
     return G_SOURCE_CONTINUE;
 }
@@ -514,6 +670,7 @@ int main(void) {
     g_service.state_dir = g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "service", NULL);
     g_service.weather_path = g_build_filename(g_service.state_dir, "weather.json", NULL);
     g_service.crypto_path = g_build_filename(g_service.state_dir, "crypto.json", NULL);
+    g_service.wifi_path = g_build_filename(g_service.state_dir, "wifi.json", NULL);
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
 
     g_mkdir_with_parents(g_service.state_dir, 0755);
@@ -529,7 +686,7 @@ int main(void) {
 
     refresh_all(NULL);
     g_service.heartbeat_source = g_timeout_add_seconds(60, write_heartbeat, NULL);
-    g_service.refresh_source = g_timeout_add_seconds(900, refresh_all, NULL);
+    g_service.refresh_source = g_timeout_add_seconds(5, refresh_all, NULL);
 
     loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
@@ -547,6 +704,7 @@ int main(void) {
     g_free(g_service.state_dir);
     g_free(g_service.weather_path);
     g_free(g_service.crypto_path);
+    g_free(g_service.wifi_path);
     g_free(g_service.status_path);
     return 0;
 }

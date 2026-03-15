@@ -1,6 +1,6 @@
 # Hanauta Native Services
 
-This folder now contains the native C background stack for Hanauta:
+This folder now contains the active native C background stack for Hanauta:
 
 - `hanauta-service.c`
   - GLib main-loop service for background weather and crypto refreshes.
@@ -12,12 +12,12 @@ This folder now contains the native C background stack for Hanauta:
   - Renders toast popups and persists notification history.
 - `hanauta-notifyctl.c`
   - Native CLI for pause state, history, and notification closing.
-- `hanauta-clock.cpp`
-  - Native Qt desktop clock.
-  - Uses the same Hanauta settings file as the PyQt clock.
-- `hanauta-powermenu.cpp`
-  - Native Qt/QML powermenu.
-  - Reuses `src/pyqt/powermenu/powermenu.qml` for visual parity with the Python version.
+
+The Qt/QML widget experiments were archived to:
+
+- `archive/qt-qml-experiments/`
+
+Those builds were useful prototypes, but local benchmarks showed the PyQt6 widget versions were faster and lighter for the desktop UI surfaces that were tested.
 
 ## Build
 
@@ -30,8 +30,6 @@ That produces:
 - `hanauta/bin/hanauta-service`
 - `hanauta/bin/hanauta-notifyctl`
 - `hanauta/bin/hanauta-notifyd`
-- `hanauta/bin/hanauta-clock`
-- `hanauta/bin/hanauta-powermenu`
 
 ## Runtime
 

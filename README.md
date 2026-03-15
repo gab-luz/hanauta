@@ -100,6 +100,27 @@ Wallpaper → Matugen → Palette JSON → PyQt UI + VS Code
 4. All PyQt surfaces (bar, dock, notification center) restyle live
 5. VS Code extension watches the same file and updates the editor
 
+## Why PyQt6 Stayed
+
+Hanauta briefly tested a native C++/QML path for the dock, Wi-Fi popup, and notification center. On this machine, those experiments were consistently slower and heavier than the existing PyQt6 widgets, so the desktop stayed on PyQt6 as the active UI stack.
+
+Measured locally during the switch-back:
+
+| Widget | PyQt6 widgets | C++/QML | Difference |
+|--------|----------------|---------|------------|
+| Wi-Fi control | `0.200s` startup, `76.6 MB RSS`, `35.8 MB PSS` | `0.613s` startup, `137.7 MB RSS`, `67.2 MB PSS` | C++/QML opened slower and used much more memory |
+| Notification center | `0.761s` startup, `98.9 MB RSS`, `52.7 MB PSS` | `1.116s` startup, `159.7 MB RSS`, `86.0 MB PSS` | C++/QML was slower and heavier |
+| Dock | `79.5 MB RSS`, `37.7 MB PSS` | `127.3 MB RSS`, `64.5 MB PSS` | C++/QML used much more memory |
+
+PyQt6 with classic widgets also beat a PyQt6+QML Wi-Fi popup rewrite:
+
+| Wi-Fi popup variant | Startup | RSS | PSS |
+|---------------------|---------|-----|-----|
+| PyQt6 widgets | `0.200s` | `76.6 MB` | `35.8 MB` |
+| PyQt6 + QML frontend | `0.778s` | `160.1 MB` | `91.1 MB` |
+
+Because of those results, the repository keeps PyQt6 widgets as the active desktop UI and archives the Qt/QML native widget experiments instead of shipping them as defaults.
+
 ## 📁 Project Structure
 
 ```
@@ -116,6 +137,11 @@ Wallpaper → Matugen → Palette JSON → PyQt UI + VS Code
 │   │   ├── launcher/          # App launcher
 │   │   ├── widget-*/          # Various widgets
 │   │   └── shared/            # Shared utilities
+│   ├── src/service/      # Native C background services
+│   │   ├── hanauta-service.c
+│   │   ├── hanauta-notifyctl.c
+│   │   ├── hanauta-notifyd.c
+│   │   └── archive/qt-qml-experiments/  # Archived Qt/QML widget experiments
 │   ├── src/eww/scripts/  # Helper scripts
 │   └── vscode-wallpaper-theme/  # Editor theming
 └── install.sh          # Installation script

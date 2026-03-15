@@ -59,11 +59,10 @@ from pyqt.shared.gamemode import summary as game_mode_summary
 
 SCRIPTS_DIR = APP_DIR / "eww" / "scripts"
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
-NOTIFICATION_CENTER_BINARY = HANAUTA_ROOT / "bin" / "hanauta-notification-center"
 AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
 WIFI_CONTROL_PY = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
 WIFI_CONTROL_BINARY = HANAUTA_ROOT / "bin" / "hanauta-wifi-control"
-WIFI_CONTROL = WIFI_CONTROL_BINARY if WIFI_CONTROL_BINARY.exists() else WIFI_CONTROL_PY
+WIFI_CONTROL = WIFI_CONTROL_PY
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
 REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
@@ -2396,19 +2395,9 @@ class CyberBar(QWidget):
             return
         active = (
             self._control_center_process is not None and self._control_center_process.poll() is None
-        ) or background_match_exists(str(NOTIFICATION_CENTER)) or background_match_exists(str(NOTIFICATION_CENTER_BINARY))
+        ) or background_match_exists(str(NOTIFICATION_CENTER))
         if active:
             terminate_background_matches(str(NOTIFICATION_CENTER))
-            terminate_background_matches(str(NOTIFICATION_CENTER_BINARY))
-            try:
-                subprocess.run(
-                    ["pkill", "-x", "hanauta-notification-center"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-            except Exception:
-                pass
             if self._control_center_process is not None and self._control_center_process.poll() is None:
                 self._control_center_process.terminate()
             self._control_center_process = None
@@ -2425,22 +2414,13 @@ class CyberBar(QWidget):
         QTimer.singleShot(450, self._finish_control_center_launch)
         try:
             terminate_background_matches(str(NOTIFICATION_CENTER))
-            terminate_background_matches(str(NOTIFICATION_CENTER_BINARY))
-            if NOTIFICATION_CENTER_BINARY.exists():
-                self._control_center_process = subprocess.Popen(
-                    [str(NOTIFICATION_CENTER_BINARY)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-            else:
-                python_bin = self._python_bin()
-                self._control_center_process = subprocess.Popen(
-                    [python_bin, str(NOTIFICATION_CENTER)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+            python_bin = self._python_bin()
+            self._control_center_process = subprocess.Popen(
+                [python_bin, str(NOTIFICATION_CENTER)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
         except Exception:
             self._control_center_process = None
             self._control_center_launch_pending = False
@@ -2645,7 +2625,7 @@ class CyberBar(QWidget):
     def _sync_control_center_button(self) -> None:
         active = self._control_center_launch_pending or (
             self._control_center_process is not None and self._control_center_process.poll() is None
-        ) or background_match_exists(str(NOTIFICATION_CENTER)) or background_match_exists(str(NOTIFICATION_CENTER_BINARY))
+        ) or background_match_exists(str(NOTIFICATION_CENTER))
         if not active:
             self._control_center_process = None
         self.btn_control_center.setChecked(active)
