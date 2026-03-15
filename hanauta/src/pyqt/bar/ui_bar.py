@@ -9,11 +9,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
@@ -200,7 +205,7 @@ def widget_python() -> str:
 def terminate_background_matches(pattern: str) -> None:
     try:
         subprocess.run(
-            ["pkill", "-f", pattern],
+            ["pkill", "-f", re.escape(pattern)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -212,7 +217,7 @@ def terminate_background_matches(pattern: str) -> None:
 def background_match_exists(pattern: str) -> bool:
     try:
         result = subprocess.run(
-            ["pgrep", "-f", pattern],
+            ["pgrep", "-f", re.escape(pattern)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -1814,6 +1819,7 @@ class CyberBar(QWidget):
         self.setMask(QRegion(self.rect()))
 
     def _start_polls(self) -> None:
+        self._clear_game_mode_popup_process()
         self._poll_all()
         self.clock_timer = QTimer(self)
         self.clock_timer.timeout.connect(self._poll_clock)
@@ -1885,6 +1891,10 @@ class CyberBar(QWidget):
 
         self._start_cava()
 
+    def _clear_game_mode_popup_process(self) -> None:
+        for pattern in entry_patterns(GAME_MODE_POPUP):
+            terminate_background_matches(pattern)
+
     def _poll_all(self) -> None:
         self._poll_clock()
         self._poll_workspaces()
@@ -1894,6 +1904,36 @@ class CyberBar(QWidget):
         self._poll_rss_notifications()
         self._poll_crypto_notifications()
         self._sync_game_mode_button()
+
+    def _game_mode_window_exists(self) -> bool:
+        tree_raw = run_cmd(["i3-msg", "-t", "get_tree"])
+        if not tree_raw:
+            return False
+        try:
+            tree = json.loads(tree_raw)
+        except Exception:
+            return False
+
+        def search(node: dict) -> bool:
+            if not isinstance(node, dict):
+                return False
+            title = str(node.get("name", "")).strip()
+            if title == "Hanauta Game Mode":
+                return True
+            props = node.get("window_properties")
+            if isinstance(props, dict):
+                window_name = str(props.get("name", "")).strip()
+                if window_name == "Hanauta Game Mode":
+                    return True
+            for key in ("nodes", "floating_nodes"):
+                children = node.get(key)
+                if isinstance(children, list):
+                    for child in children:
+                        if isinstance(child, dict) and search(child):
+                            return True
+            return False
+
+        return bool(search(tree))
 
     def _poll_clock(self) -> None:
         now = datetime.now()
@@ -2591,6 +2631,7 @@ class CyberBar(QWidget):
             return
         active = self._toggle_singleton_process("_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin())
         self.game_mode_button.setChecked(active)
+        self._sync_game_mode_button()
 
     def _open_launcher(self) -> None:
         if not LAUNCHER_APP.exists():
@@ -2652,8 +2693,9 @@ class CyberBar(QWidget):
         if not active:
             self._game_mode_popup_process = None
         current = game_mode_summary()
-        self.game_mode_button.setChecked(active)
-        self.game_mode_button.setProperty("active", bool(current.get("active", False)))
+        window_active = self._game_mode_window_exists()
+        self.game_mode_button.setChecked(window_active)
+        self.game_mode_button.setProperty("active", window_active)
         self.game_mode_button.setToolTip(str(current.get("note", "Game Mode")))
         self.style().unpolish(self.game_mode_button)
         self.style().polish(self.game_mode_button)
