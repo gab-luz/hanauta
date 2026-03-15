@@ -31,17 +31,18 @@ from PyQt6.QtWidgets import (
 )
 
 
-APP_DIR = Path(__file__).resolve().parents[2]
-ROOT = APP_DIR.parents[1]
+from pyqt.shared.runtime import fonts_root, source_root
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
+APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
-
-FONTS_DIR = ROOT / "assets" / "fonts"
+FONTS_DIR = fonts_root()
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon"
 HISTORY_FILE = STATE_DIR / "history.json"
 CONTROL_FILE = STATE_DIR / "control.json"
+SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 
 
 def load_app_fonts() -> dict[str, str]:
@@ -105,6 +106,25 @@ def set_paused(value: bool) -> None:
     save_json(CONTROL_FILE, {"paused": bool(value)})
 
 
+def load_toast_appearance() -> dict[str, int]:
+    try:
+        payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    appearance = payload.get("appearance", {}) if isinstance(payload, dict) else {}
+    if not isinstance(appearance, dict):
+        appearance = {}
+    try:
+        max_width = max(260, min(640, int(appearance.get("notification_toast_max_width", 356))))
+    except Exception:
+        max_width = 356
+    try:
+        max_height = max(160, min(640, int(appearance.get("notification_toast_max_height", 280))))
+    except Exception:
+        max_height = 280
+    return {"max_width": max_width, "max_height": max_height}
+
+
 class NotificationBridge(QObject):
     notificationRequested = pyqtSignal(dict)
     closeRequested = pyqtSignal(int)
@@ -114,13 +134,23 @@ class NotificationToast(QWidget):
     actionInvoked = pyqtSignal(int, str)
     dismissed = pyqtSignal(int, int)
 
-    def __init__(self, notification_id: int, payload: dict, ui_font: str, material_font: str, theme) -> None:
+    def __init__(
+        self,
+        notification_id: int,
+        payload: dict,
+        ui_font: str,
+        material_font: str,
+        theme,
+        appearance: dict[str, int],
+    ) -> None:
         super().__init__()
         self.notification_id = notification_id
         self.payload = payload
         self.ui_font = ui_font
         self.material_font = material_font
         self.theme = theme
+        self.max_width = int(appearance.get("max_width", 356))
+        self.max_height = int(appearance.get("max_height", 280))
         self._fade: QPropertyAnimation | None = None
         self._timeout_timer: QTimer | None = None
 
@@ -133,7 +163,9 @@ class NotificationToast(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setWindowTitle(f"Hanauta Notification {notification_id}")
-        self.setFixedWidth(356)
+        self.setMinimumWidth(min(320, self.max_width))
+        self.setMaximumWidth(self.max_width)
+        self.setMaximumHeight(self.max_height)
 
         self._build_ui()
         self._apply_styles()
@@ -178,6 +210,7 @@ class NotificationToast(QWidget):
             body_label.setObjectName("bodyLabel")
             body_label.setWordWrap(True)
             body_label.setFont(QFont(self.ui_font, 10))
+            body_label.setMaximumHeight(max(56, self.max_height - 136))
             layout.addWidget(body_label)
 
         self.actions_wrap = QWidget()
@@ -186,7 +219,7 @@ class NotificationToast(QWidget):
         actions_layout.setSpacing(8)
         for action in self.payload.get("actions", []):
             button = QPushButton(action.get("label", "Action"))
-            button.setObjectName("actionButton")
+            button.setObjectName("primaryActionButton" if actions_layout.count() == 0 else "secondaryActionButton")
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             button.clicked.connect(
                 lambda _checked=False, action_key=action.get("key", "default"): self._trigger_action(str(action_key))
@@ -224,28 +257,40 @@ class NotificationToast(QWidget):
             QPushButton#closeButton {{
                 background: {theme.app_running_bg};
                 border: 1px solid {theme.app_running_border};
-                border-radius: 12px;
+                border-radius: 15px;
                 color: {theme.icon};
-                min-width: 24px;
-                max-width: 24px;
-                min-height: 24px;
-                max-height: 24px;
+                font-size: 16px;
+                font-weight: 600;
+                min-width: 30px;
+                max-width: 30px;
+                min-height: 30px;
+                max-height: 30px;
             }}
             QPushButton#closeButton:hover {{
                 background: {theme.hover_bg};
             }}
-            QPushButton#actionButton {{
-                background: {theme.primary};
-                border: none;
-                border-radius: 14px;
-                color: {theme.active_text};
-                min-height: 30px;
-                padding: 0 12px;
+            QPushButton#primaryActionButton, QPushButton#secondaryActionButton {{
+                min-height: 36px;
+                border-radius: 18px;
+                padding: 0 16px;
                 font-weight: 700;
             }}
-            QPushButton#actionButton:hover {{
+            QPushButton#primaryActionButton {{
+                background: {theme.primary};
+                border: 1px solid {theme.primary};
+                color: {theme.active_text};
+            }}
+            QPushButton#primaryActionButton:hover {{
                 background: {theme.primary_container};
                 color: {theme.on_primary_container};
+            }}
+            QPushButton#secondaryActionButton {{
+                background: {theme.app_running_bg};
+                border: 1px solid {theme.app_running_border};
+                color: {theme.text};
+            }}
+            QPushButton#secondaryActionButton:hover {{
+                background: {theme.hover_bg};
             }}
             """
         )
@@ -452,6 +497,7 @@ class NotificationDaemon(QObject):
         self.theme = load_theme_palette()
         for toast in self.toasts.values():
             toast.update_theme(self.theme)
+        self._reposition_toasts()
 
     def show_notification(self, payload: dict) -> None:
         notification_id = int(payload.get("id", 0))
@@ -459,7 +505,14 @@ class NotificationDaemon(QObject):
             old = self.toasts.pop(notification_id)
             old.close()
             old.deleteLater()
-        toast = NotificationToast(notification_id, payload, self.ui_font, self.material_font, self.theme)
+        toast = NotificationToast(
+            notification_id,
+            payload,
+            self.ui_font,
+            self.material_font,
+            self.theme,
+            load_toast_appearance(),
+        )
         toast.actionInvoked.connect(self._emit_action)
         toast.dismissed.connect(self._toast_dismissed)
         self.toasts[notification_id] = toast
@@ -485,10 +538,15 @@ class NotificationDaemon(QObject):
         if screen is None:
             return
         rect = screen.availableGeometry()
-        x = rect.x() + rect.width() - 372
+        right_margin = 16
         y = rect.y() + 56
         for toast in list(self.toasts.values()):
             toast.adjustSize()
+            toast.resize(
+                min(toast.sizeHint().width(), toast.maximumWidth()),
+                min(toast.sizeHint().height(), toast.maximumHeight()),
+            )
+            x = rect.x() + rect.width() - toast.width() - right_margin
             toast.move(QPoint(x, y))
             y += toast.height() + 10
 

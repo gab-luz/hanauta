@@ -93,3 +93,8 @@ for entry in "${entries[@]}"; do
 
   ln -sfn "nuitka/$script_stem.dist/$name" "$BIN_DIR/$name"
 done
+
+ln -sfn ../../assets "$BIN_DIR/assets"
+ln -sfn ../scripts "$BIN_DIR/scripts"
+ln -sfn ../../config "$BIN_DIR/config"
+ln -sfn .. "$BIN_DIR/hanauta"

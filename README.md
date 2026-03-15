@@ -104,6 +104,13 @@ Wallpaper → Matugen → Palette JSON → PyQt UI + VS Code
 
 Hanauta briefly tested a native C++/QML path for the dock, Wi-Fi popup, and notification center. On this machine, those experiments were consistently slower and heavier than the existing PyQt6 widgets, so the desktop stayed on PyQt6 as the active UI stack.
 
+The repository also tested compiling the PyQt shell with Nuitka. That path is only partially active today:
+
+- `bar` and `dock` currently run from Python source
+- many secondary widgets/popups still run from Nuitka binaries in `hanauta/bin`
+
+This hybrid setup is intentional. In this environment, the compiled `hanauta-bar` and `hanauta-dock` hit click/input regressions, while compiled secondary widgets were still usable. Until those shell-specific issues are solved, the default setup keeps the top-level shell on Python and uses Nuitka for many supporting widgets.
+
 Measured locally during the switch-back:
 
 | Widget | PyQt6 widgets | C++/QML | Difference |

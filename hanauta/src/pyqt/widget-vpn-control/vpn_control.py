@@ -26,15 +26,15 @@ from PyQt6.QtWidgets import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[4]
-APP_DIR = Path(__file__).resolve().parents[2]
+from pyqt.shared.runtime import fonts_root, scripts_root, source_root
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+
+APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
-
-SCRIPTS_DIR = ROOT / "scripts"
-FONTS_DIR = ROOT / "assets" / "fonts"
+SCRIPTS_DIR = scripts_root()
+FONTS_DIR = fonts_root()
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 
