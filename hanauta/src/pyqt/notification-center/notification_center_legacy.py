@@ -827,9 +827,9 @@ class GameCarouselCard(QFrame):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
-        self.kicker = QLabel("Recently played")
+        self.kicker = QLabel("Recently games played")
         self.kicker.setObjectName("gameKicker")
-        self.title = QLabel("Game Hub")
+        self.title = QLabel("")
         self.title.setObjectName("gameCarouselTitle")
         header_text = QVBoxLayout()
         header_text.setContentsMargins(0, 0, 0, 0)
@@ -1079,6 +1079,7 @@ class NotificationCenter(QWidget):
         left_layout.setSpacing(12)
         left_layout.addWidget(self._build_quick_settings_card())
         left_layout.addWidget(self._build_compact_sliders_card())
+        left_layout.addWidget(self._build_media_card())
         left_layout.addWidget(self._build_game_carousel_card())
         left_layout.addWidget(self._build_phone_card())
         left_layout.addWidget(self._build_home_assistant_card())
@@ -1112,13 +1113,14 @@ class NotificationCenter(QWidget):
         subtitle_label = QLabel(subtitle)
         subtitle_label.setObjectName("sectionSubtitle")
         subtitle_label.setWordWrap(True)
+        subtitle_label.setVisible(bool(subtitle.strip()))
         header.addWidget(title_label)
         header.addWidget(subtitle_label)
         layout.addLayout(header)
         return card, layout
 
     def _build_quick_settings_card(self) -> QFrame:
-        card, layout = self._section_shell("Connectivity", "Small toggles for the controls you reach most.")
+        card, layout = self._section_shell("Connectivity", "")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(8)
@@ -1141,7 +1143,7 @@ class NotificationCenter(QWidget):
         return card
 
     def _build_compact_sliders_card(self) -> QFrame:
-        card, layout = self._section_shell("Levels", "Brightness and volume in a tighter footprint.")
+        card, layout = self._section_shell("Levels", "")
         self.brightness_slider = self._slider_row("brightness_medium", "brightness", compact=True)
         self.volume_slider = self._slider_row("volume_up", "volume", compact=True)
         layout.addWidget(self.brightness_slider["wrap"])
@@ -2171,20 +2173,61 @@ class NotificationCenter(QWidget):
             }}
             #miniCalendar {{
                 background: transparent;
+                border: none;
+                border-radius: 18px;
                 selection-background-color: {theme.primary};
                 selection-color: {theme.active_text};
+                alternate-background-color: transparent;
+                color: {theme.text};
             }}
             #miniCalendar QToolButton {{
                 color: {theme.text};
                 font-weight: 700;
-                background: transparent;
-                border: none;
+                background: {rgba(theme.surface_container_high, 0.76)};
+                border: 1px solid {rgba(theme.outline, 0.14)};
+                border-radius: 12px;
+                padding: 6px 8px;
+            }}
+            #miniCalendar QToolButton:hover {{
+                background: {theme.hover_bg};
+            }}
+            #miniCalendar QMenu {{
+                background: {theme.chip_bg};
+                border: 1px solid {theme.chip_border};
+                color: {theme.text};
             }}
             #miniCalendar QAbstractItemView:enabled {{
                 color: {theme.text};
-                background: transparent;
+                background: {rgba(theme.surface_container_high, 0.18)};
+                border: 1px solid {rgba(theme.outline, 0.12)};
+                border-radius: 14px;
                 selection-background-color: {theme.primary};
                 selection-color: {theme.active_text};
+                alternate-background-color: transparent;
+                gridline-color: transparent;
+                outline: 0;
+            }}
+            #miniCalendar QWidget#qt_calendar_navigationbar {{
+                background: transparent;
+            }}
+            #miniCalendar QSpinBox {{
+                background: {rgba(theme.surface_container_high, 0.76)};
+                color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.14)};
+                border-radius: 12px;
+                padding: 4px 8px;
+                selection-background-color: {theme.primary};
+            }}
+            #miniCalendar QAbstractItemView {{
+                background: {theme.chip_bg};
+                color: {theme.text};
+                border: 1px solid {theme.chip_border};
+                selection-background-color: {theme.primary};
+                selection-color: {theme.active_text};
+            }}
+            #miniCalendar QTableView {{
+                background: transparent;
+                border: none;
             }}
             #feedCard {{
                 background: {rgba(theme.surface_container_high, 0.76)};
