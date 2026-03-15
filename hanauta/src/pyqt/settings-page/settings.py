@@ -51,6 +51,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
@@ -4770,8 +4771,12 @@ class SettingsWindow(QWidget):
         if not QCAL_WRAPPER.exists():
             self.calendar_status.setText("qcal wrapper is missing.")
             return
+        command = entry_command(QCAL_WRAPPER, "discover", url, username, password)
+        if not command:
+            self.calendar_status.setText("qcal wrapper is missing.")
+            return
         result = subprocess.run(
-            [sys.executable, str(QCAL_WRAPPER), "discover", url, username, password],
+            command,
             capture_output=True,
             text=True,
             check=False,
@@ -4988,9 +4993,7 @@ class SettingsWindow(QWidget):
     def _desktop_clock_command(self) -> list[str]:
         if DESKTOP_CLOCK_BINARY.exists():
             return [str(DESKTOP_CLOCK_BINARY)]
-        if DESKTOP_CLOCK_WIDGET.exists():
-            return [sys.executable, str(DESKTOP_CLOCK_WIDGET)]
-        return []
+        return entry_command(DESKTOP_CLOCK_WIDGET)
 
     def _launch_desktop_clock(self) -> None:
         command = self._desktop_clock_command()

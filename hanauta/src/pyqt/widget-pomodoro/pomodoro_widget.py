@@ -27,11 +27,11 @@ ROOT = HERE.parents[3]
 FONTS_DIR = ROOT / "assets" / "fonts"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 
@@ -103,9 +103,7 @@ def material_icon(name: str) -> str:
 
 
 def python_bin() -> str:
-    if VENV_PYTHON.exists():
-        return str(VENV_PYTHON)
-    return sys.executable
+    return python_executable()
 
 
 def load_settings_state() -> dict:
@@ -563,15 +561,11 @@ class PomodoroWidget(QWidget):
         if not SETTINGS_PAGE_SCRIPT.exists():
             return
         try:
+            command = entry_command(SETTINGS_PAGE_SCRIPT, "--page", "services", "--service-section", "pomodoro_widget")
+            if not command:
+                return
             subprocess.Popen(
-                [
-                    python_bin(),
-                    str(SETTINGS_PAGE_SCRIPT),
-                    "--page",
-                    "services",
-                    "--service-section",
-                    "pomodoro_widget",
-                ],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

@@ -39,6 +39,7 @@ HANAUTA_ROOT = APP_DIR.parent
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
@@ -96,7 +97,6 @@ TRAY_SLOT_WIDTH = 24
 TRAY_SLOT_HEIGHT = 32
 TRAY_SLOT_SIZE = 20
 TRAY_ICON_SIZE = 16
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 MATERIAL_ICONS = {
     "battery_2_bar": "\uebe0",
@@ -190,9 +190,7 @@ def run_bg(cmd: list[str]) -> None:
 
 
 def widget_python() -> str:
-    if VENV_PYTHON.exists():
-        return str(VENV_PYTHON)
-    return sys.executable
+    return python_executable()
 
 
 def terminate_background_matches(pattern: str) -> None:
@@ -329,7 +327,7 @@ def desktop_clock_command() -> list[str]:
         return []
     if target == DESKTOP_CLOCK_BINARY:
         return [str(target)]
-    return [widget_python(), str(target)]
+    return entry_command(target)
 
 
 def detect_font(*families: str) -> str:
@@ -2070,9 +2068,8 @@ class CyberBar(QWidget):
                 pass
             return
         run_bg(
-            [
-                widget_python(),
-                str(ACTION_NOTIFICATION_SCRIPT),
+            entry_command(
+                ACTION_NOTIFICATION_SCRIPT,
                 "--app-name",
                 "Hanauta",
                 "--summary",
@@ -2085,7 +2082,7 @@ class CyberBar(QWidget):
                 open_url,
                 "--replace-id",
                 str(replace_id),
-            ]
+            )
         )
 
     def _poll_rss_notifications(self) -> None:
@@ -2393,11 +2390,12 @@ class CyberBar(QWidget):
     def _toggle_notifications(self) -> None:
         if self._control_center_launch_pending:
             return
-        active = (
-            self._control_center_process is not None and self._control_center_process.poll() is None
-        ) or background_match_exists(str(NOTIFICATION_CENTER))
+        active = self._control_center_process is not None and self._control_center_process.poll() is None
+        if not active:
+            active = any(background_match_exists(pattern) for pattern in entry_patterns(NOTIFICATION_CENTER))
         if active:
-            terminate_background_matches(str(NOTIFICATION_CENTER))
+            for pattern in entry_patterns(NOTIFICATION_CENTER):
+                terminate_background_matches(pattern)
             if self._control_center_process is not None and self._control_center_process.poll() is None:
                 self._control_center_process.terminate()
             self._control_center_process = None
@@ -2413,10 +2411,13 @@ class CyberBar(QWidget):
         self.btn_control_center.setEnabled(False)
         QTimer.singleShot(450, self._finish_control_center_launch)
         try:
-            terminate_background_matches(str(NOTIFICATION_CENTER))
-            python_bin = self._python_bin()
+            for pattern in entry_patterns(NOTIFICATION_CENTER):
+                terminate_background_matches(pattern)
+            command = entry_command(NOTIFICATION_CENTER)
+            if not command:
+                raise RuntimeError("Notification center entrypoint not found")
             self._control_center_process = subprocess.Popen(
-                [python_bin, str(NOTIFICATION_CENTER)],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -2433,21 +2434,19 @@ class CyberBar(QWidget):
         self._sync_control_center_button()
 
     def _python_bin(self) -> str:
-        python_bin = ROOT / ".venv" / "bin" / "python"
-        if python_bin.exists():
-            return str(python_bin)
-        return sys.executable
+        return python_executable()
 
     def _singleton_active(self, process: Optional[subprocess.Popen], script_path: Path) -> bool:
-        return (
-            process is not None and process.poll() is None
-        ) or background_match_exists(str(script_path))
+        if process is not None and process.poll() is None:
+            return True
+        return any(background_match_exists(pattern) for pattern in entry_patterns(script_path))
 
     def _terminate_singleton_process(self, attr_name: str, script_path: Path) -> None:
         process = getattr(self, attr_name, None)
         if process is not None and process.poll() is None:
             process.terminate()
-        terminate_background_matches(str(script_path))
+        for pattern in entry_patterns(script_path):
+            terminate_background_matches(pattern)
         setattr(self, attr_name, None)
 
     def _launch_singleton_process(
@@ -2457,17 +2456,19 @@ class CyberBar(QWidget):
         *,
         python_bin: Optional[str] = None,
     ) -> bool:
-        if not script_path.exists():
+        if not script_path.exists() and entry_target(script_path) == script_path.resolve():
             setattr(self, attr_name, None)
             return False
         self._terminate_singleton_process(attr_name, script_path)
         try:
-            if python_bin is not None:
+            if script_path.suffix == ".py":
+                command = entry_command(script_path)
+            elif python_bin is not None:
                 command = [python_bin, str(script_path)]
-            elif script_path.suffix == ".py":
-                command = [widget_python(), str(script_path)]
             else:
                 command = [str(script_path)]
+            if not command:
+                raise RuntimeError(f"No launch command available for {script_path}")
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,

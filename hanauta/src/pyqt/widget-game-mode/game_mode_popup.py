@@ -18,6 +18,7 @@ SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.runtime import entry_command
 from pyqt.shared.gamemode import service_enabled, set_active, summary
 from pyqt.shared.theme import load_theme_palette, rgba
 
@@ -238,16 +239,9 @@ class GameModePopup(QWidget):
     def _open_settings(self) -> None:
         if not SETTINGS_PAGE_SCRIPT.exists():
             return
-        run_bg(
-            [
-                sys.executable,
-                str(SETTINGS_PAGE_SCRIPT),
-                "--page",
-                "services",
-                "--service-section",
-                "game_mode",
-            ]
-        )
+        command = entry_command(SETTINGS_PAGE_SCRIPT, "--page", "services", "--service-section", "game_mode")
+        if command:
+            run_bg(command)
 
 
 def main() -> int:
