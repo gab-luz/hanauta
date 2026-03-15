@@ -1905,25 +1905,29 @@ class CyberBar(QWidget):
         self._poll_crypto_notifications()
         self._sync_game_mode_button()
 
-    def _game_mode_window_exists(self) -> bool:
-        tree_raw = run_cmd(["i3-msg", "-t", "get_tree"])
-        if not tree_raw:
+    def _tree_has_window(self, titles: tuple[str, ...]) -> bool:
+        raw = run_cmd(["i3-msg", "-t", "get_tree"])
+        if not raw:
             return False
         try:
-            tree = json.loads(tree_raw)
+            tree = json.loads(raw)
         except Exception:
+            return False
+
+        normalized = {title.strip().lower() for title in titles if title.strip()}
+        if not normalized:
             return False
 
         def search(node: dict) -> bool:
             if not isinstance(node, dict):
                 return False
-            title = str(node.get("name", "")).strip()
-            if title == "Hanauta Game Mode":
+            title = str(node.get("name", "")).strip().lower()
+            if title in normalized:
                 return True
             props = node.get("window_properties")
             if isinstance(props, dict):
-                window_name = str(props.get("name", "")).strip()
-                if window_name == "Hanauta Game Mode":
+                window_name = str(props.get("name", "")).strip().lower()
+                if window_name in normalized:
                     return True
             for key in ("nodes", "floating_nodes"):
                 children = node.get(key)
@@ -2669,13 +2673,17 @@ class CyberBar(QWidget):
         active = self._singleton_active(self._wifi_popup_process, WIFI_CONTROL)
         if not active:
             self._wifi_popup_process = None
-        self.net_icon.setChecked(active)
+        window_active = self._tree_has_window(("Wi-Fi Control",))
+        self.net_icon.setChecked(window_active)
+        self.net_icon.setProperty("active", window_active)
 
     def _sync_vpn_button(self) -> None:
         active = self._singleton_active(self._vpn_popup_process, VPN_CONTROL)
         if not active:
             self._vpn_popup_process = None
-        self.vpn_icon.setChecked(active)
+        window_active = self._tree_has_window(("WireGuard",))
+        self.vpn_icon.setChecked(window_active)
+        self.vpn_icon.setProperty("active", window_active)
 
     def _sync_weather_button(self) -> None:
         active = self._singleton_active(self._weather_popup_process, WEATHER_POPUP)
@@ -2693,7 +2701,7 @@ class CyberBar(QWidget):
         if not active:
             self._game_mode_popup_process = None
         current = game_mode_summary()
-        window_active = self._game_mode_window_exists()
+        window_active = self._tree_has_window(("Hanauta Game Mode",))
         self.game_mode_button.setChecked(window_active)
         self.game_mode_button.setProperty("active", window_active)
         self.game_mode_button.setToolTip(str(current.get("note", "Game Mode")))
