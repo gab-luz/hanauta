@@ -7,12 +7,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMap>
-#include <QPointer>
 #include <QProcess>
 #include <QQuickStyle>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QRegularExpression>
 #include <QScreen>
 #include <QSet>
 #include <QStandardPaths>
@@ -31,10 +29,6 @@ QString repoRoot() {
 
 QString paletteFilePath() {
     return QDir::homePath() + "/.local/state/hanauta/theme/pyqt_palette.json";
-}
-
-QString networkScriptPath() {
-    return repoRoot() + "/src/eww/scripts/network.sh";
 }
 
 QString normalizeHex(const QString &value, const QString &fallback) {
@@ -114,11 +108,10 @@ void loadFonts() {
 QString materialGlyph(const QString &name) {
     static const QMap<QString, QString> icons = {
         {"check_circle", QString::fromUtf8("\uE86C")},
+        {"close", QString::fromUtf8("\uE5CD")},
         {"lock", QString::fromUtf8("\uE897")},
         {"lock_open", QString::fromUtf8("\uE898")},
         {"refresh", QString::fromUtf8("\uE5D5")},
-        {"router", QString::fromUtf8("\uE328")},
-        {"settings_ethernet", QString::fromUtf8("\uF017")},
         {"signal_wifi_0_bar", QString::fromUtf8("\uE1DA")},
         {"signal_wifi_1_bar", QString::fromUtf8("\uE1D9")},
         {"signal_wifi_2_bar", QString::fromUtf8("\uE1D8")},
@@ -127,17 +120,16 @@ QString materialGlyph(const QString &name) {
         {"wifi", QString::fromUtf8("\uE63E")},
         {"wifi_find", QString::fromUtf8("\uEE67")},
         {"wifi_off", QString::fromUtf8("\uE648")},
-        {"close", QString::fromUtf8("\uE5CD")},
     };
     return icons.value(name, "?");
 }
 
-QString wifiSignalGlyph(int signal) {
-    if (signal >= 80) return "signal_wifi_4_bar";
-    if (signal >= 60) return "signal_wifi_3_bar";
-    if (signal >= 35) return "signal_wifi_2_bar";
-    if (signal > 0) return "signal_wifi_1_bar";
-    return "signal_wifi_0_bar";
+QString signalGlyph(int signal) {
+    if (signal >= 80) return materialGlyph("signal_wifi_4_bar");
+    if (signal >= 60) return materialGlyph("signal_wifi_3_bar");
+    if (signal >= 35) return materialGlyph("signal_wifi_2_bar");
+    if (signal > 0) return materialGlyph("signal_wifi_1_bar");
+    return materialGlyph("signal_wifi_0_bar");
 }
 
 QString unescapeNmcli(QString value) {
@@ -185,10 +177,17 @@ struct WifiNetwork {
     int signal = 0;
     QString security = "--";
     bool inUse = false;
-    bool secure = false;
+
+    bool secure() const {
+        return !security.isEmpty() && security != "--";
+    }
 };
 
-QList<WifiNetwork> parseNetworkList(const QString &output) {
+QList<WifiNetwork> listNetworks() {
+    const QString output = runCommandText(
+        {"nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto"},
+        12000
+    );
     QList<WifiNetwork> rows;
     QSet<QString> seen;
     const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
@@ -213,7 +212,6 @@ QList<WifiNetwork> parseNetworkList(const QString &output) {
         if (network.security.isEmpty()) {
             network.security = "--";
         }
-        network.secure = network.security != "--";
         rows.append(network);
     }
     std::sort(rows.begin(), rows.end(), [](const WifiNetwork &left, const WifiNetwork &right) {
@@ -235,10 +233,6 @@ QString currentSsid() {
         if (line.startsWith("yes:")) {
             return unescapeNmcli(line.section(':', 1));
         }
-    }
-    const QString script = networkScriptPath();
-    if (QFile::exists(script)) {
-        return runCommandText({script, "ssid"}, 4000);
     }
     return {};
 }
@@ -277,7 +271,6 @@ class WifiBackend final : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString materialFontFamily READ materialFontFamily CONSTANT)
     Q_PROPERTY(QString uiFontFamily READ uiFontFamily CONSTANT)
-    Q_PROPERTY(QString monoFontFamily READ monoFontFamily CONSTANT)
 
 public:
     explicit WifiBackend(QObject *parent = nullptr)
@@ -286,6 +279,17 @@ public:
         refreshNetworks();
         connect(&themeTimer_, &QTimer::timeout, this, &WifiBackend::refreshPalette);
         themeTimer_.start(3000);
+    }
+
+    ~WifiBackend() override {
+        if (scanProcess_ != nullptr) {
+            scanProcess_->kill();
+            scanProcess_->waitForFinished(1000);
+        }
+        if (actionProcess_ != nullptr) {
+            actionProcess_->kill();
+            actionProcess_->waitForFinished(1000);
+        }
     }
 
     QVariantMap palette() const { return palette_; }
@@ -303,13 +307,13 @@ public:
     bool busy() const { return busy_; }
     QString materialFontFamily() const { return "Material Icons"; }
     QString uiFontFamily() const { return "Inter"; }
-    QString monoFontFamily() const { return "JetBrains Mono"; }
 
     Q_INVOKABLE QString glyph(const QString &name) const {
         return materialGlyph(name);
     }
 
     Q_INVOKABLE QVariantMap popupGeometry(int width, int height) const {
+        Q_UNUSED(height);
         QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
         if (screen == nullptr) {
             screen = QGuiApplication::primaryScreen();
@@ -327,30 +331,28 @@ public:
         }
         setBusy(true);
         setStatusText("Refreshing Wi-Fi scan...");
-        QString program = QStandardPaths::findExecutable("nmcli");
-        if (program.isEmpty()) {
-            setBusy(false);
-            setStatusText("nmcli was not found.");
-            return;
-        }
         scanProcess_ = new QProcess(this);
         connect(scanProcess_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int, QProcess::ExitStatus) {
-            const QString output = QString::fromUtf8(scanProcess_->readAllStandardOutput());
-            const QList<WifiNetwork> parsed = parseNetworkList(output);
-            applyScan(parsed);
+            const QString output = QString::fromUtf8(scanProcess_->readAllStandardOutput()).trimmed();
+            const QString error = QString::fromUtf8(scanProcess_->readAllStandardError()).trimmed();
             scanProcess_->deleteLater();
             scanProcess_ = nullptr;
             setBusy(false);
+            if (!error.isEmpty() && output.isEmpty()) {
+                setStatusText(error);
+                return;
+            }
+            applyNetworks(listNetworks());
         });
         connect(scanProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
-            setBusy(false);
-            setStatusText("Failed to scan networks.");
             if (scanProcess_ != nullptr) {
                 scanProcess_->deleteLater();
                 scanProcess_ = nullptr;
             }
+            setBusy(false);
+            setStatusText("Failed to scan networks.");
         });
-        scanProcess_->start(program, {"-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto"});
+        scanProcess_->start("nmcli", {"-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto"});
     }
 
     Q_INVOKABLE void selectNetwork(const QString &ssid) {
@@ -372,7 +374,11 @@ public:
             setStatusText("Enter the Wi-Fi password for this secured network.");
             return;
         }
-        runAction({"nmcli", "dev", "wifi", "connect", selectedSsid_, trimmedPassword.isEmpty() ? QString() : "password", trimmedPassword}, true, QStringLiteral("Connected to %1").arg(selectedSsid_));
+        QStringList command = {"nmcli", "dev", "wifi", "connect", selectedSsid_};
+        if (!trimmedPassword.isEmpty()) {
+            command << "password" << trimmedPassword;
+        }
+        runAction(command, QStringLiteral("Connected to %1").arg(selectedSsid_));
     }
 
     Q_INVOKABLE void disconnectCurrent() {
@@ -381,12 +387,12 @@ public:
             setStatusText("Wi-Fi already disconnected.");
             return;
         }
-        runAction({"nmcli", "connection", "down", "id", wifiName}, true, "Wi-Fi disconnected.");
+        runAction({"nmcli", "connection", "down", "id", wifiName}, "Wi-Fi disconnected.");
     }
 
     Q_INVOKABLE void toggleRadio() {
         const bool nextEnabled = !radioEnabled();
-        runAction({"nmcli", "radio", "wifi", nextEnabled ? "on" : "off"}, true, QStringLiteral("Wi-Fi radio turned %1.").arg(nextEnabled ? "on" : "off"));
+        runAction({"nmcli", "radio", "wifi", nextEnabled ? "on" : "off"}, QStringLiteral("Wi-Fi radio turned %1.").arg(nextEnabled ? "on" : "off"));
     }
 
     Q_INVOKABLE void closeWindow() {
@@ -424,13 +430,17 @@ private:
             {"scrollHandle", rgba(theme.primary, 0.30)},
             {"shadow", rgba("#000000", 0.38)},
             {"danger", "#FFB4AB"},
+            {"dangerBg", rgba("#FFB4AB", 0.16)},
+            {"dangerBorder", rgba("#FFB4AB", 0.30)},
+            {"accentButtonBg", rgba(theme.primaryContainer, 0.92)},
+            {"accentButtonBorder", rgba(theme.primary, 0.22)},
             {"heroGlow", rgba(blend(theme.primary, theme.secondary, 0.35), 0.20)},
         };
         emit paletteChanged();
     }
 
-    void applyScan(const QList<WifiNetwork> &parsed) {
-        networkCache_ = parsed;
+    void applyNetworks(const QList<WifiNetwork> &networks) {
+        networkCache_ = networks;
         const QString current = currentSsid();
         const bool enabled = radioEnabled();
 
@@ -441,6 +451,7 @@ private:
         currentConnectionMeta_ = "Scanning adapter state and active SSID.";
         currentConnectionIcon_ = materialGlyph((!current.isEmpty() && enabled) ? "wifi" : "wifi_off");
         radioButtonText_ = enabled ? "Turn Wi-Fi Off" : "Turn Wi-Fi On";
+        emit summaryChanged();
 
         QVariantList items;
         for (const WifiNetwork &network : networkCache_) {
@@ -449,15 +460,14 @@ private:
                 {"signal", network.signal},
                 {"security", network.security},
                 {"inUse", network.inUse},
-                {"secure", network.secure},
-                {"signalGlyph", materialGlyph(network.signal > 0 ? wifiSignalGlyph(network.signal) : "wifi_find")},
-                {"trailGlyph", materialGlyph(network.inUse ? "check_circle" : (network.secure ? "lock" : "lock_open"))},
-                {"detail", network.inUse ? "Connected" : QStringLiteral("%1%% signal%2").arg(network.signal).arg(network.secure ? " • secured" : "")},
+                {"secure", network.secure()},
+                {"signalGlyph", network.signal > 0 ? signalGlyph(network.signal) : materialGlyph("wifi_find")},
+                {"trailGlyph", materialGlyph(network.inUse ? "check_circle" : (network.secure() ? "lock" : "lock_open"))},
+                {"detail", network.inUse ? "Connected" : QStringLiteral("%1%% signal%2").arg(network.signal).arg(network.secure() ? " • secured" : "")},
             });
         }
         networks_ = items;
         emit networksChanged();
-        emit summaryChanged();
 
         if (networkCache_.isEmpty()) {
             clearSelection();
@@ -465,23 +475,17 @@ private:
             return;
         }
 
-        WifiNetwork nextSelection;
-        bool found = false;
+        WifiNetwork selection = networkCache_.constFirst();
         for (const WifiNetwork &network : networkCache_) {
             if (network.ssid == selectedSsid_) {
-                nextSelection = network;
-                found = true;
+                selection = network;
                 break;
             }
+            if (network.inUse) {
+                selection = network;
+            }
         }
-        if (!found) {
-            nextSelection = std::find_if(networkCache_.begin(), networkCache_.end(), [](const WifiNetwork &network) {
-                return network.inUse;
-            }) != networkCache_.end()
-                ? *std::find_if(networkCache_.begin(), networkCache_.end(), [](const WifiNetwork &network) { return network.inUse; })
-                : networkCache_.constFirst();
-        }
-        setSelectedNetwork(nextSelection);
+        setSelectedNetwork(selection);
         setStatusText(QStringLiteral("%1 network(s) available").arg(networkCache_.size()));
     }
 
@@ -495,11 +499,11 @@ private:
 
     void setSelectedNetwork(const WifiNetwork &network) {
         selectedSsid_ = network.ssid;
-        selectedSecure_ = network.secure;
+        selectedSecure_ = network.secure();
         selectedInUse_ = network.inUse;
         if (network.inUse) {
             selectionHint_ = "Currently connected. You can disconnect or reconnect.";
-        } else if (network.secure) {
+        } else if (network.secure()) {
             selectionHint_ = "Secured network. Enter the password to connect if this network is not saved yet.";
         } else {
             selectionHint_ = "Open network. No password is required.";
@@ -507,41 +511,35 @@ private:
         emit selectionChanged();
     }
 
-    void runAction(QStringList command, bool refreshAfter, const QString &successMessage) {
-        command.removeAll(QString());
+    void runAction(const QStringList &command, const QString &successMessage) {
         if (busy_) {
             return;
         }
         setBusy(true);
         setStatusText("Applying Wi-Fi change...");
-        QString program = QStandardPaths::findExecutable(command.value(0));
-        if (program.isEmpty()) {
-            setBusy(false);
-            setStatusText("nmcli was not found.");
-            return;
-        }
         actionProcess_ = new QProcess(this);
-        connect(actionProcess_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, refreshAfter, successMessage](int exitCode, QProcess::ExitStatus) {
-            const QString stderrText = QString::fromUtf8(actionProcess_->readAllStandardError()).trimmed();
+        connect(actionProcess_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, successMessage](int exitCode, QProcess::ExitStatus) {
             const QString stdoutText = QString::fromUtf8(actionProcess_->readAllStandardOutput()).trimmed();
-            const bool ok = exitCode == 0;
-            setBusy(false);
-            setStatusText(ok ? successMessage : (!stderrText.isEmpty() ? stderrText : (!stdoutText.isEmpty() ? stdoutText : "Wi-Fi action failed.")));
+            const QString stderrText = QString::fromUtf8(actionProcess_->readAllStandardError()).trimmed();
             actionProcess_->deleteLater();
             actionProcess_ = nullptr;
-            if (ok && refreshAfter) {
+            setBusy(false);
+            if (exitCode == 0) {
+                setStatusText(successMessage);
                 QTimer::singleShot(400, this, &WifiBackend::refreshNetworks);
+                return;
             }
+            setStatusText(!stderrText.isEmpty() ? stderrText : (!stdoutText.isEmpty() ? stdoutText : "Wi-Fi action failed."));
         });
         connect(actionProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
-            setBusy(false);
-            setStatusText("Failed to start Wi-Fi action.");
             if (actionProcess_ != nullptr) {
                 actionProcess_->deleteLater();
                 actionProcess_ = nullptr;
             }
+            setBusy(false);
+            setStatusText("Failed to start Wi-Fi action.");
         });
-        actionProcess_->start(program, command.mid(1));
+        actionProcess_->start(command.first(), command.mid(1));
     }
 
     void setStatusText(const QString &value) {
