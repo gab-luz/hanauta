@@ -49,6 +49,13 @@ Hanauta transforms your X11 desktop into a cohesive, modern experience with nati
 - **Per-Monitor Wallpaper** — Different wallpapers per display
 - **Live Editor Theming** — VS Code / VSCodium workbench matches wallpaper colors
 
+### Systray
+- **Native StatusNotifier tray** — The PyQt bar hosts modern DBus tray items directly
+- **Fallback watcher support** — Hanauta starts its own watcher helper when the session does not provide `org.kde.StatusNotifierWatcher`
+- **Works with mixed tray apps** — Supports apps that expose either `IconName` or raw `IconPixmap`
+- **Theme-aware tray styling** — Tray icons can be tinted with the live Matugen primary color
+- **Dedicated alignment control** — Tray icons have their own vertical offset setting instead of sharing the whole status block offset
+
 ## 📸 Screenshots
 
 ![Hanauta screenshot 1](assets/screenshots/2026-03-11_21-42.png)
@@ -99,6 +106,31 @@ Wallpaper → Matugen → Palette JSON → PyQt UI + VS Code
 3. Palette written to `~/.local/state/hanauta/theme/pyqt_palette.json`
 4. All PyQt surfaces (bar, dock, notification center) restyle live
 5. VS Code extension watches the same file and updates the editor
+
+## Systray Support
+
+Hanauta's active systray lives in the PyQt bar at `hanauta/src/pyqt/bar/ui_bar.py`.
+
+- It uses the StatusNotifierItem / StatusNotifierWatcher DBus model
+- It does not use Eww systray widgets
+- It does not depend on `stalonetray` as the normal tray host
+- If no watcher is present on the session bus, the bar launches `hanauta/src/pyqt/bar/status_notifier_watcher.py`
+
+The current implementation is based on what works reliably in this environment:
+
+- Read watcher properties and tray item properties through `org.freedesktop.DBus.Properties.Get`
+- Accept tray apps that register with only an object path and normalize those registrations in the fallback watcher
+- Use real global pointer coordinates for `Activate`, `SecondaryActivate`, and `ContextMenu`
+- Keep tray startup visibility independent from whether the parent bar is already shown
+- Support both theme icons and raw pixmap icons
+- Apply optional tray tinting from the live Matugen palette when Matugen is enabled
+
+After systray code changes, restart the bar fully so tray apps can re-register cleanly:
+
+```bash
+pkill -f 'hanauta/src/pyqt/bar/ui_bar.py|hanauta-bar'
+python hanauta/src/pyqt/bar/ui_bar.py
+```
 
 ## Why PyQt6 Stayed
 

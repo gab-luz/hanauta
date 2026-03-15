@@ -52,6 +52,26 @@
 - The center section contains the clock/date and current media.
 - The media visualizer uses `cava` raw output, configured by `hanauta/src/pyqt/bar/cava_bar.conf`.
 
+## Systray Notes
+
+- The active tray implementation is the native PyQt StatusNotifier tray inside `hanauta/src/pyqt/bar/ui_bar.py`.
+- The bar should use StatusNotifierItem / StatusNotifierWatcher DBus support, not Eww systray widgets and not `stalonetray`.
+- If no watcher is present on the session bus, the bar starts `hanauta/src/pyqt/bar/status_notifier_watcher.py` as the fallback watcher service.
+- Many tray apps register with a DBus object path only. The fallback watcher must normalize those registrations to `sender + path`, otherwise the bar cannot build a valid tray item interface.
+- For both watcher properties and tray item properties, use explicit `org.freedesktop.DBus.Properties.Get` calls. In this environment, relying on `QDBusInterface.property(...)` for remote DBus properties caused empty tray state.
+- Tray item clicks should use the pointer's real global coordinates when calling `Activate`, `SecondaryActivate`, and `ContextMenu`. Passing `0, 0` broke right click menus for apps here.
+- Do not decide tray visibility using `button.isVisible()` during startup. The tray host may still be under a hidden parent while the bar is constructing. Use hidden-state / item state instead so the tray does not hide itself permanently before the bar is shown.
+- Tray icons may come from either `IconName` or `IconPixmap`. Keep both paths working.
+- `IconPixmap` rendering and optional tinting are currently fast enough in Python for this environment. Prefer the PyQt path first before offloading tray icon processing to the C service.
+- The bar now supports a dedicated `tray_offset` setting. Use that for tray vertical alignment rather than shifting the entire status block when only the tray is off.
+- Tray tinting should follow the live Matugen palette only when Matugen is enabled and the bar setting `tray_tint_with_matugen` is on.
+- If tray icons disappear again, verify these in order:
+  - `org.kde.StatusNotifierWatcher` exists on the session bus
+  - `RegisteredStatusNotifierItems` is non-empty
+  - tray items respond on `/StatusNotifierItem` or their registered object path
+  - the tray host is not hiding itself during startup
+  - the bar was fully restarted after tray changes
+
 ## Notification Center Notes
 
 - The notification center is a native PyQt6 recreation of `hanauta/src/pyqt/notification-center/idea.html`.
@@ -73,5 +93,7 @@
 - After PyQt code changes, run:
   - `python3 -m py_compile hanauta/src/pyqt/bar/ui_bar.py`
   - `python3 -m py_compile hanauta/src/pyqt/notification-center/notification_center.py`
+  - `python3 -m py_compile hanauta/src/pyqt/bar/status_notifier_watcher.py`
+  - `python3 -m py_compile hanauta/src/pyqt/settings-page/settings.py`
 - If a change touches i3 startup behavior, also validate:
   - `bash -n startup.sh`
