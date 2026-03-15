@@ -22,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QPainter, QPalette, QPixmap, QRegion
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QImage, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -86,6 +86,7 @@ ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 POWERMENU_APP = HANAUTA_ROOT / "bin" / "hanauta-powermenu"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
+STATUS_NOTIFIER_WATCHER = APP_DIR / "pyqt" / "bar" / "status_notifier_watcher.py"
 SCRIPTS_DIR = scripts_root()
 FONTS_DIR = fonts_root()
 ASSETS_DIR = source_root() / "assets"
@@ -614,6 +615,7 @@ class StatusNotifierWatcher(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._items: list[str] = []
+        self._hosts: list[str] = []
 
     @pyqtSlot(str)
     def RegisterStatusNotifierItem(self, service_or_path: str) -> None:
@@ -625,7 +627,10 @@ class StatusNotifierWatcher(QObject):
             self.statusNotifierItemRegistered.emit(item_id)
 
     @pyqtSlot(str)
-    def RegisterStatusNotifierHost(self, _service: str) -> None:
+    def RegisterStatusNotifierHost(self, service: str) -> None:
+        host = service.strip()
+        if host and host not in self._hosts:
+            self._hosts.append(host)
         self.statusNotifierHostRegistered.emit()
 
     @pyqtProperty("QStringList")
@@ -634,7 +639,7 @@ class StatusNotifierWatcher(QObject):
 
     @pyqtProperty(bool)
     def IsStatusNotifierHostRegistered(self) -> bool:
-        return True
+        return bool(self._hosts)
 
     @pyqtProperty(int)
     def ProtocolVersion(self) -> int:
@@ -668,13 +673,55 @@ class StatusNotifierItemButton(QPushButton):
             return service, f"/{path}"
         return item_id, "/StatusNotifierItem"
 
+    def _dbus_property(self, name: str, default=None):
+        reply = QDBusInterface(
+            self.service,
+            self.path,
+            "org.freedesktop.DBus.Properties",
+            self.bus,
+        ).call("Get", "org.kde.StatusNotifierItem", name)
+        if not reply.arguments():
+            return default
+        value = reply.arguments()[0]
+        return default if value is None else value
+
+    def _icon_from_pixmaps(self, pixmaps) -> QIcon:
+        if not isinstance(pixmaps, list) or not pixmaps:
+            return QIcon()
+        best = max(
+            (
+                entry for entry in pixmaps
+                if isinstance(entry, tuple) and len(entry) == 3 and entry[0] > 0 and entry[1] > 0
+            ),
+            key=lambda entry: entry[0] * entry[1],
+            default=None,
+        )
+        if best is None:
+            return QIcon()
+        width, height, data = best
+        image = QImage(bytes(data), int(width), int(height), QImage.Format.Format_ARGB32)
+        if image.isNull():
+            return QIcon()
+        return QIcon(QPixmap.fromImage(image.copy()))
+
     @pyqtSlot()
     def refresh(self) -> None:
-        title = self.iface.property("Title") or self.service
-        icon_name = self.iface.property("IconName") or ""
-        status = str(self.iface.property("Status") or "")
+        tooltip = self._dbus_property("ToolTip", ("", [], "", ""))
+        title = (
+            self._dbus_property("Title", "")
+            or (tooltip[2] if isinstance(tooltip, tuple) and len(tooltip) > 2 else "")
+            or self._dbus_property("Id", "")
+            or self.service
+        )
+        icon_name = (
+            self._dbus_property("IconName", "")
+            or (tooltip[0] if isinstance(tooltip, tuple) and len(tooltip) > 0 else "")
+        )
+        status = str(self._dbus_property("Status", "Active") or "Active")
         self.setToolTip(str(title))
         icon = QIcon.fromTheme(str(icon_name))
+        if icon.isNull():
+            icon = self._icon_from_pixmaps(self._dbus_property("IconPixmap", []))
         if not icon.isNull():
             self.setIcon(icon)
             self.setText("")
@@ -706,8 +753,8 @@ class StatusNotifierTray(QFrame):
         self.bus = QDBusConnection.sessionBus()
         self.watcher_service = "org.kde.StatusNotifierWatcher"
         self.host_service = f"org.kde.StatusNotifierHost-{os.getpid()}-1"
-        self._owns_watcher_service = False
-        self._watcher_object: StatusNotifierWatcher | None = None
+        self._watcher_process: subprocess.Popen[str] | None = None
+        self._watcher_signals_connected = False
         self.buttons: dict[str, StatusNotifierItemButton] = {}
         self.proxy: QDBusInterface | None = None
 
@@ -737,39 +784,26 @@ class StatusNotifierTray(QFrame):
             self.bus,
         )
         if self.proxy.isValid():
-            self.bus.connect(
-                self.watcher_service,
-                "/StatusNotifierWatcher",
-                self.watcher_service,
-                "StatusNotifierItemRegistered",
-                self._register_item,
-            )
-            self.bus.connect(
-                self.watcher_service,
-                "/StatusNotifierWatcher",
-                self.watcher_service,
-                "StatusNotifierItemUnregistered",
-                self._unregister_item,
-            )
+            if not self._watcher_signals_connected:
+                self.bus.connect(
+                    self.watcher_service,
+                    "/StatusNotifierWatcher",
+                    self.watcher_service,
+                    "StatusNotifierItemRegistered",
+                    self._register_item,
+                )
+                self.bus.connect(
+                    self.watcher_service,
+                    "/StatusNotifierWatcher",
+                    self.watcher_service,
+                    "StatusNotifierItemUnregistered",
+                    self._unregister_item,
+                )
+                self._watcher_signals_connected = True
         else:
-            if not self._owns_watcher_service and self.bus.registerService(self.watcher_service):
-                self._watcher_object = StatusNotifierWatcher()
-                self.bus.registerObject(
-                    "/StatusNotifierWatcher",
-                    self._watcher_object,
-                    QDBusConnection.RegisterOption.ExportAllSlots
-                    | QDBusConnection.RegisterOption.ExportAllSignals
-                    | QDBusConnection.RegisterOption.ExportAllProperties,
-                )
-                self._owns_watcher_service = True
-                self.proxy = QDBusInterface(
-                    self.watcher_service,
-                    "/StatusNotifierWatcher",
-                    self.watcher_service,
-                    self.bus,
-                )
-            else:
-                self.proxy = None
+            self.proxy = None
+            self._watcher_signals_connected = False
+            self._start_watcher_helper()
 
         if not self.bus.registerService(self.host_service):
             return
@@ -782,7 +816,7 @@ class StatusNotifierTray(QFrame):
         if self.proxy is None or not self.proxy.isValid():
             self._sync_visibility()
             return
-        items = self.proxy.property("RegisteredStatusNotifierItems") or []
+        items = self._watcher_property("RegisteredStatusNotifierItems", [])
         if isinstance(items, list):
             for item_id in items:
                 self._register_item(str(item_id))
@@ -790,13 +824,19 @@ class StatusNotifierTray(QFrame):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.bus.unregisterService(self.host_service)
-        if self._owns_watcher_service:
-            self.bus.unregisterObject("/StatusNotifierWatcher")
-            self.bus.unregisterService(self.watcher_service)
+        if self._watcher_process is not None and self._watcher_process.poll() is None:
+            self._watcher_process.terminate()
         super().closeEvent(event)
 
     @pyqtSlot(str)
     def _register_item(self, item_id: str) -> None:
+        service, _path = StatusNotifierItemButton._parse_item_id(item_id)
+        bus_interface = self.bus.interface()
+        if bus_interface is not None:
+            reply = bus_interface.isServiceRegistered(service)
+            if reply.isValid() and not bool(reply.value()):
+                self._unregister_item(item_id)
+                return
         if item_id in self.buttons:
             self.buttons[item_id].refresh()
             self._sync_visibility()
@@ -827,9 +867,37 @@ class StatusNotifierTray(QFrame):
         visible_buttons = 0
         for button in self.buttons.values():
             button.refresh()
-            if button.isVisible():
+            if not button.isHidden():
                 visible_buttons += 1
         self.setVisible(visible_buttons > 0)
+
+    def _start_watcher_helper(self) -> None:
+        if self._watcher_process is not None and self._watcher_process.poll() is None:
+            return
+        if not STATUS_NOTIFIER_WATCHER.exists():
+            return
+        try:
+            self._watcher_process = subprocess.Popen(
+                [python_executable(), str(STATUS_NOTIFIER_WATCHER)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            QTimer.singleShot(250, self.refresh_items)
+        except Exception:
+            self._watcher_process = None
+
+    def _watcher_property(self, name: str, default=None):
+        reply = QDBusInterface(
+            self.watcher_service,
+            "/StatusNotifierWatcher",
+            "org.freedesktop.DBus.Properties",
+            self.bus,
+        ).call("Get", self.watcher_service, name)
+        if not reply.arguments():
+            return default
+        value = reply.arguments()[0]
+        return default if value is None else value
 
 
 class WeatherWorker(QThread):
