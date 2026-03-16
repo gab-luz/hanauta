@@ -2678,6 +2678,8 @@ class NotificationCenter(QWidget):
         self._poll_header()
         self._poll_quick_settings()
         self._poll_sliders()
+        self._poll_media_metadata()
+        self._poll_media_progress()
         self._poll_phone()
         self._poll_calendar_events()
         self._poll_notification_history()
