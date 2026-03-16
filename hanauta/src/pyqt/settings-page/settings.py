@@ -447,6 +447,8 @@ def load_settings_state() -> dict:
             "slideshow_interval": 30,
             "slideshow_enabled": False,
             "theme_mode": "dark",
+            "theme_choice": "dark",
+            "custom_theme_id": "retrowave",
             "transparency": True,
             "notification_center_panel_opacity": 84,
             "notification_center_card_opacity": 92,
@@ -571,6 +573,7 @@ def load_settings_state() -> dict:
     appearance.setdefault("slideshow_interval", 30)
     appearance.setdefault("slideshow_enabled", False)
     appearance.setdefault("theme_mode", "dark")
+    appearance.setdefault("custom_theme_id", "retrowave")
     appearance.setdefault("transparency", True)
     try:
         appearance["notification_center_panel_opacity"] = max(
@@ -600,6 +603,14 @@ def load_settings_state() -> dict:
     except Exception:
         appearance["notification_toast_max_height"] = 280
     appearance.setdefault("use_matugen_palette", False)
+    theme_choice = str(appearance.get("theme_choice", "")).strip().lower()
+    if theme_choice not in THEME_CHOICES:
+        theme_choice = "wallpaper_aware" if appearance.get("use_matugen_palette", False) else str(appearance.get("theme_mode", "dark")).strip().lower()
+    if theme_choice not in THEME_CHOICES:
+        theme_choice = "dark"
+    appearance["theme_choice"] = theme_choice
+    custom_theme_id = str(appearance.get("custom_theme_id", "retrowave")).strip().lower()
+    appearance["custom_theme_id"] = custom_theme_id if custom_theme_id in CUSTOM_THEME_KEYS else "retrowave"
     home_assistant = dict(payload.get("home_assistant", {}))
     home_assistant.setdefault("url", "")
     home_assistant.setdefault("token", "")
@@ -1308,36 +1319,233 @@ def update_picom_config(text: str, values: dict[str, object]) -> str:
 
 
 def write_default_pyqt_palette(use_matugen: bool = False) -> None:
+    write_pyqt_palette(HANAUTA_DARK_PALETTE, use_matugen=use_matugen)
+
+
+def write_pyqt_palette(palette: dict[str, str], use_matugen: bool = False) -> None:
     PYQT_THEME_DIR.mkdir(parents=True, exist_ok=True)
-    PYQT_THEME_FILE.write_text(
-        json.dumps(
-            {
-                "use_matugen": use_matugen,
-                "source": "#D0BCFF",
-                "primary": "#D0BCFF",
-                "on_primary": "#381E72",
-                "primary_container": "#4F378B",
-                "on_primary_container": "#EADDFF",
-                "secondary": "#CCC2DC",
-                "on_secondary": "#332D41",
-                "tertiary": "#EFB8C8",
-                "on_tertiary": "#492532",
-                "background": "#141218",
-                "on_background": "#E6E0E9",
-                "surface": "#141218",
-                "on_surface": "#E6E0E9",
-                "surface_container": "#211F26",
-                "surface_container_high": "#2B2930",
-                "surface_variant": "#49454F",
-                "on_surface_variant": "#CAC4D0",
-                "outline": "#938F99",
-                "error": "#F2B8B5",
-                "on_error": "#601410",
-            },
-            indent=2,
+    payload = {"use_matugen": bool(use_matugen)}
+    payload.update(palette)
+    PYQT_THEME_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def selected_theme_key(settings_state: dict) -> str:
+    appearance = settings_state.get("appearance", {})
+    choice = str(appearance.get("theme_choice", "dark")).strip().lower()
+    if choice == "custom":
+        custom_theme = str(appearance.get("custom_theme_id", "retrowave")).strip().lower()
+        return custom_theme if custom_theme in CUSTOM_THEME_KEYS else "retrowave"
+    if choice == "light":
+        return "hanauta_light"
+    return "hanauta_dark"
+
+
+def _ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _copytree_clean(source: Path, destination: Path) -> None:
+    if destination.exists() or destination.is_symlink():
+        shutil.rmtree(destination, ignore_errors=True)
+    shutil.copytree(
+        source,
+        destination,
+        ignore=shutil.ignore_patterns(".git", ".github", "node_modules", "__pycache__"),
+        dirs_exist_ok=False,
+    )
+
+
+def _hanauta_gtk_css(palette: dict[str, str]) -> str:
+    return f"""
+@define-color theme_bg_color {palette["background"]};
+@define-color theme_fg_color {palette["on_surface"]};
+@define-color theme_base_color {palette["surface_container"]};
+@define-color theme_text_color {palette["on_surface"]};
+@define-color theme_selected_bg_color {palette["primary"]};
+@define-color theme_selected_fg_color {palette["on_primary"]};
+@define-color borders {palette["outline"]};
+@define-color accent_color {palette["primary"]};
+@define-color accent_bg_color {palette["primary"]};
+@define-color accent_fg_color {palette["on_primary"]};
+@define-color headerbar_bg_color {palette["surface_container_high"]};
+@define-color headerbar_fg_color {palette["on_surface"]};
+@define-color window_bg_color {palette["background"]};
+@define-color window_fg_color {palette["on_surface"]};
+
+window, dialog, .background {{
+  background-color: @theme_bg_color;
+  color: @theme_fg_color;
+}}
+
+headerbar, .titlebar {{
+  background-image: none;
+  background-color: @headerbar_bg_color;
+  color: @headerbar_fg_color;
+  border-bottom: 1px solid @borders;
+  box-shadow: none;
+}}
+
+button, entry, textview, spinbutton, combobox, scale trough, progressbar trough {{
+  border-radius: 12px;
+  border: 1px solid alpha(@borders, 0.75);
+  background-image: none;
+  box-shadow: none;
+}}
+
+button {{
+  background-color: {palette["surface_container_high"]};
+  color: {palette["on_surface"]};
+}}
+
+button:hover {{
+  background-color: {palette["surface_variant"]};
+}}
+
+button.suggested-action, button:checked, switch:checked slider {{
+  background-color: {palette["primary"]};
+  color: {palette["on_primary"]};
+}}
+
+entry, textview, spinbutton, combobox {{
+  background-color: {palette["surface_container"]};
+  color: {palette["on_surface"]};
+  caret-color: {palette["primary"]};
+}}
+
+selection, *:selected {{
+  background-color: {palette["primary"]};
+  color: {palette["on_primary"]};
+}}
+
+menu, popover {{
+  background-color: {palette["surface_container_high"]};
+  color: {palette["on_surface"]};
+  border: 1px solid alpha(@borders, 0.85);
+}}
+
+scrollbar slider {{
+  min-width: 10px;
+  min-height: 10px;
+  border-radius: 999px;
+  background-color: alpha({palette["primary"]}, 0.65);
+}}
+
+progressbar progress, scale highlight {{
+  border-radius: 999px;
+  background-color: {palette["primary"]};
+}}
+""".strip() + "\n"
+
+
+def _write_index_theme(theme_dir: Path, display_name: str, gtk_theme: str) -> None:
+    _ensure_parent(theme_dir / "index.theme")
+    (theme_dir / "index.theme").write_text(
+        "\n".join(
+            [
+                "[Desktop Entry]",
+                "Type=X-GNOME-Metatheme",
+                f"Name={display_name}",
+                "Comment=Hanauta managed theme",
+                "Encoding=UTF-8",
+                "",
+                "[X-GNOME-Metatheme]",
+                f"GtkTheme={gtk_theme}",
+                "IconTheme=Adwaita",
+                "CursorTheme=Adwaita",
+                "ButtonLayout=menu:minimize,maximize,close",
+                "",
+            ]
         ),
         encoding="utf-8",
     )
+
+
+def ensure_builtin_hanauta_gtk_theme(theme_key: str) -> str:
+    metadata = THEME_LIBRARY[theme_key]
+    theme_name = str(metadata["gtk_theme"])
+    palette = dict(metadata["palette"])
+    theme_dir = THEMES_HOME / theme_name
+    for gtk_dir_name in ("gtk-3.0", "gtk-4.0"):
+        gtk_dir = theme_dir / gtk_dir_name
+        gtk_dir.mkdir(parents=True, exist_ok=True)
+        (gtk_dir / "gtk.css").write_text(_hanauta_gtk_css(palette), encoding="utf-8")
+    _write_index_theme(theme_dir, str(metadata["label"]), theme_name)
+    return theme_name
+
+
+def ensure_dracula_gtk_theme() -> str:
+    metadata = THEME_LIBRARY["dracula"]
+    target = THEMES_HOME / str(metadata["gtk_theme"])
+    source = ROOT / "hanauta" / "vendor" / "themes" / "dracula-gtk"
+    if not target.exists():
+        _copytree_clean(source, target)
+    return str(metadata["gtk_theme"])
+
+
+def ensure_retrowave_gtk_theme() -> str:
+    metadata = THEME_LIBRARY["retrowave"]
+    source = ROOT / "hanauta" / "vendor" / "themes" / "retrowave-theme" / "src" / "retrowave"
+    target = THEMES_HOME / str(metadata["gtk_theme"])
+    if (target / "gtk-3.0" / "gtk.css").exists():
+        return str(metadata["gtk_theme"])
+    if target.exists() or target.is_symlink():
+        shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source / "index.theme", target / "index.theme")
+    if (source / "gtk-2.0").exists():
+        _copytree_clean(source / "gtk-2.0", target / "gtk-2.0")
+    gtk3_source = source / "gtk-3.0"
+    gtk3_target = target / "gtk-3.0"
+    gtk3_target.mkdir(parents=True, exist_ok=True)
+    if (gtk3_source / "assets").exists():
+        _copytree_clean(gtk3_source / "assets", gtk3_target / "assets")
+    subprocess.run(
+        ["sassc", "-I", str(gtk3_source), str(gtk3_source / "gtk.scss"), str(gtk3_target / "gtk.css")],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    gtk4_target = target / "gtk-4.0"
+    gtk4_target.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(gtk3_target / "gtk.css", gtk4_target / "gtk.css")
+    except OSError:
+        pass
+    return str(metadata["gtk_theme"])
+
+
+def ensure_theme_installed(theme_key: str) -> str:
+    THEMES_HOME.mkdir(parents=True, exist_ok=True)
+    if theme_key == "retrowave":
+        return ensure_retrowave_gtk_theme()
+    if theme_key == "dracula":
+        return ensure_dracula_gtk_theme()
+    return ensure_builtin_hanauta_gtk_theme(theme_key)
+
+
+def apply_gtk_theme(theme_name: str, color_scheme: str = "prefer-dark", icon_theme: str = "") -> None:
+    cmd = [str(ROOT / "hanauta" / "scripts" / "set_theme.sh"), theme_name]
+    if icon_theme:
+        cmd.append(icon_theme)
+    else:
+        cmd.append("")
+    cmd.append(color_scheme)
+    subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def sync_static_theme_from_settings(settings_state: dict, apply_gtk: bool = False) -> str:
+    theme_key = selected_theme_key(settings_state)
+    metadata = THEME_LIBRARY[theme_key]
+    write_pyqt_palette(dict(metadata["palette"]), use_matugen=False)
+    if apply_gtk:
+        theme_name = ensure_theme_installed(theme_key)
+        apply_gtk_theme(theme_name, str(metadata.get("color_scheme", "prefer-dark")))
+    return theme_key
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
@@ -1719,6 +1927,131 @@ class ThemeModeCard(QPushButton):
         layout.addStretch(1)
 
 
+THEME_CHOICES = {"light", "dark", "custom", "wallpaper_aware"}
+BUILTIN_THEME_KEYS = {"hanauta_dark", "hanauta_light"}
+CUSTOM_THEME_KEYS = {"retrowave", "dracula"}
+THEMES_HOME = Path.home() / ".themes"
+
+HANAUTA_DARK_PALETTE = {
+    "source": "#D0BCFF",
+    "primary": "#D0BCFF",
+    "on_primary": "#381E72",
+    "primary_container": "#4F378B",
+    "on_primary_container": "#EADDFF",
+    "secondary": "#CCC2DC",
+    "on_secondary": "#332D41",
+    "tertiary": "#EFB8C8",
+    "on_tertiary": "#492532",
+    "background": "#141218",
+    "on_background": "#E6E0E9",
+    "surface": "#141218",
+    "on_surface": "#E6E0E9",
+    "surface_container": "#211F26",
+    "surface_container_high": "#2B2930",
+    "surface_variant": "#49454F",
+    "on_surface_variant": "#CAC4D0",
+    "outline": "#938F99",
+    "error": "#F2B8B5",
+    "on_error": "#601410",
+}
+
+HANAUTA_LIGHT_PALETTE = {
+    "source": "#8E4BC3",
+    "primary": "#7A3EA8",
+    "on_primary": "#FFFFFF",
+    "primary_container": "#F2DAFF",
+    "on_primary_container": "#300047",
+    "secondary": "#745A77",
+    "on_secondary": "#FFFFFF",
+    "tertiary": "#9D3F73",
+    "on_tertiary": "#FFFFFF",
+    "background": "#FFF7FB",
+    "on_background": "#221925",
+    "surface": "#FFF7FB",
+    "on_surface": "#221925",
+    "surface_container": "#F8EDF5",
+    "surface_container_high": "#F2E2EC",
+    "surface_variant": "#E7D8E4",
+    "on_surface_variant": "#655865",
+    "outline": "#968797",
+    "error": "#BA1A1A",
+    "on_error": "#FFFFFF",
+}
+
+RETROWAVE_PALETTE = {
+    "source": "#FC29A8",
+    "primary": "#FC29A8",
+    "on_primary": "#25031A",
+    "primary_container": "#5C1650",
+    "on_primary_container": "#FFD4EF",
+    "secondary": "#03EDF9",
+    "on_secondary": "#001F23",
+    "tertiary": "#FFF951",
+    "on_tertiary": "#292500",
+    "background": "#1A1326",
+    "on_background": "#F4EBFF",
+    "surface": "#221A30",
+    "on_surface": "#F4EBFF",
+    "surface_container": "#2A2139",
+    "surface_container_high": "#372D4B",
+    "surface_variant": "#4B4061",
+    "on_surface_variant": "#D3C6E8",
+    "outline": "#8C7AA7",
+    "error": "#FE4450",
+    "on_error": "#FFFFFF",
+}
+
+DRACULA_PALETTE = {
+    "source": "#BD93F9",
+    "primary": "#BD93F9",
+    "on_primary": "#221534",
+    "primary_container": "#4C3E6E",
+    "on_primary_container": "#F1E5FF",
+    "secondary": "#8BE9FD",
+    "on_secondary": "#032730",
+    "tertiary": "#FF79C6",
+    "on_tertiary": "#3B0F2B",
+    "background": "#282A36",
+    "on_background": "#F8F8F2",
+    "surface": "#282A36",
+    "on_surface": "#F8F8F2",
+    "surface_container": "#2E3140",
+    "surface_container_high": "#343746",
+    "surface_variant": "#44475A",
+    "on_surface_variant": "#CAD0F8",
+    "outline": "#6272A4",
+    "error": "#FF5555",
+    "on_error": "#FFFFFF",
+}
+
+THEME_LIBRARY = {
+    "hanauta_dark": {
+        "label": "Hanauta Dark",
+        "palette": HANAUTA_DARK_PALETTE,
+        "gtk_theme": "Hanauta-Dark",
+        "color_scheme": "prefer-dark",
+    },
+    "hanauta_light": {
+        "label": "Hanauta Light",
+        "palette": HANAUTA_LIGHT_PALETTE,
+        "gtk_theme": "Hanauta-Light",
+        "color_scheme": "prefer-light",
+    },
+    "retrowave": {
+        "label": "Retrowave",
+        "palette": RETROWAVE_PALETTE,
+        "gtk_theme": "Retrowave",
+        "color_scheme": "prefer-dark",
+    },
+    "dracula": {
+        "label": "Dracula",
+        "palette": DRACULA_PALETTE,
+        "gtk_theme": "Dracula",
+        "color_scheme": "prefer-dark",
+    },
+}
+
+
 class SwitchButton(QPushButton):
     toggledValue = pyqtSignal(bool)
 
@@ -2058,7 +2391,9 @@ class SettingsWindow(QWidget):
         self._weather_search_timer = QTimer(self)
         self._weather_search_timer.setSingleShot(True)
         self._weather_search_timer.timeout.connect(self._perform_weather_city_search)
-        if not PYQT_THEME_FILE.exists() and not self.settings_state["appearance"].get("use_matugen_palette", False):
+        if not self.settings_state["appearance"].get("use_matugen_palette", False):
+            sync_static_theme_from_settings(self.settings_state, apply_gtk=False)
+        elif not PYQT_THEME_FILE.exists():
             write_default_pyqt_palette(use_matugen=False)
         self.theme_palette = load_theme_palette()
         self._theme_mtime = palette_mtime()
@@ -2458,21 +2793,57 @@ class SettingsWindow(QWidget):
         mode_heading.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
         actions.addWidget(mode_heading)
 
-        modes = QHBoxLayout()
-        modes.setSpacing(8)
+        modes = QGridLayout()
+        modes.setContentsMargins(0, 0, 0, 0)
+        modes.setHorizontalSpacing(8)
+        modes.setVerticalSpacing(8)
         light = ThemeModeCard(material_icon("light_mode"), "Light", self.icon_font, self.ui_font)
         dark = ThemeModeCard(material_icon("dark_mode"), "Dark", self.icon_font, self.ui_font)
-        self.theme_buttons = {"light": light, "dark": dark}
+        custom = ThemeModeCard(material_icon("palette"), "Custom", self.icon_font, self.ui_font)
+        wallpaper_aware = ThemeModeCard(material_icon("auto_awesome"), "Wallpaper aware", self.icon_font, self.ui_font)
+        self.theme_buttons = {
+            "light": light,
+            "dark": dark,
+            "custom": custom,
+            "wallpaper_aware": wallpaper_aware,
+        }
         self.mode_group = QButtonGroup(self)
         self.mode_group.setExclusive(True)
-        self.mode_group.addButton(light)
-        self.mode_group.addButton(dark)
-        light.clicked.connect(lambda: self._set_theme_mode("light"))
-        dark.clicked.connect(lambda: self._set_theme_mode("dark"))
-        modes.addWidget(light)
-        modes.addWidget(dark)
+        for key, button in self.theme_buttons.items():
+            self.mode_group.addButton(button)
+            button.clicked.connect(lambda checked=False, current=key: self._set_theme_choice(current))
+        modes.addWidget(light, 0, 0)
+        modes.addWidget(dark, 0, 1)
+        modes.addWidget(custom, 1, 0)
+        modes.addWidget(wallpaper_aware, 1, 1)
 
         actions.addLayout(modes)
+        self.custom_theme_heading = QLabel("Custom theme")
+        self.custom_theme_heading.setObjectName("appearanceSectionLabel")
+        self.custom_theme_heading.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+        actions.addWidget(self.custom_theme_heading)
+
+        self.custom_theme_wrap = QFrame()
+        self.custom_theme_wrap.setObjectName("appearanceAccentFrame")
+        custom_theme_layout = QGridLayout(self.custom_theme_wrap)
+        custom_theme_layout.setContentsMargins(10, 10, 10, 10)
+        custom_theme_layout.setHorizontalSpacing(8)
+        custom_theme_layout.setVerticalSpacing(8)
+        retrowave = ThemeModeCard(material_icon("bolt"), "Retrowave", self.icon_font, self.ui_font)
+        dracula = ThemeModeCard(material_icon("dark_mode"), "Dracula", self.icon_font, self.ui_font)
+        self.custom_theme_buttons = {"retrowave": retrowave, "dracula": dracula}
+        self.custom_theme_group = QButtonGroup(self)
+        self.custom_theme_group.setExclusive(True)
+        for key, button in self.custom_theme_buttons.items():
+            self.custom_theme_group.addButton(button)
+            button.clicked.connect(lambda checked=False, current=key: self._set_custom_theme(current))
+        custom_theme_layout.addWidget(retrowave, 0, 0)
+        custom_theme_layout.addWidget(dracula, 0, 1)
+        actions.addWidget(self.custom_theme_wrap)
+        self.custom_theme_hint = QLabel("Custom themes drive both Hanauta colors and the matching GTK theme.")
+        self.custom_theme_hint.setObjectName("settingsStatus")
+        self.custom_theme_hint.setFont(QFont(self.ui_font, 8))
+        actions.addWidget(self.custom_theme_hint)
         actions.addStretch(1)
         hero.addWidget(actions_wrap, 8)
         layout.addWidget(hero_wrap)
@@ -2605,16 +2976,7 @@ class SettingsWindow(QWidget):
             self.ui_font,
             matugen_button,
         )
-        matugen_toggle = SettingsRow(
-            material_icon("palette"),
-            "Enable Matugen theming",
-            "When enabled, wallpaper changes regenerate the dock and bar palette.",
-            self.icon_font,
-            self.ui_font,
-            self._make_matugen_switch(),
-        )
         layout.addWidget(interval)
-        layout.addWidget(matugen_toggle)
         layout.addWidget(matugen)
         return card
 
@@ -5541,6 +5903,13 @@ class SettingsWindow(QWidget):
 
     def _set_use_matugen_palette(self, enabled: bool) -> None:
         self.settings_state["appearance"]["use_matugen_palette"] = bool(enabled)
+        if enabled:
+            self.settings_state["appearance"]["theme_choice"] = "wallpaper_aware"
+        else:
+            current_choice = str(self.settings_state["appearance"].get("theme_choice", "dark")).strip().lower()
+            if current_choice == "wallpaper_aware":
+                fallback_mode = str(self.settings_state["appearance"].get("theme_mode", "dark")).strip().lower()
+                self.settings_state["appearance"]["theme_choice"] = fallback_mode if fallback_mode in {"light", "dark", "custom"} else "dark"
         save_settings_state(self.settings_state)
         if enabled:
             self._apply_matugen_palette()
@@ -5548,17 +5917,90 @@ class SettingsWindow(QWidget):
             self._theme_mtime = palette_mtime()
             self._refresh_current_accent()
             self._apply_styles()
+            self._sync_accent_controls()
             return
         write_default_pyqt_palette(use_matugen=False)
         self.theme_palette = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self._refresh_current_accent()
         self._apply_styles()
+        self._sync_accent_controls()
+
+    def _set_theme_choice(self, choice: str) -> None:
+        choice = str(choice).strip().lower()
+        if choice not in THEME_CHOICES:
+            return
+        self.settings_state["appearance"]["theme_choice"] = choice
+        if choice == "wallpaper_aware":
+            self.settings_state["appearance"]["use_matugen_palette"] = True
+            save_settings_state(self.settings_state)
+            self._apply_matugen_palette(force=True)
+            self.theme_palette = load_theme_palette()
+            self._theme_mtime = palette_mtime()
+            self._refresh_current_accent()
+            self._apply_styles()
+            self._sync_accent_controls()
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText("Wallpaper aware mode is active. Hanauta will refresh colors from the current wallpaper.")
+            return
+        if choice == "custom":
+            self.settings_state["appearance"]["theme_mode"] = "dark"
+            self.settings_state["appearance"]["use_matugen_palette"] = False
+            save_settings_state(self.settings_state)
+            sync_static_theme_from_settings(self.settings_state, apply_gtk=True)
+            self.theme_palette = load_theme_palette()
+            self._theme_mtime = palette_mtime()
+            self._refresh_current_accent()
+            self._apply_styles()
+            self._sync_accent_controls()
+            if hasattr(self, "appearance_status"):
+                label = THEME_LIBRARY[selected_theme_key(self.settings_state)]["label"]
+                self.appearance_status.setText(f"Custom theme selected: {label}.")
+            return
+        self.settings_state["appearance"]["theme_mode"] = choice
+        self.settings_state["appearance"]["use_matugen_palette"] = False
+        save_settings_state(self.settings_state)
+        sync_static_theme_from_settings(self.settings_state, apply_gtk=True)
+        self.theme_palette = load_theme_palette()
+        self._theme_mtime = palette_mtime()
+        self._refresh_current_accent()
+        self._apply_styles()
+        self._sync_accent_controls()
+        if hasattr(self, "appearance_status"):
+            labels = {
+                "light": "Light mode selected.",
+                "dark": "Dark mode selected.",
+                "custom": "Custom theme mode selected. Theme selection will land here next.",
+            }
+            self.appearance_status.setText(labels.get(choice, "Theme mode updated."))
+
+    def _set_custom_theme(self, theme_id: str) -> None:
+        theme_id = str(theme_id).strip().lower()
+        if theme_id not in CUSTOM_THEME_KEYS:
+            return
+        self.settings_state["appearance"]["custom_theme_id"] = theme_id
+        self.settings_state["appearance"]["theme_choice"] = "custom"
+        self.settings_state["appearance"]["use_matugen_palette"] = False
+        save_settings_state(self.settings_state)
+        sync_static_theme_from_settings(self.settings_state, apply_gtk=True)
+        self.theme_palette = load_theme_palette()
+        self._theme_mtime = palette_mtime()
+        self._refresh_current_accent()
+        self._apply_styles()
+        self._sync_accent_controls()
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(f"Custom theme applied: {THEME_LIBRARY[theme_id]['label']}.")
 
     def _set_theme_mode(self, mode: str) -> None:
         self.settings_state["appearance"]["theme_mode"] = mode
+        self.settings_state["appearance"]["theme_choice"] = mode if mode in {"light", "dark", "custom"} else "dark"
+        self.settings_state["appearance"]["use_matugen_palette"] = False
         save_settings_state(self.settings_state)
+        sync_static_theme_from_settings(self.settings_state, apply_gtk=False)
+        self.theme_palette = load_theme_palette()
+        self._theme_mtime = palette_mtime()
         self._sync_accent_controls()
+        self._apply_styles()
 
     def _set_accent(self, key: str) -> None:
         key = {"auto": "orchid"}.get(key, key)
@@ -5571,15 +6013,30 @@ class SettingsWindow(QWidget):
         accent = self.settings_state["appearance"].get("accent", "orchid")
         for key, chip in getattr(self, "accent_chips", {}).items():
             chip.setChecked(key == accent or (key == "auto" and accent == "orchid"))
-        theme_mode = self.settings_state["appearance"].get("theme_mode", "dark")
+        theme_mode = str(self.settings_state["appearance"].get("theme_choice", "")).strip().lower()
+        if theme_mode not in THEME_CHOICES:
+            theme_mode = "wallpaper_aware" if self.settings_state["appearance"].get("use_matugen_palette", False) else str(self.settings_state["appearance"].get("theme_mode", "dark")).strip().lower()
+        if theme_mode not in THEME_CHOICES:
+            theme_mode = "dark"
         for key, button in getattr(self, "theme_buttons", {}).items():
             button.setChecked(key == theme_mode)
+        custom_theme_id = str(self.settings_state["appearance"].get("custom_theme_id", "retrowave")).strip().lower()
+        for key, button in getattr(self, "custom_theme_buttons", {}).items():
+            button.setChecked(key == custom_theme_id)
+        custom_visible = theme_mode == "custom"
+        if hasattr(self, "custom_theme_heading"):
+            self.custom_theme_heading.setVisible(custom_visible)
+        if hasattr(self, "custom_theme_wrap"):
+            self.custom_theme_wrap.setVisible(custom_visible)
+        if hasattr(self, "custom_theme_hint"):
+            self.custom_theme_hint.setVisible(custom_visible)
         self._refresh_current_accent()
 
     def _refresh_current_accent(self) -> None:
         accent = self.settings_state["appearance"].get("accent", "orchid")
         self.current_accent = accent_palette(accent)
-        if self.theme_palette.use_matugen:
+        theme_choice = str(self.settings_state["appearance"].get("theme_choice", "dark")).strip().lower()
+        if self.theme_palette.use_matugen or theme_choice == "custom":
             self.current_accent = {
                 "accent": self.theme_palette.primary,
                 "on_accent": self.theme_palette.active_text,
@@ -5661,12 +6118,13 @@ class SettingsWindow(QWidget):
             return
         if force and not self.settings_state["appearance"].get("use_matugen_palette", False):
             self.settings_state["appearance"]["use_matugen_palette"] = True
+            self.settings_state["appearance"]["theme_choice"] = "wallpaper_aware"
             save_settings_state(self.settings_state)
             if hasattr(self, "matugen_palette_switch"):
                 self.matugen_palette_switch.setChecked(True)
                 self.matugen_palette_switch._apply_state()
         if not self.settings_state["appearance"].get("use_matugen_palette", False):
-            write_default_pyqt_palette(use_matugen=False)
+            sync_static_theme_from_settings(self.settings_state, apply_gtk=False)
             return
         if MATUGEN_SCRIPT.exists():
             run_bg([str(MATUGEN_SCRIPT), str(self.wallpaper)])
