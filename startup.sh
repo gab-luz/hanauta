@@ -4,6 +4,9 @@ set -euo pipefail
 LOG=/tmp/i3-startup.log
 
 {
+  unset GTK_THEME
+  systemctl --user unset-environment GTK_THEME 2>/dev/null || true
+  dbus-update-activation-environment --systemd GTK_THEME= 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/notification-daemon/notification_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-service" 2>/dev/null || true
