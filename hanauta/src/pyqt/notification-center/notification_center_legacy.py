@@ -12,6 +12,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import threading
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -85,9 +86,12 @@ MATERIAL_ICONS = {
     "brightness_medium": "\ue1ae",
     "camera_alt": "\ue3b0",
     "check_circle": "\ue86c",
+    "chevron_left": "\ue5cb",
     "chevron_right": "\ue5cc",
     "content_paste": "\ue14f",
+    "close": "\ue5cd",
     "coffee": "\uefef",
+    "delete_sweep": "\ue16c",
     "do_not_disturb_on": "\ue644",
     "home": "\ue88a",
     "hub": "\uee20",
@@ -527,6 +531,7 @@ def load_notification_history(limit: int = 3) -> list[dict]:
                     "body": str(payload.get("body", "")),
                     "icon": str(payload.get("icon", "")),
                     "desktop_entry": str(payload.get("desktop_entry", "")),
+                    "timestamp": payload.get("timestamp", 0),
                 }
             )
         raw = payload.get("data", [])
@@ -542,6 +547,7 @@ def load_notification_history(limit: int = 3) -> list[dict]:
                         "body": str(item.get("body", {}).get("data", "")) if isinstance(item.get("body"), dict) else str(item.get("body", "")),
                         "icon": str(item.get("app_icon", {}).get("data", "")) if isinstance(item.get("app_icon"), dict) else str(item.get("app_icon", "")),
                         "desktop_entry": str(item.get("desktop_entry", {}).get("data", "")) if isinstance(item.get("desktop_entry"), dict) else str(item.get("desktop_entry", "")),
+                        "timestamp": item.get("timestamp", 0),
                     }
                 )
     history = [item for item in history if item.get("summary") or item.get("body")]
@@ -1001,7 +1007,7 @@ class GameCarouselCard(QFrame):
         self.kicker.setObjectName("gameKicker")
         header.addWidget(self.kicker, 1)
 
-        self.prev_button = QPushButton(material_icon("arrow_back"))
+        self.prev_button = QPushButton(material_icon("chevron_left"))
         self.prev_button.setObjectName("compactIconAction")
         self.prev_button.setFont(QFont(self.material_font, 17))
         self.prev_button.setFixedSize(30, 30)
@@ -1188,6 +1194,7 @@ class NotificationCenter(QWidget):
         self._media_estimated_progress = False
         self._media_url = ""
         self._media_duration_cache: dict[str, int] = {}
+        self._media_duration_pending: set[str] = set()
         self._calendar_events: list[dict] = []
         self._notification_history: list[dict] = []
         self.settings_state = load_notification_settings()
@@ -1418,7 +1425,27 @@ class NotificationCenter(QWidget):
         return card
 
     def _build_notifications_card(self) -> QFrame:
-        card, layout = self._section_shell("Last notifications", "")
+        card = QFrame()
+        card.setObjectName("overviewSection")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        title_label = QLabel("Last notifications")
+        title_label.setObjectName("sectionTitle")
+        self.clear_notifications_btn = QPushButton(material_icon("delete_sweep"))
+        self.clear_notifications_btn.setObjectName("compactIconAction")
+        self.clear_notifications_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.clear_notifications_btn.setFont(QFont(self.material_font, 16))
+        self.clear_notifications_btn.setFixedSize(28, 28)
+        self.clear_notifications_btn.setToolTip("Clear all notifications")
+        self.clear_notifications_btn.clicked.connect(self._clear_all_notifications)
+        header.addWidget(title_label)
+        header.addStretch(1)
+        header.addWidget(self.clear_notifications_btn)
+        layout.addLayout(header)
         self.notifications_scroll, self.notifications_container, self.notifications_layout = self._hidden_scroll("notificationsScroll")
         layout.addWidget(self.notifications_scroll, 1)
         return card
@@ -1455,9 +1482,9 @@ class NotificationCenter(QWidget):
         right = QHBoxLayout()
         right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(6)
-        self.settings_btn = self._circle_icon_button("settings")
+        self.settings_btn = self._circle_icon_button("settings", rounded_rect=True)
         self.settings_btn.clicked.connect(self._open_settings)
-        self.power_btn = self._circle_icon_button("power_settings_new", accent="power")
+        self.power_btn = self._circle_icon_button("power_settings_new", accent="power", rounded_rect=True)
         self.power_btn.clicked.connect(self.close)
         right.addWidget(self.settings_btn)
         right.addWidget(self.power_btn)
@@ -2122,11 +2149,12 @@ class NotificationCenter(QWidget):
             return
         run_bg_singleton(GAME_MODE_POPUP_SCRIPT)
 
-    def _circle_icon_button(self, icon: str, accent: str = "default") -> QPushButton:
+    def _circle_icon_button(self, icon: str, accent: str = "default", rounded_rect: bool = False) -> QPushButton:
         button = QPushButton(material_icon(icon))
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setFont(QFont(self.material_font, 18))
         button.setProperty("accent", accent)
+        button.setProperty("roundedRect", rounded_rect)
         button.setObjectName("circleIconButton")
         button.setFixedSize(40, 40)
         return button
@@ -2181,6 +2209,9 @@ class NotificationCenter(QWidget):
                 border-radius: 999px;
                 color: {theme.icon};
                 font-family: "{self.material_font}";
+            }}
+            #circleIconButton[roundedRect="true"] {{
+                border-radius: 14px;
             }}
             #circleIconButton:hover {{
                 background: {theme.hover_bg};
@@ -2267,7 +2298,7 @@ class NotificationCenter(QWidget):
             }}
             #compactIconAction {{
                 background: {rgba(theme.surface_container_high, 0.88)};
-                border: 1px solid {rgba(theme.outline, 0.16)};
+                border: none;
                 border-radius: 999px;
                 color: {theme.icon};
                 font-family: "{self.material_font}";
@@ -2277,8 +2308,11 @@ class NotificationCenter(QWidget):
             }}
             #compactIconAction[active="true"] {{
                 background: {theme.accent_soft};
-                border: 1px solid {theme.app_focused_border};
                 color: {theme.primary};
+            }}
+            #compactIconAction:disabled {{
+                color: {theme.inactive};
+                background: {rgba(theme.surface_container_high, 0.44)};
             }}
             #settingsInput {{
                 background: {rgba(theme.surface_container_high, 0.88)};
@@ -2316,7 +2350,7 @@ class NotificationCenter(QWidget):
             }}
             #compactSliderWrap {{
                 background: {rgba(theme.surface_container_high, 0.34)};
-                border: 1px solid {rgba(theme.outline, 0.12)};
+                border: none;
                 border-radius: 14px;
             }}
             #wideSlider::groove:horizontal, #compactSlider::groove:horizontal {{
@@ -2496,6 +2530,17 @@ class NotificationCenter(QWidget):
             #feedCardBody {{
                 color: {theme.text_muted};
                 font-size: 10px;
+            }}
+            #notificationCloseButton {{
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: none;
+                border-radius: 10px;
+                color: {theme.text_muted};
+                font-family: "{self.material_font}";
+            }}
+            #notificationCloseButton:hover {{
+                background: {theme.hover_bg};
+                color: {theme.text};
             }}
             #eventsScroll, #notificationsScroll {{
                 background: transparent;
@@ -2749,6 +2794,40 @@ class NotificationCenter(QWidget):
                     if child.widget() is not None:
                         child.widget().deleteLater()
 
+    def _history_item_matches(self, left: dict, right: dict) -> bool:
+        left_id = int(left.get("id", 0) or 0)
+        right_id = int(right.get("id", 0) or 0)
+        if left_id and right_id:
+            return left_id == right_id
+        return (
+            str(left.get("app_name", "")) == str(right.get("app_name", ""))
+            and str(left.get("summary", "")) == str(right.get("summary", ""))
+            and str(left.get("body", "")) == str(right.get("body", ""))
+            and str(left.get("timestamp", "")) == str(right.get("timestamp", ""))
+        )
+
+    def _write_notification_history(self, history: list[dict]) -> None:
+        NOTIFICATION_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        NOTIFICATION_HISTORY_FILE.write_text(
+            json.dumps(history, indent=2),
+            encoding="utf-8",
+        )
+
+    def _dismiss_notification(self, target: dict) -> None:
+        updated: list[dict] = []
+        removed = False
+        for item in self._notification_history:
+            if not removed and self._history_item_matches(item, target):
+                removed = True
+                continue
+            updated.append(item)
+        self._write_notification_history(updated)
+        self._poll_notification_history()
+
+    def _clear_all_notifications(self) -> None:
+        self._write_notification_history([])
+        self._poll_notification_history()
+
     def _list_item_card(
         self,
         title: str,
@@ -2756,6 +2835,7 @@ class NotificationCenter(QWidget):
         meta: str,
         kind: str,
         icon_pixmap: QPixmap | None = None,
+        action_button: QPushButton | None = None,
     ) -> QFrame:
         card = QFrame()
         card.setObjectName("feedCard")
@@ -2785,6 +2865,8 @@ class NotificationCenter(QWidget):
         text.addWidget(subtitle_label)
         text.addWidget(meta_label)
         row.addLayout(text, 1)
+        if action_button is not None:
+            row.addWidget(action_button, 0, Qt.AlignmentFlag.AlignTop)
         return card
 
     def _notification_icon_pixmap(self, app_name: str, desktop_entry: str = "", icon_name: str = "") -> QPixmap:
@@ -2889,6 +2971,8 @@ class NotificationCenter(QWidget):
     def _poll_notification_history(self) -> None:
         self._notification_history = load_notification_history(3)
         self._clear_layout_widgets(self.notifications_layout)
+        if hasattr(self, "clear_notifications_btn"):
+            self.clear_notifications_btn.setEnabled(bool(self._notification_history))
         if not self._notification_history:
             self.notifications_layout.addWidget(
                 self._list_item_card(
@@ -2906,6 +2990,13 @@ class NotificationCenter(QWidget):
             app_name = str(item.get("app_name", "System")).strip() or "System"
             desktop_entry = str(item.get("desktop_entry", "")).strip()
             icon_name = str(item.get("icon", "")).strip()
+            dismiss_btn = QPushButton(material_icon("close"))
+            dismiss_btn.setObjectName("notificationCloseButton")
+            dismiss_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            dismiss_btn.setFont(QFont(self.material_font, 14))
+            dismiss_btn.setFixedSize(20, 20)
+            dismiss_btn.setToolTip("Dismiss notification")
+            dismiss_btn.clicked.connect(lambda checked=False, current=dict(item): self._dismiss_notification(current))
             self.notifications_layout.addWidget(
                 self._list_item_card(
                     title,
@@ -2913,6 +3004,7 @@ class NotificationCenter(QWidget):
                     app_name,
                     "notifications",
                     self._notification_icon_pixmap(app_name, desktop_entry, icon_name),
+                    dismiss_btn,
                 )
             )
         self.notifications_layout.addStretch(1)
@@ -3006,6 +3098,8 @@ class NotificationCenter(QWidget):
             self._media_duration_ms = 0
             self._media_estimated_progress = False
             self._render_media_progress()
+            if self._is_browser_player(player) and media_url:
+                self._request_media_url_duration(media_url)
             cover_path = Path(art) if art else FALLBACK_COVER
             if not cover_path.exists():
                 cover_path = FALLBACK_COVER
@@ -3044,6 +3138,22 @@ class NotificationCenter(QWidget):
             return None
         self._media_duration_cache[url] = duration_ms
         return duration_ms
+
+    def _request_media_url_duration(self, url: str) -> None:
+        url = url.strip()
+        if not url or url in self._media_duration_cache or url in self._media_duration_pending:
+            return
+        self._media_duration_pending.add(url)
+
+        def worker() -> None:
+            try:
+                duration_ms = self._duration_ms_from_media_url(url)
+                if duration_ms is not None:
+                    self._media_duration_cache[url] = duration_ms
+            finally:
+                self._media_duration_pending.discard(url)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _trigger_media_action(self, action: str) -> None:
         run_script_bg("mpris.sh", action)
@@ -3091,9 +3201,11 @@ class NotificationCenter(QWidget):
             self._media_duration_ms = 0
 
         if self._is_browser_player(player):
-            url_duration_ms = self._duration_ms_from_media_url(self._media_url)
+            url_duration_ms = self._media_duration_cache.get(self._media_url)
             if url_duration_ms is not None:
                 self._media_duration_ms = url_duration_ms
+            else:
+                self._request_media_url_duration(self._media_url)
 
         parsed_position_ms: int | None = None
         try:
