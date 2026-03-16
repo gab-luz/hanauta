@@ -555,13 +555,6 @@ def format_playtime_hours(hours: float) -> str:
     return f"{whole_hours}h {minutes}m total"
 
 
-def format_completion_hint(hours: float, seed: int) -> str:
-    if hours <= 0:
-        return "Fresh install"
-    percent = min(96, max(8, int(hours * 4) + (seed % 17)))
-    return f"{percent}% completed"
-
-
 def load_lutris_game_slides(limit: int = 2) -> list[dict]:
     if not LUTRIS_DB.exists():
         return []
@@ -590,7 +583,6 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
     slides: list[dict] = []
     for name, slug, playtime, lastplayed, runner, platform in rows:
         hours = float(playtime or 0.0)
-        label_seed = int(lastplayed or 0)
         platform_label = f"Lutris • {runner or platform or 'Library'}"
         cover_path = LUTRIS_COVERART_DIR / f"{slug}.jpg" if slug else Path()
         if not cover_path.exists() and slug:
@@ -600,7 +592,6 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
             {
                 "title": str(name or "Lutris game"),
                 "stats": [
-                    format_completion_hint(hours, label_seed),
                     format_playtime_hours(hours),
                     str(platform or runner or "Installed"),
                 ],
@@ -654,7 +645,6 @@ def load_steam_game_slides(limit: int = 2) -> list[dict]:
                 {
                     "title": name,
                     "stats": [
-                        format_completion_hint(hours, int(appid)),
                         format_playtime_hours(hours),
                         f"App {appid}",
                     ],
@@ -1346,14 +1336,14 @@ class NotificationCenter(QWidget):
             slides = [
                 {
                     "title": "Cyberpunk 2077",
-                    "stats": ["60% completed", "42h total", "Night City route"],
+                    "stats": ["42h total", "Night City route"],
                     "logo": LUTRIS_ICON,
                     "platform": "Lutris library",
                     "accent": "primary",
                 },
                 {
                     "title": "Minecraft",
-                    "stats": ["18% completed", "13h total", "Modded survival"],
+                    "stats": ["13h total", "Modded survival"],
                     "logo": STEAM_ICON,
                     "platform": "Steam library",
                     "accent": "secondary",
