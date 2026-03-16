@@ -242,8 +242,6 @@ def load_theme_palette() -> ThemePalette:
         payload.update(json.loads(PALETTE_FILE.read_text(encoding="utf-8")))
     except Exception:
         pass
-    if not bool(payload.get("use_matugen", False)):
-        payload = dict(defaults)
     normalized = {
         key: (_normalize_hex(str(value), defaults[key]) if isinstance(defaults[key], str) and str(defaults[key]).startswith("#") else value)
         for key, value in payload.items()
