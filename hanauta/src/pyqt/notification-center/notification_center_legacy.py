@@ -18,8 +18,8 @@ from pathlib import Path
 from time import monotonic
 from urllib import error, parse, request
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QPainter, QPainterPath, QPixmap
+from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPixmap, QTextCharFormat
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -441,6 +441,19 @@ def render_svg_pixmap(path: Path, size: int = 18) -> QPixmap:
     return pixmap
 
 
+def render_theme_icon_pixmap(names: list[str], size: int = 18) -> QPixmap:
+    for name in names:
+        if not name:
+            continue
+        icon = QIcon.fromTheme(name)
+        if icon.isNull():
+            continue
+        pixmap = icon.pixmap(size, size)
+        if not pixmap.isNull():
+            return pixmap
+    return QPixmap()
+
+
 def accent_palette(name: str) -> dict[str, str]:
     palettes = {
         "orchid": {"accent": "#D0BCFF", "on_accent": "#381E72", "soft": "rgba(208,188,255,0.18)"},
@@ -505,6 +518,17 @@ def load_notification_history(limit: int = 3) -> list[dict]:
     if isinstance(payload, list):
         history = [item for item in payload if isinstance(item, dict)]
     elif isinstance(payload, dict):
+        if payload.get("summary") or payload.get("body"):
+            history.append(
+                {
+                    "id": payload.get("id", 0),
+                    "app_name": str(payload.get("app_name", "")),
+                    "summary": str(payload.get("summary", "")),
+                    "body": str(payload.get("body", "")),
+                    "icon": str(payload.get("icon", "")),
+                    "desktop_entry": str(payload.get("desktop_entry", "")),
+                }
+            )
         raw = payload.get("data", [])
         if isinstance(raw, list) and raw and isinstance(raw[0], list):
             for item in raw[0]:
@@ -516,6 +540,8 @@ def load_notification_history(limit: int = 3) -> list[dict]:
                         "app_name": str(item.get("app_name", {}).get("data", "")) if isinstance(item.get("app_name"), dict) else str(item.get("app_name", "")),
                         "summary": str(item.get("summary", {}).get("data", "")) if isinstance(item.get("summary"), dict) else str(item.get("summary", "")),
                         "body": str(item.get("body", {}).get("data", "")) if isinstance(item.get("body"), dict) else str(item.get("body", "")),
+                        "icon": str(item.get("app_icon", {}).get("data", "")) if isinstance(item.get("app_icon"), dict) else str(item.get("app_icon", "")),
+                        "desktop_entry": str(item.get("desktop_entry", {}).get("data", "")) if isinstance(item.get("desktop_entry"), dict) else str(item.get("desktop_entry", "")),
                     }
                 )
     history = [item for item in history if item.get("summary") or item.get("body")]
@@ -2383,16 +2409,34 @@ class NotificationCenter(QWidget):
                 alternate-background-color: transparent;
                 color: {theme.text};
             }}
+            #miniCalendar QWidget {{
+                background: transparent;
+                outline: none;
+            }}
+            #miniCalendar QAbstractItemView:focus,
+            #miniCalendar QTableView:focus,
+            #miniCalendar QSpinBox:focus,
+            #miniCalendar QToolButton:focus {{
+                outline: none;
+            }}
             #miniCalendar QToolButton {{
                 color: {theme.text};
                 font-weight: 700;
-                background: {rgba(theme.surface_container_high, 0.76)};
-                border: 1px solid {rgba(theme.outline, 0.14)};
+                background: transparent;
+                border: none;
                 border-radius: 10px;
-                padding: 5px 7px;
+                padding: 4px 6px;
             }}
             #miniCalendar QToolButton:hover {{
-                background: {theme.hover_bg};
+                background: {rgba(theme.surface_container_high, 0.56)};
+            }}
+            #miniCalendar QToolButton#qt_calendar_monthbutton,
+            #miniCalendar QToolButton#qt_calendar_yearbutton {{
+                font-size: 12px;
+            }}
+            #miniCalendar QToolButton::menu-indicator {{
+                image: none;
+                width: 0px;
             }}
             #miniCalendar QMenu {{
                 background: {theme.chip_bg};
@@ -2414,11 +2458,11 @@ class NotificationCenter(QWidget):
                 background: transparent;
             }}
             #miniCalendar QSpinBox {{
-                background: {rgba(theme.surface_container_high, 0.76)};
+                background: transparent;
                 color: {theme.text};
-                border: 1px solid {rgba(theme.outline, 0.14)};
+                border: none;
                 border-radius: 10px;
-                padding: 4px 8px;
+                padding: 2px 4px;
                 selection-background-color: {theme.primary};
             }}
             #miniCalendar QAbstractItemView {{
@@ -2506,6 +2550,7 @@ class NotificationCenter(QWidget):
             }}
             """
         )
+        self._apply_calendar_formats()
         for quick_button in getattr(self, "quick_buttons", {}).values():
             quick_button.apply_theme(theme, self.current_accent["accent"], self.current_accent["on_accent"])
         for button_key, button in getattr(self, "settings_nav_buttons", {}).items():
@@ -2699,17 +2744,26 @@ class NotificationCenter(QWidget):
                     if child.widget() is not None:
                         child.widget().deleteLater()
 
-    def _list_item_card(self, title: str, subtitle: str, meta: str, kind: str) -> QFrame:
+    def _list_item_card(
+        self,
+        title: str,
+        subtitle: str,
+        meta: str,
+        kind: str,
+        icon_pixmap: QPixmap | None = None,
+    ) -> QFrame:
         card = QFrame()
         card.setObjectName("feedCard")
         row = QHBoxLayout(card)
         row.setContentsMargins(12, 12, 12, 12)
         row.setSpacing(10)
 
-        icon = QLabel(material_icon(kind))
+        icon = QLabel(material_icon(kind) if icon_pixmap is None or icon_pixmap.isNull() else "")
         icon.setObjectName("feedCardIcon")
         icon.setFont(QFont(self.material_font, 16))
         icon.setFixedWidth(20)
+        if icon_pixmap is not None and not icon_pixmap.isNull():
+            icon.setPixmap(icon_pixmap)
         row.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
 
         text = QVBoxLayout()
@@ -2727,6 +2781,78 @@ class NotificationCenter(QWidget):
         text.addWidget(meta_label)
         row.addLayout(text, 1)
         return card
+
+    def _notification_icon_pixmap(self, app_name: str, desktop_entry: str = "", icon_name: str = "") -> QPixmap:
+        normalized = app_name.strip().lower()
+        known_assets = {
+            "kde connect": KDECONNECT_ICON,
+            "kdeconnect": KDECONNECT_ICON,
+            "home assistant": HOME_ASSISTANT_ICON,
+            "steam": STEAM_ICON,
+            "lutris": LUTRIS_ICON,
+        }
+        asset = known_assets.get(normalized)
+        if asset is not None:
+            return tinted_svg_pixmap(asset, QColor(self.theme_palette.primary), 18)
+
+        theme_name_candidates = {
+            "kde connect": ["kdeconnect", "org.kde.kdeconnect", "kde-connect"],
+            "kdeconnect": ["kdeconnect", "org.kde.kdeconnect", "kde-connect"],
+            "discord": ["discord", "Discord"],
+            "spotify": ["spotify", "Spotify"],
+            "steam": ["steam", "Steam"],
+            "lutris": ["lutris", "Lutris"],
+            "telegram": ["telegram", "Telegram", "org.telegram.desktop"],
+            "firefox": ["firefox", "Firefox"],
+            "chromium": ["chromium", "Chromium"],
+            "google chrome": ["google-chrome", "Google-chrome", "chrome"],
+            "ferdium": ["ferdium", "Ferdium"],
+        }
+        candidates = []
+        if icon_name:
+            candidates.append(icon_name)
+        if desktop_entry:
+            candidates.extend(
+                [
+                    desktop_entry,
+                    desktop_entry.removesuffix(".desktop"),
+                    desktop_entry.replace(".desktop", ""),
+                ]
+            )
+        candidates.extend(theme_name_candidates.get(normalized, []))
+        if not candidates:
+            slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+            dotted = re.sub(r"[^a-z0-9]+", ".", normalized).strip(".")
+            compact = re.sub(r"[^a-z0-9]+", "", normalized)
+            candidates = [slug, dotted, compact, app_name]
+        return render_theme_icon_pixmap(candidates, 18)
+
+    def _apply_calendar_formats(self) -> None:
+        if not hasattr(self, "calendar_widget"):
+            return
+        theme = self.theme_palette
+
+        header_fmt = QTextCharFormat()
+        header_fmt.setForeground(QColor(theme.primary))
+        self.calendar_widget.setHeaderTextFormat(header_fmt)
+
+        weekday_fmt = QTextCharFormat()
+        weekday_fmt.setForeground(QColor(theme.text))
+        weekend_fmt = QTextCharFormat()
+        weekend_fmt.setForeground(QColor(theme.primary))
+
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Monday, weekday_fmt)
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Tuesday, weekday_fmt)
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Wednesday, weekday_fmt)
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Thursday, weekday_fmt)
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Friday, weekday_fmt)
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, weekend_fmt)
+        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, weekend_fmt)
+
+        today_fmt = QTextCharFormat()
+        today_fmt.setForeground(QColor(theme.text))
+        today_fmt.setBackground(QColor(self._hex_to_rgba(theme.primary, 0.16)))
+        self.calendar_widget.setDateTextFormat(QDate.currentDate(), today_fmt)
 
     def _poll_calendar_events(self) -> None:
         self._calendar_events = load_calendar_events(2)
@@ -2773,7 +2899,17 @@ class NotificationCenter(QWidget):
             title = str(item.get("summary", "Notification")).strip() or "Notification"
             body = str(item.get("body", "")).replace("\n", " ").strip() or str(item.get("app_name", "No details"))
             app_name = str(item.get("app_name", "System")).strip() or "System"
-            self.notifications_layout.addWidget(self._list_item_card(title, body, app_name, "notifications"))
+            desktop_entry = str(item.get("desktop_entry", "")).strip()
+            icon_name = str(item.get("icon", "")).strip()
+            self.notifications_layout.addWidget(
+                self._list_item_card(
+                    title,
+                    body,
+                    app_name,
+                    "notifications",
+                    self._notification_icon_pixmap(app_name, desktop_entry, icon_name),
+                )
+            )
         self.notifications_layout.addStretch(1)
 
     def _poll_quick_settings(self) -> None:
