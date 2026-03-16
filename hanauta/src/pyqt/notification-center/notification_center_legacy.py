@@ -677,8 +677,8 @@ class QuickSettingButton(QFrame):
         self.setObjectName("quickTile")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
 
         self.icon_label = QLabel(material_icon(icon))
         self.icon_label.setFont(QFont(self.material_font, 18))
@@ -822,8 +822,8 @@ class ActionTile(QFrame):
         self.setObjectName("actionTile")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
         self.icon_label = QLabel(material_icon(icon))
         self.icon_label.setObjectName("actionTileIcon")
         self.icon_label.setFont(QFont(material_font, 18))
@@ -888,8 +888,8 @@ class ServiceLauncherCard(QFrame):
         self.setObjectName("infoCard")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
 
         icon_label = QLabel(material_icon(icon))
         icon_label.setObjectName("sectionIcon")
@@ -965,12 +965,12 @@ class GameCarouselCard(QFrame):
         self._auto_timer.start()
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(8)
+        header.setSpacing(6)
         self.kicker = QLabel("Recently games played")
         self.kicker.setObjectName("gameKicker")
         header.addWidget(self.kicker, 1)
@@ -978,12 +978,12 @@ class GameCarouselCard(QFrame):
         self.prev_button = QPushButton(material_icon("arrow_back"))
         self.prev_button.setObjectName("compactIconAction")
         self.prev_button.setFont(QFont(self.material_font, 17))
-        self.prev_button.setFixedSize(34, 34)
+        self.prev_button.setFixedSize(30, 30)
         self.prev_button.clicked.connect(self.previous_slide)
         self.next_button = QPushButton(material_icon("chevron_right"))
         self.next_button.setObjectName("compactIconAction")
         self.next_button.setFont(QFont(self.material_font, 17))
-        self.next_button.setFixedSize(34, 34)
+        self.next_button.setFixedSize(30, 30)
         self.next_button.clicked.connect(self.next_slide)
         self.prev_button.clicked.connect(self._restart_autoplay)
         self.next_button.clicked.connect(self._restart_autoplay)
@@ -997,17 +997,17 @@ class GameCarouselCard(QFrame):
 
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
-        footer.setSpacing(6)
+        footer.setSpacing(4)
         self.caption = QLabel("")
         self.caption.setObjectName("gameCaption")
         footer.addWidget(self.caption, 1)
         self.dots_wrap = QHBoxLayout()
         self.dots_wrap.setContentsMargins(0, 0, 0, 0)
-        self.dots_wrap.setSpacing(5)
+        self.dots_wrap.setSpacing(4)
         footer.addLayout(self.dots_wrap)
         layout.addLayout(footer)
 
-    def _cover_pixmap(self, path: Path, width: int = 86, height: int = 114) -> QPixmap:
+    def _cover_pixmap(self, path: Path, width: int = 74, height: int = 100) -> QPixmap:
         fallback = QPixmap(width, height)
         fallback.fill(Qt.GlobalColor.transparent)
         if not path.exists():
@@ -1041,20 +1041,20 @@ class GameCarouselCard(QFrame):
         slide.setProperty("accentColor", accent)
         slide_layout = QVBoxLayout(slide)
         slide_layout.setContentsMargins(0, 0, 0, 0)
-        slide_layout.setSpacing(10)
+        slide_layout.setSpacing(8)
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(12)
+        top.setSpacing(10)
         cover = QLabel()
         cover.setObjectName("gameCover")
-        cover.setFixedSize(86, 114)
+        cover.setFixedSize(74, 100)
         cover.setPixmap(self._cover_pixmap(cover_path or Path()))
         top.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
 
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(6)
+        title_wrap.setSpacing(4)
         title_label = QLabel(title)
         title_label.setObjectName("gameSlideTitle")
         platform_label = QLabel(platform)
@@ -1063,7 +1063,7 @@ class GameCarouselCard(QFrame):
         title_wrap.addWidget(platform_label)
         chip_row = QHBoxLayout()
         chip_row.setContentsMargins(0, 0, 0, 0)
-        chip_row.setSpacing(8)
+        chip_row.setSpacing(6)
         stat_values = stats or ["No telemetry yet"]
         for idx, text in enumerate(stat_values):
             stat = QLabel(text)
@@ -1077,7 +1077,7 @@ class GameCarouselCard(QFrame):
 
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
-        bottom.setSpacing(8)
+        bottom.setSpacing(6)
         hint = QLabel("Last played across your launchers")
         hint.setObjectName("gameSlideHint")
         bottom.addWidget(hint, 1, Qt.AlignmentFlag.AlignBottom)
@@ -1200,7 +1200,7 @@ class NotificationCenter(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.screen_geo = QApplication.primaryScreen().availableGeometry()
-        self.compact_size = (920, min(860, self.screen_geo.height() - 68))
+        self.compact_size = (884, min(804, self.screen_geo.height() - 72))
         self.settings_size = (min(864, self.screen_geo.width() - 72), self.compact_size[1])
         self._apply_window_mode("compact")
 
@@ -1214,7 +1214,7 @@ class NotificationCenter(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 18)
+        root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(0)
 
         self.panel = QFrame()
@@ -1223,7 +1223,7 @@ class NotificationCenter(QWidget):
         self.panel.setGraphicsEffect(self.panel_effect)
         self.panel_effect.setOpacity(0.0)
         panel_layout = QVBoxLayout(self.panel)
-        panel_layout.setContentsMargins(20, 20, 20, 20)
+        panel_layout.setContentsMargins(16, 16, 16, 16)
         panel_layout.setSpacing(0)
         self.page_stack = QStackedWidget()
         self.page_stack.setObjectName("pageStack")
@@ -1239,18 +1239,18 @@ class NotificationCenter(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(14)
+        layout.setSpacing(10)
 
         layout.addLayout(self._build_header())
 
         columns = QHBoxLayout()
         columns.setContentsMargins(0, 0, 0, 0)
-        columns.setSpacing(14)
+        columns.setSpacing(10)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(12)
+        left_layout.setSpacing(10)
         left_layout.addWidget(self._build_quick_settings_card())
         left_layout.addWidget(self._build_compact_sliders_card())
         left_layout.addWidget(self._build_media_card())
@@ -1262,7 +1262,7 @@ class NotificationCenter(QWidget):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(12)
+        right_layout.setSpacing(10)
         right_layout.addWidget(self._build_calendar_card())
         right_layout.addWidget(self._build_events_card(), 1)
         right_layout.addWidget(self._build_notifications_card(), 1)
@@ -1277,11 +1277,11 @@ class NotificationCenter(QWidget):
         card = QFrame()
         card.setObjectName(object_name)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
         header = QVBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(2)
+        header.setSpacing(1)
         title_label = QLabel(title)
         title_label.setObjectName("sectionTitle")
         subtitle_label = QLabel(subtitle)
@@ -1297,8 +1297,8 @@ class NotificationCenter(QWidget):
         card, layout = self._section_shell("Connectivity", "")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(8)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
 
         self.quick_buttons = {
             "wifi": QuickSettingButton(self.material_font, "Wi-Fi", "wifi", self._toggle_wifi),
@@ -1311,7 +1311,7 @@ class NotificationCenter(QWidget):
         positions = [("wifi", 0, 0), ("bluetooth", 0, 1), ("dnd", 0, 2), ("airplane", 1, 0), ("night", 1, 1), ("caffeine", 1, 2)]
         for key, row, col in positions:
             button = self.quick_buttons[key]
-            button.setMinimumHeight(70)
+            button.setMinimumHeight(62)
             grid.addWidget(button, row, col)
         layout.addLayout(grid)
         return card
@@ -1322,7 +1322,7 @@ class NotificationCenter(QWidget):
         self.volume_slider = self._slider_row("volume_up", "volume", compact=True)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
+        row.setSpacing(6)
         row.addWidget(self.brightness_slider["wrap"], 1)
         row.addWidget(self.volume_slider["wrap"], 1)
         layout.addLayout(row)
@@ -1378,7 +1378,7 @@ class NotificationCenter(QWidget):
         container = QWidget()
         inner = QVBoxLayout(container)
         inner.setContentsMargins(0, 0, 0, 0)
-        inner.setSpacing(8)
+        inner.setSpacing(6)
         scroll.setWidget(container)
         return scroll, container, inner
 
@@ -1401,12 +1401,12 @@ class NotificationCenter(QWidget):
 
         left = QHBoxLayout()
         left.setContentsMargins(0, 0, 0, 0)
-        left.setSpacing(14)
+        left.setSpacing(10)
 
         self.avatar = QLabel(material_icon("person"))
         self.avatar.setObjectName("avatar")
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.avatar.setFixedSize(46, 46)
+        self.avatar.setFixedSize(42, 42)
         self.avatar.setFont(QFont(self.material_font, 24))
 
         text_wrap = QVBoxLayout()
@@ -1425,7 +1425,7 @@ class NotificationCenter(QWidget):
 
         right = QHBoxLayout()
         right.setContentsMargins(0, 0, 0, 0)
-        right.setSpacing(8)
+        right.setSpacing(6)
         self.settings_btn = self._circle_icon_button("settings")
         self.settings_btn.clicked.connect(self._open_settings)
         self.power_btn = self._circle_icon_button("power_settings_new", accent="power")
@@ -1496,13 +1496,13 @@ class NotificationCenter(QWidget):
         wrap = QFrame()
         wrap.setObjectName("compactSliderWrap" if compact else "sliderWrap")
         row = QHBoxLayout(wrap)
-        row.setContentsMargins(12, 0, 12, 0)
-        row.setSpacing(8)
+        row.setContentsMargins(10, 0, 10, 0)
+        row.setSpacing(6)
 
         icon_label = QLabel(material_icon(icon))
         icon_label.setObjectName("sliderIcon")
         icon_label.setFont(QFont(self.material_font, 16 if compact else 18))
-        icon_label.setFixedWidth(24)
+        icon_label.setFixedWidth(22)
 
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(0, 100)
@@ -1518,7 +1518,7 @@ class NotificationCenter(QWidget):
     def _build_media_card(self) -> QFrame:
         self.media_card = QFrame()
         self.media_card.setObjectName("mediaCard")
-        self.media_card.setMinimumHeight(152)
+        self.media_card.setMinimumHeight(132)
         self.media_base = QFrame(self.media_card)
         self.media_base.setObjectName("mediaBase")
         self.media_scrim = QFrame(self.media_card)
@@ -1530,16 +1530,16 @@ class NotificationCenter(QWidget):
         self.media_content.setObjectName("mediaContent")
 
         layout = QVBoxLayout(self.media_content)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(14)
+        top.setSpacing(10)
 
         self.cover = QLabel()
         self.cover.setObjectName("cover")
-        self.cover.setFixedSize(62, 62)
+        self.cover.setFixedSize(54, 54)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         text_wrap = QWidget()
@@ -1581,7 +1581,7 @@ class NotificationCenter(QWidget):
         self.elapsed.setFont(QFont(self.mono_font, 9))
         controls = QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
-        controls.setSpacing(10)
+        controls.setSpacing(8)
         self.prev_btn = self._plain_icon_button("skip_previous")
         self.prev_btn.clicked.connect(lambda: self._trigger_media_action("--previous"))
         self.play_btn = self._circle_icon_button("pause", accent="play")
@@ -1608,8 +1608,8 @@ class NotificationCenter(QWidget):
         card = QFrame()
         card.setObjectName("infoCard")
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
 
         icon = QLabel()
         icon.setObjectName("sectionIcon")
@@ -1644,8 +1644,8 @@ class NotificationCenter(QWidget):
         self.ha_card = QFrame()
         self.ha_card.setObjectName("infoCard")
         layout = QHBoxLayout(self.ha_card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
 
         icon = QLabel()
         icon.setObjectName("sectionIcon")
@@ -1658,7 +1658,7 @@ class NotificationCenter(QWidget):
 
         tile_row = QHBoxLayout()
         tile_row.setContentsMargins(0, 0, 0, 0)
-        tile_row.setSpacing(6)
+        tile_row.setSpacing(4)
         self.ha_action_tiles: list[ActionTile] = []
         for index in range(5):
             tile = ActionTile(
@@ -1667,8 +1667,8 @@ class NotificationCenter(QWidget):
                 "hub",
                 lambda checked=False, i=index: self._activate_ha_tile(i),
             )
-            tile.setMinimumSize(64, 70)
-            tile.setMaximumSize(64, 70)
+            tile.setMinimumSize(58, 64)
+            tile.setMaximumSize(58, 64)
             self.ha_action_tiles.append(tile)
             tile_row.addWidget(tile)
 
@@ -2209,7 +2209,7 @@ class NotificationCenter(QWidget):
                 border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 999px;
                 color: {theme.text};
-                padding: 10px 14px;
+                padding: 8px 12px;
                 font-weight: 600;
             }}
             #softButton:hover {{
@@ -2218,7 +2218,7 @@ class NotificationCenter(QWidget):
             #actionTile {{
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 16px;
+                border-radius: 14px;
             }}
             #actionTile:hover {{
                 background: {theme.hover_bg};
@@ -2288,7 +2288,7 @@ class NotificationCenter(QWidget):
             #compactSliderWrap {{
                 background: {rgba(theme.surface_container_high, 0.34)};
                 border: 1px solid {rgba(theme.outline, 0.12)};
-                border-radius: 16px;
+                border-radius: 14px;
             }}
             #wideSlider::groove:horizontal, #compactSlider::groove:horizontal {{
                 background: {rgba(theme.on_surface_variant, 0.12)};
@@ -2298,7 +2298,7 @@ class NotificationCenter(QWidget):
                 height: 42px;
             }}
             #compactSlider::groove:horizontal {{
-                height: 18px;
+                height: 16px;
             }}
             #wideSlider::sub-page:horizontal, #compactSlider::sub-page:horizontal {{
                 background: {theme.primary};
@@ -2322,54 +2322,54 @@ class NotificationCenter(QWidget):
                     stop:0 {rgba(theme.surface_container_high, 0.92)},
                     stop:1 {rgba(theme.primary_container, 0.72)});
                 border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 22px;
+                border-radius: 20px;
             }}
             #gameSlideInner {{
                 background: transparent;
                 border: none;
-                min-height: 120px;
+                min-height: 104px;
             }}
             #gameKicker {{
                 color: {theme.text};
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 1px;
                 text-transform: uppercase;
             }}
             #gameCarouselTitle, #gameSlideTitle {{
                 color: {theme.text};
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: 700;
             }}
             #gameSlidePlatform, #gameCaption, #feedCardMeta {{
                 color: {theme.text_muted};
-                font-size: 10px;
+                font-size: 9px;
                 font-weight: 600;
             }}
             #gameStatChip {{
                 background: {theme.primary};
                 color: {theme.active_text};
-                border-radius: 12px;
-                padding: 4px 10px;
-                font-size: 10px;
+                border-radius: 10px;
+                padding: 3px 8px;
+                font-size: 9px;
                 font-weight: 700;
             }}
             #gameStatLabel {{
                 color: {theme.primary};
                 background: {rgba(theme.primary, 0.14)};
                 border: 1px solid {rgba(theme.primary, 0.18)};
-                border-radius: 12px;
-                padding: 6px 10px;
-                font-size: 10px;
+                border-radius: 10px;
+                padding: 4px 8px;
+                font-size: 9px;
                 font-weight: 600;
             }}
             #gameSlideHint {{
                 color: {theme.inactive};
-                font-size: 10px;
+                font-size: 9px;
             }}
             #carouselDot {{
                 color: {rgba(theme.on_surface_variant, 0.30)};
-                font-size: 16px;
+                font-size: 14px;
             }}
             #carouselDot[active="true"] {{
                 color: {theme.primary};
@@ -2377,7 +2377,7 @@ class NotificationCenter(QWidget):
             #miniCalendar {{
                 background: transparent;
                 border: none;
-                border-radius: 18px;
+                border-radius: 16px;
                 selection-background-color: {theme.primary};
                 selection-color: {theme.active_text};
                 alternate-background-color: transparent;
@@ -2388,8 +2388,8 @@ class NotificationCenter(QWidget):
                 font-weight: 700;
                 background: {rgba(theme.surface_container_high, 0.76)};
                 border: 1px solid {rgba(theme.outline, 0.14)};
-                border-radius: 12px;
-                padding: 6px 8px;
+                border-radius: 10px;
+                padding: 5px 7px;
             }}
             #miniCalendar QToolButton:hover {{
                 background: {theme.hover_bg};
@@ -2403,7 +2403,7 @@ class NotificationCenter(QWidget):
                 color: {theme.text};
                 background: {rgba(theme.surface_container_high, 0.18)};
                 border: 1px solid {rgba(theme.outline, 0.12)};
-                border-radius: 14px;
+                border-radius: 12px;
                 selection-background-color: {theme.primary};
                 selection-color: {theme.active_text};
                 alternate-background-color: transparent;
@@ -2417,7 +2417,7 @@ class NotificationCenter(QWidget):
                 background: {rgba(theme.surface_container_high, 0.76)};
                 color: {theme.text};
                 border: 1px solid {rgba(theme.outline, 0.14)};
-                border-radius: 12px;
+                border-radius: 10px;
                 padding: 4px 8px;
                 selection-background-color: {theme.primary};
             }}
@@ -2435,7 +2435,7 @@ class NotificationCenter(QWidget):
             #feedCard {{
                 background: {rgba(theme.surface_container_high, 0.76)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 16px;
+                border-radius: 14px;
             }}
             #feedCardIcon {{
                 color: {theme.primary};
@@ -2443,12 +2443,12 @@ class NotificationCenter(QWidget):
             }}
             #feedCardTitle {{
                 color: {theme.text};
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
             }}
             #feedCardBody {{
                 color: {theme.text_muted};
-                font-size: 11px;
+                font-size: 10px;
             }}
             #eventsScroll, #notificationsScroll {{
                 background: transparent;
@@ -2464,20 +2464,20 @@ class NotificationCenter(QWidget):
             #mediaCard {{
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 20px;
+                border-radius: 18px;
             }}
             #cover {{
                 background: {theme.surface_container_high};
                 border: 1px solid {theme.chip_border};
-                border-radius: 16px;
+                border-radius: 14px;
             }}
             #mediaTitle {{
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 600;
                 color: {theme.text};
             }}
             #mediaArtist {{
-                font-size: 12px;
+                font-size: 11px;
                 color: {theme.primary};
             }}
             #progressTrack {{
