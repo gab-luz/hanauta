@@ -50,7 +50,7 @@ from pyqt.shared.runtime import entry_command, entry_patterns
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
 
 ROOT = APP_DIR.parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
+SCRIPTS_DIR = ROOT / "hanauta" / "scripts"
 FONTS_DIR = ROOT / "assets" / "fonts"
 FALLBACK_COVER = ROOT / "assets" / "fallback.webp"
 ASSETS_DIR = APP_DIR / "assets"
@@ -701,6 +701,9 @@ class QuickSettingButton(QFrame):
         self.title_label.setObjectName("quickTileTitle")
         self.subtitle_label = QLabel("Off")
         self.subtitle_label.setObjectName("quickTileSubtitle")
+        self.icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         text_wrap.addWidget(self.title_label)
         text_wrap.addWidget(self.subtitle_label)
 
@@ -725,13 +728,13 @@ class QuickSettingButton(QFrame):
         if theme is not None:
             icon_color = self.on_accent if self.active else theme.icon
             title_color = self.on_accent if self.active else theme.text
-            sub_color = theme.inactive if self.active else theme.text_muted
+            sub_color = rgba(self.on_accent, 0.78) if self.active else theme.text_muted
             bg = self.accent if self.active else theme.app_running_bg
             hover = theme.accent_soft if self.active else theme.hover_bg
         else:
             icon_color = "#381E72" if self.active else "rgba(255,255,255,0.82)"
             title_color = "#381E72" if self.active else "#ffffff"
-            sub_color = "rgba(56,30,114,0.72)" if self.active else "rgba(255,255,255,0.54)"
+            sub_color = "rgba(56,30,114,0.78)" if self.active else "rgba(255,255,255,0.54)"
             bg = "#D0BCFF" if self.active else "rgba(255,255,255,0.05)"
             hover = "#ddcbff" if self.active else "rgba(255,255,255,0.10)"
         self.setStyleSheet(
@@ -753,12 +756,12 @@ class QuickSettingButton(QFrame):
         self.subtitle_label.setText(self._subtitle)
         self.subtitle_label.setStyleSheet(f"color: {sub_color}; font-size: 10px;")
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
             self.callback()
             event.accept()
             return
-        super().mousePressEvent(event)
+        super().mouseReleaseEvent(event)
 
 
 class SidebarItemButton(QPushButton):
@@ -842,6 +845,9 @@ class ActionTile(QFrame):
         self.subtitle_label.setObjectName("actionTileSubtitle")
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setWordWrap(True)
+        self.icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.icon_label)
         layout.addWidget(self.title_label)
         layout.addWidget(self.subtitle_label)
@@ -851,12 +857,12 @@ class ActionTile(QFrame):
         self.title_label.setText(title)
         self.subtitle_label.setText(subtitle)
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
             self.callback()
             event.accept()
             return
-        super().mousePressEvent(event)
+        super().mouseReleaseEvent(event)
 
 
 class CompactIconAction(QPushButton):
@@ -888,7 +894,9 @@ class ServiceLauncherCard(QFrame):
         callback,
     ) -> None:
         super().__init__()
+        self.callback = callback
         self.setObjectName("infoCard")
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
@@ -906,6 +914,9 @@ class ServiceLauncherCard(QFrame):
         subtitle_label = QLabel(detail)
         subtitle_label.setObjectName("statusHint")
         subtitle_label.setWordWrap(True)
+        icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         text.addWidget(title_label)
         text.addWidget(subtitle_label)
 
@@ -917,6 +928,13 @@ class ServiceLauncherCard(QFrame):
         layout.addWidget(icon_label)
         layout.addLayout(text, 1)
         layout.addWidget(action)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.callback()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class ElidedLabel(QLabel):
