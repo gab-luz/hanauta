@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 
 
 from pyqt.shared.runtime import fonts_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
@@ -523,7 +523,7 @@ class NotificationDaemon(QObject):
     def __init__(self) -> None:
         super().__init__()
         self.loaded_fonts = load_app_fonts()
-        self.ui_font = detect_font("Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.ui_font = detect_font(theme_font_family("ui"), "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.material_font = detect_font(
             self.loaded_fonts.get("material_icons", ""),
             self.loaded_fonts.get("material_icons_outlined", ""),

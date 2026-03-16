@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 
 
 from pyqt.shared.runtime import fonts_root, project_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 APP_DIR = source_root()
 ROOT = project_root()
@@ -449,9 +449,8 @@ class LauncherWindow(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
-        self.ui_font = detect_font("Noto Sans", "DejaVu Sans", "Sans Serif")
-        self.ui_font = detect_font("Rubik", self.ui_font, "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
-        self.mono_font = detect_font("JetBrains Mono", "DejaVu Sans Mono", "Monospace")
+        self.ui_font = detect_font(theme_font_family("ui"), "Rubik", "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.mono_font = detect_font(theme_font_family("mono"), "JetBrains Mono", "DejaVu Sans Mono", "Monospace")
         self.theme = load_theme_palette()
         self.use_matugen = matugen_enabled()
         self._theme_mtime = palette_mtime()

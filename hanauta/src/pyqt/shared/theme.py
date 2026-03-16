@@ -90,6 +90,10 @@ class ThemePalette:
     outline: str
     error: str
     on_error: str
+    ui_font_family: str
+    display_font_family: str
+    mono_font_family: str
+    serif_font_family: str
     use_matugen: bool
 
     @property
@@ -232,6 +236,10 @@ def _default_payload() -> dict[str, object]:
         "outline": "#938F99",
         "error": "#F2B8B5",
         "on_error": "#601410",
+        "ui_font_family": "Rubik",
+        "display_font_family": "Rubik",
+        "mono_font_family": "JetBrains Mono",
+        "serif_font_family": "Playfair Display",
     }
 
 
@@ -257,3 +265,14 @@ def palette_mtime() -> float:
         return PALETTE_FILE.stat().st_mtime
     except OSError:
         return 0.0
+
+
+def theme_font_family(role: str) -> str:
+    palette = load_theme_palette()
+    mapping = {
+        "ui": palette.ui_font_family,
+        "display": palette.display_font_family,
+        "mono": palette.mono_font_family,
+        "serif": palette.serif_font_family,
+    }
+    return str(mapping.get(role, "") or "")
