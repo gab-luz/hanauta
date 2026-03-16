@@ -1486,8 +1486,6 @@ def ensure_retrowave_gtk_theme() -> str:
     metadata = THEME_LIBRARY["retrowave"]
     source = ROOT / "hanauta" / "vendor" / "themes" / "retrowave-theme" / "src" / "retrowave"
     target = THEMES_HOME / str(metadata["gtk_theme"])
-    if (target / "gtk-3.0" / "gtk.css").exists():
-        return str(metadata["gtk_theme"])
     if target.exists() or target.is_symlink():
         shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True, exist_ok=True)
@@ -1524,7 +1522,7 @@ def ensure_theme_installed(theme_key: str) -> str:
 
 
 def apply_gtk_theme(theme_name: str, color_scheme: str = "prefer-dark", icon_theme: str = "") -> None:
-    cmd = [str(ROOT / "hanauta" / "scripts" / "set_theme.sh"), theme_name]
+    cmd = ["bash", str(ROOT / "hanauta" / "scripts" / "set_theme.sh"), theme_name]
     if icon_theme:
         cmd.append(icon_theme)
     else:
@@ -1931,6 +1929,8 @@ THEME_CHOICES = {"light", "dark", "custom", "wallpaper_aware"}
 BUILTIN_THEME_KEYS = {"hanauta_dark", "hanauta_light"}
 CUSTOM_THEME_KEYS = {"retrowave", "dracula"}
 THEMES_HOME = Path.home() / ".themes"
+SYSTEM_THEMES_HOME = Path("/usr/share/themes")
+SYSTEM_THEME_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_theme_system.sh"
 
 HANAUTA_DARK_PALETTE = {
     "source": "#D0BCFF",
@@ -2403,6 +2403,7 @@ class SettingsWindow(QWidget):
         self.initial_service_section = initial_service_section
         self._window_animation: QParallelAnimationGroup | None = None
         self._wallpaper_sync_worker: WallpaperSourceSyncWorker | None = None
+        self._system_theme_install_declined: set[str] = set()
         self._sidebar_collapsed = False
         self._slideshow_timer = QTimer(self)
         self._slideshow_timer.timeout.connect(self._advance_slideshow)
@@ -5953,6 +5954,7 @@ class SettingsWindow(QWidget):
             self._refresh_current_accent()
             self._apply_styles()
             self._sync_accent_controls()
+            self._ensure_system_theme_copy(selected_theme_key(self.settings_state))
             if hasattr(self, "appearance_status"):
                 label = THEME_LIBRARY[selected_theme_key(self.settings_state)]["label"]
                 self.appearance_status.setText(f"Custom theme selected: {label}.")
@@ -5966,6 +5968,7 @@ class SettingsWindow(QWidget):
         self._refresh_current_accent()
         self._apply_styles()
         self._sync_accent_controls()
+        self._ensure_system_theme_copy(selected_theme_key(self.settings_state))
         if hasattr(self, "appearance_status"):
             labels = {
                 "light": "Light mode selected.",
@@ -5988,8 +5991,50 @@ class SettingsWindow(QWidget):
         self._refresh_current_accent()
         self._apply_styles()
         self._sync_accent_controls()
+        self._ensure_system_theme_copy(theme_id)
         if hasattr(self, "appearance_status"):
             self.appearance_status.setText(f"Custom theme applied: {THEME_LIBRARY[theme_id]['label']}.")
+
+    def _ensure_system_theme_copy(self, theme_key: str) -> None:
+        theme_key = str(theme_key).strip().lower()
+        metadata = THEME_LIBRARY.get(theme_key)
+        if not metadata:
+            return
+        theme_name = str(metadata.get("gtk_theme", "")).strip()
+        if not theme_name:
+            return
+        if (SYSTEM_THEMES_HOME / theme_name).exists():
+            return
+        if theme_name in getattr(self, "_system_theme_install_declined", set()):
+            return
+        source_dir = THEMES_HOME / theme_name
+        if not source_dir.exists():
+            return
+        if not SYSTEM_THEME_INSTALL_SCRIPT.exists():
+            return
+        if shutil.which("pkexec") is None:
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText(
+                    f"{metadata['label']} is installed only for this user. Install pkexec or copy it into /usr/share/themes for apps like Thunar."
+                )
+            return
+        result = subprocess.run(
+            ["pkexec", "bash", str(SYSTEM_THEME_INSTALL_SCRIPT), theme_name, str(source_dir)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText(
+                    f"{metadata['label']} is now available in /usr/share/themes for apps that require a system theme install."
+                )
+            return
+        self._system_theme_install_declined.add(theme_name)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(
+                f"{metadata['label']} is active for this user. System-wide installation was skipped."
+            )
 
     def _set_theme_mode(self, mode: str) -> None:
         self.settings_state["appearance"]["theme_mode"] = mode

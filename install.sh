@@ -11,6 +11,9 @@ INSTALL_VSCODIUM_ONLY=false
 INSTALL_NOTIFICATION_DAEMON_ONLY=false
 INSTALL_QUICKSHELL_ONLY=false
 INSTALL_WIREGUARD_SYSTEMD_ONLY=false
+INSTALL_CUSTOM_THEMES=false
+CUSTOM_THEMES_SELECTION=""
+INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -52,6 +55,19 @@ detect_arch() {
 }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+normalize_custom_theme_selection() {
+  local raw="${1:-all}"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$raw" in
+    all|retrowave|dracula)
+      printf '%s\n' "$raw"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 install_editor_extension_dir() {
   local target_root="$1"
@@ -116,9 +132,26 @@ parse_args() {
       --wireguard-systemd)
         INSTALL_WIREGUARD_SYSTEMD_ONLY=true
         ;;
+      --custom-themes)
+        INSTALL_CUSTOM_THEMES=true
+        CUSTOM_THEMES_SELECTION="all"
+        INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
+        ;;
+      --custom-themes=*)
+        INSTALL_CUSTOM_THEMES=true
+        CUSTOM_THEMES_SELECTION="${1#*=}"
+        INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
+        ;;
+      --custom-themes-system)
+        INSTALL_CUSTOM_THEMES=true
+        INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
+        if [ -z "$CUSTOM_THEMES_SELECTION" ]; then
+          CUSTOM_THEMES_SELECTION="all"
+        fi
+        ;;
       -h|--help)
         cat <<EOF
-Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon] [--quickshell] [--wireguard-systemd]
+Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon] [--quickshell] [--wireguard-systemd] [--custom-themes[=retrowave|dracula|all]] [--custom-themes-system]
 
 Without flags:
   Runs the full desktop install only.
@@ -129,6 +162,8 @@ With flags:
   --notification-daemon  Install only the Hanauta notification daemon components
   --quickshell  Install only the Quickshell runtime dependencies
   --wireguard-systemd  Offer a systemd-based WireGuard auto-start setup
+  --custom-themes[=name]  Install vendored custom themes to both ~/.themes and /usr/share/themes by default. Accepted values: retrowave, dracula, all
+  --custom-themes-system  Explicitly force system installation too (default for custom-theme installs)
 EOF
         exit 0
         ;;
@@ -148,6 +183,16 @@ confirm_yes() {
   case "${reply,,}" in
     y|yes) return 0 ;;
     *) return 1 ;;
+  esac
+}
+
+confirm_default_yes() {
+  local prompt="$1"
+  local reply=""
+  read -r -p "$prompt [Y/n] " reply
+  case "${reply,,}" in
+    n|no) return 1 ;;
+    *) return 0 ;;
   esac
 }
 
@@ -655,6 +700,151 @@ ensure_hanauta_settings() {
   fi
 }
 
+copy_theme_tree() {
+  local source_dir="$1"
+  local target_dir="$2"
+  mkdir -p "$(dirname "$target_dir")"
+  rm -rf "$target_dir"
+  mkdir -p "$target_dir"
+  rsync -a \
+    --exclude '.git' \
+    --exclude '.github' \
+    --exclude 'node_modules' \
+    "$source_dir/" \
+    "$target_dir/"
+}
+
+install_retrowave_theme_to() {
+  local destination_root="$1"
+  local source_root="$SCRIPT_DIR/hanauta/vendor/themes/retrowave-theme/src/retrowave"
+  local target_root="$destination_root/Retrowave"
+
+  if [ ! -d "$source_root" ]; then
+    warn "Retrowave source not found at $source_root"
+    return 1
+  fi
+  if ! need_cmd sassc; then
+    warn "sassc is required to build the Retrowave GTK theme."
+    return 1
+  fi
+
+  rm -rf "$target_root"
+  mkdir -p "$target_root/gtk-3.0" "$target_root/gtk-4.0"
+  cp "$source_root/index.theme" "$target_root/index.theme"
+  if [ -d "$source_root/gtk-2.0" ]; then
+    copy_theme_tree "$source_root/gtk-2.0" "$target_root/gtk-2.0"
+  fi
+  if [ -d "$source_root/gtk-3.0/assets" ]; then
+    copy_theme_tree "$source_root/gtk-3.0/assets" "$target_root/gtk-3.0/assets"
+  fi
+  sassc -I "$source_root/gtk-3.0" "$source_root/gtk-3.0/gtk.scss" "$target_root/gtk-3.0/gtk.css"
+  cp "$target_root/gtk-3.0/gtk.css" "$target_root/gtk-4.0/gtk.css"
+  success "Retrowave installed to $target_root"
+}
+
+install_dracula_theme_to() {
+  local destination_root="$1"
+  local source_root="$SCRIPT_DIR/hanauta/vendor/themes/dracula-gtk"
+  local target_root="$destination_root/Dracula"
+
+  if [ ! -d "$source_root" ]; then
+    warn "Dracula source not found at $source_root"
+    return 1
+  fi
+
+  copy_theme_tree "$source_root" "$target_root"
+  success "Dracula installed to $target_root"
+}
+
+install_selected_theme_to_root() {
+  local theme_key="$1"
+  local destination_root="$2"
+  case "$theme_key" in
+    retrowave) install_retrowave_theme_to "$destination_root" ;;
+    dracula) install_dracula_theme_to "$destination_root" ;;
+    *) warn "Unknown custom theme: $theme_key"; return 1 ;;
+  esac
+}
+
+install_custom_themes_for_root() {
+  local selection="$1"
+  local destination_root="$2"
+  local -a themes=()
+  case "$selection" in
+    all) themes=(retrowave dracula) ;;
+    retrowave|dracula) themes=("$selection") ;;
+    *)
+      error "Unsupported custom theme selection: $selection"
+      return 1
+      ;;
+  esac
+
+  mkdir -p "$destination_root"
+  for theme in "${themes[@]}"; do
+    install_selected_theme_to_root "$theme" "$destination_root"
+  done
+}
+
+install_custom_themes_system() {
+  local selection="$1"
+  if ! need_cmd sudo; then
+    warn "sudo not found; skipping installation to /usr/share/themes"
+    return 0
+  fi
+  local temp_root
+  temp_root="$(mktemp -d)"
+  install_custom_themes_for_root "$selection" "$temp_root"
+  info "Copying selected custom themes into /usr/share/themes with sudo..."
+  sudo mkdir -p /usr/share/themes
+  for theme_dir in "$temp_root"/*; do
+    [ -d "$theme_dir" ] || continue
+    sudo rm -rf "/usr/share/themes/$(basename "$theme_dir")"
+    sudo cp -a "$theme_dir" "/usr/share/themes/"
+  done
+  rm -rf "$temp_root"
+  success "Selected custom themes installed system-wide"
+}
+
+offer_custom_theme_install() {
+  local selection="${CUSTOM_THEMES_SELECTION:-}"
+  local reply=""
+
+  if [ -n "$selection" ]; then
+    selection="$(normalize_custom_theme_selection "$selection")" || {
+      error "Invalid custom theme selection: $selection"
+      return 1
+    }
+  else
+    echo ""
+    echo -e "${MAGENTA}${BOLD}Optional Custom Themes${NC}"
+    echo -e "Install Hanauta's vendored GTK themes: ${BOLD}Retrowave${NC}, ${BOLD}Dracula${NC}, or ${BOLD}both${NC}."
+    if ! confirm_yes "Do you want to install custom themes for Hanauta?"; then
+      info "Skipping custom theme installation."
+      return 0
+    fi
+    echo "Choose which custom themes to install:"
+    echo "  1. All custom themes"
+    echo "  2. Retrowave only"
+    echo "  3. Dracula only"
+    read -r -p "Selection [1-3]: " reply
+    case "${reply:-1}" in
+      1|"") selection="all" ;;
+      2) selection="retrowave" ;;
+      3) selection="dracula" ;;
+      *) warn "Unknown selection. Installing all custom themes."; selection="all" ;;
+    esac
+    if ! confirm_default_yes "Also install the selected custom themes into /usr/share/themes using sudo for apps like Thunar?"; then
+      INSTALL_CUSTOM_THEMES_TO_SYSTEM=false
+    fi
+  fi
+
+  info "Installing custom themes to $HOME/.themes..."
+  install_custom_themes_for_root "$selection" "$HOME/.themes"
+  if [ "$INSTALL_CUSTOM_THEMES_TO_SYSTEM" = true ]; then
+    install_custom_themes_system "$selection"
+  fi
+}
+
 print_summary() {
   echo ""
   echo -e "${GREEN}${BOLD}========================================${NC}"
@@ -667,6 +857,7 @@ print_summary() {
   echo -e "  ${GREEN}✓${NC} Dotfiles"
   echo -e "  ${GREEN}✓${NC} Config links"
   echo -e "  ${GREEN}✓${NC} Bundled binaries"
+  echo -e "  ${GREEN}✓${NC} Optional custom themes"
   echo ""
 }
 
@@ -674,6 +865,7 @@ post_notes() {
   echo ""
   echo -e "${YELLOW}Important notes:${NC}"
   echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
+  echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
   echo -e "  • PyQt6 notification center opens from the bar"
   echo ""
@@ -693,6 +885,19 @@ main() {
     if [ "$INSTALL_VSCODIUM_ONLY" = true ]; then
       install_vscodium_extension
     fi
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_CUSTOM_THEMES" = true ]; then
+    selection="${CUSTOM_THEMES_SELECTION:-all}"
+    selection="$(normalize_custom_theme_selection "$selection")" || {
+      error "Invalid custom theme selection: ${CUSTOM_THEMES_SELECTION:-}"
+      return 1
+    }
+    CUSTOM_THEMES_SELECTION="$selection"
+    print_banner
+    offer_custom_theme_install
     info "Done!"
     return 0
   fi
@@ -754,6 +959,9 @@ main() {
   install_local_binaries
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ] && [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
     install_detected_editor_extensions
+  fi
+  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
+    offer_custom_theme_install
   fi
 
   offer_wireguard_systemd_setup
