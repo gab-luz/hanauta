@@ -60,6 +60,9 @@ HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
+WIFI_NOTIFICATION_ICON = "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg"
+BLUETOOTH_NOTIFICATION_ICON = "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg"
+AIRPLANE_NOTIFICATION_ICON = "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 NOTIFICATION_HISTORY_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon" / "history.json"
@@ -124,6 +127,10 @@ MATERIAL_ICONS = {
 }
 
 DEFAULT_SERVICE_SETTINGS = {
+    "kdeconnect": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
     "home_assistant": {
         "enabled": True,
         "show_in_notification_center": True,
@@ -2355,7 +2362,12 @@ class NotificationCenter(QWidget):
             }}
             #wideSlider::groove:horizontal, #compactSlider::groove:horizontal {{
                 background: {rgba(theme.on_surface_variant, 0.12)};
-                border-radius: 16px;
+                border-radius: 999px;
+                margin: 0px;
+            }}
+            #wideSlider, #compactSlider {{
+                background: transparent;
+                border: none;
             }}
             #wideSlider::groove:horizontal {{
                 height: 42px;
@@ -2365,11 +2377,13 @@ class NotificationCenter(QWidget):
             }}
             #wideSlider::sub-page:horizontal, #compactSlider::sub-page:horizontal {{
                 background: {theme.primary};
-                border-radius: 16px;
+                border-radius: 999px;
+                margin: 0px;
             }}
             #wideSlider::add-page:horizontal, #compactSlider::add-page:horizontal {{
                 background: {rgba(theme.on_surface_variant, 0.12)};
-                border-radius: 16px;
+                border-radius: 999px;
+                margin: 0px;
             }}
             #wideSlider::handle:horizontal, #compactSlider::handle:horizontal {{
                 background: transparent;
@@ -3532,23 +3546,70 @@ class NotificationCenter(QWidget):
 
     def _toggle_wifi(self) -> None:
         run_script_bg("network.sh", "toggle")
-        QTimer.singleShot(300, self._poll_quick_settings)
+        QTimer.singleShot(
+            300,
+            lambda: self._refresh_quick_settings_and_notify(
+                "wifi",
+                "Wi-Fi",
+                "Wi-Fi connected",
+                "Wi-Fi disconnected",
+                WIFI_NOTIFICATION_ICON if Path(WIFI_NOTIFICATION_ICON).exists() else "network-wireless",
+            ),
+        )
 
     def _toggle_bluetooth(self) -> None:
         run_script_bg("bluetooth", "toggle")
-        QTimer.singleShot(300, self._poll_quick_settings)
+        QTimer.singleShot(
+            300,
+            lambda: self._refresh_quick_settings_and_notify(
+                "bluetooth",
+                "Bluetooth",
+                "Bluetooth enabled",
+                "Bluetooth disabled",
+                BLUETOOTH_NOTIFICATION_ICON if Path(BLUETOOTH_NOTIFICATION_ICON).exists() else "bluetooth",
+            ),
+        )
 
     def _toggle_airplane(self) -> None:
         run_script_bg("network.sh", "toggle-radio")
-        QTimer.singleShot(300, self._poll_quick_settings)
+        QTimer.singleShot(
+            300,
+            lambda: self._refresh_quick_settings_and_notify(
+                "airplane",
+                "Airplane Mode",
+                "Airplane mode enabled",
+                "Airplane mode disabled",
+                AIRPLANE_NOTIFICATION_ICON if Path(AIRPLANE_NOTIFICATION_ICON).exists() else "airplane-mode-symbolic",
+            ),
+        )
 
     def _toggle_night(self) -> None:
         run_script_bg("redshift", "toggle")
-        QTimer.singleShot(300, self._poll_quick_settings)
+        QTimer.singleShot(
+            300,
+            lambda: self._refresh_quick_settings_and_notify(
+                "night",
+                "Night Light",
+                "Night light enabled",
+                "Night light disabled",
+                "weather-clear-night",
+            ),
+        )
 
     def _toggle_caffeine(self) -> None:
-        run_script_bg("caffeine.sh", "toggle")
-        QTimer.singleShot(300, self._poll_quick_settings)
+        caffeine_script = SCRIPTS_DIR / "caffeine.sh"
+        if caffeine_script.exists():
+            run_bg(["env", "HANAUTA_QUIET=1", str(caffeine_script), "toggle"])
+        QTimer.singleShot(
+            300,
+            lambda: self._refresh_quick_settings_and_notify(
+                "caffeine",
+                "Caffeine",
+                "Caffeine enabled",
+                "Caffeine disabled",
+                "coffee",
+            ),
+        )
 
     def _toggle_dnd(self) -> None:
         dnd_on = parse_bool_text(run_cmd(notification_control_command("is-paused")))
@@ -3576,6 +3637,47 @@ class NotificationCenter(QWidget):
     def _enable_dnd_after_warning(self) -> None:
         run_cmd(notification_control_command("set-paused", "true"))
         self._poll_quick_settings()
+
+    def _show_system_notification(self, title: str, body: str, icon_name: str = "") -> None:
+        run_bg(
+            [
+                "gdbus",
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.Notifications",
+                "--object-path",
+                "/org/freedesktop/Notifications",
+                "--method",
+                "org.freedesktop.Notifications.Notify",
+                "Hanauta",
+                "0",
+                icon_name,
+                title,
+                body,
+                "[]",
+                "{}",
+                "3000",
+            ]
+        )
+
+    def _refresh_quick_settings_and_notify(
+        self,
+        key: str,
+        title: str,
+        enabled_message: str,
+        disabled_message: str,
+        icon_name: str,
+    ) -> None:
+        self._poll_quick_settings()
+        button = self.quick_buttons.get(key)
+        if button is None:
+            return
+        self._show_system_notification(
+            title,
+            enabled_message if button.active else disabled_message,
+            icon_name,
+        )
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)

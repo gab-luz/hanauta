@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import configparser
 import hashlib
 import json
 import os
@@ -62,6 +63,7 @@ FONTS_DIR = ROOT / "assets" / "fonts"
 WALLS_DIR = ROOT / "hanauta" / "walls"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
+NOTIFICATION_RULES_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-rules.ini"
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 WALLPAPER_SCRIPT = ROOT / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "scripts" / "run_matugen.sh"
@@ -251,6 +253,10 @@ def merged_bar_settings(payload: object) -> dict[str, int]:
 
 
 DEFAULT_SERVICE_SETTINGS = {
+    "kdeconnect": {
+        "enabled": True,
+        "show_in_notification_center": True,
+    },
     "home_assistant": {
         "enabled": True,
         "show_in_notification_center": True,
@@ -309,6 +315,20 @@ DEFAULT_SERVICE_SETTINGS = {
         "enabled": False,
         "show_in_notification_center": True,
         "show_in_bar": False,
+    },
+}
+
+DEFAULT_NOTIFICATION_RULES = {
+    "version": 1,
+    "rules": {
+        "kdeconnect_ignore_whatsapp_when_desktop_client_active": {
+            "enabled": False,
+            "source_app": "KDE Connect",
+            "summary_contains": ["WhatsApp"],
+            "body_contains": ["WhatsApp"],
+            "processes": ["ferdium", "Ferdium", "whatsapp", "WhatsApp"],
+            "action": "ignore",
+        }
     },
 }
 
@@ -773,6 +793,97 @@ def load_settings_state() -> dict:
         "bar": bar,
         "services": services,
     }
+
+
+def load_notification_rules_state() -> dict:
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    try:
+        parser.read(NOTIFICATION_RULES_FILE, encoding="utf-8")
+    except Exception:
+        parser = configparser.ConfigParser()
+        parser.optionxform = str
+    version = DEFAULT_NOTIFICATION_RULES["version"]
+    try:
+        version = int(parser.get("meta", "version", fallback=str(version)))
+    except Exception:
+        version = DEFAULT_NOTIFICATION_RULES["version"]
+
+    rules: dict[str, dict[str, object]] = {}
+    for rule_id, defaults in DEFAULT_NOTIFICATION_RULES["rules"].items():
+        section = f"rule.{rule_id}"
+        rules[rule_id] = {
+            "enabled": parser.getboolean(section, "enabled", fallback=bool(defaults.get("enabled", False))),
+            "source_app": parser.get(section, "source_app", fallback=str(defaults.get("source_app", ""))).strip(),
+            "summary_contains": [
+                item.strip()
+                for item in parser.get(
+                    section,
+                    "summary_contains",
+                    fallback=",".join(defaults.get("summary_contains", [])),
+                ).split(",")
+                if item.strip()
+            ],
+            "body_contains": [
+                item.strip()
+                for item in parser.get(
+                    section,
+                    "body_contains",
+                    fallback=",".join(defaults.get("body_contains", [])),
+                ).split(",")
+                if item.strip()
+            ],
+            "processes": [
+                item.strip()
+                for item in parser.get(
+                    section,
+                    "processes",
+                    fallback=",".join(defaults.get("processes", [])),
+                ).split(",")
+                if item.strip()
+            ],
+            "action": parser.get(section, "action", fallback=str(defaults.get("action", "ignore"))).strip() or "ignore",
+        }
+
+    for section in parser.sections():
+        if not section.startswith("rule."):
+            continue
+        rule_id = section[5:]
+        if rule_id in rules:
+            continue
+        rules[rule_id] = {
+            "enabled": parser.getboolean(section, "enabled", fallback=False),
+            "source_app": parser.get(section, "source_app", fallback="").strip(),
+            "summary_contains": [item.strip() for item in parser.get(section, "summary_contains", fallback="").split(",") if item.strip()],
+            "body_contains": [item.strip() for item in parser.get(section, "body_contains", fallback="").split(",") if item.strip()],
+            "processes": [item.strip() for item in parser.get(section, "processes", fallback="").split(",") if item.strip()],
+            "action": parser.get(section, "action", fallback="ignore").strip() or "ignore",
+        }
+
+    return {"version": version, "rules": rules}
+
+
+def save_notification_rules_state(state: dict) -> None:
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser["meta"] = {"version": str(int(state.get("version", DEFAULT_NOTIFICATION_RULES["version"])))}
+    rules = state.get("rules", {})
+    if not isinstance(rules, dict):
+        rules = {}
+    for rule_id, rule in rules.items():
+        if not isinstance(rule, dict):
+            continue
+        parser[f"rule.{rule_id}"] = {
+            "enabled": "true" if bool(rule.get("enabled", False)) else "false",
+            "source_app": str(rule.get("source_app", "")).strip(),
+            "summary_contains": ",".join([str(item).strip() for item in rule.get("summary_contains", []) if str(item).strip()]),
+            "body_contains": ",".join([str(item).strip() for item in rule.get("body_contains", []) if str(item).strip()]),
+            "processes": ",".join([str(item).strip() for item in rule.get("processes", []) if str(item).strip()]),
+            "action": str(rule.get("action", "ignore")).strip() or "ignore",
+        }
+    NOTIFICATION_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with NOTIFICATION_RULES_FILE.open("w", encoding="utf-8") as handle:
+        parser.write(handle)
 
 
 def save_settings_state(settings: dict) -> None:
@@ -1941,6 +2052,7 @@ class SettingsWindow(QWidget):
         )
 
         self.settings_state = load_settings_state()
+        self.notification_rules_state = load_notification_rules_state()
         self._weather_city_map: dict[str, WeatherCity] = {}
         self._selected_weather_city: WeatherCity | None = configured_city()
         self._weather_search_timer = QTimer(self)
@@ -3303,6 +3415,7 @@ class SettingsWindow(QWidget):
         self.service_sections: dict[str, ExpandableServiceSection] = {}
         self.service_display_switches: dict[str, SwitchButton] = {}
         for key, widget in (
+            ("kdeconnect", self._build_kdeconnect_service_section()),
             ("home_assistant", self._build_home_assistant_section()),
             ("vpn_control", self._build_vpn_service_section()),
             ("christian_widget", self._build_christian_service_section()),
@@ -3410,6 +3523,66 @@ class SettingsWindow(QWidget):
             lambda enabled: self._set_service_enabled("home_assistant", enabled),
         )
         self.service_sections["home_assistant"] = section
+        return section
+
+    def _build_kdeconnect_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        rule_id = "kdeconnect_ignore_whatsapp_when_desktop_client_active"
+        rule = self.notification_rules_state["rules"].get(
+            rule_id,
+            DEFAULT_NOTIFICATION_RULES["rules"][rule_id],
+        )
+
+        self.kdeconnect_whatsapp_ignore_switch = SwitchButton(bool(rule.get("enabled", False)))
+        self.kdeconnect_whatsapp_ignore_switch.toggledValue.connect(
+            lambda enabled: self._set_notification_rule_enabled(rule_id, enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_off"),
+                "Ignore WhatsApp while desktop client is active",
+                "If Ferdium or WhatsApp Desktop is running, Hanauta will ignore matching KDE Connect WhatsApp notifications.",
+                self.icon_font,
+                self.ui_font,
+                self.kdeconnect_whatsapp_ignore_switch,
+            )
+        )
+
+        rules_path_label = QLabel(str(NOTIFICATION_RULES_FILE))
+        rules_path_label.setWordWrap(True)
+        rules_path_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("description"),
+                "Rules file",
+                "Rules live in a shared INI file with [rule.<id>] sections and keys like enabled, source_app, summary_contains, body_contains, processes, and action.",
+                self.icon_font,
+                self.ui_font,
+                rules_path_label,
+            )
+        )
+
+        self.kdeconnect_rules_status = QLabel("KDE Connect notification rules are idle.")
+        self.kdeconnect_rules_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.kdeconnect_rules_status.setWordWrap(True)
+        layout.addWidget(self.kdeconnect_rules_status)
+
+        section = ExpandableServiceSection(
+            "kdeconnect",
+            "KDE Connect",
+            "Notification-routing rules for mirrored phone notifications.",
+            material_icon("phone_android"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("kdeconnect"),
+            lambda enabled: self._set_service_enabled("kdeconnect", enabled),
+        )
+        self.service_sections["kdeconnect"] = section
         return section
 
     def _build_vpn_service_section(self) -> QWidget:
@@ -4695,6 +4868,12 @@ class SettingsWindow(QWidget):
         service["enabled"] = bool(enabled)
         if not enabled:
             service["show_in_notification_center"] = False
+            if key == "kdeconnect":
+                self._set_notification_rule_enabled(
+                    "kdeconnect_ignore_whatsapp_when_desktop_client_active",
+                    False,
+                    persist=True,
+                )
             if key == "vpn_control":
                 service["reconnect_on_login"] = False
             if key == "christian_widget":
@@ -4732,6 +4911,15 @@ class SettingsWindow(QWidget):
             switch = getattr(self, "vpn_reconnect_switch", None)
             if switch is not None:
                 switch.setChecked(bool(service.get("reconnect_on_login", False)))
+                switch._apply_state()
+        if key == "kdeconnect":
+            switch = getattr(self, "kdeconnect_whatsapp_ignore_switch", None)
+            if switch is not None:
+                rule = self.notification_rules_state["rules"].get(
+                    "kdeconnect_ignore_whatsapp_when_desktop_client_active",
+                    DEFAULT_NOTIFICATION_RULES["rules"]["kdeconnect_ignore_whatsapp_when_desktop_client_active"],
+                )
+                switch.setChecked(bool(rule.get("enabled", False) and enabled))
                 switch._apply_state()
         if key == "reminders_widget":
             switch = getattr(self, "reminders_bar_switch", None)
@@ -4800,6 +4988,23 @@ class SettingsWindow(QWidget):
             return
         service[flag] = bool(enabled)
         save_settings_state(self.settings_state)
+
+    def _set_notification_rule_enabled(self, rule_id: str, enabled: bool, persist: bool = True) -> None:
+        rule = self.notification_rules_state["rules"].setdefault(
+            rule_id,
+            dict(DEFAULT_NOTIFICATION_RULES["rules"].get(rule_id, {})),
+        )
+        if not self._service_enabled("kdeconnect") and enabled:
+            return
+        rule["enabled"] = bool(enabled)
+        if persist:
+            save_notification_rules_state(self.notification_rules_state)
+        if hasattr(self, "kdeconnect_rules_status"):
+            self.kdeconnect_rules_status.setText(
+                "KDE Connect WhatsApp ignore rule enabled."
+                if enabled
+                else "KDE Connect WhatsApp ignore rule disabled."
+            )
 
     def _set_calendar_show_week_numbers(self, enabled: bool) -> None:
         self.settings_state.setdefault("calendar", {})["show_week_numbers"] = bool(enabled)

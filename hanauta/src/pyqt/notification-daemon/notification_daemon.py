@@ -18,7 +18,7 @@ from dbus_next.aio import MessageBus
 from dbus_next.constants import PropertyAccess
 from dbus_next.service import ServiceInterface, dbus_property, method, signal as dbus_signal
 from PyQt6.QtCore import QEasingCurve, QObject, QPoint, QPropertyAnimation, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -43,6 +43,18 @@ STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon"
 HISTORY_FILE = STATE_DIR / "history.json"
 CONTROL_FILE = STATE_DIR / "control.json"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+
+MATERIAL_ICONS = {
+    "network-wireless": "\ue63e",
+    "wifi": "\ue63e",
+    "bluetooth": "\ue1a7",
+    "airplane-mode-symbolic": "\ue195",
+    "airplanemode_active": "\ue195",
+    "night-light": "\uf03d",
+    "nightlight": "\uf03d",
+    "coffee": "\uefef",
+    "caffeine": "\uefef",
+}
 
 
 def load_app_fonts() -> dict[str, str]:
@@ -70,6 +82,10 @@ def detect_font(*families: str) -> str:
         if family and QFont(family).exactMatch():
             return family
     return "Sans Serif"
+
+
+def material_icon(name: str) -> str:
+    return MATERIAL_ICONS.get(name, "")
 
 
 def ensure_state_dir() -> None:
@@ -187,6 +203,13 @@ class NotificationToast(QWidget):
 
         top = QHBoxLayout()
         top.setSpacing(8)
+        self.icon_label = QLabel("")
+        self.icon_label.setObjectName("iconLabel")
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon_label.setFixedSize(28, 28)
+        self.icon_label.setFont(QFont(self.material_font, 18))
+        self._apply_notification_icon(self.payload.get("app_icon", ""))
+        top.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignTop)
         app_name = QLabel(self.payload.get("app_name", "") or "Notification")
         app_name.setObjectName("appLabel")
         app_name.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
@@ -248,6 +271,12 @@ class NotificationToast(QWidget):
                 color: {theme.primary};
                 letter-spacing: 0.5px;
             }}
+            QLabel#iconLabel {{
+                color: {theme.primary};
+                background: {rgba(theme.surface_container_high, 0.78)};
+                border-radius: 14px;
+                font-family: "{self.material_font}";
+            }}
             QLabel#summaryLabel {{
                 color: {theme.text};
             }}
@@ -294,6 +323,41 @@ class NotificationToast(QWidget):
             }}
             """
         )
+
+    def _apply_notification_icon(self, icon_spec: str) -> None:
+        icon_spec = str(icon_spec or "").strip()
+        self.icon_label.clear()
+        self.icon_label.setPixmap(QPixmap())
+        if not icon_spec:
+            self.icon_label.hide()
+            return
+        path = Path(icon_spec)
+        if path.exists():
+            pixmap = QPixmap(str(path))
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(
+                    pixmap.scaled(
+                        18,
+                        18,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+                self.icon_label.show()
+                return
+        theme_icon = QIcon.fromTheme(icon_spec)
+        if not theme_icon.isNull():
+            pixmap = theme_icon.pixmap(18, 18)
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(pixmap)
+                self.icon_label.show()
+                return
+        glyph = material_icon(icon_spec)
+        if glyph:
+            self.icon_label.setText(glyph)
+            self.icon_label.show()
+            return
+        self.icon_label.hide()
 
     def update_theme(self, theme) -> None:
         self.theme = theme
