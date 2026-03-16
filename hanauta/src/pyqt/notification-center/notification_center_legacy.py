@@ -1185,6 +1185,9 @@ class NotificationCenter(QWidget):
         self._media_status = "Stopped"
         self._media_track_key = ""
         self._media_last_sync = monotonic()
+        self._media_estimated_progress = False
+        self._media_url = ""
+        self._media_duration_cache: dict[str, int] = {}
         self._calendar_events: list[dict] = []
         self._notification_history: list[dict] = []
         self.settings_state = load_notification_settings()
@@ -2968,10 +2971,22 @@ class NotificationCenter(QWidget):
         status = run_script("mpris.sh", "status") or "Stopped"
         player = run_script("mpris.sh", "player")
         art = run_script("mpris.sh", "coverloc")
+        media_url = ""
+        if player:
+            media_url = run_cmd(
+                [
+                    "playerctl",
+                    f"--player={player}",
+                    "metadata",
+                    "--format",
+                    "{{xesam:url}}",
+                ]
+            )
 
         self._media_player = player
         self._media_status = status
         self._media_last_sync = monotonic()
+        self._media_url = media_url
         self.media_title.setText(title)
         self.media_artist.setText(artist)
         self.media_title.setVisible(True)
@@ -2987,11 +3002,48 @@ class NotificationCenter(QWidget):
         track_key = f"{title}|{artist}"
         if track_key != self._media_track_key:
             self._media_track_key = track_key
+            self._media_position_ms = 0
+            self._media_duration_ms = 0
+            self._media_estimated_progress = False
+            self._render_media_progress()
             cover_path = Path(art) if art else FALLBACK_COVER
             if not cover_path.exists():
                 cover_path = FALLBACK_COVER
             self._set_cover_art(cover_path)
             self._update_media_palette_from_cover(cover_path)
+
+    def _is_browser_player(self, player: str) -> bool:
+        lowered = player.lower()
+        return any(
+            name in lowered
+            for name in ("firefox", "librewolf", "chromium", "brave", "chrome", "vivaldi")
+        )
+
+    def _duration_ms_from_media_url(self, url: str) -> int | None:
+        url = url.strip()
+        if not url:
+            return None
+        cached = self._media_duration_cache.get(url)
+        if cached is not None:
+            return cached
+        duration_raw = run_cmd(
+            [
+                "yt-dlp",
+                "--no-playlist",
+                "--skip-download",
+                "--print",
+                "duration",
+                "--no-warnings",
+                url,
+            ],
+            timeout=4.0,
+        )
+        try:
+            duration_ms = max(0, int(float(duration_raw.strip()) * 1000))
+        except Exception:
+            return None
+        self._media_duration_cache[url] = duration_ms
+        return duration_ms
 
     def _trigger_media_action(self, action: str) -> None:
         run_script_bg("mpris.sh", action)
@@ -3011,6 +3063,7 @@ class NotificationCenter(QWidget):
         if not player:
             self._media_position_ms = 0
             self._media_duration_ms = 0
+            self._media_estimated_progress = False
             self._render_media_progress()
             return
 
@@ -3033,20 +3086,42 @@ class NotificationCenter(QWidget):
         )
 
         try:
-            self._media_position_ms = int(float(position_raw) * 1000)
-        except Exception:
-            if status_raw == "Playing" and self._media_duration_ms > 0:
-                self._media_position_ms = min(
-                    self._media_duration_ms,
-                    self._media_position_ms + int(elapsed_since_sync * 1000),
-                )
-            else:
-                self._media_position_ms = max(0, self._media_position_ms)
-
-        try:
             self._media_duration_ms = int(int(length_raw) / 1000)
         except Exception:
             self._media_duration_ms = 0
+
+        if self._is_browser_player(player):
+            url_duration_ms = self._duration_ms_from_media_url(self._media_url)
+            if url_duration_ms is not None:
+                self._media_duration_ms = url_duration_ms
+
+        parsed_position_ms: int | None = None
+        try:
+            parsed_position_ms = int(float(position_raw) * 1000)
+        except Exception:
+            parsed_position_ms = None
+
+        if (
+            parsed_position_ms is not None
+            and self._media_duration_ms > 0
+            and self._is_browser_player(player)
+            and parsed_position_ms >= self._media_duration_ms - 1000
+            and status_raw in {"Playing", "Paused"}
+        ):
+            self._media_estimated_progress = True
+            parsed_position_ms = None
+        elif parsed_position_ms is not None:
+            self._media_estimated_progress = False
+
+        if parsed_position_ms is not None:
+            self._media_position_ms = max(0, parsed_position_ms)
+        elif status_raw == "Playing" and self._media_duration_ms > 0:
+            self._media_position_ms = min(
+                self._media_duration_ms,
+                max(0, self._media_position_ms + int(elapsed_since_sync * 1000)),
+            )
+        else:
+            self._media_position_ms = max(0, self._media_position_ms)
 
         self._media_status = status_raw
 
