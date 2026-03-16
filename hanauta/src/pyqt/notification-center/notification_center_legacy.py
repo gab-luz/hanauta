@@ -81,6 +81,8 @@ VPS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 GAME_MODE_POPUP_SCRIPT = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
+POWERMENU_SCRIPT = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
+PROFILE_PHOTO_CANDIDATES = [Path.home() / ".face.png", Path.home() / ".face.jpg"]
 
 MATERIAL_ICONS = {
     "airplanemode_active": "\ue195",
@@ -990,6 +992,20 @@ class ElidedLabel(QLabel):
         super().setText(elided)
 
 
+class ClickableLabel(QLabel):
+    def __init__(self, callback) -> None:
+        super().__init__()
+        self._callback = callback
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._callback()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class GameCarouselCard(QFrame):
     def __init__(self, ui_font: str, material_font: str) -> None:
         super().__init__()
@@ -1219,6 +1235,8 @@ class NotificationCenter(QWidget):
         self._ha_entities: list[dict] = []
         self._ha_entity_map: dict[str, dict] = {}
         self._ha_last_error = ""
+        self._avatar_source: Path | None = None
+        self._avatar_mtime_ns = -1
 
         self._brightness_commit_timer = QTimer(self)
         self._brightness_commit_timer.setSingleShot(True)
@@ -1405,7 +1423,25 @@ class NotificationCenter(QWidget):
         return self.game_carousel
 
     def _build_calendar_card(self) -> QFrame:
-        card, layout = self._section_shell("Calendar", "")
+        card = QFrame()
+        card.setObjectName("overviewSection")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        title_label = QLabel("Calendar")
+        title_label.setObjectName("sectionTitle")
+        self.calendar_settings_btn = self._circle_icon_button("settings")
+        self.calendar_settings_btn.setFixedSize(30, 30)
+        self.calendar_settings_btn.setFont(QFont(self.material_font, 16))
+        self.calendar_settings_btn.setToolTip("Open calendar service settings")
+        self.calendar_settings_btn.clicked.connect(lambda: self._launch_settings_page("services", "calendar_widget"))
+        header.addWidget(title_label)
+        header.addStretch(1)
+        header.addWidget(self.calendar_settings_btn)
+        layout.addLayout(header)
         self.calendar_widget = QCalendarWidget()
         self.calendar_widget.setObjectName("miniCalendar")
         self.calendar_widget.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
@@ -1466,11 +1502,13 @@ class NotificationCenter(QWidget):
         left.setContentsMargins(0, 0, 0, 0)
         left.setSpacing(10)
 
-        self.avatar = QLabel(material_icon("person"))
+        self.avatar = ClickableLabel(self._open_profile_photo_picker)
         self.avatar.setObjectName("avatar")
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar.setFixedSize(42, 42)
         self.avatar.setFont(QFont(self.material_font, 24))
+        self.avatar.setProperty("hasPhoto", False)
+        self._refresh_profile_avatar(force=True)
 
         text_wrap = QVBoxLayout()
         text_wrap.setContentsMargins(0, 0, 0, 0)
@@ -1492,7 +1530,7 @@ class NotificationCenter(QWidget):
         self.settings_btn = self._circle_icon_button("settings", rounded_rect=True)
         self.settings_btn.clicked.connect(self._open_settings)
         self.power_btn = self._circle_icon_button("power_settings_new", accent="power", rounded_rect=True)
-        self.power_btn.clicked.connect(self.close)
+        self.power_btn.clicked.connect(self._open_powermenu)
         right.addWidget(self.settings_btn)
         right.addWidget(self.power_btn)
 
@@ -2201,6 +2239,13 @@ class NotificationCenter(QWidget):
                 color: {theme.active_text};
                 font-family: "{self.material_font}";
                 border-radius: 23px;
+                border: none;
+                padding: 0px;
+            }}
+            #avatar[hasPhoto="true"] {{
+                background: transparent;
+                border: none;
+                padding: 0px;
             }}
             #userLabel {{
                 font-size: 17px;
@@ -2754,6 +2799,7 @@ class NotificationCenter(QWidget):
             "up "
         ).strip() or datetime.now().strftime("%H:%M")
         self.uptime_label.setText(f"up {uptime}")
+        self._refresh_profile_avatar()
 
     def _poll_phone(self) -> None:
         raw = run_script("phone_info.sh")
@@ -3354,6 +3400,77 @@ class NotificationCenter(QWidget):
         blue = max(0, min(255, int(int(color[4:6], 16) * (1.0 - amount))))
         return f"#{red:02X}{green:02X}{blue:02X}"
 
+    def _profile_photo_path(self) -> Path | None:
+        for candidate in PROFILE_PHOTO_CANDIDATES:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _rounded_avatar_pixmap(self, path: Path, size: int = 42) -> QPixmap:
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return QPixmap()
+        scaled = pixmap.scaled(
+            size,
+            size,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        x = max(0, (scaled.width() - size) // 2)
+        y = max(0, (scaled.height() - size) // 2)
+        cropped = scaled.copy(x, y, size, size)
+        rounded = QPixmap(size, size)
+        rounded.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(rounded)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        clip = QPainterPath()
+        clip.addRoundedRect(0.0, 0.0, float(size), float(size), 14.0, 14.0)
+        painter.setClipPath(clip)
+        painter.drawPixmap(0, 0, cropped)
+        painter.end()
+        return rounded
+
+    def _refresh_profile_avatar(self, force: bool = False) -> None:
+        if not hasattr(self, "avatar"):
+            return
+        photo_path = self._profile_photo_path()
+        if photo_path is None:
+            if force or self._avatar_source is not None:
+                self.avatar.setPixmap(QPixmap())
+                self.avatar.setText(material_icon("person"))
+                self.avatar.setProperty("hasPhoto", False)
+                self.avatar.style().unpolish(self.avatar)
+                self.avatar.style().polish(self.avatar)
+                self._avatar_source = None
+                self._avatar_mtime_ns = -1
+            return
+        try:
+            mtime_ns = photo_path.stat().st_mtime_ns
+        except OSError:
+            mtime_ns = -1
+        if not force and self._avatar_source == photo_path and self._avatar_mtime_ns == mtime_ns:
+            return
+        rounded = self._rounded_avatar_pixmap(photo_path, self.avatar.width())
+        if rounded.isNull():
+            self.avatar.setPixmap(QPixmap())
+            self.avatar.setText(material_icon("person"))
+            self.avatar.setProperty("hasPhoto", False)
+            self.avatar.style().unpolish(self.avatar)
+            self.avatar.style().polish(self.avatar)
+            return
+        self.avatar.setText("")
+        self.avatar.setPixmap(rounded)
+        self.avatar.setProperty("hasPhoto", True)
+        self.avatar.style().unpolish(self.avatar)
+        self.avatar.style().polish(self.avatar)
+        self._avatar_source = photo_path
+        self._avatar_mtime_ns = mtime_ns
+
+    def _open_profile_photo_picker(self) -> None:
+        run_script_bg("chpfp.sh")
+        for delay in (1200, 3000, 7000):
+            QTimer.singleShot(delay, lambda force=True: self._refresh_profile_avatar(force=force))
+
     def _open_settings(self) -> None:
         self._launch_settings_page("overview")
 
@@ -3375,10 +3492,19 @@ class NotificationCenter(QWidget):
     def _open_settings_homeassistant(self) -> None:
         self._launch_settings_page("services")
 
-    def _launch_settings_page(self, page: str) -> None:
+    def _open_powermenu(self) -> None:
+        if not POWERMENU_SCRIPT.exists():
+            return
+        run_bg_singleton(POWERMENU_SCRIPT)
+        self.hide()
+
+    def _launch_settings_page(self, page: str, service_section: str = "") -> None:
         if not SETTINGS_PAGE_SCRIPT.exists():
             return
-        run_bg_singleton(SETTINGS_PAGE_SCRIPT, "--page", page)
+        args = ["--page", page]
+        if service_section:
+            args.extend(["--service-section", service_section])
+        run_bg_singleton(SETTINGS_PAGE_SCRIPT, *args)
         self.hide()
 
     def _set_accent(self, key: str) -> None:
