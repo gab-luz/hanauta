@@ -48,7 +48,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pyqt.shared.runtime import current_executable_path, entry_command, fonts_root, is_frozen, project_root, python_executable, scripts_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 ROOT = project_root()
 APP_DIR = source_root()
@@ -1106,8 +1106,14 @@ class CyberDock(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
-        self.ui_font = detect_font("Rubik", self.loaded_fonts.get("ui_sans", ""), "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
-        self.mono_font = detect_font("JetBrains Mono", "DejaVu Sans Mono", "Monospace")
+        self.ui_font = detect_font(theme_font_family("ui"), "Rubik", self.loaded_fonts.get("ui_sans", ""), "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.mono_font = detect_font(theme_font_family("mono"), "JetBrains Mono", "DejaVu Sans Mono", "Monospace")
+        self._theme_font_signature = (
+            theme_font_family("ui"),
+            theme_font_family("display"),
+            theme_font_family("mono"),
+        )
+        self._theme_refresh_restart_pending = False
         self.config = load_dock_config()
         self._last_items_json = ""
         self._geometry_animation: QPropertyAnimation | None = None
@@ -1421,7 +1427,28 @@ class CyberDock(QWidget):
             return
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
+        new_signature = (
+            theme_font_family("ui"),
+            theme_font_family("display"),
+            theme_font_family("mono"),
+        )
+        if new_signature != getattr(self, "_theme_font_signature", ("", "", "")):
+            self._theme_font_signature = new_signature
+            self._restart_for_theme_refresh()
+            return
         self._apply_theme()
+
+    def _restart_for_theme_refresh(self) -> None:
+        if getattr(self, "_theme_refresh_restart_pending", False):
+            return
+        self._theme_refresh_restart_pending = True
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve())],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        QTimer.singleShot(0, self.close)
 
     def _update_clock(self) -> None:
         self.clock_label.setText(datetime.now().strftime("%H:%M"))

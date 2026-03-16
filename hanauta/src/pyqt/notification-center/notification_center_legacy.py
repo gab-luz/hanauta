@@ -48,7 +48,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.runtime import entry_command, entry_patterns
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 ROOT = APP_DIR.parents[1]
 SCRIPTS_DIR = ROOT / "hanauta" / "scripts"
@@ -1195,6 +1195,7 @@ class NotificationCenter(QWidget):
             "Material Symbols Rounded",
         )
         self.ui_font = detect_font(
+            theme_font_family("ui"),
             "Rubik",
             self.loaded_fonts.get("ui_sans", ""),
             "Inter",
@@ -1202,7 +1203,10 @@ class NotificationCenter(QWidget):
             "Sans Serif",
         )
         self.mono_font = detect_font(
-            "JetBrains Mono", "JetBrainsMono Nerd Font", "DejaVu Sans Mono"
+            theme_font_family("mono"),
+            "JetBrains Mono",
+            "JetBrainsMono Nerd Font",
+            "DejaVu Sans Mono",
         )
         self._panel_animation: QPropertyAnimation | None = None
         self._syncing_sliders = False

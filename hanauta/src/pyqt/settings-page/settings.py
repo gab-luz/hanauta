@@ -53,7 +53,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.runtime import entry_command
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
@@ -1322,10 +1322,12 @@ def write_default_pyqt_palette(use_matugen: bool = False) -> None:
     write_pyqt_palette(HANAUTA_DARK_PALETTE, use_matugen=use_matugen)
 
 
-def write_pyqt_palette(palette: dict[str, str], use_matugen: bool = False) -> None:
+def write_pyqt_palette(palette: dict[str, str], use_matugen: bool = False, fonts: dict[str, str] | None = None) -> None:
     PYQT_THEME_DIR.mkdir(parents=True, exist_ok=True)
     payload = {"use_matugen": bool(use_matugen)}
     payload.update(palette)
+    if fonts:
+        payload.update(fonts)
     PYQT_THEME_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
@@ -1539,7 +1541,11 @@ def apply_gtk_theme(theme_name: str, color_scheme: str = "prefer-dark", icon_the
 def sync_static_theme_from_settings(settings_state: dict, apply_gtk: bool = False) -> str:
     theme_key = selected_theme_key(settings_state)
     metadata = THEME_LIBRARY[theme_key]
-    write_pyqt_palette(dict(metadata["palette"]), use_matugen=False)
+    write_pyqt_palette(
+        dict(metadata["palette"]),
+        use_matugen=False,
+        fonts=dict(metadata.get("fonts", HANAUTA_FONT_PROFILE)),
+    )
     if apply_gtk:
         theme_name = ensure_theme_installed(theme_key)
         apply_gtk_theme(theme_name, str(metadata.get("color_scheme", "prefer-dark")))
@@ -1955,6 +1961,13 @@ HANAUTA_DARK_PALETTE = {
     "on_error": "#601410",
 }
 
+HANAUTA_FONT_PROFILE = {
+    "ui_font_family": "Rubik",
+    "display_font_family": "Rubik",
+    "mono_font_family": "JetBrains Mono",
+    "serif_font_family": "Playfair Display",
+}
+
 HANAUTA_LIGHT_PALETTE = {
     "source": "#8E4BC3",
     "primary": "#7A3EA8",
@@ -2028,24 +2041,38 @@ THEME_LIBRARY = {
     "hanauta_dark": {
         "label": "Hanauta Dark",
         "palette": HANAUTA_DARK_PALETTE,
+        "fonts": HANAUTA_FONT_PROFILE,
         "gtk_theme": "Hanauta-Dark",
         "color_scheme": "prefer-dark",
     },
     "hanauta_light": {
         "label": "Hanauta Light",
         "palette": HANAUTA_LIGHT_PALETTE,
+        "fonts": HANAUTA_FONT_PROFILE,
         "gtk_theme": "Hanauta-Light",
         "color_scheme": "prefer-light",
     },
     "retrowave": {
         "label": "Retrowave",
         "palette": RETROWAVE_PALETTE,
+        "fonts": {
+            "ui_font_family": "Noto Sans Mono",
+            "display_font_family": "Noto Sans Mono",
+            "mono_font_family": "Noto Sans Mono",
+            "serif_font_family": "Noto Serif",
+        },
         "gtk_theme": "Retrowave",
         "color_scheme": "prefer-dark",
     },
     "dracula": {
         "label": "Dracula",
         "palette": DRACULA_PALETTE,
+        "fonts": {
+            "ui_font_family": "Cantarell",
+            "display_font_family": "Cantarell",
+            "mono_font_family": "JetBrains Mono",
+            "serif_font_family": "Noto Serif",
+        },
         "gtk_theme": "Dracula",
         "color_scheme": "prefer-dark",
     },
@@ -2364,6 +2391,7 @@ class SettingsWindow(QWidget):
         super().__init__()
         self.fonts = load_app_fonts()
         self.ui_font = detect_font(
+            theme_font_family("ui"),
             "Rubik",
             self.fonts.get("ui_sans_medium", ""),
             self.fonts.get("ui_sans", ""),
@@ -2372,6 +2400,7 @@ class SettingsWindow(QWidget):
             "Noto Sans",
         )
         self.display_font = detect_font(
+            theme_font_family("display"),
             "Rubik",
             self.fonts.get("ui_display_medium", ""),
             self.fonts.get("ui_display", ""),
@@ -2404,6 +2433,7 @@ class SettingsWindow(QWidget):
         self._window_animation: QParallelAnimationGroup | None = None
         self._wallpaper_sync_worker: WallpaperSourceSyncWorker | None = None
         self._system_theme_install_declined: set[str] = set()
+        self._theme_refresh_restart_pending = False
         self._sidebar_collapsed = False
         self._slideshow_timer = QTimer(self)
         self._slideshow_timer.timeout.connect(self._advance_slideshow)
@@ -2454,6 +2484,7 @@ class SettingsWindow(QWidget):
         shell_layout.addLayout(body, 1)
 
         self._apply_styles()
+        self._theme_font_signature = self._current_theme_font_signature()
         self._sync_wallpaper_controls()
         self._sync_accent_controls()
         self._refresh_system_overview()
@@ -2666,6 +2697,7 @@ class SettingsWindow(QWidget):
     def _show_page(self, key: str) -> None:
         order = {"overview": 0, "appearance": 1, "display": 2, "region": 3, "bar": 4, "services": 5, "picom": 6}
         resolved = key if key in order else "appearance"
+        self.current_page = resolved
         self.page_stack.setCurrentIndex(order[resolved])
         for button_key, button in getattr(self, "nav_buttons", {}).items():
             button.setChecked(button_key == resolved)
@@ -5955,6 +5987,8 @@ class SettingsWindow(QWidget):
             self._apply_styles()
             self._sync_accent_controls()
             self._ensure_system_theme_copy(selected_theme_key(self.settings_state))
+            if self._restart_if_theme_fonts_changed():
+                return
             if hasattr(self, "appearance_status"):
                 label = THEME_LIBRARY[selected_theme_key(self.settings_state)]["label"]
                 self.appearance_status.setText(f"Custom theme selected: {label}.")
@@ -5969,6 +6003,8 @@ class SettingsWindow(QWidget):
         self._apply_styles()
         self._sync_accent_controls()
         self._ensure_system_theme_copy(selected_theme_key(self.settings_state))
+        if self._restart_if_theme_fonts_changed():
+            return
         if hasattr(self, "appearance_status"):
             labels = {
                 "light": "Light mode selected.",
@@ -5992,6 +6028,8 @@ class SettingsWindow(QWidget):
         self._apply_styles()
         self._sync_accent_controls()
         self._ensure_system_theme_copy(theme_id)
+        if self._restart_if_theme_fonts_changed():
+            return
         if hasattr(self, "appearance_status"):
             self.appearance_status.setText(f"Custom theme applied: {THEME_LIBRARY[theme_id]['label']}.")
 
@@ -6088,6 +6126,37 @@ class SettingsWindow(QWidget):
                 "soft": self.theme_palette.accent_soft,
             }
 
+    def _current_theme_font_signature(self) -> tuple[str, str, str]:
+        return (
+            theme_font_family("ui"),
+            theme_font_family("display"),
+            theme_font_family("mono"),
+        )
+
+    def _restart_for_theme_refresh(self) -> None:
+        if self._theme_refresh_restart_pending:
+            return
+        self._theme_refresh_restart_pending = True
+        page = getattr(self, "current_page", self.initial_page or "appearance")
+        command = [sys.executable, str(Path(__file__).resolve()), "--page", str(page or "appearance")]
+        if page == "services" and self.initial_service_section:
+            command.extend(["--service-section", str(self.initial_service_section)])
+        subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        QTimer.singleShot(0, self.close)
+
+    def _restart_if_theme_fonts_changed(self) -> bool:
+        new_signature = self._current_theme_font_signature()
+        if new_signature == getattr(self, "_theme_font_signature", ("", "", "")):
+            return False
+        self._theme_font_signature = new_signature
+        self._restart_for_theme_refresh()
+        return True
+
     def _reload_theme_if_needed(self) -> None:
         current_mtime = palette_mtime()
         if current_mtime == self._theme_mtime:
@@ -6095,6 +6164,8 @@ class SettingsWindow(QWidget):
         self._theme_mtime = current_mtime
         self.theme_palette = load_theme_palette()
         self._refresh_current_accent()
+        if self._restart_if_theme_fonts_changed():
+            return
         self._apply_styles()
 
     def _sync_wallpaper_controls(self) -> None:

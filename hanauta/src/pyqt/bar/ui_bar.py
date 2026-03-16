@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, fonts_root, hanauta_root, project_root, python_executable, scripts_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
 from pyqt.shared.rss import load_cache as load_rss_cache
@@ -967,12 +967,19 @@ class CyberBar(QWidget):
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
         self.region_settings = load_region_settings_from_payload(self.runtime_settings)
         self.ui_font = detect_font(
+            theme_font_family("ui"),
             "Rubik",
             self.loaded_fonts.get("ui_sans", ""),
             "Inter",
             "Noto Sans",
             "Sans Serif",
         )
+        self._theme_font_signature = (
+            theme_font_family("ui"),
+            theme_font_family("display"),
+            theme_font_family("mono"),
+        )
+        self._theme_refresh_restart_pending = False
         self.material_font = (
             self.loaded_fonts.get("material_icons")
             or self.loaded_fonts.get("material_icons_outlined")
@@ -1881,8 +1888,29 @@ class CyberBar(QWidget):
             return
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
+        new_signature = (
+            theme_font_family("ui"),
+            theme_font_family("display"),
+            theme_font_family("mono"),
+        )
+        if new_signature != getattr(self, "_theme_font_signature", ("", "", "")):
+            self._theme_font_signature = new_signature
+            self._restart_for_theme_refresh()
+            return
         self._apply_styles()
         self._reload_settings_if_needed()
+
+    def _restart_for_theme_refresh(self) -> None:
+        if getattr(self, "_theme_refresh_restart_pending", False):
+            return
+        self._theme_refresh_restart_pending = True
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve())],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        QTimer.singleShot(0, self.close)
 
     def _reload_settings_if_needed(self, force: bool = False) -> None:
         current_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
