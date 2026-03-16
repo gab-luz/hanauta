@@ -4,6 +4,9 @@ state_file="/tmp/eww-caffeine.enabled"
 pid_file="/tmp/eww-caffeine.pid"
 
 notify() {
+  if [ "${HANAUTA_QUIET:-0}" = "1" ]; then
+    return
+  fi
   if command -v notify-send >/dev/null 2>&1; then
     notify-send "Caffeine" "$1"
   fi

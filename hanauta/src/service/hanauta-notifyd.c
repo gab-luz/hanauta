@@ -15,6 +15,7 @@ typedef struct {
 typedef struct {
     guint id;
     gchar *app_name;
+    gchar *app_icon;
     gchar *summary;
     gchar *body;
     gint expire_timeout;
@@ -279,6 +280,10 @@ static gchar *history_file_path(void) {
     return path;
 }
 
+static gchar *notification_rules_file_path(void) {
+    return g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-rules.ini", NULL);
+}
+
 static gchar *control_file_path(void) {
     gchar *dir = state_dir_path();
     gchar *path = g_build_filename(dir, "control.json", NULL);
@@ -331,6 +336,7 @@ static void payload_free(NotificationPayload *payload) {
         return;
     }
     g_free(payload->app_name);
+    g_free(payload->app_icon);
     g_free(payload->summary);
     g_free(payload->body);
     if (payload->actions != NULL) {
@@ -366,6 +372,163 @@ static gchar *json_escape(const gchar *text) {
     gchar *quoted = g_strdup_printf("\"%s\"", escaped != NULL ? escaped : "");
     g_free(escaped);
     return quoted;
+}
+
+static gboolean str_contains_casefold(const gchar *haystack, const gchar *needle) {
+    gboolean matched = FALSE;
+    gchar *haystack_folded = NULL;
+    gchar *needle_folded = NULL;
+    if (haystack == NULL || needle == NULL || *needle == '\0') {
+        return FALSE;
+    }
+    haystack_folded = g_utf8_casefold(haystack, -1);
+    needle_folded = g_utf8_casefold(needle, -1);
+    matched = g_strstr_len(haystack_folded, -1, needle_folded) != NULL;
+    g_free(haystack_folded);
+    g_free(needle_folded);
+    return matched;
+}
+
+static gboolean csv_text_matches(const gchar *text, const gchar *csv) {
+    gboolean matched = FALSE;
+    gchar **parts = NULL;
+    if (csv == NULL || *csv == '\0') {
+        return FALSE;
+    }
+    parts = g_strsplit(csv, ",", -1);
+    for (guint i = 0; parts[i] != NULL; ++i) {
+        gchar *trimmed = g_strstrip(parts[i]);
+        if (*trimmed == '\0') {
+            continue;
+        }
+        if (str_contains_casefold(text, trimmed)) {
+            matched = TRUE;
+            break;
+        }
+    }
+    g_strfreev(parts);
+    return matched;
+}
+
+static gboolean process_list_match(const gchar *csv) {
+    gchar **parts = NULL;
+    gboolean matched = FALSE;
+    if (csv == NULL || *csv == '\0') {
+        return FALSE;
+    }
+    parts = g_strsplit(csv, ",", -1);
+    for (guint i = 0; parts[i] != NULL; ++i) {
+        gchar *trimmed = g_strstrip(parts[i]);
+        gchar *stdout_data = NULL;
+        gchar *stderr_data = NULL;
+        gint exit_status = 1;
+        const gchar *argv[] = {"pgrep", "-af", trimmed, NULL};
+        if (*trimmed == '\0') {
+            continue;
+        }
+        if (g_spawn_sync(NULL, (gchar **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &stdout_data, &stderr_data, &exit_status, NULL)) {
+            if (exit_status == 0 && stdout_data != NULL && *stdout_data != '\0') {
+                matched = TRUE;
+            }
+        }
+        g_free(stdout_data);
+        g_free(stderr_data);
+        if (matched) {
+            break;
+        }
+    }
+    g_strfreev(parts);
+    return matched;
+}
+
+static gboolean should_ignore_notification(const NotificationPayload *payload) {
+    gboolean ignored = FALSE;
+    gchar *path = notification_rules_file_path();
+    GKeyFile *key_file = g_key_file_new();
+    gsize group_count = 0;
+    gchar **groups = NULL;
+
+    if (!g_key_file_load_from_file(key_file, path, G_KEY_FILE_NONE, NULL)) {
+        g_key_file_free(key_file);
+        g_free(path);
+        return FALSE;
+    }
+
+    groups = g_key_file_get_groups(key_file, &group_count);
+    for (gsize i = 0; i < group_count; ++i) {
+        const gchar *group = groups[i];
+        gchar *source_app = NULL;
+        gchar *summary_contains = NULL;
+        gchar *body_contains = NULL;
+        gchar *processes = NULL;
+        gchar *action = NULL;
+        gboolean enabled = FALSE;
+        gboolean summary_match = FALSE;
+        gboolean body_match = FALSE;
+        gboolean has_content_matcher = FALSE;
+
+        if (!g_str_has_prefix(group, "rule.")) {
+            continue;
+        }
+        enabled = g_key_file_get_boolean(key_file, group, "enabled", NULL);
+        if (!enabled) {
+            continue;
+        }
+
+        action = g_key_file_get_string(key_file, group, "action", NULL);
+        if (action == NULL || g_ascii_strcasecmp(action, "ignore") != 0) {
+            g_free(action);
+            continue;
+        }
+
+        source_app = g_key_file_get_string(key_file, group, "source_app", NULL);
+        if (source_app != NULL && *source_app != '\0' && g_strcmp0(source_app, payload->app_name) != 0) {
+            g_free(source_app);
+            g_free(action);
+            continue;
+        }
+
+        summary_contains = g_key_file_get_string(key_file, group, "summary_contains", NULL);
+        body_contains = g_key_file_get_string(key_file, group, "body_contains", NULL);
+        if (summary_contains != NULL && *summary_contains != '\0') {
+            has_content_matcher = TRUE;
+            summary_match = csv_text_matches(payload->summary, summary_contains);
+        }
+        if (body_contains != NULL && *body_contains != '\0') {
+            has_content_matcher = TRUE;
+            body_match = csv_text_matches(payload->body, body_contains);
+        }
+        if (has_content_matcher && !summary_match && !body_match) {
+            g_free(source_app);
+            g_free(summary_contains);
+            g_free(body_contains);
+            g_free(action);
+            continue;
+        }
+
+        processes = g_key_file_get_string(key_file, group, "processes", NULL);
+        if (processes != NULL && *processes != '\0' && !process_list_match(processes)) {
+            g_free(source_app);
+            g_free(summary_contains);
+            g_free(body_contains);
+            g_free(processes);
+            g_free(action);
+            continue;
+        }
+
+        ignored = TRUE;
+        g_free(source_app);
+        g_free(summary_contains);
+        g_free(body_contains);
+        g_free(processes);
+        g_free(action);
+        break;
+    }
+
+    g_strfreev(groups);
+    g_key_file_free(key_file);
+    g_free(path);
+    return ignored;
 }
 
 static void save_history(void) {
@@ -529,6 +692,24 @@ static GtkWidget *make_label(const gchar *name, const gchar *text, gdouble xalig
     return label;
 }
 
+static GtkWidget *make_notification_icon(const gchar *icon_name) {
+    if (icon_name == NULL || *icon_name == '\0') {
+        return NULL;
+    }
+    GtkWidget *image = NULL;
+    if (g_file_test(icon_name, G_FILE_TEST_EXISTS)) {
+        image = gtk_image_new_from_file(icon_name);
+    } else {
+        image = gtk_image_new_from_icon_name(icon_name, GTK_ICON_SIZE_DIALOG);
+    }
+    if (image == NULL) {
+        return NULL;
+    }
+    gtk_widget_set_name(image, "toastIcon");
+    gtk_widget_set_size_request(image, 28, 28);
+    return image;
+}
+
 static void show_toast(const NotificationPayload *payload) {
     ThemePalette theme;
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -551,6 +732,11 @@ static void show_toast(const NotificationPayload *payload) {
 
     GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_pack_start(GTK_BOX(card), top, FALSE, FALSE, 0);
+
+    GtkWidget *icon = make_notification_icon(payload->app_icon);
+    if (icon != NULL) {
+        gtk_box_pack_start(GTK_BOX(top), icon, FALSE, FALSE, 0);
+    }
 
     GtkWidget *app_name = make_label("appLabel", payload->app_name[0] != '\0' ? payload->app_name : "Notification", 0.0);
     gtk_box_pack_start(GTK_BOX(top), app_name, TRUE, TRUE, 0);
@@ -598,6 +784,7 @@ static void show_toast(const NotificationPayload *payload) {
     gchar *css = g_strdup_printf(
         "#hanauta-toast-window { background: transparent; }"
         "#card { background: %s; border: 1px solid %s; border-radius: 24px; }"
+        "#toastIcon { padding: 0; }"
         "#appLabel { color: %s; font-weight: 800; letter-spacing: 0.4px; }"
         "#summaryLabel { color: %s; font-weight: 800; font-size: 15px; }"
         "#bodyLabel { color: %s; }"
@@ -657,7 +844,6 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
     const gchar *body = "";
     guint32 replaces_id = 0;
     gint32 expire_timeout = 5000;
-    (void)app_icon;
 
     g_variant_get(
         parameters,
@@ -674,6 +860,7 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
 
     payload->id = replaces_id > 0 ? replaces_id : g_daemon.next_id++;
     payload->app_name = g_strdup(app_name);
+    payload->app_icon = g_strdup(app_icon);
     payload->summary = g_strdup(summary);
     payload->body = g_strdup(body);
     payload->expire_timeout = expire_timeout;
@@ -711,10 +898,12 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
 
 static void handle_notify(GDBusMethodInvocation *invocation, GVariant *parameters) {
     NotificationPayload *payload = payload_from_variant(parameters);
-    append_history(payload);
-    if (!is_paused()) {
-        dismiss_toast(payload->id, 3);
-        show_toast(payload);
+    if (!should_ignore_notification(payload)) {
+        append_history(payload);
+        if (!is_paused()) {
+            dismiss_toast(payload->id, 3);
+            show_toast(payload);
+        }
     }
     g_dbus_method_invocation_return_value(invocation, g_variant_new("(u)", payload->id));
     payload_free(payload);
