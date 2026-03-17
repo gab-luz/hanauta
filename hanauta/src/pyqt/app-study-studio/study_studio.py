@@ -219,6 +219,10 @@ class StreakItem:
     last_reset_at: str
     category: str = "Recovery"
     notes: str = ""
+    notify_daily: bool = False
+    milestones: list[int] = field(default_factory=list)
+    last_daily_notification_date: str = ""
+    last_milestone_notified: int = 0
     updated_at: str = field(default_factory=now_iso)
 
 
@@ -327,6 +331,8 @@ def default_seed_state() -> OrganizerState:
                 last_reset_at=(now - timedelta(days=12, hours=3)).replace(microsecond=0).isoformat(),
                 category="Addiction control",
                 notes="Track cravings in notes instead of breaking the streak.",
+                notify_daily=True,
+                milestones=[7, 14, 30, 60, 90],
             ),
             StreakItem(
                 id=str(uuid.uuid4()),
@@ -334,6 +340,8 @@ def default_seed_state() -> OrganizerState:
                 last_reset_at=(now - timedelta(days=34)).replace(microsecond=0).isoformat(),
                 category="Safety",
                 notes="Reach out before the urge spikes.",
+                notify_daily=True,
+                milestones=[7, 14, 30, 60, 90],
             ),
         ],
         resources=[
@@ -446,6 +454,10 @@ def load_state() -> OrganizerState:
             last_reset_at=str(item.get("last_reset_at", now_iso())),
             category=str(item.get("category", "Recovery")),
             notes=str(item.get("notes", "")),
+            notify_daily=bool(item.get("notify_daily", False)),
+            milestones=sorted({max(1, _safe_int(milestone, 1, 1, 100000)) for milestone in item.get("milestones", []) if str(milestone).strip()}),
+            last_daily_notification_date=str(item.get("last_daily_notification_date", "")),
+            last_milestone_notified=_safe_int(item.get("last_milestone_notified", 0), 0, 0, 100000),
             updated_at=str(item.get("updated_at", now_iso())),
         )
         for item in payload.get("streaks", [])
@@ -916,6 +928,7 @@ class NavButton(QPushButton):
         super().__init__()
         self.setObjectName("navButton")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setSizePolicy(self.sizePolicy().horizontalPolicy(), self.sizePolicy().verticalPolicy())
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(14, 12, 14, 12)
         self.layout.setSpacing(12)
@@ -924,6 +937,7 @@ class NavButton(QPushButton):
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setMinimumWidth(26)
         self.text_wrap = QWidget()
+        self.text_wrap.setObjectName("navTextWrap")
         text_wrap_layout = QVBoxLayout(self.text_wrap)
         text_wrap_layout.setContentsMargins(0, 0, 0, 0)
         text_wrap_layout.setSpacing(2)
@@ -935,6 +949,9 @@ class NavButton(QPushButton):
         text_wrap_layout.addWidget(self.subtitle_label)
         self.layout.addWidget(self.icon_label)
         self.layout.addWidget(self.text_wrap, 1)
+        self.title_label.setStyleSheet("color: rgba(255,255,255,0.98); background: transparent;")
+        self.subtitle_label.setStyleSheet("color: rgba(255,255,255,0.74); background: transparent;")
+        self.icon_label.setStyleSheet("color: rgba(255,255,255,0.98); background: transparent;")
 
     def set_active(self, active: bool) -> None:
         self.setProperty("active", active)
@@ -1160,6 +1177,7 @@ class OrganizerWindow(QMainWindow):
         brand_layout.addWidget(self.brand_title)
         brand_layout.addWidget(self.brand_body)
         sidebar_layout.addWidget(brand)
+        self.sidebar_hover_widgets: list[QWidget] = [self.sidebar, brand, self.brand_icon, self.brand_title, self.brand_body]
 
         nav_items = [
             ("dashboard", "Overview", "Today and next up"),
@@ -1176,12 +1194,16 @@ class OrganizerWindow(QMainWindow):
             button.clicked.connect(lambda _checked=False, idx=index: self._set_page(idx))
             sidebar_layout.addWidget(button)
             self.nav_buttons.append(button)
+            self.sidebar_hover_widgets.extend([button, button.icon_label, button.text_wrap, button.title_label, button.subtitle_label])
         sidebar_layout.addStretch(1)
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("statusText")
         self.status_label.setWordWrap(True)
         sidebar_layout.addWidget(self.status_label)
+        self.sidebar_hover_widgets.append(self.status_label)
+        for widget in self.sidebar_hover_widgets:
+            widget.installEventFilter(self)
 
         self.content = QFrame()
         self.content.setObjectName("contentArea")
@@ -1470,16 +1492,21 @@ class OrganizerWindow(QMainWindow):
         self.streak_last_reset_input = QDateTimeEdit(QDateTime.currentDateTime().addDays(-1))
         self.streak_last_reset_input.setDisplayFormat("yyyy-MM-dd HH:mm")
         self.streak_last_reset_input.setCalendarPopup(True)
+        self.streak_notify_daily_input = QCheckBox("Notify me every day another day passes")
+        self.streak_milestones_input = QLineEdit()
+        self.streak_milestones_input.setPlaceholderText("7, 14, 30, 60, 90")
         self.streak_notes_input = QTextEdit()
         self.streak_notes_input.setFixedHeight(110)
         for label, widget in [
             ("Label", self.streak_label_input),
             ("Category", self.streak_category_input),
             ("Last reset / event", self.streak_last_reset_input),
+            ("Milestones (days)", self.streak_milestones_input),
             ("Notes", self.streak_notes_input),
         ]:
             form.addWidget(self._field_label(label))
             form.addWidget(widget)
+        form.addWidget(self.streak_notify_daily_input)
         actions = QHBoxLayout()
         self.streak_save_button = QPushButton("Add streak")
         self.streak_save_button.setObjectName("primaryButton")
@@ -1487,11 +1514,19 @@ class OrganizerWindow(QMainWindow):
         reset_now = QPushButton("Record reset now")
         reset_now.setObjectName("ghostButton")
         reset_now.clicked.connect(self._record_streak_reset_now)
+        add_milestone = QPushButton("Extend milestone")
+        add_milestone.setObjectName("ghostButton")
+        add_milestone.clicked.connect(self._extend_selected_streak_milestone)
+        remove = QPushButton("Remove item")
+        remove.setObjectName("ghostButton")
+        remove.clicked.connect(self._delete_selected_streak)
         clear = QPushButton("Clear")
         clear.setObjectName("ghostButton")
         clear.clicked.connect(self._reset_streak_form)
         actions.addWidget(self.streak_save_button, 1)
         actions.addWidget(reset_now)
+        actions.addWidget(add_milestone)
+        actions.addWidget(remove)
         actions.addWidget(clear)
         form.addLayout(actions)
         layout.addWidget(editor, 0)
@@ -1727,8 +1762,10 @@ class OrganizerWindow(QMainWindow):
                 border-radius: 32px;
             }}
             QFrame#sidebar {{
-                background: {rgba(theme.surface_container_high, 0.72)};
-                border-right: 1px solid {rgba(theme.outline, 0.16)};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {rgba(theme.surface_container_high, 0.92)},
+                    stop:1 {rgba(theme.surface_container, 0.84)});
+                border-right: 1px solid {rgba(theme.outline, 0.20)};
                 border-top-left-radius: 32px;
                 border-bottom-left-radius: 32px;
             }}
@@ -1748,12 +1785,19 @@ class OrganizerWindow(QMainWindow):
             QLabel#brandIcon {{
                 color: rgba(255, 255, 255, 0.98);
                 font-family: "{self.material_font}";
-                font-size: 24px;
+                font-size: 26px;
+                background: {rgba(theme.primary, 0.18)};
+                border: 1px solid {rgba(theme.primary, 0.26)};
+                border-radius: 18px;
+                min-width: 38px;
+                max-width: 38px;
+                min-height: 38px;
+                max-height: 38px;
             }}
             QLabel#brandTitle {{
-                color: {theme.text};
+                color: rgba(255, 255, 255, 0.98);
                 font-family: "{self.display_font}";
-                font-size: 20px;
+                font-size: 19px;
                 font-weight: 700;
             }}
             QLabel#pageKicker {{
@@ -1808,12 +1852,19 @@ class OrganizerWindow(QMainWindow):
                 font-size: 11px;
                 font-weight: 600;
             }}
+            QWidget#navTextWrap {{
+                background: transparent;
+            }}
             QLabel#navTitle {{
                 color: rgba(255, 255, 255, 0.98);
+                background: transparent;
+                font-family: "{self.display_font}";
+                font-size: 14px;
                 font-weight: 700;
             }}
             QLabel#navSubtitle {{
                 color: rgba(255, 255, 255, 0.74);
+                background: transparent;
                 font-size: 11px;
                 font-weight: 600;
             }}
@@ -1838,18 +1889,19 @@ class OrganizerWindow(QMainWindow):
                 font-weight: 700;
             }}
             QPushButton#navButton {{
-                background: {rgba(theme.surface, 0.20)};
-                border: 1px solid {rgba(theme.outline, 0.14)};
-                border-radius: 20px;
+                background: {rgba(theme.surface_container_high, 0.72)};
+                border: 1px solid {rgba(theme.outline, 0.24)};
+                border-radius: 18px;
                 text-align: left;
+                min-height: 64px;
             }}
             QPushButton#navButton:hover {{
-                background: {rgba(theme.primary, 0.14)};
-                border-color: {rgba(theme.primary, 0.22)};
+                background: {rgba(theme.primary, 0.22)};
+                border-color: {rgba(theme.primary, 0.34)};
             }}
             QPushButton#navButton[active="true"] {{
-                background: {rgba(theme.primary, 0.18)};
-                border-color: {rgba(theme.primary, 0.24)};
+                background: {rgba(theme.primary, 0.28)};
+                border-color: {rgba(theme.primary, 0.40)};
             }}
             QSlider#dashboardCarousel {{
                 min-height: 20px;
@@ -1946,12 +1998,25 @@ class OrganizerWindow(QMainWindow):
         super().resizeEvent(event)
         self._update_dashboard_columns_layout()
 
+    def _cursor_over_sidebar(self) -> bool:
+        local_pos = self.sidebar.mapFromGlobal(QCursor.pos())
+        return self.sidebar.rect().contains(local_pos)
+
     def eventFilter(self, watched, event):  # type: ignore[override]
-        if watched is self.sidebar:
+        if hasattr(self, "sidebar_hover_widgets") and watched in self.sidebar_hover_widgets:
+            if event.type() in (QEvent.Type.Enter, QEvent.Type.HoverEnter, QEvent.Type.MouseMove, QEvent.Type.HoverMove):
+                self.sidebar_close_timer.stop()
+                self._set_sidebar_collapsed(False)
+            elif event.type() in (QEvent.Type.Leave, QEvent.Type.HoverLeave):
+                if self._cursor_over_sidebar():
+                    self.sidebar_close_timer.stop()
+                else:
+                    self.sidebar_close_timer.start(3000)
+        elif watched is self.sidebar:
             if event.type() == QEvent.Type.Enter:
                 self.sidebar_close_timer.stop()
                 self._set_sidebar_collapsed(False)
-            elif event.type() == QEvent.Type.Leave:
+            elif event.type() == QEvent.Type.Leave and not self._cursor_over_sidebar():
                 self.sidebar_close_timer.start(3000)
         return super().eventFilter(watched, event)
 
@@ -1963,6 +2028,12 @@ class OrganizerWindow(QMainWindow):
         self.brand_body.setVisible(not collapsed)
         self.status_label.setVisible(not collapsed)
         self.brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter if collapsed else Qt.AlignmentFlag.AlignLeft)
+        if collapsed:
+            self.sidebar.layout().setContentsMargins(10, 18, 10, 18)  # type: ignore[union-attr]
+            self.sidebar.layout().setSpacing(10)  # type: ignore[union-attr]
+        else:
+            self.sidebar.layout().setContentsMargins(18, 18, 18, 18)  # type: ignore[union-attr]
+            self.sidebar.layout().setSpacing(12)  # type: ignore[union-attr]
         if animate:
             for animation in (self.sidebar_min_animation, self.sidebar_max_animation):
                 animation.stop()
@@ -2015,6 +2086,7 @@ class OrganizerWindow(QMainWindow):
         self._refresh_clock()
         self._refresh_dashboard()
         self._maybe_notify_next_routine()
+        self._maybe_notify_recovery_progress()
 
     def _reload_theme_if_needed(self) -> None:
         current = palette_mtime()
@@ -2159,10 +2231,25 @@ class OrganizerWindow(QMainWindow):
         return card
 
     def _streak_card(self, streak: StreakItem) -> QWidget:
-        card = ItemCard(streak.label, f"{days_since(streak.last_reset_at)}d")
+        current_days = days_since(streak.last_reset_at)
+        next_milestone = next((milestone for milestone in sorted(streak.milestones) if milestone > current_days), None)
+        badge = f"{current_days}d"
+        card = ItemCard(streak.label, badge)
         meta = QLabel(streak.category)
         meta.setObjectName("bodyText")
         card.layout.addWidget(meta)
+        if streak.notify_daily:
+            reminder = QLabel("Daily reminder enabled")
+            reminder.setObjectName("bodyText")
+            card.layout.addWidget(reminder)
+        if streak.milestones:
+            milestone_text = f"Milestones: {', '.join(str(item) for item in sorted(streak.milestones))}"
+            if next_milestone is not None:
+                milestone_text += f"  •  next {next_milestone}d"
+            milestone = QLabel(milestone_text)
+            milestone.setObjectName("bodyText")
+            milestone.setWordWrap(True)
+            card.layout.addWidget(milestone)
         if streak.notes.strip():
             notes = QLabel(streak.notes.strip())
             notes.setObjectName("bodyText")
@@ -2172,10 +2259,18 @@ class OrganizerWindow(QMainWindow):
         reset = QPushButton("Reset now")
         reset.setObjectName("ghostButton")
         reset.clicked.connect(lambda: self._reset_streak_now(streak.id))
+        extend = QPushButton("Extend milestone")
+        extend.setObjectName("ghostButton")
+        extend.clicked.connect(lambda: self._extend_streak_milestone(streak.id))
+        delete = QPushButton("Remove")
+        delete.setObjectName("ghostButton")
+        delete.clicked.connect(lambda: self._delete_streak(streak.id))
         edit = QPushButton("Edit")
         edit.setObjectName("ghostButton")
         edit.clicked.connect(lambda: self._load_streak(streak.id))
         actions.addWidget(reset)
+        actions.addWidget(extend)
+        actions.addWidget(delete)
         actions.addWidget(edit)
         card.layout.addLayout(actions)
         return card
@@ -2373,6 +2468,8 @@ class OrganizerWindow(QMainWindow):
         self.streak_label_input.clear()
         self.streak_category_input.setCurrentText("Addiction control")
         self.streak_last_reset_input.setDateTime(QDateTime.currentDateTime().addDays(-1))
+        self.streak_notify_daily_input.setChecked(False)
+        self.streak_milestones_input.clear()
         self.streak_notes_input.clear()
         self.streak_save_button.setText("Add streak")
 
@@ -2385,10 +2482,16 @@ class OrganizerWindow(QMainWindow):
         if streak is None:
             streak = StreakItem(id=str(uuid.uuid4()), label=label, last_reset_at=now_iso())
             self.state.streaks.append(streak)
+        milestones = self._parse_milestones_text(self.streak_milestones_input.text())
         streak.label = label
         streak.category = self.streak_category_input.currentText()
         streak.last_reset_at = self.streak_last_reset_input.dateTime().toPyDateTime().replace(second=0, microsecond=0).isoformat()
         streak.notes = self.streak_notes_input.toPlainText().strip()
+        streak.notify_daily = self.streak_notify_daily_input.isChecked()
+        streak.milestones = milestones
+        if streak.last_milestone_notified not in milestones:
+            reached = [milestone for milestone in milestones if milestone <= days_since(streak.last_reset_at)]
+            streak.last_milestone_notified = max(reached, default=0)
         streak.updated_at = now_iso()
         self._save_all()
         self._reset_streak_form()
@@ -2401,6 +2504,8 @@ class OrganizerWindow(QMainWindow):
         self.streak_label_input.setText(streak.label)
         self.streak_category_input.setCurrentText(streak.category)
         self.streak_last_reset_input.setDateTime(QDateTime(parse_iso_datetime(streak.last_reset_at) or datetime.now()))
+        self.streak_notify_daily_input.setChecked(streak.notify_daily)
+        self.streak_milestones_input.setText(", ".join(str(item) for item in sorted(streak.milestones)))
         self.streak_notes_input.setPlainText(streak.notes)
         self.streak_save_button.setText("Update streak")
         self._set_page(4)
@@ -2410,6 +2515,8 @@ class OrganizerWindow(QMainWindow):
         if streak is None:
             return
         streak.last_reset_at = now_iso()
+        streak.last_daily_notification_date = ""
+        streak.last_milestone_notified = 0
         streak.updated_at = now_iso()
         self._save_all()
 
@@ -2418,6 +2525,69 @@ class OrganizerWindow(QMainWindow):
             self.streak_last_reset_input.setDateTime(QDateTime.currentDateTime())
             return
         self._reset_streak_now(self.selected_streak_id)
+
+    def _parse_milestones_text(self, raw: str) -> list[int]:
+        milestones: list[int] = []
+        for token in re.split(r"[,\s]+", raw.strip()):
+            if not token:
+                continue
+            try:
+                value = int(token)
+            except ValueError:
+                continue
+            if value > 0:
+                milestones.append(value)
+        return sorted(set(milestones))
+
+    def _next_milestone_value(self, streak: StreakItem) -> int:
+        milestones = sorted(streak.milestones)
+        if not milestones:
+            return max(7, days_since(streak.last_reset_at) + 7)
+        if len(milestones) == 1:
+            step = max(7, milestones[0])
+        else:
+            step = max(1, milestones[-1] - milestones[-2])
+        return milestones[-1] + step
+
+    def _extend_streak_milestone(self, streak_id: str) -> None:
+        streak = next((item for item in self.state.streaks if item.id == streak_id), None)
+        if streak is None:
+            return
+        next_value = self._next_milestone_value(streak)
+        streak.milestones = sorted(set([*streak.milestones, next_value]))
+        streak.updated_at = now_iso()
+        self._save_all()
+        if streak.id == self.selected_streak_id:
+            self.streak_milestones_input.setText(", ".join(str(item) for item in streak.milestones))
+
+    def _extend_selected_streak_milestone(self) -> None:
+        if not self.selected_streak_id:
+            current = self._parse_milestones_text(self.streak_milestones_input.text())
+            if not current:
+                current = [7, 14, 30]
+            if len(current) == 1:
+                current.append(current[0] * 2)
+            else:
+                current.append(current[-1] + max(1, current[-1] - current[-2]))
+            current = sorted(set(current))
+            self.streak_milestones_input.setText(", ".join(str(item) for item in current))
+            return
+        self._extend_streak_milestone(self.selected_streak_id)
+
+    def _delete_streak(self, streak_id: str) -> None:
+        before = len(self.state.streaks)
+        self.state.streaks = [item for item in self.state.streaks if item.id != streak_id]
+        if len(self.state.streaks) == before:
+            return
+        if self.selected_streak_id == streak_id:
+            self._reset_streak_form()
+        self._save_all()
+
+    def _delete_selected_streak(self) -> None:
+        if not self.selected_streak_id:
+            self.status_label.setText("Select a recovery item to remove it.")
+            return
+        self._delete_streak(self.selected_streak_id)
 
     def _reset_resource_form(self) -> None:
         self.selected_resource_id = ""
@@ -2554,10 +2724,34 @@ class OrganizerWindow(QMainWindow):
             self._notify("Next routine block", " • ".join(body_bits))
             self._last_notice_key = key
 
-    def _notify(self, title: str, body: str) -> None:
+    def _maybe_notify_recovery_progress(self) -> None:
+        today = date.today().isoformat()
+        changed = False
+        for streak in self.state.streaks:
+            days = days_since(streak.last_reset_at)
+            if streak.notify_daily and streak.last_daily_notification_date != today:
+                self._notify("Recovery progress", f"{streak.label}: another day passed. You are at {days} day(s).")
+                streak.last_daily_notification_date = today
+                streak.updated_at = now_iso()
+                changed = True
+            reached = [milestone for milestone in sorted(streak.milestones) if streak.last_milestone_notified < milestone <= days]
+            if reached:
+                latest = reached[-1]
+                self._notify("Recovery milestone trophy", f"{streak.label}: trophy unlocked at {latest} day(s).", icon="trophy")
+                streak.last_milestone_notified = latest
+                streak.updated_at = now_iso()
+                changed = True
+        if changed:
+            save_state(self.state)
+
+    def _notify(self, title: str, body: str, icon: str = "") -> None:
         try:
+            command = ["notify-send"]
+            if icon:
+                command.extend(["-i", icon])
+            command.extend([title, body])
             subprocess.Popen(
-                ["notify-send", title, body],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
