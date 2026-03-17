@@ -2858,9 +2858,18 @@ class NotificationCenter(QWidget):
                     if child.widget() is not None:
                         child.widget().deleteLater()
 
+    def _history_item_id(self, payload: dict) -> int:
+        raw = payload.get("id", 0)
+        if isinstance(raw, dict):
+            raw = raw.get("id", raw.get("value", 0))
+        try:
+            return int(raw or 0)
+        except (TypeError, ValueError):
+            return 0
+
     def _history_item_matches(self, left: dict, right: dict) -> bool:
-        left_id = int(left.get("id", 0) or 0)
-        right_id = int(right.get("id", 0) or 0)
+        left_id = self._history_item_id(left)
+        right_id = self._history_item_id(right)
         if left_id and right_id:
             return left_id == right_id
         return (
