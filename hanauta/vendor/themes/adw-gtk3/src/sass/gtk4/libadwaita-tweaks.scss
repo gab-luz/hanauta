@@ -1,0 +1,98 @@
+// Tweaks for the gtk-4.0 theme
+// These fixes are not for libadwaita apps
+
+@use '../settings' with (
+  $toolkit: 'gtk4'
+);
+@use '../functions' as *;
+
+// https://github.com/lassekongo83/adw-gtk3/issues/272
+@define-color accent_bg_color @blue_3;
+@define-color accent_fg_color white;
+
+:root {
+  --accent-blue: #3584e4;
+  --accent-teal: #2190a4;
+  --accent-green: #3a944a;
+  --accent-yellow: #c88800;
+  --accent-orange: #ed5b00;
+  --accent-red: #e62d42;
+  --accent-pink: #d56199;
+  --accent-purple: #9141ac;
+  --accent-slate: #6f8396;
+
+  --accent-bg-color: var(--accent-blue);
+  --accent-fg-color: @accent_fg_color;
+
+  --window-bg-color: @window_bg_color;
+  --headerbar-bg-color: @headerbar_bg_color;
+}
+
+// Some apps don't like transparency or don't style this
+// https://github.com/lassekongo83/adw-gtk3/issues/232
+notebook > header {
+  background-color: var(--window-bg-color);
+}
+
+// Better osd
+.osd {
+  &, button { border-radius: 24px; }
+  button { margin: 2px; }
+}
+
+// Default decoration window controls
+headerbar {
+  // Line up the buttons with csd headerbar buttons
+  &.default-decoration windowcontrols {
+    > button {
+      margin: 0 1px;
+      > image { padding: 4px; } // Make sure they have the same size
+    }
+
+    &.start { margin-left: 3px; }
+    &.end { margin-right: 3px; }
+  }
+}
+
+
+// ******
+// Apps *
+// ******
+
+// Chromium
+.background.chromium {
+  // Will crash the browser if mixed with any color that is transparent!
+  background-color: var(--window-bg-color);
+  @media (prefers-color-scheme: dark) {
+    background-color: gtkshade(var(--headerbar-bg-color), 1.2);
+  }
+
+  selection {
+    &, &:focus {
+      background-color: color-mix(in srgb, var(--accent-bg-color) 30%, transparent);
+      @media (prefers-color-scheme: dark) {
+        background-color:  var(--accent-bg-color);
+      }
+      color: var(--accent-fg-color);
+    }
+  }
+
+  windowcontrols > button {
+    background-color: color-mix(in srgb, currentColor 10%, transparent);
+    color: var(--window-fg-color);
+    min-width: 24px;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 100%;
+    margin: 0 4px; // doesn't work on the far edges of the tab-bar
+    transition: background 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    &:hover { background-color: color-mix(in srgb, currentColor 15%, transparent); }
+    &:active { background-color: color-mix(in srgb, currentColor 30%, transparent); }
+  }
+}
+
+// https://github.com/lassekongo83/adw-gtk3/issues/298
+tooltip.background.chromium {
+  background-color: RGB(0 0 6 / 80%);
+}
+

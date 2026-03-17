@@ -1,0 +1,33 @@
+name: gtk-theme-adw-gtk3
+build-base: core24
+base: bare
+version: '6.4'
+platforms:
+  all:
+    build-on: [amd64]
+    build-for: [all]
+summary:  The theme from libadwaita ported to GTK-3
+description: |
+   The theme from libadwaita ported to GTK-3
+grade: stable
+confinement: strict
+compression: lzo
+
+slots:
+  gtk-3-themes:
+    interface: content
+    source:
+      read:
+        - $SNAP/share/themes/adw-gtk3
+        - $SNAP/share/themes/adw-gtk3-dark
+  
+parts:
+  gtk-3-themes:
+    plugin: dump
+    source: https://github.com/lassekongo83/adw-gtk3/releases/download/v$SNAPCRAFT_PROJECT_VERSION/adw-gtk3v$SNAPCRAFT_PROJECT_VERSION.tar.xz
+    organize:
+      adw-gtk3: share/themes/adw-gtk3
+      adw-gtk3-dark: share/themes/adw-gtk3-dark
+    prime:
+      - share/themes/*/gtk-3.0
+      - share/themes/*/gtk-4.0
