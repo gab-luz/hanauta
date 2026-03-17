@@ -1,0 +1,33 @@
+name: Update GTK4 theme
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Install sassc
+      run: sudo apt-get update && sudo apt-get -y install sassc
+
+    - name: Clone libadwaita and compile scss
+      run: |
+        git clone -b libadwaita-1-9 --single-branch https://gitlab.gnome.org/GNOME/libadwaita.git
+        cd libadwaita/src/stylesheet
+        sassc -a -M -t compact gtk.scss libadwaita.css
+
+    - name: Copy css files
+      run: |
+        cp libadwaita/src/stylesheet/libadwaita.css $GITHUB_WORKSPACE/src/theme-light/gtk4/libadwaita.css
+
+    - name: Commit changes
+      run: |
+        git config user.name "GitHub-Actions"
+        git config user.email "<>"
+        git add src
+        git commit -m "Update gtk4 theme"
+        git push
