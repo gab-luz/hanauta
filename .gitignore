@@ -63,3 +63,10 @@ Makefile
 # Specific configs that might differ per machine
 TODO.md
 NOTES.md
+
+# Local app state / secrets
+*.env
+*.sqlite
+*.db
+*.db-*
+hanauta-life-sync/data/
