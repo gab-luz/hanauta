@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -169,6 +170,7 @@ class NotificationToast(QWidget):
         self.max_height = int(appearance.get("max_height", 280))
         self._fade: QPropertyAnimation | None = None
         self._timeout_timer: QTimer | None = None
+        self._i3_rules_applied = False
 
         self.setWindowFlags(
             Qt.WindowType.Tool
@@ -188,6 +190,14 @@ class NotificationToast(QWidget):
         self._apply_shadow()
         self._start_timeout()
         self._animate_in()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        if self._i3_rules_applied:
+            return
+        self._i3_rules_applied = True
+        QTimer.singleShot(0, self._set_window_identity)
+        QTimer.singleShot(120, self._apply_i3_window_rules)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -323,6 +333,39 @@ class NotificationToast(QWidget):
             }}
             """
         )
+
+    def _set_window_identity(self) -> None:
+        try:
+            wid = int(self.winId())
+            subprocess.run(
+                ["xprop", "-id", hex(wid), "-f", "_NET_WM_NAME", "8t", "-set", "_NET_WM_NAME", self.windowTitle()],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            subprocess.run(
+                ["xprop", "-id", hex(wid), "-f", "WM_CLASS", "8s", "-set", "WM_CLASS", "HanautaNotification"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def _apply_i3_window_rules(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "i3-msg",
+                    f'[title="^{self.windowTitle()}$"]',
+                    "floating enable, sticky enable, border pixel 0",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
 
     def _apply_notification_icon(self, icon_spec: str) -> None:
         icon_spec = str(icon_spec or "").strip()
