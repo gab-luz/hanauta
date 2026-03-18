@@ -2388,7 +2388,18 @@ class CyberBar(QWidget):
         self.style().polish(self.vpn_icon)
 
     def _set_vpn_button_icon(self, active: bool) -> None:
-        self._apply_icon_to_widget(self.vpn_icon, "vpn_key", material_icon("vpn_key"), 16)
+        icon_path = VPN_ICON_ON if active else VPN_ICON_OFF
+        icon = tinted_svg_icon(icon_path, QColor(self.theme.primary), 16)
+        self.vpn_icon.setProperty("iconKey", "vpn_key" if active else "vpn_key_off")
+        self.vpn_icon.setProperty("nerdIcon", False)
+        self.vpn_icon.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.vpn_icon.setIcon(icon)
+            self.vpn_icon.setIconSize(QSize(16, 16))
+            self.vpn_icon.setText("")
+            return
+        self.vpn_icon.setIcon(QIcon())
+        self.vpn_icon.setText(self._icon_text("vpn_key" if active else "lock_open"))
 
     def _set_christian_button_icon(self) -> None:
         icon = tinted_svg_icon(CHRISTIAN_ICON, QColor(self.theme.primary), 16)
