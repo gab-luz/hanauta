@@ -116,8 +116,14 @@ for_window [title="Hanauta Window Switcher"] floating enable, border pixel 0, st
 for_window [title="Power Menu"] floating enable, border pixel 0, sticky enable
 
 # Hanauta notification toasts should never take focus
+for_window [class="HanautaNotification"] floating enable, border pixel 0, sticky enable
 for_window [title="^Hanauta Notification .*"] floating enable, border pixel 0, sticky enable
 no_focus [title="^Hanauta Notification .*"]
+no_focus [class="HanautaNotification"]
+
+# Hanauta fullscreen reminders should stay visible across workspaces
+for_window [class="HanautaReminder"] floating enable, border pixel 0, sticky enable
+for_window [title="Hanauta Reminder"] floating enable, border pixel 0, sticky enable
 
 # Basic i3 controls (minimal, adjust to taste)
 # Start a terminal
