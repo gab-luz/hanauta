@@ -291,6 +291,17 @@ static gchar *control_file_path(void) {
     return path;
 }
 
+static gchar *toast_override_file_path(void) {
+    gchar *dir = state_dir_path();
+    gchar *path = g_build_filename(dir, "toast.css", NULL);
+    g_free(dir);
+    return path;
+}
+
+static gchar *toast_default_file_path(void) {
+    return g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "hanauta-notifyd.css", NULL);
+}
+
 static void ensure_state_dir(void) {
     gchar *dir = state_dir_path();
     g_mkdir_with_parents(dir, 0755);
@@ -372,6 +383,112 @@ static gchar *json_escape(const gchar *text) {
     gchar *quoted = g_strdup_printf("\"%s\"", escaped != NULL ? escaped : "");
     g_free(escaped);
     return quoted;
+}
+
+static gchar *replace_all(const gchar *source, const gchar *needle, const gchar *replacement) {
+    GString *result = NULL;
+    const gchar *cursor = source;
+    gsize needle_len = strlen(needle);
+    gsize replacement_len = strlen(replacement);
+    const gchar *match = NULL;
+
+    if (source == NULL || needle == NULL || replacement == NULL || needle_len == 0) {
+        return g_strdup(source != NULL ? source : "");
+    }
+
+    result = g_string_new("");
+    while ((match = g_strstr_len(cursor, -1, needle)) != NULL) {
+        g_string_append_len(result, cursor, (gssize)(match - cursor));
+        g_string_append_len(result, replacement, (gssize)replacement_len);
+        cursor = match + needle_len;
+    }
+    g_string_append(result, cursor);
+    return g_string_free(result, FALSE);
+}
+
+static gchar *load_toast_css(const ThemePalette *theme) {
+    static const gchar *fallback_template =
+        "#hanauta-toast-window { background: transparent; }\n"
+        "#card { background: {{CARD_BG}}; border: 1px solid {{CARD_BORDER}}; border-radius: 24px; }\n"
+        "#toastIcon { padding: 0; }\n"
+        "#appLabel { color: {{APP_LABEL}}; font-weight: 800; letter-spacing: 0.4px; }\n"
+        "#summaryLabel { color: {{SUMMARY_COLOR}}; font-weight: 800; font-size: 15px; }\n"
+        "#bodyLabel { color: {{BODY_COLOR}}; }\n"
+        "#closeButton { background: {{CLOSE_BG}}; color: {{CLOSE_FG}}; border-radius: 12px; padding: 2px 8px; border: none; }\n"
+        "#actionButton { background: {{ACTION_BG}}; color: {{ACTION_FG}}; border-radius: 16px; padding: 7px 13px; border: none; font-weight: 800; }\n"
+        "#actionButton:hover { background: {{ACTION_HOVER}}; color: {{ACTION_HOVER_FG}}; }\n";
+    gchar *override_path = toast_override_file_path();
+    gchar *default_path = toast_default_file_path();
+    gchar *template = NULL;
+    gchar *card_bg = hex_to_rgba(theme->surface_container, 0.94);
+    gchar *card_border = hex_to_rgba(theme->outline, 0.18);
+    gchar *app_label = g_strdup(theme->primary);
+    gchar *summary_color = g_strdup(theme->on_surface);
+    gchar *body_color = hex_to_rgba(theme->on_surface_variant, 0.78);
+    gchar *close_bg = hex_to_rgba(theme->on_surface, 0.08);
+    gchar *close_fg = g_strdup(theme->on_surface);
+    gchar *action_bg = g_strdup(theme->primary);
+    gchar *action_fg = g_strdup(theme->on_primary);
+    gchar *action_hover = g_strdup(theme->primary_container);
+    gchar *action_hover_fg = g_strdup(theme->on_primary_container);
+    gchar *css = NULL;
+    gchar *next = NULL;
+
+    if (!g_file_get_contents(override_path, &template, NULL, NULL) || template == NULL) {
+        g_clear_pointer(&template, g_free);
+        if (!g_file_get_contents(default_path, &template, NULL, NULL) || template == NULL) {
+            g_clear_pointer(&template, g_free);
+            template = g_strdup(fallback_template);
+        }
+    }
+
+    css = replace_all(template, "{{CARD_BG}}", card_bg);
+    next = replace_all(css, "{{CARD_BORDER}}", card_border);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{APP_LABEL}}", app_label);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{SUMMARY_COLOR}}", summary_color);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{BODY_COLOR}}", body_color);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{CLOSE_BG}}", close_bg);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{CLOSE_FG}}", close_fg);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{ACTION_BG}}", action_bg);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{ACTION_FG}}", action_fg);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{ACTION_HOVER}}", action_hover);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{ACTION_HOVER_FG}}", action_hover_fg);
+    g_free(css);
+    css = next;
+
+    g_free(template);
+    g_free(override_path);
+    g_free(default_path);
+    g_free(card_bg);
+    g_free(card_border);
+    g_free(app_label);
+    g_free(summary_color);
+    g_free(body_color);
+    g_free(close_bg);
+    g_free(close_fg);
+    g_free(action_bg);
+    g_free(action_fg);
+    g_free(action_hover);
+    g_free(action_hover_fg);
+    return css;
 }
 
 static gboolean str_contains_casefold(const gchar *haystack, const gchar *needle) {
@@ -717,6 +834,7 @@ static void show_toast(const NotificationPayload *payload) {
     gtk_window_set_skip_taskbar_hint(GTK_WINDOW(window), TRUE);
     gtk_window_set_skip_pager_hint(GTK_WINDOW(window), TRUE);
     gtk_window_set_keep_above(GTK_WINDOW(window), TRUE);
+    gtk_window_stick(GTK_WINDOW(window));
     gtk_window_set_accept_focus(GTK_WINDOW(window), FALSE);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
     gtk_window_set_default_size(GTK_WINDOW(window), 356, -1);
@@ -768,41 +886,8 @@ static void show_toast(const NotificationPayload *payload) {
     }
 
     load_theme_palette(&theme);
-    gchar *card_bg = hex_to_rgba(theme.surface_container, 0.94);
-    gchar *card_border = hex_to_rgba(theme.outline, 0.18);
-    gchar *app_label = g_strdup(theme.primary);
-    gchar *summary_color = g_strdup(theme.on_surface);
-    gchar *body_color = hex_to_rgba(theme.on_surface_variant, 0.78);
-    gchar *close_bg = hex_to_rgba(theme.on_surface, 0.08);
-    gchar *close_fg = g_strdup(theme.on_surface);
-    gchar *action_bg = g_strdup(theme.primary);
-    gchar *action_fg = g_strdup(theme.on_primary);
-    gchar *action_hover = g_strdup(theme.primary_container);
-    gchar *action_hover_fg = g_strdup(theme.on_primary_container);
-
     GtkCssProvider *provider = gtk_css_provider_new();
-    gchar *css = g_strdup_printf(
-        "#hanauta-toast-window { background: transparent; }"
-        "#card { background: %s; border: 1px solid %s; border-radius: 24px; }"
-        "#toastIcon { padding: 0; }"
-        "#appLabel { color: %s; font-weight: 800; letter-spacing: 0.4px; }"
-        "#summaryLabel { color: %s; font-weight: 800; font-size: 15px; }"
-        "#bodyLabel { color: %s; }"
-        "#closeButton { background: %s; color: %s; border-radius: 12px; padding: 2px 8px; border: none; }"
-        "#actionButton { background: %s; color: %s; border-radius: 16px; padding: 7px 13px; border: none; font-weight: 800; }"
-        "#actionButton:hover { background: %s; color: %s; }",
-        card_bg,
-        card_border,
-        app_label,
-        summary_color,
-        body_color,
-        close_bg,
-        close_fg,
-        action_bg,
-        action_fg,
-        action_hover,
-        action_hover_fg
-    );
+    gchar *css = load_toast_css(&theme);
     gtk_css_provider_load_from_data(provider, css, -1, NULL);
     GtkStyleContext *context = gtk_widget_get_style_context(window);
     gtk_style_context_add_provider(context, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -812,23 +897,12 @@ static void show_toast(const NotificationPayload *payload) {
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
     );
     g_object_unref(provider);
-    g_free(card_bg);
-    g_free(card_border);
-    g_free(app_label);
-    g_free(summary_color);
-    g_free(body_color);
-    g_free(close_bg);
-    g_free(close_fg);
-    g_free(action_bg);
-    g_free(action_fg);
-    g_free(action_hover);
-    g_free(action_hover_fg);
     g_free(css);
 
     ToastWindow *toast = g_new0(ToastWindow, 1);
     toast->window = window;
     toast->id = payload->id;
-    toast->timeout_id = g_timeout_add(payload->expire_timeout > 0 ? (guint)payload->expire_timeout : 5000, toast_timeout_cb, GUINT_TO_POINTER(payload->id));
+    toast->timeout_id = g_timeout_add(payload->expire_timeout > 0 ? (guint)payload->expire_timeout : 10000, toast_timeout_cb, GUINT_TO_POINTER(payload->id));
     g_hash_table_insert(g_daemon.toasts, GUINT_TO_POINTER(payload->id), toast);
     gtk_widget_show_all(window);
     reposition_toasts();
@@ -843,7 +917,7 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
     const gchar *summary = "";
     const gchar *body = "";
     guint32 replaces_id = 0;
-    gint32 expire_timeout = 5000;
+    gint32 expire_timeout = 10000;
 
     g_variant_get(
         parameters,

@@ -1,0 +1,75 @@
+/*
+  Hanauta notification toast stylesheet.
+
+  Edit this file to rice the native notification daemon.
+  You can also copy it to:
+
+    ~/.local/state/hanauta/notification-daemon/toast.css
+
+  The daemon will prefer that user override file if it exists.
+
+  Available theme tokens:
+    {{CARD_BG}}
+    {{CARD_BORDER}}
+    {{APP_LABEL}}
+    {{SUMMARY_COLOR}}
+    {{BODY_COLOR}}
+    {{CLOSE_BG}}
+    {{CLOSE_FG}}
+    {{ACTION_BG}}
+    {{ACTION_FG}}
+    {{ACTION_HOVER}}
+    {{ACTION_HOVER_FG}}
+*/
+
+#hanauta-toast-window {
+  background: transparent;
+}
+
+#card {
+  background: {{CARD_BG}};
+  border: 1px solid {{CARD_BORDER}};
+  border-radius: 24px;
+}
+
+#toastIcon {
+  padding: 0;
+}
+
+#appLabel {
+  color: {{APP_LABEL}};
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+#summaryLabel {
+  color: {{SUMMARY_COLOR}};
+  font-weight: 800;
+  font-size: 15px;
+}
+
+#bodyLabel {
+  color: {{BODY_COLOR}};
+}
+
+#closeButton {
+  background: {{CLOSE_BG}};
+  color: {{CLOSE_FG}};
+  border: none;
+  border-radius: 12px;
+  padding: 2px 8px;
+}
+
+#actionButton {
+  background: {{ACTION_BG}};
+  color: {{ACTION_FG}};
+  border: none;
+  border-radius: 16px;
+  padding: 7px 13px;
+  font-weight: 800;
+}
+
+#actionButton:hover {
+  background: {{ACTION_HOVER}};
+  color: {{ACTION_HOVER_FG}};
+}

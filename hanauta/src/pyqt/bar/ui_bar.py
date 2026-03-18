@@ -2647,7 +2647,10 @@ class CyberBar(QWidget):
         self._terminate_singleton_process(attr_name, script_path)
         try:
             if script_path.suffix == ".py":
-                command = entry_command(script_path)
+                if python_bin is not None:
+                    command = [python_bin, str(script_path)]
+                else:
+                    command = entry_command(script_path)
             elif python_bin is not None:
                 command = [python_bin, str(script_path)]
             else:
