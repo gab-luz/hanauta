@@ -100,13 +100,12 @@ class ReminderAlert(QWidget):
         self._audio_output = None
         self._audio_fade_timer: QTimer | None = None
         self._audio_process: subprocess.Popen[str] | None = None
+        self._i3_rules_applied = False
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
 
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Window
-        if hasattr(Qt.WindowType, "X11BypassWindowManagerHint"):
-            flags |= Qt.WindowType.X11BypassWindowManagerHint
         self.setWindowFlags(flags)
         self.setWindowTitle("Hanauta Reminder")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -118,6 +117,14 @@ class ReminderAlert(QWidget):
         self._animate_in()
         self._start_sound()
         self._position_overlay()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        if self._i3_rules_applied:
+            return
+        self._i3_rules_applied = True
+        QTimer.singleShot(0, self._set_window_identity)
+        QTimer.singleShot(120, self._apply_i3_window_rules)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -317,6 +324,40 @@ class ReminderAlert(QWidget):
             return
         geometry = screen.geometry()
         self.setGeometry(geometry)
+
+    def _set_window_identity(self) -> None:
+        try:
+            wid = int(self.winId())
+            subprocess.run(
+                ["xprop", "-id", hex(wid), "-f", "_NET_WM_NAME", "8t", "-set", "_NET_WM_NAME", self.windowTitle()],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            subprocess.run(
+                ["xprop", "-id", hex(wid), "-f", "WM_CLASS", "8s", "-set", "WM_CLASS", "HanautaReminder"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def _apply_i3_window_rules(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "i3-msg",
+                    '[title="Hanauta Reminder"]',
+                    "floating enable, sticky enable, border pixel 0, move position 0 0",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+        self._position_overlay()
 
     def _start_sound(self) -> None:
         if DEFAULT_ALERT_SOUND.exists() and QMediaPlayer is not None and QAudioOutput is not None and QUrl is not None:
