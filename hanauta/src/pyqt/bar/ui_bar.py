@@ -44,6 +44,7 @@ from pyqt.shared.rss import load_cache as load_rss_cache
 from pyqt.shared.rss import save_cache as save_rss_cache
 from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
 from pyqt.shared.crypto import (
+    build_price_alerts as build_crypto_price_alerts,
     fetch_prices as fetch_crypto_prices,
     load_settings_state as load_crypto_settings_state,
     load_tracker_state as load_crypto_tracker_state,
@@ -2321,44 +2322,9 @@ class CyberBar(QWidget):
             self._send_action_notification(title, body, "Read", link, 22000 + index)
 
     def _poll_crypto_notifications(self) -> None:
-        settings = load_crypto_settings_state()
-        services = settings.get("services", {})
-        crypto_settings = settings.get("crypto", {})
-        if not isinstance(services, dict) or not isinstance(crypto_settings, dict):
-            return
-        service = services.get("crypto_widget", {})
-        if not isinstance(service, dict) or not bool(service.get("enabled", True)):
-            return
-        if not bool(crypto_settings.get("notify_price_moves", True)):
-            return
-        interval = max(5, int(crypto_settings.get("check_interval_minutes", 15) or 15))
-        state = load_crypto_tracker_state()
-        if not crypto_should_check(str(state.get("last_checked_at", "")), interval):
-            return
-        try:
-            prices = fetch_crypto_prices(settings)
-        except Exception:
-            return
-        previous = state.get("last_prices", {})
-        if not isinstance(previous, dict):
-            previous = {}
-        up_threshold = float(crypto_settings.get("price_up_percent", 3.0) or 3.0)
-        down_threshold = float(crypto_settings.get("price_down_percent", 3.0) or 3.0)
-        for coin_id, payload in prices.items():
-            prev_price = float(previous.get(coin_id, 0.0) or 0.0)
-            current_price = float(payload.get("price", 0.0) or 0.0)
-            if prev_price <= 0 or current_price <= 0:
-                continue
-            movement = crypto_movement_summary(prev_price, current_price)
-            if movement >= up_threshold or movement <= -down_threshold:
-                direction = "up" if movement >= 0 else "down"
-                summary = f"{crypto_slug_to_name(coin_id)} moved {direction}"
-                body = f"{movement:+.2f}% since the last check • {current_price:,.2f} {payload.get('currency', 'USD')}"
-                url = f"https://www.coingecko.com/en/coins/{coin_id}"
-                self._send_action_notification(summary, body, "Open", url, 23000 + abs(hash(coin_id)) % 500)
-        state["last_prices"] = {coin_id: float(payload.get("price", 0.0) or 0.0) for coin_id, payload in prices.items()}
-        state["last_checked_at"] = datetime.now().astimezone().isoformat()
-        save_crypto_tracker_state(state)
+        # Crypto alerts now come from the dedicated notifier daemon so they still
+        # fire when the widget is closed and without depending on the bar process.
+        return
 
     def _sync_weather_visibility(self) -> None:
         settings = load_runtime_settings()
@@ -2399,7 +2365,7 @@ class CyberBar(QWidget):
             self.vpn_icon.setText("")
             return
         self.vpn_icon.setIcon(QIcon())
-        self.vpn_icon.setText(self._icon_text("vpn_key" if active else "lock_open"))
+        self.vpn_icon.setText(self._icon_text("vpn_key" if active else "shield"))
 
     def _set_christian_button_icon(self) -> None:
         icon = tinted_svg_icon(CHRISTIAN_ICON, QColor(self.theme.primary), 16)

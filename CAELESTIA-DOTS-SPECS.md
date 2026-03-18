@@ -111,3 +111,37 @@ Reference notes for styling Hanauta's Life Organizer using patterns observed in 
 - Dynamic palette friendliness for Matugen and custom accents.
 - Clear 11/13/19/25 size hierarchy.
 - MD3-style hero plus supporting metric cards.
+
+## Crypto Widget Notes
+
+- Keep the existing crypto information architecture:
+  - coin selector
+  - hero summary for the selected asset
+  - spot price
+  - 24h move
+  - chart window
+  - line/area chart
+  - status copy
+- Prefer a "market pulse" composition instead of a utilitarian dashboard.
+- Hero card should feel atmospheric:
+  - soft diagonal gradient
+  - translucent glass base
+  - one badge row with small metadata
+  - oversized current price
+  - short momentum sentence
+- Secondary metrics should live in three equally weighted glass cards under the hero.
+- Charts should be framed inside their own elevated card, not dropped directly on the panel background.
+- Use subtle grid lines and a low-opacity area fill beneath the line to echo Caelestia's layered shell panels.
+- Positive/negative change should affect accent treatment:
+  - positive can lean toward `primary`
+  - negative can lean toward `error`
+  - avoid saturated neon red/green blocks
+- Status text should sit in a muted pill or soft card so operational feedback feels integrated with the shell.
+- Preferred widget sizing for this family:
+  - width around `580px`
+  - height around `720px` to `760px`
+- In future Hanauta widgets using this spec:
+  - start with one expressive hero
+  - move supporting facts into small cards
+  - treat charts, feeds, or logs as separate glass surfaces
+  - keep typography calm and rounded rather than compact-terminal dense

@@ -204,3 +204,59 @@ def movement_summary(previous: float, current: float) -> float:
 
 def slug_to_name(slug: str) -> str:
     return slug.replace("-", " ").title()
+
+
+def build_price_alerts(
+    settings: dict,
+    state: dict,
+    prices: dict[str, dict] | None = None,
+) -> tuple[list[dict[str, str | int | float]], dict]:
+    services = settings.get("services", {})
+    crypto_settings = settings.get("crypto", {})
+    if not isinstance(services, dict) or not isinstance(crypto_settings, dict):
+        return [], state
+    service = services.get("crypto_widget", {})
+    if not isinstance(service, dict) or not bool(service.get("enabled", True)):
+        return [], state
+    if not bool(crypto_settings.get("notify_price_moves", True)):
+        return [], state
+
+    interval = max(5, int(crypto_settings.get("check_interval_minutes", 15) or 15))
+    if not should_check(str(state.get("last_checked_at", "")), interval):
+        return [], state
+
+    if prices is None:
+        prices = fetch_prices(settings)
+
+    previous = state.get("last_prices", {})
+    if not isinstance(previous, dict):
+        previous = {}
+
+    up_threshold = float(crypto_settings.get("price_up_percent", 3.0) or 3.0)
+    down_threshold = float(crypto_settings.get("price_down_percent", 3.0) or 3.0)
+    alerts: list[dict[str, str | int | float]] = []
+
+    for coin_id, payload in prices.items():
+        prev_price = float(previous.get(coin_id, 0.0) or 0.0)
+        current_price = float(payload.get("price", 0.0) or 0.0)
+        if prev_price <= 0 or current_price <= 0:
+            continue
+        movement = movement_summary(prev_price, current_price)
+        if movement >= up_threshold or movement <= -down_threshold:
+            direction = "up" if movement >= 0 else "down"
+            alerts.append(
+                {
+                    "coin_id": coin_id,
+                    "summary": f"{slug_to_name(coin_id)} moved {direction}",
+                    "body": f"{movement:+.2f}% since the last check • {current_price:,.2f} {payload.get('currency', 'USD')}",
+                    "url": f"https://www.coingecko.com/en/coins/{coin_id}",
+                    "replace_id": 23000 + abs(hash(coin_id)) % 500,
+                }
+            )
+
+    next_state = dict(state)
+    next_state["last_prices"] = {
+        coin_id: float(payload.get("price", 0.0) or 0.0) for coin_id, payload in prices.items()
+    }
+    next_state["last_checked_at"] = datetime.now(UTC).isoformat()
+    return alerts, next_state
