@@ -75,6 +75,7 @@ POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
 OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 OBS_STATUS = APP_DIR / "pyqt" / "widget-obs" / "obs_status.py"
+UPDATES_WIDGET = APP_DIR / "pyqt" / "widget-updates" / "updates_widget.py"
 CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
@@ -1044,6 +1045,7 @@ class CyberBar(QWidget):
         self._pomodoro_widget_process: Optional[subprocess.Popen] = None
         self._rss_widget_process: Optional[subprocess.Popen] = None
         self._obs_widget_process: Optional[subprocess.Popen] = None
+        self._updates_widget_process: Optional[subprocess.Popen] = None
         self._crypto_widget_process: Optional[subprocess.Popen] = None
         self._vps_widget_process: Optional[subprocess.Popen] = None
         self._desktop_clock_process: Optional[subprocess.Popen] = None
@@ -2819,7 +2821,7 @@ class CyberBar(QWidget):
     def _open_obs_widget(self) -> None:
         if not OBS_WIDGET.exists():
             return
-        self._toggle_singleton_process("_obs_widget_process", OBS_WIDGET)
+        self._toggle_singleton_process("_obs_widget_process", OBS_WIDGET, python_bin=self._python_bin())
 
     def _open_crypto_widget(self) -> None:
         if not CRYPTO_WIDGET.exists():
@@ -2861,7 +2863,7 @@ class CyberBar(QWidget):
         run_bg([str(SCRIPTS_DIR / "openapps"), "--clip"])
 
     def _check_updates(self) -> None:
-        run_bg([str(SCRIPTS_DIR / "openapps"), "--checkupdates"])
+        self._toggle_singleton_process("_updates_widget_process", UPDATES_WIDGET, python_bin=self._python_bin())
 
     def _sync_ai_button(self) -> None:
         active = self._singleton_active(self._ai_popup_process, AI_POPUP)
@@ -2965,6 +2967,8 @@ class CyberBar(QWidget):
             self._rss_widget_process.terminate()
         if self._obs_widget_process is not None and self._obs_widget_process.poll() is None:
             self._obs_widget_process.terminate()
+        if self._updates_widget_process is not None and self._updates_widget_process.poll() is None:
+            self._updates_widget_process.terminate()
         if self._crypto_widget_process is not None and self._crypto_widget_process.poll() is None:
             self._crypto_widget_process.terminate()
         if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
