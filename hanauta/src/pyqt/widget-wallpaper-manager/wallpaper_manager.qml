@@ -103,7 +103,7 @@ Window {
         Image {
             id: bgImage
             anchors.fill: parent
-            source: backend.backgroundSource
+            source: backend.selectedWallpaperUrl !== "" ? backend.selectedWallpaperUrl : backend.backgroundSource
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
@@ -123,7 +123,7 @@ Window {
         Rectangle {
             anchors.fill: parent
             color: themeModel.overlay
-            opacity: 0.88
+            opacity: 0.52
         }
     }
 
@@ -140,8 +140,8 @@ Window {
             anchors.fill: parent
             radius: 32
             gradient: Gradient {
-                GradientStop { position: 0.0; color: themeModel.panelStart }
-                GradientStop { position: 1.0; color: themeModel.panelEnd }
+                GradientStop { position: 0.0; color: Qt.rgba(0.10, 0.10, 0.14, 0.42) }
+                GradientStop { position: 1.0; color: Qt.rgba(0.06, 0.06, 0.10, 0.30) }
             }
         }
 
@@ -294,6 +294,31 @@ Window {
                             border.color: Qt.rgba(1, 1, 1, 0.10)
                         }
                     }
+
+                    ToolButton {
+                        text: backend.localRandomizerEnabled ? "Stop Shuffle" : "Shuffle 2m"
+                        onClicked: backend.toggleLocalRandomizer()
+                        padding: 0
+                        implicitWidth: 110
+                        implicitHeight: 38
+                        enabled: !backend.busy && backend.activeProvider !== "konachan" && backend.activeProvider !== ""
+                        contentItem: Text {
+                            text: parent.text
+                            color: themeModel.text
+                            opacity: parent.parent.enabled ? 1.0 : 0.45
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.family: fontsModel.ui
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        background: Rectangle {
+                            radius: 19
+                            color: backend.localRandomizerEnabled ? themeModel.active : Qt.rgba(1, 1, 1, 0.04)
+                            border.width: 1
+                            border.color: backend.localRandomizerEnabled ? themeModel.activeBorder : Qt.rgba(1, 1, 1, 0.10)
+                        }
+                    }
                 }
             }
 
@@ -384,7 +409,7 @@ Window {
                                 Text {
                                     text: backend.activeProvider === "konachan"
                                         ? "Konachan mode downloads a new safe wallpaper every 2 minutes and applies it automatically, even after the manager closes."
-                                        : "Arrow keys move focus across the grid. Enter or Space applies the current selection. Mouse click selects and applies instantly."
+                                        : "Arrow keys move the magical focus outline across the grid. Enter or click applies the focused wallpaper and pins the selection. Press Enter or click it again to release that pinned selection."
                                     color: themeModel.text
                                     font.family: fontsModel.ui
                                     font.pixelSize: 13
@@ -399,13 +424,13 @@ Window {
                         ToolButton {
                             Layout.fillWidth: true
                             implicitHeight: 52
-                            text: backend.activeProvider === "konachan" ? "Refresh Konachan Now" : "Apply Selected Wallpaper"
+                            text: backend.activeProvider === "konachan" ? "Refresh Konachan Now" : "Randomize wallpapers"
                             enabled: !backend.providerSelectionRequired && !backend.busy
                             onClicked: {
                                 if (backend.activeProvider === "konachan") {
                                     backend.refreshProviderContent()
                                 } else {
-                                    backend.activateCurrent()
+                                    backend.applyRandomWallpaper()
                                 }
                             }
                             padding: 0
@@ -422,6 +447,31 @@ Window {
                                 radius: 18
                                 color: themeModel.primary
                                 opacity: parent.enabled ? 1.0 : 0.45
+                            }
+                        }
+
+                        ToolButton {
+                            Layout.fillWidth: true
+                            implicitHeight: 46
+                            text: backend.localRandomizerEnabled ? "Disable 2-Min Shuffle" : "Enable 2-Min Shuffle"
+                            visible: backend.activeProvider !== "konachan" && backend.activeProvider !== ""
+                            enabled: !backend.providerSelectionRequired && !backend.busy && backend.canUseLocalRandomizer
+                            onClicked: backend.toggleLocalRandomizer()
+                            padding: 0
+                            contentItem: Text {
+                                text: parent.text
+                                color: themeModel.text
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.family: fontsModel.ui
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                            background: Rectangle {
+                                radius: 16
+                                color: backend.localRandomizerEnabled ? themeModel.active : Qt.rgba(1, 1, 1, 0.03)
+                                border.width: 1
+                                border.color: backend.localRandomizerEnabled ? themeModel.activeBorder : themeModel.cardBorder
                             }
                         }
                     }
@@ -486,9 +536,39 @@ Window {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: 22
-                                    color: index === backend.currentIndex ? themeModel.active : themeModel.cardDark
+                                    color: index === backend.pinnedIndex ? themeModel.active : themeModel.cardDark
                                     border.width: 1
-                                    border.color: index === backend.currentIndex ? themeModel.activeBorder : themeModel.cardBorder
+                                    border.color: index === backend.pinnedIndex ? themeModel.activeBorder : themeModel.cardBorder
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    radius: 20
+                                    color: "transparent"
+                                    border.width: index === backend.currentIndex ? 2 : 0
+                                    border.color: index === backend.currentIndex ? themeModel.primary : "transparent"
+                                    opacity: index === backend.currentIndex ? 0.95 : 0.0
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    radius: 20
+                                    color: "transparent"
+                                    border.width: index === backend.currentIndex ? 6 : 0
+                                    border.color: index === backend.currentIndex ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+                                    opacity: index === backend.currentIndex ? 1.0 : 0.0
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -3
+                                    radius: 24
+                                    color: "transparent"
+                                    border.width: index === backend.currentIndex ? 1 : 0
+                                    border.color: index === backend.currentIndex ? Qt.rgba(1, 1, 1, 0.28) : "transparent"
+                                    opacity: index === backend.currentIndex ? 1.0 : 0.0
                                 }
 
                                 Rectangle {
@@ -690,7 +770,7 @@ Window {
 
                                 ToolButton {
                                     Layout.fillWidth: true
-                                    implicitHeight: 48
+                                    implicitHeight: 56
                                     text: modelData.cta
                                     enabled: !backend.busy
                                     onClicked: backend.selectProvider(modelData.key)
@@ -703,6 +783,7 @@ Window {
                                         font.family: fontsModel.ui
                                         font.pixelSize: 14
                                         font.weight: Font.DemiBold
+                                        wrapMode: Text.WordWrap
                                     }
                                     background: Rectangle {
                                         radius: 18

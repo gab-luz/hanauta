@@ -33,6 +33,8 @@ def load_settings_state() -> dict:
     appearance.setdefault("konachan_enabled", False)
     appearance.setdefault("konachan_interval_seconds", 120)
     appearance.setdefault("konachan_tags", "rating:safe")
+    appearance.setdefault("local_randomizer_enabled", False)
+    appearance.setdefault("local_randomizer_interval_seconds", 120)
     payload["appearance"] = appearance
     return payload
 
@@ -54,6 +56,17 @@ def run_detached(command: list[str]) -> None:
 
 def matugen_available() -> bool:
     return MATUGEN_SCRIPT.exists() and MATUGEN_BINARY.exists() and bool(MATUGEN_BINARY.stat().st_mode & 0o111)
+
+
+def image_paths_for_folder(folder: Path) -> list[Path]:
+    suffixes = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+    if not folder.exists() or not folder.is_dir():
+        return []
+    return [
+        path
+        for path in folder.rglob("*")
+        if path.is_file() and path.suffix.lower() in suffixes
+    ]
 
 
 def build_request(tags: str) -> request.Request:
@@ -156,9 +169,34 @@ def run_once() -> int:
     return 0
 
 
+def run_local_randomizer_once() -> int:
+    settings = load_settings_state()
+    appearance = settings.get("appearance", {})
+    if not isinstance(appearance, dict):
+        return 0
+    provider = str(appearance.get("wallpaper_provider", "")).strip().lower()
+    if provider in {"", "konachan"}:
+        return 0
+    if not bool(appearance.get("local_randomizer_enabled", False)):
+        return 0
+    folder = Path(str(appearance.get("slideshow_folder", ""))).expanduser()
+    images = image_paths_for_folder(folder)
+    if not images:
+        return 1
+    current = str(appearance.get("wallpaper_path", "")).strip()
+    candidates = [path for path in images if str(path) != current]
+    if not candidates:
+        candidates = images
+    chosen = random.choice(candidates)
+    apply_wallpaper(chosen, settings)
+    return 0
+
+
 def main() -> int:
     if "--once" in sys.argv:
         return run_once()
+    if "--local-once" in sys.argv:
+        return run_local_randomizer_once()
     while True:
         settings = load_settings_state()
         appearance = settings.get("appearance", {})
@@ -171,6 +209,12 @@ def main() -> int:
         if provider == "konachan" and enabled:
             run_once()
             time.sleep(interval)
+            continue
+        local_enabled = bool(appearance.get("local_randomizer_enabled", False))
+        local_interval = max(120, int(appearance.get("local_randomizer_interval_seconds", 120) or 120))
+        if provider and provider != "konachan" and local_enabled:
+            run_local_randomizer_once()
+            time.sleep(local_interval)
             continue
         time.sleep(60)
 
