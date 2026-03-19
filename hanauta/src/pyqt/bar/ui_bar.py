@@ -74,6 +74,7 @@ REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
 OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
+OBS_STATUS = APP_DIR / "pyqt" / "widget-obs" / "obs_status.py"
 CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
 VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
@@ -95,6 +96,10 @@ VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
 OBS_ICON = ASSETS_DIR / "OBS Studio.svg"
+OBS_STREAMING_ACTIVE_ICON = ASSETS_DIR / "obs-streaming-active.svg"
+OBS_STREAMING_INACTIVE_ICON = ASSETS_DIR / "obs-streaming-inactive.svg"
+OBS_RECORDING_ACTIVE_ICON = ASSETS_DIR / "obs-recording-active.svg"
+OBS_RECORDING_INACTIVE_ICON = ASSETS_DIR / "obs-recording-inactive.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
@@ -1058,6 +1063,9 @@ class CyberBar(QWidget):
         self._caps_lock_on: Optional[bool] = None
         self._num_lock_on: Optional[bool] = None
         self._rss_last_interval_ms = 0
+        self._obs_streaming = False
+        self._obs_recording = False
+        self._obs_flash_visible = True
         self._crypto_last_interval_ms = 0
         self._setup_window()
         self._build_ui()
@@ -2038,6 +2046,14 @@ class CyberBar(QWidget):
         self.weather_popup_timer.timeout.connect(self._sync_weather_button)
         self.weather_popup_timer.start(1000)
 
+        self.obs_state_timer = QTimer(self)
+        self.obs_state_timer.timeout.connect(self._poll_obs_state)
+        self.obs_state_timer.start(5000)
+
+        self.obs_flash_timer = QTimer(self)
+        self.obs_flash_timer.timeout.connect(self._tick_obs_recording_flash)
+        self.obs_flash_timer.start(550)
+
         self.weather_timer = QTimer(self)
         self.weather_timer.timeout.connect(self._poll_weather)
         self.weather_timer.start(900000)
@@ -2068,6 +2084,7 @@ class CyberBar(QWidget):
         self._poll_weather()
         self._poll_rss_notifications()
         self._poll_crypto_notifications()
+        self._poll_obs_state()
         self._sync_game_mode_button()
 
     def _tree_has_window(self, titles: tuple[str, ...]) -> bool:
@@ -2400,7 +2417,13 @@ class CyberBar(QWidget):
         self.christian_button.setFont(QFont(self.material_font, 16))
 
     def _set_obs_button_icon(self) -> None:
-        icon = tinted_svg_icon(OBS_ICON, QColor(self.theme.primary), 16)
+        if self._obs_recording:
+            icon_path = OBS_RECORDING_ACTIVE_ICON if self._obs_flash_visible else OBS_RECORDING_INACTIVE_ICON
+            icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
+        elif self._obs_streaming:
+            icon = QIcon(str(OBS_STREAMING_ACTIVE_ICON)) if OBS_STREAMING_ACTIVE_ICON.exists() else QIcon()
+        else:
+            icon = tinted_svg_icon(OBS_ICON, QColor(self.theme.primary), 16)
         self.obs_button.setProperty("iconKey", "videocam")
         self.obs_button.setProperty("nerdIcon", False)
         self.obs_button.setFont(QFont(self.material_font, 16))
@@ -2411,6 +2434,35 @@ class CyberBar(QWidget):
             return
         self.obs_button.setIcon(QIcon())
         self.obs_button.setText(self._bar_icon_overrides.get("videocam", material_icon("videocam")))
+
+    def _tick_obs_recording_flash(self) -> None:
+        if not self._obs_recording:
+            if not self._obs_flash_visible:
+                self._obs_flash_visible = True
+                self._set_obs_button_icon()
+            return
+        self._obs_flash_visible = not self._obs_flash_visible
+        self._set_obs_button_icon()
+
+    def _poll_obs_state(self) -> None:
+        if not OBS_STATUS.exists():
+            return
+        raw = run_cmd(entry_command(OBS_STATUS), timeout=4.0)
+        if not raw:
+            self._obs_streaming = False
+            self._obs_recording = False
+            self._obs_flash_visible = True
+            self._set_obs_button_icon()
+            return
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            return
+        self._obs_streaming = bool(payload.get("streaming", False))
+        self._obs_recording = bool(payload.get("recording", False))
+        if not self._obs_recording:
+            self._obs_flash_visible = True
+        self._set_obs_button_icon()
 
     def _sync_christian_button_visibility(self) -> None:
         services = load_service_settings()
