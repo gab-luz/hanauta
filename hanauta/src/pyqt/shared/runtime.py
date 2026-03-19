@@ -31,6 +31,7 @@ ENTRYPOINT_BINARIES = {
     "pyqt/widget-updates/updates_widget.py": "hanauta-updates-widget",
     "pyqt/widget-vpn-control/vpn_control.py": "hanauta-vpn-control",
     "pyqt/widget-vps/vps_widget.py": "hanauta-vps-widget",
+    "pyqt/widget-wallpaper-manager/wallpaper_manager.py": "hanauta-wallpaper-manager",
     "pyqt/widget-weather/weather_popup.py": "hanauta-weather-popup",
     "pyqt/widget-wifi-control/wifi_control.py": "hanauta-wifi-control",
     "pyqt/widget-window-switcher/window_switcher.py": "hanauta-window-switcher",

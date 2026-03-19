@@ -1,0 +1,8 @@
+[submodule "hanauta/walls/D3Ext-aesthetic-wallpapers"]
+	path = hanauta/walls/D3Ext-aesthetic-wallpapers
+	url = https://github.com/D3Ext/aesthetic-wallpapers.git
+	branch = main
+[submodule "hanauta/walls/JaKooLit-Wallpaper-Bank"]
+	path = hanauta/walls/JaKooLit-Wallpaper-Bank
+	url = https://github.com/JaKooLit/Wallpaper-Bank.git
+	branch = main
