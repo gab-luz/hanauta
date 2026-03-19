@@ -22,11 +22,13 @@ CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
 WALLPAPER_SCRIPT = ROOT / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "scripts" / "run_matugen.sh"
 MATUGEN_BINARY = ROOT / "bin" / "matugen"
+WALLPAPER_CACHE_BINARY = ROOT / "hanauta" / "bin" / "hanauta-wallcache"
 QML_FILE = Path(__file__).resolve().with_suffix(".qml")
 DEFAULT_WALLPAPER_FOLDER = ROOT / "hanauta" / "walls"
 KONACHAN_CACHE_DIR = DEFAULT_WALLPAPER_FOLDER / "Konachan-cache"
 KONACHAN_PROVIDER_DAEMON = Path(__file__).resolve().with_name("wallpaper_provider_daemon.py")
 WALLPAPER_THUMBNAIL_SERVICE = Path(__file__).resolve().with_name("wallpaper_thumbnail_service.py")
+WALLPAPER_INDEX_CACHE = Path.home() / ".local" / "state" / "hanauta" / "service" / "wallpaper-index.json"
 
 PROVIDER_META: dict[str, dict[str, str]] = {
     "d3ext": {
@@ -117,6 +119,17 @@ def file_url(path: Path) -> str:
     return QUrl.fromLocalFile(str(path)).toString()
 
 
+def load_wallpaper_index_cache() -> dict:
+    try:
+        payload = json.loads(WALLPAPER_INDEX_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        return {}
+    folders = payload.get("folders", {})
+    return payload if isinstance(folders, dict) else {}
+
+
 def run_detached(command: list[str]) -> None:
     subprocess.Popen(
         command,
@@ -157,9 +170,15 @@ class Backend(QObject):
         self._theme = load_theme_palette()
         self._matugen_available = self._detect_matugen_available()
         self._busy = False
+        self._wallpaper_index = load_wallpaper_index_cache()
         self._providers = self._build_providers()
         self._provider_selection_required = not self._provider_initialized()
-        self._refresh_wallpapers()
+        self._refresh_wallpapers(allow_scan=False)
+        QTimer.singleShot(0, self._deferred_refresh_wallpapers)
+        self._cache_watch_timer = QTimer(self)
+        self._cache_watch_timer.setInterval(1200)
+        self._cache_watch_timer.timeout.connect(self._poll_wallpaper_cache)
+        self._cache_watch_timer.start()
 
     def _provider_initialized(self) -> bool:
         appearance = self._settings.get("appearance", {})
@@ -177,12 +196,30 @@ class Backend(QObject):
         for key in ("d3ext", "jakoolit", "konachan", "custom"):
             meta = dict(PROVIDER_META[key])
             folder = Path(str(meta.get("folder", ""))).expanduser() if meta.get("folder") else Path()
-            count = len(image_paths_for_folder(folder)) if folder else 0
+            count = self._cached_count_for_folder(folder)
             meta["active"] = key == active
-            meta["downloaded"] = bool(folder and folder.exists() and count > 0)
+            meta["downloaded"] = bool(folder and folder.exists() and (count > 0 or any(folder.iterdir())))
             meta["count"] = count
             providers.append(meta)
         return providers
+
+    def _cached_snapshot_for_folder(self, folder: Path) -> dict[str, object] | None:
+        if not folder:
+            return None
+        folders = self._wallpaper_index.get("folders", {})
+        if not isinstance(folders, dict):
+            return None
+        snapshot = folders.get(str(folder))
+        return snapshot if isinstance(snapshot, dict) else None
+
+    def _cached_count_for_folder(self, folder: Path) -> int:
+        snapshot = self._cached_snapshot_for_folder(folder)
+        if snapshot is None:
+            return 0
+        try:
+            return int(snapshot.get("count", 0))
+        except Exception:
+            return 0
 
     def _set_busy(self, busy: bool) -> None:
         if self._busy == busy:
@@ -222,10 +259,21 @@ class Backend(QObject):
         return Path(folder).expanduser()
 
     def _refresh_providers(self) -> None:
+        self._wallpaper_index = load_wallpaper_index_cache()
         self._providers = self._build_providers()
         self.providersChanged.emit()
         self.providerChanged.emit()
         self.randomizerChanged.emit()
+
+    def _trigger_wallpaper_cache_generation(self, folder: Path | None = None) -> None:
+        if not WALLPAPER_CACHE_BINARY.exists():
+            return
+        command = [str(WALLPAPER_CACHE_BINARY)]
+        if folder is not None:
+            command.extend(["--folder", str(folder)])
+        else:
+            command.append("--once")
+        run_detached(command)
 
     def _trigger_thumbnail_generation(self, folder: Path) -> None:
         if not WALLPAPER_THUMBNAIL_SERVICE.exists():
@@ -271,8 +319,45 @@ class Backend(QObject):
         self.currentFolderChanged.emit()
         self._refresh_providers()
 
-    def _refresh_wallpapers(self) -> None:
+    def _set_wallpapers_from_cache_snapshot(self, snapshot: dict[str, object]) -> bool:
+        items = snapshot.get("items", [])
+        if not isinstance(items, list):
+            return False
+        wallpapers: list[dict[str, object]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            path = Path(str(item.get("path", ""))).expanduser()
+            if not path.exists():
+                continue
+            thumb_path = Path(str(item.get("thumb", ""))).expanduser()
+            wallpapers.append(
+                {
+                    "name": str(item.get("name", "")).strip() or path.stem.replace("_", " ").replace("-", " ").strip() or path.name,
+                    "path": str(path),
+                    "url": file_url(path),
+                    "thumbUrl": file_url(thumb_path) if thumb_path.exists() else file_url(path),
+                    "folder": str(item.get("folder", "")).strip() or path.parent.name,
+                }
+            )
+        self._wallpapers = wallpapers
+        return True
+
+    def _deferred_refresh_wallpapers(self) -> None:
+        self._refresh_wallpapers(allow_scan=not WALLPAPER_CACHE_BINARY.exists())
+
+    def _poll_wallpaper_cache(self) -> None:
+        if self._needs_folder_selection or self._provider_selection_required:
+            self._cache_watch_timer.stop()
+            return
+        if self._wallpapers:
+            self._cache_watch_timer.stop()
+            return
+        self._refresh_wallpapers(allow_scan=False)
+
+    def _refresh_wallpapers(self, *, allow_scan: bool = True) -> None:
         folder = self._current_folder_path()
+        self._wallpaper_index = load_wallpaper_index_cache()
         self._wallpapers = []
         self._needs_folder_selection = False
         if self._active_provider() == "custom" and not (folder.exists() and folder.is_dir()):
@@ -284,6 +369,39 @@ class Backend(QObject):
             self.statusChanged.emit()
             self.wallpapersChanged.emit()
             self.selectedWallpaperChanged.emit()
+            return
+
+        snapshot = self._cached_snapshot_for_folder(folder)
+        if snapshot is not None and self._set_wallpapers_from_cache_snapshot(snapshot):
+            if self._wallpapers:
+                self._current_index = max(0, min(self._current_index, len(self._wallpapers) - 1))
+                if self._pinned_index >= len(self._wallpapers):
+                    self._pinned_index = -1
+                if self._active_provider() == "konachan":
+                    self._status = f"Konachan cache ready with {len(self._wallpapers)} wallpaper(s). New safe wallpaper arrives every 2 minutes."
+                else:
+                    self._status = f"Loaded {len(self._wallpapers)} cached wallpaper(s) from {folder}."
+            else:
+                self._current_index = 0
+                self._pinned_index = -1
+                self._status = f"No cached wallpapers found for {folder}."
+            self.wallpapersChanged.emit()
+            self.currentIndexChanged.emit()
+            self.pinnedSelectionChanged.emit()
+            self.statusChanged.emit()
+            self.selectedWallpaperChanged.emit()
+            self._refresh_providers()
+            return
+
+        self._trigger_wallpaper_cache_generation(folder)
+        if not allow_scan:
+            self._status = f"Preparing wallpaper library for {folder}."
+            self.wallpapersChanged.emit()
+            self.currentIndexChanged.emit()
+            self.pinnedSelectionChanged.emit()
+            self.statusChanged.emit()
+            self.selectedWallpaperChanged.emit()
+            self._refresh_providers()
             return
 
         image_paths = image_paths_for_folder(folder)
@@ -490,7 +608,9 @@ class Backend(QObject):
         self._status = f"Custom wallpaper folder set to {folder}."
         self.statusChanged.emit()
         self._trigger_thumbnail_generation(Path(folder).expanduser())
-        self._refresh_wallpapers()
+        self._trigger_wallpaper_cache_generation(Path(folder).expanduser())
+        self._refresh_wallpapers(allow_scan=False)
+        QTimer.singleShot(350, self._deferred_refresh_wallpapers)
 
     @pyqtSlot(str)
     def selectProvider(self, provider_key: str) -> None:
@@ -509,7 +629,7 @@ class Backend(QObject):
                 self._persist_provider("konachan", KONACHAN_CACHE_DIR)
                 self._status = "Konachan live feed enabled. Downloading the first safe wallpaper now."
                 self.statusChanged.emit()
-                self._refresh_wallpapers()
+                self._refresh_wallpapers(allow_scan=False)
                 self._start_konachan_daemon_once()
                 return
             target_dir = Path(str(meta.get("folder", ""))).expanduser()
@@ -524,7 +644,9 @@ class Backend(QObject):
             self._status = f"{meta['title']} is ready. {output or 'Pack prepared successfully.'}"
             self.statusChanged.emit()
             self._trigger_thumbnail_generation(target_dir)
-            self._refresh_wallpapers()
+            self._trigger_wallpaper_cache_generation(target_dir)
+            self._refresh_wallpapers(allow_scan=False)
+            QTimer.singleShot(350, self._deferred_refresh_wallpapers)
             self.notify.emit(f"{meta['title']} wallpaper pack is ready.")
         finally:
             self._set_busy(False)
