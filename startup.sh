@@ -17,6 +17,7 @@ fi
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-crypto/crypto_notifier.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-updates/updates_notifier.py" 2>/dev/null || true
+  pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" 2>/dev/null || true
   pkill -x dunst 2>/dev/null || true
   pkill -x deadd-notification-center 2>/dev/null || true
   "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" >/tmp/hanauta-notification-daemon.log 2>&1 &
@@ -26,6 +27,7 @@ fi
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" >/tmp/hanauta-reminder-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-crypto/crypto_notifier.py" >/tmp/hanauta-crypto-notifier.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-updates/updates_notifier.py" >/tmp/hanauta-updates-notifier.log 2>&1 &
+  "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" >/tmp/hanauta-wallpaper-provider.log 2>&1 &
   "$HOME/.config/i3/hanauta/bin/hanauta-settings" --restore-displays >/tmp/hanauta-display-restore.log 2>&1 &
   "$HOME/.config/i3/hanauta/bin/hanauta-settings" --restore-wallpaper >/tmp/hanauta-wallpaper-restore.log 2>&1 &
   "$HOME/.config/i3/hanauta/bin/hanauta-settings" --restore-vpn >/tmp/hanauta-vpn-restore.log 2>&1 &
