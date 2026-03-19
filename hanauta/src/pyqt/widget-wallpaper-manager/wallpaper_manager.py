@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import random
 import signal
 import subprocess
 import sys
@@ -87,6 +88,8 @@ def load_settings_state() -> dict:
             "konachan_enabled": False,
             "konachan_interval_seconds": 120,
             "konachan_tags": "rating:safe",
+            "local_randomizer_enabled": False,
+            "local_randomizer_interval_seconds": 120,
         }
     }
     try:
@@ -145,10 +148,12 @@ class Backend(QObject):
     backgroundSourceChanged = pyqtSignal()
     matugenAvailableChanged = pyqtSignal()
     selectedWallpaperChanged = pyqtSignal()
+    pinnedSelectionChanged = pyqtSignal()
     providersChanged = pyqtSignal()
     providerChanged = pyqtSignal()
     providerSelectionRequiredChanged = pyqtSignal()
     busyChanged = pyqtSignal()
+    randomizerChanged = pyqtSignal()
     closeRequested = pyqtSignal()
     notify = pyqtSignal(str)
 
@@ -157,6 +162,7 @@ class Backend(QObject):
         self._settings = load_settings_state()
         self._wallpapers: list[dict[str, object]] = []
         self._current_index = 0
+        self._pinned_index = -1
         self._status = "Choose your wallpaper pack to start building the library."
         self._needs_folder_selection = False
         self._background_source = self._resolve_background_source()
@@ -231,6 +237,7 @@ class Backend(QObject):
         self._providers = self._build_providers()
         self.providersChanged.emit()
         self.providerChanged.emit()
+        self.randomizerChanged.emit()
 
     def _run_git_prepare_pack(self, target_dir: Path, repo_url: str) -> tuple[bool, str]:
         target_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -253,6 +260,8 @@ class Backend(QObject):
         appearance["wallpaper_provider"] = provider_key
         appearance["wallpaper_provider_initialized"] = True
         appearance["konachan_enabled"] = provider_key == "konachan"
+        if provider_key == "konachan":
+            appearance["local_randomizer_enabled"] = False
         if provider_key == "konachan":
             folder = KONACHAN_CACHE_DIR
         elif folder is None:
@@ -294,18 +303,22 @@ class Backend(QObject):
         ]
         if self._wallpapers:
             self._current_index = max(0, min(self._current_index, len(self._wallpapers) - 1))
+            if self._pinned_index >= len(self._wallpapers):
+                self._pinned_index = -1
             if self._active_provider() == "konachan":
                 self._status = f"Konachan cache ready with {len(self._wallpapers)} wallpaper(s). New safe wallpaper arrives every 2 minutes."
             else:
                 self._status = f"Loaded {len(self._wallpapers)} wallpaper(s) from {folder}."
         else:
             self._current_index = 0
+            self._pinned_index = -1
             if self._active_provider() == "konachan":
                 self._status = "Konachan feed is enabled. The first safe wallpaper will be downloaded into the cache shortly."
             else:
                 self._status = f"No supported images found in {folder}."
         self.wallpapersChanged.emit()
         self.currentIndexChanged.emit()
+        self.pinnedSelectionChanged.emit()
         self.statusChanged.emit()
         self.selectedWallpaperChanged.emit()
         self._refresh_providers()
@@ -331,10 +344,39 @@ class Backend(QObject):
         item = self._wallpapers[self._current_index]
         return item if isinstance(item, dict) else None
 
+    def _apply_wallpaper_path(self, wallpaper_path: Path, *, pin_selection: bool) -> None:
+        if WALLPAPER_SCRIPT.exists():
+            run_detached([str(WALLPAPER_SCRIPT), str(wallpaper_path)])
+        else:
+            run_detached(["feh", "--bg-fill", str(wallpaper_path)])
+        if self._matugen_available:
+            run_detached([str(MATUGEN_SCRIPT), str(wallpaper_path)])
+        self._apply_wallpaper_settings(wallpaper_path)
+        self._background_source = file_url(wallpaper_path)
+        self.backgroundSourceChanged.emit()
+        self._pinned_index = self._current_index if pin_selection else -1
+        self.pinnedSelectionChanged.emit()
+        self._status = (
+            f"Applied {wallpaper_path.name}. Matugen palette refreshed."
+            if self._matugen_available
+            else f"Applied {wallpaper_path.name}. Matugen not available, so widget colors were left as-is."
+        )
+        if not pin_selection:
+            self._status += " Selection released."
+        self.statusChanged.emit()
+        self.notify.emit(self._status)
+
     def _start_konachan_daemon_once(self) -> None:
         if not KONACHAN_PROVIDER_DAEMON.exists():
             return
         run_detached([python_executable(), str(KONACHAN_PROVIDER_DAEMON), "--once"])
+
+    def _appearance(self) -> dict:
+        appearance = self._settings.setdefault("appearance", {})
+        if not isinstance(appearance, dict):
+            appearance = {}
+            self._settings["appearance"] = appearance
+        return appearance
 
     @pyqtProperty("QVariantList", notify=wallpapersChanged)
     def wallpapers(self) -> list[dict[str, object]]:
@@ -395,6 +437,26 @@ class Backend(QObject):
     @pyqtProperty(bool, notify=busyChanged)
     def busy(self) -> bool:
         return self._busy
+
+    @pyqtProperty(int, notify=pinnedSelectionChanged)
+    def pinnedIndex(self) -> int:
+        return self._pinned_index
+
+    @pyqtProperty(bool, notify=pinnedSelectionChanged)
+    def hasPinnedSelection(self) -> bool:
+        return self._pinned_index >= 0
+
+    @pyqtProperty(bool, notify=randomizerChanged)
+    def localRandomizerEnabled(self) -> bool:
+        appearance = self._settings.get("appearance", {})
+        if not isinstance(appearance, dict):
+            return False
+        return bool(appearance.get("local_randomizer_enabled", False))
+
+    @pyqtProperty(bool, notify=randomizerChanged)
+    def canUseLocalRandomizer(self) -> bool:
+        provider = self._active_provider()
+        return provider not in {"", "konachan"} and bool(self._wallpapers)
 
     @pyqtSlot()
     def openProviderDialog(self) -> None:
@@ -481,6 +543,52 @@ class Backend(QObject):
         self.selectedWallpaperChanged.emit()
 
     @pyqtSlot()
+    def applyRandomWallpaper(self) -> None:
+        if not self._wallpapers:
+            self.notify.emit("No wallpapers available to randomize.")
+            return
+        if self._active_provider() == "konachan":
+            self.notify.emit("Konachan already rotates automatically every 2 minutes.")
+            return
+        current_path = self.selectedWallpaperPath
+        candidates = [item for item in self._wallpapers if isinstance(item, dict) and str(item.get("path", "")) != current_path]
+        if not candidates:
+            candidates = self._wallpapers
+        chosen = random.choice(candidates)
+        chosen_path = str(chosen.get("path", ""))
+        for index, item in enumerate(self._wallpapers):
+            if str(item.get("path", "")) == chosen_path:
+                self.setCurrentIndex(index)
+                break
+        wallpaper_path = Path(chosen_path).expanduser()
+        if not wallpaper_path.exists():
+            self.notify.emit("Random wallpaper file no longer exists.")
+            return
+        self._apply_wallpaper_path(wallpaper_path, pin_selection=False)
+
+    @pyqtSlot()
+    def toggleLocalRandomizer(self) -> None:
+        if self._active_provider() == "konachan":
+            self.notify.emit("Konachan already uses its own live 2-minute rotation.")
+            return
+        if not self._wallpapers:
+            self.notify.emit("Load a wallpaper pack first before enabling random rotation.")
+            return
+        appearance = self._appearance()
+        enabled = not bool(appearance.get("local_randomizer_enabled", False))
+        appearance["local_randomizer_enabled"] = enabled
+        appearance["local_randomizer_interval_seconds"] = 120
+        save_settings_state(self._settings)
+        self.randomizerChanged.emit()
+        if enabled:
+            self._status = "Random folder rotation enabled. A new wallpaper will be applied every 2 minutes."
+            self.applyRandomWallpaper()
+        else:
+            self._status = "Random folder rotation disabled."
+        self.statusChanged.emit()
+        self.notify.emit(self._status)
+
+    @pyqtSlot()
     def activateCurrent(self) -> None:
         item = self._selected_item()
         if item is None:
@@ -495,22 +603,14 @@ class Backend(QObject):
             self.notify.emit("Wallpaper file no longer exists.")
             return
         try:
-            if WALLPAPER_SCRIPT.exists():
-                run_detached([str(WALLPAPER_SCRIPT), str(wallpaper_path)])
-            else:
-                run_detached(["feh", "--bg-fill", str(wallpaper_path)])
-            if self._matugen_available:
-                run_detached([str(MATUGEN_SCRIPT), str(wallpaper_path)])
-            self._apply_wallpaper_settings(wallpaper_path)
-            self._background_source = file_url(wallpaper_path)
-            self.backgroundSourceChanged.emit()
-            self._status = (
-                f"Applied {wallpaper_path.name}. Matugen palette refreshed."
-                if self._matugen_available
-                else f"Applied {wallpaper_path.name}. Matugen not available, so widget colors were left as-is."
-            )
-            self.statusChanged.emit()
-            self.notify.emit(self._status)
+            if self._pinned_index == self._current_index:
+                self._pinned_index = -1
+                self.pinnedSelectionChanged.emit()
+                self._status = f"Selection released for {wallpaper_path.name}."
+                self.statusChanged.emit()
+                self.notify.emit(self._status)
+                return
+            self._apply_wallpaper_path(wallpaper_path, pin_selection=True)
         except Exception as exc:
             self._status = f"Failed to apply wallpaper: {exc}"
             self.statusChanged.emit()
