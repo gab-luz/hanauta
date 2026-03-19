@@ -218,6 +218,7 @@ That rebuilds the compiled Nuitka popup/widget binaries that the Python bar pref
 - [end-4 dots-hyprland](https://github.com/end-4/dots-hyprland)
 - [FreshRSS](https://FreshRSS.github.io/FreshRSS/en/)
 - [CoinGecko API](https://docs.coingecko.com/)
+- RSS widget adaptation based on [BrendonJL's dms-rss-widget](https://github.com/BrendonJL/dms-rss-widget)
 
 ---
 
