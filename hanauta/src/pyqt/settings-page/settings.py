@@ -518,6 +518,7 @@ def load_settings_state() -> dict:
             "port": 4455,
             "password": "",
             "auto_connect": False,
+            "show_debug_tooltips": False,
         },
         "crypto": {
             "api_provider": "coingecko",
@@ -723,6 +724,7 @@ def load_settings_state() -> dict:
         obs["port"] = 4455
     obs["password"] = str(obs.get("password", ""))
     obs["auto_connect"] = bool(obs.get("auto_connect", False))
+    obs["show_debug_tooltips"] = bool(obs.get("show_debug_tooltips", False))
     crypto = dict(payload.get("crypto", {}))
     crypto["api_provider"] = "coingecko"
     crypto["api_key"] = str(crypto.get("api_key", "")).strip()
@@ -4813,6 +4815,8 @@ class SettingsWindow(QWidget):
         self.obs_password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.obs_auto_connect_switch = SwitchButton(bool(self.settings_state["obs"].get("auto_connect", False)))
         self.obs_auto_connect_switch.toggledValue.connect(self._set_obs_auto_connect)
+        self.obs_debug_tooltips_switch = SwitchButton(bool(self.settings_state["obs"].get("show_debug_tooltips", False)))
+        self.obs_debug_tooltips_switch.toggledValue.connect(self._set_obs_debug_tooltips)
         layout.addWidget(SettingsRow(material_icon("public"), "OBS host", "OBS WebSocket host, usually 127.0.0.1.", self.icon_font, self.ui_font, self.obs_host_input))
         layout.addWidget(SettingsRow(material_icon("sensors"), "OBS port", "OBS WebSocket port. OBS 30+ defaults to 4455.", self.icon_font, self.ui_font, self.obs_port_input))
         layout.addWidget(SettingsRow(material_icon("lock"), "OBS password", "Optional OBS WebSocket password.", self.icon_font, self.ui_font, self.obs_password_input))
@@ -4824,6 +4828,16 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.obs_auto_connect_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("tune"),
+                "Show debug tooltips",
+                "Adds inspection tooltips to OBS popup elements so we can identify what still needs polishing.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_debug_tooltips_switch,
             )
         )
 
@@ -5563,6 +5577,14 @@ class SettingsWindow(QWidget):
         if hasattr(self, "obs_status"):
             self.obs_status.setText("OBS widget will connect immediately when opened." if enabled else "OBS widget now waits for a manual connect.")
 
+    def _set_obs_debug_tooltips(self, enabled: bool) -> None:
+        self.settings_state.setdefault("obs", {})["show_debug_tooltips"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "obs_status"):
+            self.obs_status.setText(
+                "OBS debug tooltips are enabled." if enabled else "OBS debug tooltips are disabled."
+            )
+
     def _save_obs_settings(self) -> None:
         obs = self.settings_state.setdefault("obs", {})
         obs["host"] = self.obs_host_input.text().strip() or "127.0.0.1"
@@ -5572,6 +5594,7 @@ class SettingsWindow(QWidget):
             obs["port"] = 4455
         obs["password"] = self.obs_password_input.text()
         obs["auto_connect"] = bool(self.obs_auto_connect_switch.isChecked())
+        obs["show_debug_tooltips"] = bool(self.obs_debug_tooltips_switch.isChecked())
         save_settings_state(self.settings_state)
         if hasattr(self, "obs_status"):
             self.obs_status.setText(f"OBS connection saved for {obs['host']}:{obs['port']}.")
