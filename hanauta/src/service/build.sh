@@ -41,6 +41,12 @@ compile \
   "$OUT_DIR/hanauta-notifyd" \
   $(pkg-config --cflags --libs gtk+-3.0 gio-2.0 glib-2.0 gobject-2.0)
 
+compile \
+  "$ROOT_DIR/src/service/hanauta-wallcache.c" \
+  "$OUT_DIR/hanauta-wallcache" \
+  $(pkg-config --cflags --libs gio-2.0 glib-2.0 gobject-2.0)
+
 printf 'Built %s\n' "$OUT_DIR/hanauta-service"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notifyctl"
 printf 'Built %s\n' "$OUT_DIR/hanauta-notifyd"
+printf 'Built %s\n' "$OUT_DIR/hanauta-wallcache"
