@@ -23,10 +23,10 @@ WALLPAPER_SCRIPT = ROOT / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "scripts" / "run_matugen.sh"
 MATUGEN_BINARY = ROOT / "bin" / "matugen"
 QML_FILE = Path(__file__).resolve().with_suffix(".qml")
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 DEFAULT_WALLPAPER_FOLDER = ROOT / "hanauta" / "walls"
 KONACHAN_CACHE_DIR = DEFAULT_WALLPAPER_FOLDER / "Konachan-cache"
 KONACHAN_PROVIDER_DAEMON = Path(__file__).resolve().with_name("wallpaper_provider_daemon.py")
+WALLPAPER_THUMBNAIL_SERVICE = Path(__file__).resolve().with_name("wallpaper_thumbnail_service.py")
 
 PROVIDER_META: dict[str, dict[str, str]] = {
     "d3ext": {
@@ -72,6 +72,7 @@ if str(APP_DIR) not in sys.path:
 
 from pyqt.shared.runtime import python_executable
 from pyqt.shared.theme import blend, load_theme_palette, rgba
+from pyqt.shared.wallpaper_thumbs import image_paths_for_folder, thumbnail_path_for
 
 
 def load_settings_state() -> dict:
@@ -123,19 +124,6 @@ def run_detached(command: list[str]) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
-    )
-
-
-def image_paths_for_folder(folder: Path) -> list[Path]:
-    if not folder.exists() or not folder.is_dir():
-        return []
-    return sorted(
-        (
-            path
-            for path in folder.rglob("*")
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
-        ),
-        key=lambda path: path.name.lower(),
     )
 
 
@@ -239,6 +227,13 @@ class Backend(QObject):
         self.providerChanged.emit()
         self.randomizerChanged.emit()
 
+    def _trigger_thumbnail_generation(self, folder: Path) -> None:
+        if not WALLPAPER_THUMBNAIL_SERVICE.exists():
+            return
+        if self._active_provider() == "konachan":
+            return
+        run_detached([python_executable(), str(WALLPAPER_THUMBNAIL_SERVICE), "--folder", str(folder)])
+
     def _run_git_prepare_pack(self, target_dir: Path, repo_url: str) -> tuple[bool, str]:
         target_dir.parent.mkdir(parents=True, exist_ok=True)
         if target_dir.exists():
@@ -297,6 +292,7 @@ class Backend(QObject):
                 "name": path.stem.replace("_", " ").replace("-", " ").strip() or path.name,
                 "path": str(path),
                 "url": file_url(path),
+                "thumbUrl": file_url(thumbnail_path_for(path)) if thumbnail_path_for(path).exists() else file_url(path),
                 "folder": path.parent.name,
             }
             for path in image_paths
@@ -493,6 +489,7 @@ class Backend(QObject):
         self._persist_provider("custom", Path(folder).expanduser())
         self._status = f"Custom wallpaper folder set to {folder}."
         self.statusChanged.emit()
+        self._trigger_thumbnail_generation(Path(folder).expanduser())
         self._refresh_wallpapers()
 
     @pyqtSlot(str)
@@ -526,6 +523,7 @@ class Backend(QObject):
             self._persist_provider(provider_key, target_dir)
             self._status = f"{meta['title']} is ready. {output or 'Pack prepared successfully.'}"
             self.statusChanged.emit()
+            self._trigger_thumbnail_generation(target_dir)
             self._refresh_wallpapers()
             self.notify.emit(f"{meta['title']} wallpaper pack is ready.")
         finally:

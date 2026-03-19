@@ -583,7 +583,7 @@ Window {
 
                                     Image {
                                         anchors.fill: parent
-                                        source: modelData.url
+                                        source: modelData.thumbUrl
                                         fillMode: Image.PreserveAspectCrop
                                         asynchronous: true
                                         cache: true
@@ -704,7 +704,8 @@ Window {
                         delegate: Rectangle {
                             required property var modelData
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            Layout.minimumHeight: 212
+                            Layout.preferredHeight: 224
                             radius: 28
                             color: modelData.active ? themeModel.active : themeModel.cardDark
                             border.width: 1
@@ -770,7 +771,7 @@ Window {
 
                                 ToolButton {
                                     Layout.fillWidth: true
-                                    implicitHeight: 56
+                                    implicitHeight: 64
                                     text: modelData.cta
                                     enabled: !backend.busy
                                     onClicked: backend.selectProvider(modelData.key)
@@ -784,6 +785,8 @@ Window {
                                         font.pixelSize: 14
                                         font.weight: Font.DemiBold
                                         wrapMode: Text.WordWrap
+                                        anchors.centerIn: parent
+                                        width: parent.width - 24
                                     }
                                     background: Rectangle {
                                         radius: 18

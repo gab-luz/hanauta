@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import base64
+import email.utils
 import hashlib
 import json
+import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from urllib import request
 
@@ -17,6 +20,7 @@ RSS_CACHE_FILE = RSS_STATE_DIR / "cache.json"
 def load_settings_state() -> dict:
     default = {
         "rss": {
+            "feeds": [],
             "feed_urls": "",
             "opml_source": "",
             "username": "",
@@ -24,6 +28,13 @@ def load_settings_state() -> dict:
             "item_limit": 10,
             "check_interval_minutes": 15,
             "notify_new_items": True,
+            "play_notification_sound": False,
+            "show_feed_name": True,
+            "open_in_browser": True,
+            "show_images": True,
+            "sort_mode": "newest",
+            "max_per_feed": 5,
+            "view_mode": "expanded",
         },
         "services": {
             "rss_widget": {
@@ -40,6 +51,23 @@ def load_settings_state() -> dict:
     rss = payload.get("rss", {})
     if isinstance(rss, dict):
         default["rss"].update(rss)
+    feeds = default["rss"].get("feeds", [])
+    if not isinstance(feeds, list):
+        feeds = []
+    normalized_feeds: list[dict[str, str]] = []
+    for item in feeds:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "")).strip()
+        if not url:
+            continue
+        normalized_feeds.append(
+            {
+                "name": str(item.get("name", "")).strip() or url,
+                "url": url,
+            }
+        )
+    default["rss"]["feeds"] = normalized_feeds
     services = payload.get("services", {})
     if isinstance(services, dict):
         current = services.get("rss_widget", {})
@@ -86,6 +114,21 @@ def parse_opml_urls(raw: str) -> list[str]:
     return urls
 
 
+def parse_opml_feeds(raw: str) -> list[dict[str, str]]:
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return []
+    feeds: list[dict[str, str]] = []
+    for outline in root.findall(".//outline"):
+        url = (outline.attrib.get("xmlUrl") or "").strip()
+        if not url:
+            continue
+        name = (outline.attrib.get("title") or outline.attrib.get("text") or url).strip()
+        feeds.append({"name": name, "url": url})
+    return feeds
+
+
 def _feed_text(node, *names: str) -> str:
     for name in names:
         value = node.findtext(name)
@@ -95,6 +138,63 @@ def _feed_text(node, *names: str) -> str:
         if value:
             return value.strip()
     return ""
+
+
+def _first_attr(node, tag_names: tuple[str, ...], attr: str) -> str:
+    for tag_name in tag_names:
+        for child in node.findall(f".//{tag_name}"):
+            value = (child.attrib.get(attr) or "").strip()
+            if value:
+                return value
+        for child in node.findall(f".//{{*}}{tag_name}"):
+            value = (child.attrib.get(attr) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _extract_inline_image(html: str) -> str:
+    match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html or "", re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_rss_image(item, description: str) -> str:
+    enclosure = ""
+    for child in item.findall("enclosure"):
+        url = (child.attrib.get("url") or "").strip()
+        if url:
+            enclosure = url
+            break
+    if not enclosure:
+        for child in item.findall("{*}content"):
+            url = (child.attrib.get("url") or "").strip()
+            if url:
+                enclosure = url
+                break
+    if not enclosure:
+        for child in item.findall("{*}thumbnail"):
+            url = (child.attrib.get("url") or "").strip()
+            if url:
+                enclosure = url
+                break
+    return enclosure or _extract_inline_image(description)
+
+
+def parse_timestamp(raw: str) -> int:
+    value = str(raw or "").strip()
+    if not value:
+        return 0
+    try:
+        parsed = email.utils.parsedate_to_datetime(value)
+        if parsed is not None:
+            return int(parsed.timestamp())
+    except Exception:
+        pass
+    try:
+        normalized = value.replace("Z", "+00:00")
+        return int(datetime.fromisoformat(normalized).timestamp())
+    except Exception:
+        return 0
 
 
 def parse_feed_entries(raw: str, source: str = "") -> list[dict[str, str]]:
@@ -110,6 +210,8 @@ def parse_feed_entries(raw: str, source: str = "") -> list[dict[str, str]]:
             link = _feed_text(item, "link")
             guid = _feed_text(item, "guid") or link or title
             detail = _feed_text(item, "pubDate", "description")
+            description = _feed_text(item, "description")
+            timestamp = parse_timestamp(_feed_text(item, "pubDate"))
             entries.append(
                 {
                     "title": title,
@@ -118,6 +220,8 @@ def parse_feed_entries(raw: str, source: str = "") -> list[dict[str, str]]:
                     "guid": guid,
                     "feed_title": feed_title or source,
                     "source": source,
+                    "image_url": _extract_rss_image(item, description),
+                    "timestamp": str(timestamp),
                 }
             )
     else:
@@ -132,6 +236,9 @@ def parse_feed_entries(raw: str, source: str = "") -> list[dict[str, str]]:
                     break
             guid = _feed_text(item, "id") or link or title
             detail = _feed_text(item, "updated", "published", "summary")
+            updated = _feed_text(item, "updated", "published")
+            timestamp = parse_timestamp(updated)
+            image_url = _first_attr(item, ("thumbnail", "content"), "url") or _extract_inline_image(_feed_text(item, "summary", "content"))
             entries.append(
                 {
                     "title": title,
@@ -140,32 +247,47 @@ def parse_feed_entries(raw: str, source: str = "") -> list[dict[str, str]]:
                     "guid": guid,
                     "feed_title": feed_title or source,
                     "source": source,
+                    "image_url": image_url,
+                    "timestamp": str(timestamp),
                 }
             )
     return entries
 
 
-def resolve_feed_sources(settings: dict) -> list[str]:
+def resolve_feed_sources(settings: dict) -> list[dict[str, str]]:
     rss = settings.get("rss", {})
     if not isinstance(rss, dict):
         return []
-    sources: list[str] = []
+    sources: list[dict[str, str]] = []
+    structured = rss.get("feeds", [])
+    if isinstance(structured, list):
+        for item in structured:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url", "")).strip()
+            if not url:
+                continue
+            sources.append({"name": str(item.get("name", "")).strip() or url, "url": url})
     raw_urls = str(rss.get("feed_urls", "")).replace("\n", ",")
     for item in raw_urls.split(","):
         url = item.strip()
         if url:
-            sources.append(url)
+            sources.append({"name": url, "url": url})
     opml_source = str(rss.get("opml_source", "")).strip()
     if opml_source:
         try:
             opml_raw = fetch_text(opml_source, str(rss.get("username", "")), str(rss.get("password", "")))
-            sources.extend(parse_opml_urls(opml_raw))
+            sources.extend(parse_opml_feeds(opml_raw))
         except Exception:
             pass
-    deduped: list[str] = []
-    for url in sources:
-        if url not in deduped:
-            deduped.append(url)
+    deduped: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for item in sources:
+        url = str(item.get("url", "")).strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        deduped.append({"name": str(item.get("name", "")).strip() or url, "url": url})
     return deduped
 
 
@@ -178,13 +300,18 @@ def collect_entries(settings: dict) -> tuple[list[str], list[dict[str, str]]]:
     collected: list[dict[str, str]] = []
     for source in sources:
         try:
-            raw = fetch_text(source, username, password)
-            collected.extend(parse_feed_entries(raw, source))
+            source_url = str(source.get("url", ""))
+            source_name = str(source.get("name", "")).strip() or source_url
+            raw = fetch_text(source_url, username, password)
+            entries = parse_feed_entries(raw, source_name)
+            for entry in entries:
+                entry["source_url"] = source_url
+            collected.extend(entries)
         except Exception:
             continue
         if len(collected) >= item_limit:
             break
-    return sources, collected[:item_limit]
+    return [str(item.get("url", "")) for item in sources], collected[:item_limit]
 
 
 def entry_fingerprint(item: dict[str, str]) -> str:
