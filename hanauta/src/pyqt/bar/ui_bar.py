@@ -94,6 +94,7 @@ ASSETS_DIR = source_root() / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
+OBS_ICON = ASSETS_DIR / "OBS Studio.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
@@ -115,6 +116,8 @@ MATERIAL_ICONS = {
     "bluetooth": "\ue1a7",
     "coffee": "\uefef",
     "content_paste": "\ue14f",
+    "md-bitcoin": "\uebc5",
+    "currency_bitcoin": "\uebc5",
     "dashboard": "\ue871",
     "music_note": "\ue405",
     "notifications": "\ue7f4",
@@ -430,6 +433,25 @@ def tinted_svg_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
     painter.fillRect(pixmap.rect(), color)
     painter.end()
     return QIcon(pixmap)
+
+
+def tinted_raster_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
+    if not path.exists():
+        return QIcon()
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        return QIcon()
+    tinted = pixmap.scaled(
+        size,
+        size,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    painter = QPainter(tinted)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(tinted.rect(), color)
+    painter.end()
+    return QIcon(tinted)
 
 
 def load_service_settings() -> dict[str, dict[str, object]]:
@@ -1946,8 +1968,8 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
         self._apply_icon_to_widget(self.pomodoro_button, "timer", material_icon("timer"), 16)
         self._apply_icon_to_widget(self.rss_button, "public", material_icon("public"), 16)
-        self._apply_icon_to_widget(self.obs_button, "videocam", material_icon("videocam"), 16)
-        self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("show_chart"), 16)
+        self._set_obs_button_icon()
+        self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 16)
         self._apply_icon_to_widget(self.ntfy_button, "notifications", material_icon("notifications"), 16)
         self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 16)
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
@@ -2377,6 +2399,19 @@ class CyberBar(QWidget):
         self.christian_button.setText(self._bar_icon_overrides.get("christian_widget", material_icon("auto_awesome")))
         self.christian_button.setFont(QFont(self.material_font, 16))
 
+    def _set_obs_button_icon(self) -> None:
+        icon = tinted_svg_icon(OBS_ICON, QColor(self.theme.primary), 16)
+        self.obs_button.setProperty("iconKey", "videocam")
+        self.obs_button.setProperty("nerdIcon", False)
+        self.obs_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.obs_button.setIcon(icon)
+            self.obs_button.setIconSize(QSize(12, 12))
+            self.obs_button.setText("")
+            return
+        self.obs_button.setIcon(QIcon())
+        self.obs_button.setText(self._bar_icon_overrides.get("videocam", material_icon("videocam")))
+
     def _sync_christian_button_visibility(self) -> None:
         services = load_service_settings()
         service = services.get("christian_widget", {})
@@ -2737,7 +2772,7 @@ class CyberBar(QWidget):
     def _open_crypto_widget(self) -> None:
         if not CRYPTO_WIDGET.exists():
             return
-        self._toggle_singleton_process("_crypto_widget_process", CRYPTO_WIDGET)
+        self._toggle_singleton_process("_crypto_widget_process", CRYPTO_WIDGET, python_bin=self._python_bin())
 
     def _open_vps_widget(self) -> None:
         if not VPS_WIDGET.exists():
