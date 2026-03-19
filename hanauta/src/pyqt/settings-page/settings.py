@@ -26,6 +26,7 @@ import locale as pylocale
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
+from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -57,6 +58,7 @@ from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_fon
 from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
+from pyqt.shared.rss_settings_bridge import create_rss_settings_widget
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
@@ -505,6 +507,7 @@ def load_settings_state() -> dict:
             "auto_start_focus": False,
         },
         "rss": {
+            "feeds": [],
             "feed_urls": "",
             "opml_source": "",
             "username": "",
@@ -512,6 +515,13 @@ def load_settings_state() -> dict:
             "item_limit": 10,
             "check_interval_minutes": 15,
             "notify_new_items": True,
+            "play_notification_sound": False,
+            "show_feed_name": True,
+            "open_in_browser": True,
+            "show_images": True,
+            "sort_mode": "newest",
+            "max_per_feed": 5,
+            "view_mode": "expanded",
         },
         "obs": {
             "host": "127.0.0.1",
@@ -703,6 +713,18 @@ def load_settings_state() -> dict:
     pomodoro["auto_start_breaks"] = bool(pomodoro.get("auto_start_breaks", False))
     pomodoro["auto_start_focus"] = bool(pomodoro.get("auto_start_focus", False))
     rss = dict(payload.get("rss", {}))
+    feeds = rss.get("feeds", [])
+    if not isinstance(feeds, list):
+        feeds = []
+    normalized_feeds: list[dict[str, str]] = []
+    for item in feeds:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "")).strip()
+        if not url:
+            continue
+        normalized_feeds.append({"name": str(item.get("name", "")).strip() or url, "url": url})
+    rss["feeds"] = normalized_feeds
     rss["feed_urls"] = str(rss.get("feed_urls", "")).strip()
     rss["opml_source"] = str(rss.get("opml_source", "")).strip()
     rss["username"] = str(rss.get("username", "")).strip()
@@ -716,6 +738,18 @@ def load_settings_state() -> dict:
     except Exception:
         rss["check_interval_minutes"] = 15
     rss["notify_new_items"] = bool(rss.get("notify_new_items", True))
+    rss["play_notification_sound"] = bool(rss.get("play_notification_sound", False))
+    rss["show_feed_name"] = bool(rss.get("show_feed_name", True))
+    rss["open_in_browser"] = bool(rss.get("open_in_browser", True))
+    rss["show_images"] = bool(rss.get("show_images", True))
+    sort_mode = str(rss.get("sort_mode", "newest")).strip().lower()
+    rss["sort_mode"] = sort_mode if sort_mode in {"newest", "oldest", "byfeed"} else "newest"
+    try:
+        rss["max_per_feed"] = max(1, min(20, int(rss.get("max_per_feed", 5))))
+    except Exception:
+        rss["max_per_feed"] = 5
+    view_mode = str(rss.get("view_mode", "expanded")).strip().lower()
+    rss["view_mode"] = view_mode if view_mode in {"expanded", "compact"} else "expanded"
     obs = dict(payload.get("obs", {}))
     obs["host"] = str(obs.get("host", "127.0.0.1")).strip() or "127.0.0.1"
     try:
@@ -4666,93 +4700,18 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.rss_urls_input = QLineEdit(self.settings_state["rss"].get("feed_urls", ""))
-        self.rss_urls_input.setPlaceholderText("https://feed1.xml, https://feed2.xml")
-        layout.addWidget(
-            SettingsRow(
-                material_icon("web_asset"),
-                "Feed URLs",
-                "Comma-separated RSS or Atom feed URLs if you want to manage feeds manually, including feeds exposed by self-hosted readers like FreshRSS.",
-                self.icon_font,
-                self.ui_font,
-                self.rss_urls_input,
-            )
-        )
-
-        self.rss_opml_input = QLineEdit(self.settings_state["rss"].get("opml_source", ""))
-        self.rss_opml_input.setPlaceholderText("/path/to/feeds.opml or https://service.example/opml")
-        layout.addWidget(
-            SettingsRow(
-                material_icon("folder_open"),
-                "OPML source",
-                "Local or remote OPML export. This works well with self-hosted readers like FreshRSS, which support OPML import and export.",
-                self.icon_font,
-                self.ui_font,
-                self.rss_opml_input,
-            )
-        )
-
-        self.rss_username_input = QLineEdit(self.settings_state["rss"].get("username", ""))
-        self.rss_username_input.setPlaceholderText("Optional username")
-        self.rss_password_input = QLineEdit(self.settings_state["rss"].get("password", ""))
-        self.rss_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.rss_password_input.setPlaceholderText("Optional password")
-        layout.addWidget(SettingsRow(material_icon("person"), "Username", "Used for basic-auth protected OPML or feed sources.", self.icon_font, self.ui_font, self.rss_username_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Password", "Used for basic-auth protected OPML or feed sources.", self.icon_font, self.ui_font, self.rss_password_input))
-
-        self.rss_limit_slider = QSlider(Qt.Orientation.Horizontal)
-        self.rss_limit_slider.setRange(3, 30)
-        self.rss_limit_slider.setValue(int(self.settings_state["rss"].get("item_limit", 10)))
-        self.rss_limit_slider.valueChanged.connect(self._set_rss_item_limit)
-        layout.addWidget(
-            SettingsRow(
-                material_icon("refresh"),
-                "Item limit",
-                "How many recent stories the RSS widget should surface at once.",
-                self.icon_font,
-                self.ui_font,
-                self.rss_limit_slider,
-            )
-        )
-
-        self.rss_interval_slider = QSlider(Qt.Orientation.Horizontal)
-        self.rss_interval_slider.setRange(5, 180)
-        self.rss_interval_slider.setValue(int(self.settings_state["rss"].get("check_interval_minutes", 15)))
-        self.rss_interval_slider.valueChanged.connect(self._set_rss_check_interval)
-        layout.addWidget(
-            SettingsRow(
-                material_icon("schedule"),
-                "Check interval",
-                "How often Hanauta checks your feeds for new entries and notifications.",
-                self.icon_font,
-                self.ui_font,
-                self.rss_interval_slider,
-            )
-        )
-
-        self.rss_notify_switch = SwitchButton(bool(self.settings_state["rss"].get("notify_new_items", True)))
-        self.rss_notify_switch.toggledValue.connect(self._set_rss_notify_new_items)
-        layout.addWidget(
-            SettingsRow(
-                material_icon("notifications_active"),
-                "Notify on new stories",
-                "Send a desktop notification for newly discovered RSS items, with a button to read them.",
-                self.icon_font,
-                self.ui_font,
-                self.rss_notify_switch,
-            )
-        )
-
         self.rss_status = QLabel("RSS widget sources are ready.")
         self.rss_status.setWordWrap(True)
         self.rss_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.rss_status)
 
-        self.rss_save_button = QPushButton("Save RSS sources")
-        self.rss_save_button.setObjectName("primaryButton")
-        self.rss_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.rss_save_button.clicked.connect(self._save_rss_settings)
-        layout.addWidget(self.rss_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.rss_settings_qml, self.rss_settings_bridge = create_rss_settings_widget(
+            content,
+            self.settings_state,
+            self._save_rss_settings,
+            self._set_rss_status_message,
+        )
+        layout.addWidget(self.rss_settings_qml)
 
         section = ExpandableServiceSection(
             "rss_widget",
@@ -4767,6 +4726,10 @@ class SettingsWindow(QWidget):
         )
         self.service_sections["rss_widget"] = section
         return section
+
+    def _set_rss_status_message(self, message: str) -> None:
+        if hasattr(self, "rss_status"):
+            self.rss_status.setText(message)
 
     def _build_obs_service_section(self) -> QWidget:
         content = QWidget()
@@ -5556,20 +5519,15 @@ class SettingsWindow(QWidget):
             self.rss_status.setText("RSS notifications are enabled." if enabled else "RSS notifications are paused.")
 
     def _save_rss_settings(self) -> None:
-        rss = self.settings_state.setdefault("rss", {})
-        rss["feed_urls"] = self.rss_urls_input.text().strip()
-        rss["opml_source"] = self.rss_opml_input.text().strip()
-        rss["username"] = self.rss_username_input.text().strip()
-        rss["password"] = self.rss_password_input.text()
-        rss["item_limit"] = int(self.rss_limit_slider.value())
-        rss["check_interval_minutes"] = int(self.rss_interval_slider.value()) if hasattr(self, "rss_interval_slider") else 15
-        rss["notify_new_items"] = bool(self.rss_notify_switch.isChecked()) if hasattr(self, "rss_notify_switch") else True
         save_settings_state(self.settings_state)
         if hasattr(self, "rss_status"):
-            rss_mode = "manual feeds"
-            if rss["opml_source"]:
+            rss = self.settings_state.setdefault("rss", {})
+            rss_mode = "structured feeds" if rss.get("feeds") else "manual feeds"
+            if rss.get("opml_source"):
                 rss_mode = "OPML sync"
-            self.rss_status.setText(f"RSS sources saved for {rss_mode}. Notifications stay on a {rss['check_interval_minutes']}-minute rhythm.")
+            self.rss_status.setText(
+                f"RSS sources saved for {rss_mode}. Notifications stay on a {int(rss.get('check_interval_minutes', 15) or 15)}-minute rhythm."
+            )
 
     def _set_obs_auto_connect(self, enabled: bool) -> None:
         self.settings_state.setdefault("obs", {})["auto_connect"] = bool(enabled)

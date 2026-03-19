@@ -101,6 +101,7 @@ OBS_STREAMING_ACTIVE_ICON = ASSETS_DIR / "obs-streaming-active.svg"
 OBS_STREAMING_INACTIVE_ICON = ASSETS_DIR / "obs-streaming-inactive.svg"
 OBS_RECORDING_ACTIVE_ICON = ASSETS_DIR / "obs-recording-active.svg"
 OBS_RECORDING_INACTIVE_ICON = ASSETS_DIR / "obs-recording-inactive.svg"
+RSS_ICON = ASSETS_DIR / "rss-feed.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
@@ -1977,7 +1978,7 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.locale_button, "public", material_icon("public"), 16)
         self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
         self._apply_icon_to_widget(self.pomodoro_button, "timer", material_icon("timer"), 16)
-        self._apply_icon_to_widget(self.rss_button, "public", material_icon("public"), 16)
+        self._set_rss_button_icon()
         self._set_obs_button_icon()
         self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 16)
         self._apply_icon_to_widget(self.ntfy_button, "notifications", material_icon("notifications"), 16)
@@ -2352,6 +2353,18 @@ class CyberBar(QWidget):
         cache["seen"] = list(seen)
         cache["last_checked_at"] = datetime.now().astimezone().isoformat()
         save_rss_cache(cache)
+        if new_items and bool(rss_settings.get("play_notification_sound", False)):
+            sound_path = Path("/usr/share/sounds/freedesktop/stereo/complete.ogg")
+            if sound_path.exists() and shutil.which("paplay"):
+                try:
+                    subprocess.Popen(
+                        ["paplay", str(sound_path)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                except Exception:
+                    pass
         for index, item in enumerate(new_items[:3]):
             title = str(item.get("title", "New story")).strip() or "New story"
             feed_title = str(item.get("feed_title", "")).strip() or "RSS feed"
@@ -2417,6 +2430,19 @@ class CyberBar(QWidget):
         self.christian_button.setIcon(QIcon())
         self.christian_button.setText(self._bar_icon_overrides.get("christian_widget", material_icon("auto_awesome")))
         self.christian_button.setFont(QFont(self.material_font, 16))
+
+    def _set_rss_button_icon(self) -> None:
+        icon = tinted_svg_icon(RSS_ICON, QColor(self.theme.primary), 16)
+        self.rss_button.setProperty("iconKey", "rss_feed")
+        self.rss_button.setProperty("nerdIcon", False)
+        self.rss_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.rss_button.setIcon(icon)
+            self.rss_button.setIconSize(QSize(16, 16))
+            self.rss_button.setText("")
+            return
+        self.rss_button.setIcon(QIcon())
+        self.rss_button.setText(self._bar_icon_overrides.get("rss_feed", material_icon("public")))
 
     def _set_obs_button_icon(self) -> None:
         if self._obs_recording:
