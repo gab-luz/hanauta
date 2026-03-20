@@ -103,6 +103,7 @@ OBS_RECORDING_ACTIVE_ICON = ASSETS_DIR / "obs-recording-active.svg"
 OBS_RECORDING_INACTIVE_ICON = ASSETS_DIR / "obs-recording-inactive.svg"
 RSS_ICON = ASSETS_DIR / "rss-feed.svg"
 REMINDER_ICON = ASSETS_DIR / "reminder-widget.svg"
+POMODORO_ICON = ASSETS_DIR / "pomodoro.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
@@ -1978,17 +1979,17 @@ class CyberBar(QWidget):
     def _apply_bar_icon_overrides(self) -> None:
         self._apply_icon_to_widget(self.locale_button, "public", material_icon("public"), 16)
         self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
-        self._apply_icon_to_widget(self.pomodoro_button, "timer", material_icon("timer"), 16)
+        self._set_pomodoro_button_icon()
         self._set_reminders_button_icon()
         self._set_rss_button_icon()
         self._set_obs_button_icon()
-        self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 16)
+        self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 20)
         self._apply_icon_to_widget(self.ntfy_button, "notifications", material_icon("notifications"), 16)
-        self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 16)
+        self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 20)
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
         self._apply_icon_to_widget(self.btn_clip, "content_paste", material_icon("content_paste"), 16)
         self._apply_icon_to_widget(self.btn_updates, "system_update", material_icon("system_update"), 16)
-        self._apply_icon_to_widget(self.btn_power, "power_settings_new", material_icon("power_settings_new"), 16)
+        self._apply_icon_to_widget(self.btn_power, "power_settings_new", material_icon("power_settings_new"), 20)
         self._apply_icon_to_widget(self.launcher_note, "launcher_note", "♪", 14)
         self._set_vpn_button_icon(self.vpn_icon.property("active") == True)
         self._set_christian_button_icon()
@@ -2434,17 +2435,30 @@ class CyberBar(QWidget):
         self.christian_button.setFont(QFont(self.material_font, 16))
 
     def _set_reminders_button_icon(self) -> None:
-        icon = tinted_svg_icon(REMINDER_ICON, QColor(self.theme.primary), 16)
+        icon = tinted_svg_icon(REMINDER_ICON, QColor(self.theme.primary), 20)
         self.reminders_button.setProperty("iconKey", "reminder_widget")
         self.reminders_button.setProperty("nerdIcon", False)
         self.reminders_button.setFont(QFont(self.material_font, 16))
         if not icon.isNull():
             self.reminders_button.setIcon(icon)
-            self.reminders_button.setIconSize(QSize(16, 16))
+            self.reminders_button.setIconSize(QSize(20, 20))
             self.reminders_button.setText("")
             return
         self.reminders_button.setIcon(QIcon())
         self.reminders_button.setText(REMINDERS_BAR_GLYPH)
+
+    def _set_pomodoro_button_icon(self) -> None:
+        icon = tinted_svg_icon(POMODORO_ICON, QColor(self.theme.primary), 20)
+        self.pomodoro_button.setProperty("iconKey", "pomodoro_widget")
+        self.pomodoro_button.setProperty("nerdIcon", False)
+        self.pomodoro_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.pomodoro_button.setIcon(icon)
+            self.pomodoro_button.setIconSize(QSize(20, 20))
+            self.pomodoro_button.setText("")
+            return
+        self.pomodoro_button.setIcon(QIcon())
+        self.pomodoro_button.setText(self._icon_text("timer"))
 
     def _set_rss_button_icon(self) -> None:
         icon = tinted_svg_icon(RSS_ICON, QColor(self.theme.primary), 16)
