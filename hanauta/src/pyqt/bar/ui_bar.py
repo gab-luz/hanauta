@@ -42,6 +42,7 @@ from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
 from pyqt.shared.rss import load_cache as load_rss_cache
 from pyqt.shared.rss import save_cache as save_rss_cache
+from pyqt.shared.cap_alerts import CapAlert, configured_alert_location, fetch_active_alerts, relative_expiry, test_mode_enabled, top_alert
 from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
 from pyqt.shared.crypto import (
     build_price_alerts as build_crypto_price_alerts,
@@ -83,6 +84,7 @@ DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_cloc
 DESKTOP_CLOCK_BINARY = HANAUTA_ROOT / "bin" / "hanauta-clock"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
+CAP_ALERTS_POPUP = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alerts_popup.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
 GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
@@ -135,6 +137,7 @@ MATERIAL_ICONS = {
     "play_arrow": "\ue037",
     "power_settings_new": "\ue8ac",
     "public": "\ue80b",
+    "warning": "\ue002",
     "videocam": "\ue04b",
     "show_chart": "\ue6e1",
     "timer": "\ue425",
@@ -985,6 +988,17 @@ class WeatherWorker(QThread):
         self.loaded.emit(fetch_forecast(city))
 
 
+class CapAlertWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        location = configured_alert_location()
+        if location is None and not test_mode_enabled():
+            self.loaded.emit([])
+            return
+        self.loaded.emit(fetch_active_alerts(location))
+
+
 class CyberBar(QWidget):
     def __init__(self, ui_path: Optional[Path] = None):
         super().__init__()
@@ -1057,8 +1071,11 @@ class CyberBar(QWidget):
         self._calendar_popup_process: Optional[subprocess.Popen] = None
         self._game_mode_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
+        self._cap_alerts_popup_process: Optional[subprocess.Popen] = None
         self._weather_worker: Optional[WeatherWorker] = None
+        self._cap_alert_worker: Optional[CapAlertWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
+        self._cap_alerts: list[CapAlert] = []
         self._cava_buffer = ""
         self._battery_base: Optional[Path] = self._detect_battery_base()
         self._settings_watcher: Optional[QFileSystemWatcher] = None
@@ -1262,6 +1279,25 @@ class CyberBar(QWidget):
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.right_layout.setSpacing(8)
 
+        self.cap_alert_chip = ClickableFrame()
+        self.cap_alert_chip.setObjectName("capAlertChip")
+        self.cap_alert_chip.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.cap_alert_chip.clicked.connect(self._open_cap_alerts_popup)
+        self.cap_alert_layout = QHBoxLayout(self.cap_alert_chip)
+        self.cap_alert_layout.setContentsMargins(10, 4, 12, 4)
+        self.cap_alert_layout.setSpacing(8)
+        self.cap_alert_warning = QLabel(material_icon("warning"))
+        self.cap_alert_warning.setObjectName("capAlertWarning")
+        self.cap_alert_warning.setFont(QFont(self.material_font, 16))
+        self.cap_alert_icon = AnimatedWeatherIcon(18)
+        self.cap_alert_text = QLabel("Local weather alerts")
+        self.cap_alert_text.setObjectName("capAlertText")
+        self.cap_alert_text.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        self.cap_alert_layout.addWidget(self.cap_alert_warning)
+        self.cap_alert_layout.addWidget(self.cap_alert_icon)
+        self.cap_alert_layout.addWidget(self.cap_alert_text)
+        self.cap_alert_chip.hide()
+
         self.status_chip = QFrame()
         self.status_chip.setObjectName("statusChip")
         self.status_layout = QHBoxLayout(self.status_chip)
@@ -1371,6 +1407,7 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
         self.status_layout.addWidget(self.btn_power)
         self.status_wrap = self._wrap_movable(self.status_chip)
+        self.right_layout.addWidget(self.cap_alert_chip)
         self.right_layout.addWidget(self.status_wrap)
         self.root_layout.addWidget(right_wrap, 0, Qt.AlignmentFlag.AlignRight)
 
@@ -1388,6 +1425,7 @@ class CyberBar(QWidget):
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
+        self._sync_cap_alert_chip()
         self._apply_bar_settings()
         self._install_debug_tooltips()
 
@@ -1581,6 +1619,7 @@ class CyberBar(QWidget):
             self.workspace_chip,
             self.datetime_chip,
             self.media_chip,
+            self.cap_alert_chip,
             self.status_chip,
         ):
             chip.setFixedHeight(surface_height)
@@ -1647,6 +1686,15 @@ class CyberBar(QWidget):
                 border: 1px solid {media_border};
                 border-radius: {chip_radius_css};
             }}
+            #capAlertChip {{
+                background: {rgba("#f6cf5a", 0.18)};
+                border: 1px solid {rgba("#f6cf5a", 0.42)};
+                border-radius: {chip_radius_css};
+            }}
+            #capAlertChip:hover {{
+                background: {rgba("#f6cf5a", 0.24)};
+                border: 1px solid {rgba("#ffd54f", 0.68)};
+            }}
             #launcherTrigger {{
                 background: transparent;
                 border: none;
@@ -1708,6 +1756,15 @@ class CyberBar(QWidget):
             }}
             #statusIconButton[nerdIcon="true"] {{
                 font-family: "{self.reminders_font}";
+            }}
+            #capAlertWarning {{
+                color: #ffd95a;
+                font-family: "{self.material_font}";
+            }}
+            #capAlertText {{
+                color: #ffe8a1;
+                font-size: 11px;
+                font-weight: 700;
             }}
             #statusLockButton {{
                 background: transparent;
@@ -1973,6 +2030,7 @@ class CyberBar(QWidget):
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
+        self._sync_cap_alert_chip()
         self._sync_desktop_clock_process()
         self._update_locale_button()
 
@@ -2064,6 +2122,10 @@ class CyberBar(QWidget):
         self.weather_timer.timeout.connect(self._poll_weather)
         self.weather_timer.start(900000)
 
+        self.cap_alert_timer = QTimer(self)
+        self.cap_alert_timer.timeout.connect(self._poll_cap_alerts)
+        self.cap_alert_timer.start(300000)
+
         self.rss_notify_timer = QTimer(self)
         self.rss_notify_timer.timeout.connect(self._poll_rss_notifications)
         self.rss_notify_timer.start(60000)
@@ -2088,6 +2150,7 @@ class CyberBar(QWidget):
         self._poll_media()
         self._poll_system()
         self._poll_weather()
+        self._poll_cap_alerts()
         self._poll_rss_notifications()
         self._poll_crypto_notifications()
         self._poll_obs_state()
@@ -2258,6 +2321,7 @@ class CyberBar(QWidget):
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
         self._sync_weather_visibility()
+        self._sync_cap_alert_chip()
 
     def _poll_weather(self) -> None:
         if self._weather_worker is not None and self._weather_worker.isRunning():
@@ -2283,6 +2347,64 @@ class CyberBar(QWidget):
 
     def _finish_weather_worker(self) -> None:
         self._weather_worker = None
+
+    def _cap_alerts_service_visible(self) -> bool:
+        services = load_service_settings()
+        service = services.get("cap_alerts", {})
+        if not isinstance(service, dict):
+            service = {}
+        return bool(service.get("enabled", True)) and bool(service.get("show_in_bar", True))
+
+    def _poll_cap_alerts(self) -> None:
+        if not self._cap_alerts_service_visible():
+            self._cap_alerts = []
+            self._sync_cap_alert_chip()
+            return
+        if configured_alert_location() is None and not test_mode_enabled():
+            self._cap_alerts = []
+            self._sync_cap_alert_chip()
+            return
+        if self._cap_alert_worker is not None and self._cap_alert_worker.isRunning():
+            return
+        self._cap_alert_worker = CapAlertWorker()
+        self._cap_alert_worker.loaded.connect(self._apply_cap_alerts)
+        self._cap_alert_worker.finished.connect(self._finish_cap_alert_worker)
+        self._cap_alert_worker.start()
+
+    def _apply_cap_alerts(self, alerts_obj: object) -> None:
+        self._cap_alerts = list(alerts_obj) if isinstance(alerts_obj, list) else []
+        self._sync_cap_alert_chip()
+
+    def _finish_cap_alert_worker(self) -> None:
+        self._cap_alert_worker = None
+
+    def _sync_cap_alert_chip(self) -> None:
+        visible = self._cap_alerts_service_visible()
+        alert = top_alert(self._cap_alerts) if visible else None
+        if alert is None:
+            self.cap_alert_chip.hide()
+            self.cap_alert_chip.setToolTip("")
+            return
+        summary = f"{alert.event} • {relative_expiry(alert)}".strip(" •")
+        if len(self._cap_alerts) > 1:
+            summary = f"{len(self._cap_alerts)} alerts • {alert.event}"
+        self.cap_alert_icon.set_icon_path(animated_icon_path(alert.icon_name))
+        if test_mode_enabled():
+            self.cap_alert_text.setText(f"Demo • {summary or alert.event}")
+        else:
+            self.cap_alert_text.setText(summary or alert.event)
+        location = configured_alert_location()
+        tooltip_parts = [
+            alert.headline or alert.event,
+            alert.area_desc or "",
+            f"Source: {alert.sender_name}",
+        ]
+        if test_mode_enabled():
+            tooltip_parts.append("Demo mode is enabled. These are sample alerts for UI testing.")
+        if location is not None:
+            tooltip_parts.append(f"Location: {location.label}")
+        self.cap_alert_chip.setToolTip("\n".join(part for part in tooltip_parts if part))
+        self.cap_alert_chip.show()
 
     def _send_action_notification(
         self,
@@ -2883,6 +3005,11 @@ class CyberBar(QWidget):
             return
         self._toggle_singleton_process("_crypto_widget_process", CRYPTO_WIDGET, python_bin=self._python_bin())
 
+    def _open_cap_alerts_popup(self) -> None:
+        if not CAP_ALERTS_POPUP.exists():
+            return
+        self._toggle_singleton_process("_cap_alerts_popup_process", CAP_ALERTS_POPUP, python_bin=self._python_bin())
+
     def _open_vps_widget(self) -> None:
         if not VPS_WIDGET.exists():
             return
@@ -3026,6 +3153,8 @@ class CyberBar(QWidget):
             self._updates_widget_process.terminate()
         if self._crypto_widget_process is not None and self._crypto_widget_process.poll() is None:
             self._crypto_widget_process.terminate()
+        if self._cap_alerts_popup_process is not None and self._cap_alerts_popup_process.poll() is None:
+            self._cap_alerts_popup_process.terminate()
         if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
             self._vps_widget_process.terminate()
         if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
