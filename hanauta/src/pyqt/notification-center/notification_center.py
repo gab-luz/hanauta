@@ -136,6 +136,7 @@ DEFAULT_SERVICE_SETTINGS = {
     "home_assistant": {
         "enabled": True,
         "show_in_notification_center": True,
+        "show_in_bar": False,
     },
     "vpn_control": {
         "enabled": True,
@@ -347,6 +348,10 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                     "hourly_verse_notifications",
                     defaults.get("hourly_verse_notifications", False),
                 )
+            )
+        elif key == "home_assistant":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
     return merged
 
