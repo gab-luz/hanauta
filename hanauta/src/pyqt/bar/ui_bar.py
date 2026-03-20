@@ -29,6 +29,7 @@ from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -1300,6 +1301,11 @@ class CyberBar(QWidget):
         self.cap_alert_text = QLabel("Local weather alerts")
         self.cap_alert_text.setObjectName("capAlertText")
         self.cap_alert_text.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        self.cap_alert_text_shadow = QGraphicsDropShadowEffect(self.cap_alert_text)
+        self.cap_alert_text_shadow.setBlurRadius(2.8)
+        self.cap_alert_text_shadow.setOffset(0, 1.8)
+        self.cap_alert_text_shadow.setColor(QColor(0, 0, 0, 220))
+        self.cap_alert_text.setGraphicsEffect(self.cap_alert_text_shadow)
         self.cap_alert_layout.addWidget(self.cap_alert_warning)
         self.cap_alert_layout.addWidget(self.cap_alert_icon)
         self.cap_alert_layout.addWidget(self.cap_alert_text)
@@ -1700,8 +1706,8 @@ class CyberBar(QWidget):
                 border-radius: {chip_radius_css};
             }}
             #capAlertChip {{
-                background: {rgba("#f6cf5a", 0.18)};
-                border: 1px solid {rgba("#f6cf5a", 0.42)};
+                background: {rgba("#f6cf5a", 0.30)};
+                border: 1px solid {rgba("#f6cf5a", 0.58)};
                 border-radius: {chip_radius_css};
             }}
             #capAlertGlow {{
@@ -1710,8 +1716,8 @@ class CyberBar(QWidget):
                 border-radius: {max(8, chip_radius)}px;
             }}
             #capAlertChip:hover {{
-                background: {rgba("#f6cf5a", 0.24)};
-                border: 1px solid {rgba("#ffd54f", 0.68)};
+                background: {rgba("#f6cf5a", 0.38)};
+                border: 1px solid {rgba("#ffd54f", 0.76)};
             }}
             #launcherTrigger {{
                 background: transparent;
@@ -1781,7 +1787,7 @@ class CyberBar(QWidget):
                 font-size: 17px;
             }}
             #capAlertText {{
-                color: #ffe8a1;
+                color: #fff9e8;
                 font-size: 11px;
                 font-weight: 700;
             }}
