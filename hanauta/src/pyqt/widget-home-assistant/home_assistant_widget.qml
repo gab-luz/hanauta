@@ -2,12 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import QtQuick.Effects
 
 Window {
     id: root
-    width: 438
-    height: 736
+    width: 468
+    height: 812
     visible: true
     color: "transparent"
     title: "Hanauta Home Assistant"
@@ -22,12 +21,10 @@ Window {
         property string glyphText: ""
         property string iconSource: ""
         property color tintColor: themeModel.iconTint
-        property int iconSize: 20
+        property int iconSize: 18
 
         implicitWidth: iconSize
         implicitHeight: iconSize
-        width: implicitWidth
-        height: implicitHeight
 
         Text {
             anchors.centerIn: parent
@@ -44,17 +41,9 @@ Window {
             width: iconRoot.iconSize
             height: iconRoot.iconSize
             visible: iconRoot.iconSource !== ""
-            layer.enabled: true
-            layer.smooth: true
-
-            layer.effect: MultiEffect {
-                colorization: 1.0
-                colorizationColor: iconRoot.tintColor
-            }
 
             Image {
                 anchors.fill: parent
-                anchors.margins: 1
                 source: iconRoot.iconSource
                 fillMode: Image.PreserveAspectFit
                 sourceSize.width: iconRoot.iconSize
@@ -67,89 +56,200 @@ Window {
         }
     }
 
-    component CircleIconButton: Button {
-        id: circleControl
+    component CircleButton: Button {
+        id: circleButton
         property string iconText: ""
-        property color iconColor: themeModel.iconTint
-        property color baseColor: themeModel.card
-        property color hoverColor: themeModel.hover
-        property color pressColor: themeModel.pressed
-        property color strokeColor: themeModel.border
+        property color iconColor: themeModel.text
+        property color fillColor: Qt.rgba(1, 1, 1, 0.06)
 
-        implicitWidth: 38
-        implicitHeight: 38
-        hoverEnabled: true
+        implicitWidth: 40
+        implicitHeight: 40
         padding: 0
+        hoverEnabled: true
 
         background: Rectangle {
             radius: width / 2
-            color: !circleControl.enabled
-                   ? themeModel.card
-                   : circleControl.pressed
-                        ? circleControl.pressColor
-                        : circleControl.hovered
-                            ? circleControl.hoverColor
-                            : circleControl.baseColor
+            color: !circleButton.enabled
+                   ? Qt.rgba(1, 1, 1, 0.04)
+                   : circleButton.pressed
+                        ? themeModel.pressed
+                        : circleButton.hovered
+                            ? themeModel.hover
+                            : circleButton.fillColor
             border.width: 1
-            border.color: circleControl.strokeColor
-            opacity: circleControl.enabled ? 1.0 : 0.55
+            border.color: Qt.rgba(1, 1, 1, 0.10)
+            opacity: circleButton.enabled ? 1.0 : 0.55
         }
 
         contentItem: Text {
-            text: circleControl.iconText
+            text: circleButton.iconText
             font.family: backend.materialFontFamily
             font.pixelSize: 18
-            color: circleControl.iconColor
+            color: circleButton.iconColor
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             renderType: Text.NativeRendering
         }
     }
 
-    component PillButton: Button {
-        id: pillControl
-        property color fillColor: themeModel.cardStrong
-        property color hoverColor: themeModel.hover
-        property color pressColor: themeModel.pressed
-        property color strokeColor: themeModel.border
-        property color labelColor: themeModel.text
-        property string labelText: text
-        property string labelFamily: backend.uiFontFamily
-        property int labelSize: 11
-        property int labelWeight: Font.DemiBold
+    component GlassChip: Rectangle {
+        id: chip
+        property string label: ""
+        property color labelColor: themeModel.textMuted
+        property color fillColor: Qt.rgba(1, 1, 1, 0.06)
+        property color strokeColor: Qt.rgba(1, 1, 1, 0.10)
 
-        implicitHeight: 32
-        implicitWidth: Math.max(76, contentItem.implicitWidth + leftPadding + rightPadding)
+        radius: 13
+        color: fillColor
+        border.width: 1
+        border.color: strokeColor
+        implicitHeight: 30
+        implicitWidth: chipText.implicitWidth + 22
+
+        Text {
+            id: chipText
+            anchors.centerIn: parent
+            text: chip.label
+            color: chip.labelColor
+            font.family: backend.uiFontFamily
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+            renderType: Text.NativeRendering
+        }
+    }
+
+    component SoftButton: Button {
+        id: softButton
+        property color fillColor: Qt.rgba(1, 1, 1, 0.06)
+        property color strokeColor: Qt.rgba(1, 1, 1, 0.10)
+        property color textColor: themeModel.text
+        property string iconText: ""
+
+        implicitHeight: 36
         leftPadding: 12
-        rightPadding: 12
+        rightPadding: 14
         topPadding: 0
         bottomPadding: 0
+        spacing: 8
         hoverEnabled: true
 
         background: Rectangle {
-            radius: 12
-            color: !pillControl.enabled
-                   ? themeModel.cardStrong
-                   : pillControl.pressed
-                        ? pillControl.pressColor
-                        : pillControl.hovered
-                            ? pillControl.hoverColor
-                            : pillControl.fillColor
+            radius: 16
+            color: !softButton.enabled
+                   ? Qt.rgba(1, 1, 1, 0.04)
+                   : softButton.pressed
+                        ? themeModel.pressed
+                        : softButton.hovered
+                            ? themeModel.hover
+                            : softButton.fillColor
             border.width: 1
-            border.color: pillControl.strokeColor
-            opacity: pillControl.enabled ? 1.0 : 0.55
+            border.color: softButton.strokeColor
+            opacity: softButton.enabled ? 1.0 : 0.55
         }
 
-        contentItem: Text {
-            text: pillControl.labelText
-            color: pillControl.labelColor
-            font.family: pillControl.labelFamily
-            font.pixelSize: pillControl.labelSize
-            font.weight: pillControl.labelWeight
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-            renderType: Text.NativeRendering
+        contentItem: Row {
+            spacing: softButton.iconText !== "" ? 8 : 0
+            leftPadding: 0
+            rightPadding: 0
+            anchors.verticalCenter: parent.verticalCenter
+
+            Text {
+                visible: softButton.iconText !== ""
+                text: softButton.iconText
+                font.family: backend.materialFontFamily
+                font.pixelSize: 16
+                color: softButton.textColor
+                renderType: Text.NativeRendering
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                text: softButton.text
+                font.family: backend.uiFontFamily
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                color: softButton.textColor
+                renderType: Text.NativeRendering
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+    }
+
+    component SummaryCard: Rectangle {
+        id: summaryCard
+        property string eyebrow: ""
+        property string valueText: ""
+        property string helperText: ""
+        property color accentColor: themeModel.primary
+        property string accentIcon: ""
+
+        radius: 21
+        color: Qt.rgba(1, 1, 1, 0.055)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.10)
+        implicitHeight: 110
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 8
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Rectangle {
+                    width: 30
+                    height: 30
+                    radius: 15
+                    color: Qt.rgba(summaryCard.accentColor.r, summaryCard.accentColor.g, summaryCard.accentColor.b, 0.16)
+                    border.width: 1
+                    border.color: Qt.rgba(summaryCard.accentColor.r, summaryCard.accentColor.g, summaryCard.accentColor.b, 0.28)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: summaryCard.accentIcon
+                        font.family: backend.materialFontFamily
+                        font.pixelSize: 15
+                        color: summaryCard.accentColor
+                        renderType: Text.NativeRendering
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: summaryCard.eyebrow
+                    color: themeModel.textMuted
+                    font.family: backend.uiFontFamily
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                    wrapMode: Text.WordWrap
+                    renderType: Text.NativeRendering
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: summaryCard.valueText
+                color: themeModel.text
+                font.family: backend.displayFontFamily
+                font.pixelSize: 22
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                renderType: Text.NativeRendering
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: summaryCard.helperText
+                color: themeModel.textMuted
+                font.family: backend.uiFontFamily
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+                renderType: Text.NativeRendering
+            }
         }
     }
 
@@ -158,496 +258,731 @@ Window {
         color: "transparent"
 
         Rectangle {
-            id: panel
             anchors.fill: parent
             anchors.margins: 12
-            radius: 28
+            radius: 30
             gradient: Gradient {
                 GradientStop { position: 0.0; color: themeModel.panelStart }
-                GradientStop { position: 1.0; color: themeModel.panelEnd }
+                GradientStop { position: 0.55; color: themeModel.panelEnd }
+                GradientStop { position: 1.0; color: themeModel.surfaceContainerHigh }
             }
             border.width: 1
             border.color: themeModel.border
             clip: true
 
             Rectangle {
-                width: 220
-                height: 220
-                radius: 110
-                x: -44
-                y: -66
+                width: 260
+                height: 260
+                radius: 130
+                x: -54
+                y: -118
                 color: themeModel.heroStart
-                opacity: 0.24
+                opacity: 0.40
             }
 
             Rectangle {
-                width: 170
-                height: 170
-                radius: 85
+                width: 210
+                height: 210
+                radius: 105
                 anchors.right: parent.right
-                anchors.rightMargin: -42
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 120
+                anchors.rightMargin: -72
+                anchors.top: parent.top
+                anchors.topMargin: 120
                 color: themeModel.primary
-                opacity: 0.05
+                opacity: 0.08
+            }
+
+            Rectangle {
+                width: 220
+                height: 220
+                radius: 110
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.rightMargin: -84
+                anchors.bottomMargin: -34
+                color: themeModel.heroEnd
+                opacity: 0.16
             }
 
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 18
-                spacing: 12
+                spacing: 14
 
-                RowLayout {
+                Rectangle {
                     Layout.fillWidth: true
-                    spacing: 10
+                    radius: 27
+                    color: Qt.rgba(1, 1, 1, 0.05)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.10)
+                    implicitHeight: headerContent.implicitHeight + 30
 
                     Rectangle {
-                        width: 42
-                        height: 42
-                        radius: 21
-                        color: themeModel.active
-                        border.width: 1
-                        border.color: themeModel.activeBorder
-
-                        IconVisual {
-                            anchors.centerIn: parent
-                            glyphText: glyph("home")
-                            iconSize: 20
-                            tintColor: themeModel.iconTint
+                        anchors.fill: parent
+                        radius: 27
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: themeModel.heroStart }
+                            GradientStop { position: 0.5; color: themeModel.heroEnd }
+                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.04) }
                         }
+                        opacity: 0.92
                     }
 
                     ColumnLayout {
+                        id: headerContent
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 14
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Rectangle {
+                                width: 52
+                                height: 52
+                                radius: 20
+                                color: Qt.rgba(1, 1, 1, 0.10)
+                                border.width: 1
+                                border.color: Qt.rgba(1, 1, 1, 0.16)
+
+                                IconVisual {
+                                    anchors.centerIn: parent
+                                    glyphText: glyph("home")
+                                    iconSize: 24
+                                    tintColor: themeModel.text
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Text {
+                                    text: "CONNECTED HOME"
+                                    color: themeModel.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    renderType: Text.NativeRendering
+                                }
+
+                                Text {
+                                    text: backend.statusHeadline
+                                    color: themeModel.text
+                                    font.family: backend.displayFontFamily
+                                    font.pixelSize: 24
+                                    font.weight: Font.DemiBold
+                                    wrapMode: Text.WordWrap
+                                    renderType: Text.NativeRendering
+                                }
+
+                                Text {
+                                    text: backend.statusHint
+                                    color: themeModel.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                    renderType: Text.NativeRendering
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 8
+
+                                CircleButton {
+                                    iconText: glyph("refresh")
+                                    onClicked: backend.refresh()
+                                }
+
+                                CircleButton {
+                                    iconText: glyph("settings")
+                                    onClicked: backend.openSettings()
+                                }
+
+                                CircleButton {
+                                    iconText: glyph("close")
+                                    onClicked: backend.closeWindow()
+                                }
+                            }
+                        }
+
+                        Row {
+                            spacing: 8
+
+                            GlassChip {
+                                label: backend.available ? "Live cache ready" : "Background sync pending"
+                                labelColor: backend.available ? themeModel.text : themeModel.warning
+                                fillColor: backend.available
+                                           ? Qt.rgba(1, 1, 1, 0.10)
+                                           : Qt.rgba(themeModel.warning.r, themeModel.warning.g, themeModel.warning.b, 0.16)
+                                strokeColor: backend.available
+                                             ? Qt.rgba(1, 1, 1, 0.12)
+                                             : Qt.rgba(themeModel.warning.r, themeModel.warning.g, themeModel.warning.b, 0.28)
+                            }
+
+                            GlassChip {
+                                visible: backend.latencyMs >= 0
+                                label: backend.latencyMs >= 0 ? backend.latencyMs + " ms" : ""
+                                labelColor: themeModel.text
+                            }
+
+                            GlassChip {
+                                visible: backend.busy
+                                label: "Refreshing"
+                                labelColor: themeModel.primary
+                                fillColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.16)
+                                strokeColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.26)
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    SummaryCard {
                         Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            text: "HOME ASSISTANT"
-                            color: themeModel.primary
-                            font.family: backend.uiFontFamily
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                            renderType: Text.NativeRendering
-                        }
-
-                        Text {
-                            text: backend.statusHeadline
-                            color: themeModel.text
-                            font.family: backend.displayFontFamily
-                            font.pixelSize: 18
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                            renderType: Text.NativeRendering
-                        }
-
-                        Text {
-                            text: backend.statusHint
-                            color: themeModel.textMuted
-                            font.family: backend.uiFontFamily
-                            font.pixelSize: 11
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                            renderType: Text.NativeRendering
-                        }
+                        eyebrow: "Pinned scenes"
+                        valueText: backend.pinnedEntities.length.toString()
+                        helperText: backend.pinnedEntities.length > 0
+                                    ? "Quick actions stay parked here for one-tap control."
+                                    : "Pin up to five entities to build your shortcut dock."
+                        accentColor: themeModel.primary
+                        accentIcon: glyph("push_pin")
                     }
 
-                    CircleIconButton {
-                        iconText: glyph("settings")
-                        onClicked: backend.openSettings()
-                    }
-
-                    CircleIconButton {
-                        iconText: glyph("refresh")
-                        enabled: !backend.busy
-                        onClicked: backend.refresh()
-                    }
-
-                    CircleIconButton {
-                        iconText: glyph("close")
-                        iconColor: themeModel.text
-                        hoverColor: Qt.rgba(1.0, 0.35, 0.35, 0.16)
-                        pressColor: Qt.rgba(1.0, 0.35, 0.35, 0.24)
-                        onClicked: backend.closeWindow()
+                    SummaryCard {
+                        Layout.fillWidth: true
+                        eyebrow: "Visible now"
+                        valueText: backend.entities.length.toString()
+                        helperText: backend.searchQuery.length > 0
+                                    ? "Filtered results for your current search."
+                                    : "Entities streamed from hanauta-service cache."
+                        accentColor: themeModel.good
+                        accentIcon: glyph("bolt")
                     }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
-                    radius: 22
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: themeModel.heroStart }
-                        GradientStop { position: 1.0; color: themeModel.heroEnd }
-                    }
+                    radius: 23
+                    color: Qt.rgba(1, 1, 1, 0.055)
                     border.width: 1
-                    border.color: themeModel.activeBorder
-                    implicitHeight: heroColumn.implicitHeight + 26
+                    border.color: Qt.rgba(1, 1, 1, 0.10)
+                    implicitHeight: pinnedColumn.implicitHeight + 24
 
                     ColumnLayout {
-                        id: heroColumn
+                        id: pinnedColumn
                         anchors.fill: parent
                         anchors.margins: 14
-                        spacing: 10
+                        spacing: 12
 
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
-
-                            Rectangle {
-                                width: 10
-                                height: 10
-                                radius: 5
-                                color: backend.available ? themeModel.good : themeModel.danger
-                            }
 
                             Text {
-                                text: backend.available ? "Connected" : "Unavailable"
+                                text: "Pinned controls"
                                 color: themeModel.text
-                                font.family: backend.uiFontFamily
-                                font.pixelSize: 12
+                                font.family: backend.displayFontFamily
+                                font.pixelSize: 16
                                 font.weight: Font.DemiBold
                                 renderType: Text.NativeRendering
                             }
 
                             Item { Layout.fillWidth: true }
 
-                            Rectangle {
-                                radius: 999
-                                color: themeModel.cardStrong
-                                border.width: 1
-                                border.color: themeModel.border
-                                implicitHeight: 28
-                                implicitWidth: latencyText.implicitWidth + 22
-
-                                Text {
-                                    id: latencyText
-                                    anchors.centerIn: parent
-                                    text: backend.latencyMs >= 0 ? backend.latencyMs + " ms" : "No ping"
-                                    color: themeModel.text
-                                    font.family: backend.uiFontFamily
-                                    font.pixelSize: 11
-                                    renderType: Text.NativeRendering
-                                }
+                            Text {
+                                text: backend.pinnedEntities.length + "/5"
+                                color: themeModel.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                renderType: Text.NativeRendering
                             }
                         }
 
-                        Text {
-                            text: backend.pinnedEntities.length > 0
-                                  ? backend.pinnedEntities.length + " pinned shortcuts ready"
-                                  : "Pin your most-used entities so they stay at the top."
-                            color: themeModel.textMuted
-                            font.family: backend.uiFontFamily
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
+                        Flickable {
                             Layout.fillWidth: true
-                            renderType: Text.NativeRendering
+                            Layout.preferredHeight: backend.pinnedEntities.length > 0 ? 100 : 72
+                            contentWidth: pinnedRow.implicitWidth
+                            contentHeight: pinnedRow.implicitHeight
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            Row {
+                                id: pinnedRow
+                                spacing: 10
+
+                                Repeater {
+                                    model: backend.pinnedEntities
+
+                                    Rectangle {
+                                        width: 128
+                                        height: 88
+                                        radius: 20
+                                        color: Qt.rgba(1, 1, 1, 0.07)
+                                        border.width: 1
+                                        border.color: Qt.rgba(1, 1, 1, 0.10)
+
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 8
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+
+                                                Rectangle {
+                                                    width: 34
+                                                    height: 34
+                                                    radius: 14
+                                                    color: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.14)
+                                                    border.width: 1
+                                                    border.color: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.24)
+
+                                                    IconVisual {
+                                                        anchors.centerIn: parent
+                                                        glyphText: modelData.iconGlyph
+                                                        iconSource: modelData.iconSource
+                                                        iconSize: 18
+                                                    }
+                                                }
+
+                                                Item { Layout.fillWidth: true }
+
+                                                CircleButton {
+                                                    implicitWidth: 30
+                                                    implicitHeight: 30
+                                                    iconText: glyph("push_pin")
+                                                    iconColor: themeModel.primary
+                                                    fillColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.14)
+                                                    onClicked: backend.togglePinned(modelData.entityId)
+                                                }
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: modelData.friendlyName
+                                                color: themeModel.text
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 12
+                                                font.weight: Font.DemiBold
+                                                wrapMode: Text.WordWrap
+                                                maximumLineCount: 2
+                                                elide: Text.ElideRight
+                                                renderType: Text.NativeRendering
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: modelData.state
+                                                color: themeModel.textMuted
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                                renderType: Text.NativeRendering
+                                            }
+
+                                            Item { Layout.fillHeight: true }
+
+                                                SoftButton {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.actionLabel
+                                                    iconText: glyph("play_arrow")
+                                                    visible: modelData.canToggle
+                                                    implicitHeight: 30
+                                                    fillColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.16)
+                                                    strokeColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.28)
+                                                    textColor: themeModel.text
+                                                onClicked: backend.activateEntity(modelData.entityId)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: backend.pinnedEntities.length === 0
+                                    width: Math.max(300, root.width - 92)
+                                    height: 60
+                                    radius: 18
+                                    color: Qt.rgba(1, 1, 1, 0.045)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.08)
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        width: parent.width - 24
+                                        text: "Pin the devices and scenes you touch every day. They will stay here as a calm quick-access row."
+                                        color: themeModel.textMuted
+                                        font.family: backend.uiFontFamily
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                        horizontalAlignment: Text.AlignHCenter
+                                        renderType: Text.NativeRendering
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 48
-                    radius: 18
-                    color: themeModel.field
+                    radius: 23
+                    color: Qt.rgba(1, 1, 1, 0.055)
                     border.width: 1
-                    border.color: themeModel.border
+                    border.color: Qt.rgba(1, 1, 1, 0.10)
+                    implicitHeight: favoriteColumn.implicitHeight + 24
+
+                    ColumnLayout {
+                        id: favoriteColumn
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 12
+
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            Text {
+                                text: "Favorites"
+                                color: themeModel.text
+                                font.family: backend.displayFontFamily
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                                renderType: Text.NativeRendering
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Text {
+                                text: "Quick toggles"
+                                color: themeModel.textMuted
+                                font.family: backend.uiFontFamily
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                renderType: Text.NativeRendering
+                            }
+                        }
+
+                        Flickable {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: backend.favoriteEntities.length > 0 ? 68 : 56
+                            contentWidth: favoriteRow.implicitWidth
+                            contentHeight: favoriteRow.implicitHeight
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+                            flickableDirection: Flickable.HorizontalFlick
+                            interactive: contentWidth > width
+                            ScrollBar.horizontal: ScrollBar {
+                                policy: ScrollBar.AsNeeded
+                            }
+
+                            Row {
+                                id: favoriteRow
+                                spacing: 10
+
+                                Repeater {
+                                    model: backend.favoriteEntities
+
+                                    Rectangle {
+                                        width: 114
+                                        height: 58
+                                        radius: 17
+                                        color: Qt.rgba(1, 1, 1, 0.065)
+                                        border.width: 1
+                                        border.color: Qt.rgba(1, 1, 1, 0.10)
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            Rectangle {
+                                                width: 34
+                                                height: 34
+                                                radius: 14
+                                                color: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.16)
+                                                border.width: 1
+                                                border.color: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.26)
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: backend.activateEntity(modelData.entityId)
+                                                }
+
+                                                IconVisual {
+                                                    anchors.centerIn: parent
+                                                    glyphText: modelData.iconGlyph
+                                                    iconSource: modelData.favoriteIconSource
+                                                    iconSize: 16
+                                                    tintColor: "#F5F7FF"
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 3
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.friendlyName
+                                                    color: themeModel.text
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.DemiBold
+                                                    elide: Text.ElideRight
+                                                    renderType: Text.NativeRendering
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.state
+                                                    color: themeModel.textMuted
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 9
+                                                    elide: Text.ElideRight
+                                                    renderType: Text.NativeRendering
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: backend.favoriteEntities.length === 0
+                                    width: Math.max(300, root.width - 92)
+                                    height: 56
+                                    radius: 18
+                                    color: Qt.rgba(1, 1, 1, 0.045)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.08)
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        width: parent.width - 24
+                                        text: "Actionable entities like lights, switches and scenes will appear here."
+                                        color: themeModel.textMuted
+                                        font.family: backend.uiFontFamily
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                        horizontalAlignment: Text.AlignHCenter
+                                        renderType: Text.NativeRendering
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    radius: 22
+                    color: Qt.rgba(1, 1, 1, 0.055)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.10)
+                    implicitHeight: 56
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 10
+                        anchors.margins: 12
+                        spacing: 12
 
-                        IconVisual {
-                            glyphText: glyph("search")
-                            iconSize: 18
-                            tintColor: themeModel.iconTint
+                        Rectangle {
+                            width: 34
+                            height: 34
+                            radius: 14
+                            color: Qt.rgba(1, 1, 1, 0.06)
+                            border.width: 1
+                            border.color: Qt.rgba(1, 1, 1, 0.10)
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: glyph("search")
+                                font.family: backend.materialFontFamily
+                                font.pixelSize: 18
+                                color: themeModel.textMuted
+                                renderType: Text.NativeRendering
+                            }
                         }
 
                         TextField {
-                            id: searchField
                             Layout.fillWidth: true
+                            placeholderText: "Search entities, rooms, domains, states..."
                             text: backend.searchQuery
-                            placeholderText: "Search entities, rooms, or IDs"
                             color: themeModel.text
                             placeholderTextColor: themeModel.textMuted
                             font.family: backend.uiFontFamily
                             font.pixelSize: 12
                             selectByMouse: true
-                            leftPadding: 0
-                            rightPadding: 0
-                            topPadding: 0
-                            bottomPadding: 0
-                            background: Item {}
+                            background: Rectangle {
+                                radius: 16
+                                color: Qt.rgba(1, 1, 1, 0.05)
+                                border.width: 1
+                                border.color: Qt.rgba(1, 1, 1, 0.08)
+                            }
                             onTextChanged: backend.setSearchQuery(text)
                         }
                     }
                 }
 
-                Text {
-                    Layout.fillWidth: true
-                    text: backend.entities.length + " entity cards"
-                    color: themeModel.textMuted
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 10
-                    renderType: Text.NativeRendering
-                }
-
                 Rectangle {
-                    id: shortcutsSection
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: visible ? implicitHeight : 0
-                    visible: backend.pinnedEntities.length > 0
-                    radius: 20
-                    color: themeModel.card
-                    border.width: 1
-                    border.color: themeModel.border
-                    implicitHeight: shortcutsColumn.implicitHeight + 28
-
-                    ColumnLayout {
-                        id: shortcutsColumn
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 10
-
-                        Text {
-                            text: "Pinned shortcuts"
-                            color: themeModel.text
-                            font.family: backend.uiFontFamily
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            renderType: Text.NativeRendering
-                        }
-
-                        Flow {
-                            id: pinnedFlow
-                            Layout.fillWidth: true
-                            width: shortcutsSection.width - 28
-                            spacing: 8
-
-                            Repeater {
-                                model: backend.pinnedEntities
-
-                                delegate: Rectangle {
-                                    required property var modelData
-                                    width: Math.max(120, (pinnedFlow.width - pinnedFlow.spacing) / 2)
-                                    height: 78
-                                    radius: 18
-                                    color: themeModel.cardStrong
-                                    border.width: 1
-                                    border.color: themeModel.border
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        onClicked: backend.activateEntity(modelData.entityId)
-                                    }
-
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 12
-                                        spacing: 4
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-
-                                            IconVisual {
-                                                glyphText: modelData.iconGlyph
-                                                iconSource: modelData.iconSource
-                                                iconSize: 18
-                                                tintColor: themeModel.iconTint
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            IconVisual {
-                                                glyphText: glyph("push_pin")
-                                                iconSize: 15
-                                                tintColor: themeModel.iconMuted
-                                            }
-                                        }
-
-                                        Text {
-                                            text: modelData.friendlyName
-                                            color: themeModel.text
-                                            font.family: backend.uiFontFamily
-                                            font.pixelSize: 11
-                                            font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
-                                            Layout.fillWidth: true
-                                            renderType: Text.NativeRendering
-                                        }
-
-                                        Text {
-                                            text: modelData.state
-                                            color: themeModel.textMuted
-                                            font.family: backend.uiFontFamily
-                                            font.pixelSize: 10
-                                            elide: Text.ElideRight
-                                            Layout.fillWidth: true
-                                            renderType: Text.NativeRendering
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                ScrollView {
-                    id: entitiesScroll
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
-                    contentWidth: availableWidth
-                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                    background: Item {}
+                    Layout.minimumHeight: 320
+                    radius: 24
+                    color: Qt.rgba(1, 1, 1, 0.050)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.10)
 
-                    Column {
-                        id: entitiesColumn
-                        width: entitiesScroll.availableWidth
-                        spacing: 8
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 12
 
-                        Rectangle {
-                            visible: backend.entities.length === 0
-                            width: parent.width
-                            radius: 20
-                            color: themeModel.card
-                            border.width: 1
-                            border.color: themeModel.border
-                            implicitHeight: emptyColumn.implicitHeight + 28
+                        RowLayout {
+                            Layout.fillWidth: true
 
                             ColumnLayout {
-                                id: emptyColumn
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 8
+                                spacing: 2
 
                                 Text {
-                                    text: backend.available ? "No entities match your search." : "No Home Assistant entities to show yet."
+                                    text: "Home canvas"
                                     color: themeModel.text
-                                    font.family: backend.uiFontFamily
-                                    font.pixelSize: 12
+                                    font.family: backend.displayFontFamily
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
                                     renderType: Text.NativeRendering
                                 }
 
                                 Text {
-                                    text: backend.available
-                                          ? "Try another search term or clear the field."
-                                          : "Check your Home Assistant URL and token in Settings."
+                                    text: backend.searchQuery.length > 0
+                                          ? "Filtered entity stream"
+                                          : "Everyday devices, scenes and automations"
                                     color: themeModel.textMuted
                                     font.family: backend.uiFontFamily
-                                    font.pixelSize: 10
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
+                                    font.pixelSize: 11
                                     renderType: Text.NativeRendering
                                 }
                             }
+
+                            Item { Layout.fillWidth: true }
+
+                            GlassChip {
+                                label: backend.entities.length + " results"
+                            }
                         }
 
-                        Repeater {
+                        ListView {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            spacing: 10
                             model: backend.entities
+                            boundsBehavior: Flickable.StopAtBounds
+                            ScrollBar.vertical: ScrollBar {
+                                policy: ScrollBar.AsNeeded
+                            }
 
                             delegate: Rectangle {
                                 id: entityCard
-                                required property var modelData
+                                width: ListView.view.width
+                                height: contentColumn.implicitHeight + 24
+                                radius: 21
+                                color: Qt.rgba(1, 1, 1, 0.060)
+                                border.width: 1
+                                border.color: modelData.stateTone === "active"
+                                              ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.26)
+                                              : Qt.rgba(1, 1, 1, 0.08)
+
                                 property bool expanded: false
 
-                                width: entitiesColumn.width
-                                radius: 20
-                                color: themeModel.card
-                                border.width: 1
-                                border.color: expanded ? themeModel.activeBorder : themeModel.border
-                                implicitHeight: cardColumn.implicitHeight + 24
-
                                 ColumnLayout {
-                                    id: cardColumn
+                                    id: contentColumn
                                     anchors.fill: parent
                                     anchors.margins: 12
                                     spacing: 10
 
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        spacing: 10
+                                        spacing: 12
 
                                         Rectangle {
-                                            width: 40
-                                            height: 40
-                                            radius: 20
-                                            color: modelData.stateTone === "active" ? themeModel.active : themeModel.cardStrong
+                                            width: 42
+                                            height: 42
+                                            radius: 16
+                                            color: modelData.stateTone === "active"
+                                                   ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.16)
+                                                   : Qt.rgba(1, 1, 1, 0.07)
                                             border.width: 1
                                             border.color: modelData.stateTone === "active"
-                                                          ? themeModel.activeBorder
-                                                          : themeModel.border
+                                                         ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.26)
+                                                         : Qt.rgba(1, 1, 1, 0.10)
 
                                             IconVisual {
                                                 anchors.centerIn: parent
                                                 glyphText: modelData.iconGlyph
                                                 iconSource: modelData.iconSource
-                                                iconSize: 18
-                                                tintColor: themeModel.iconTint
+                                                iconSize: 20
+                                                tintColor: modelData.stateTone === "active" ? themeModel.primary : themeModel.iconTint
                                             }
                                         }
 
                                         ColumnLayout {
                                             Layout.fillWidth: true
-                                            spacing: 2
+                                            spacing: 3
 
                                             Text {
+                                                Layout.fillWidth: true
                                                 text: modelData.friendlyName
                                                 color: themeModel.text
                                                 font.family: backend.uiFontFamily
-                                                font.pixelSize: 12
+                                                font.pixelSize: 13
                                                 font.weight: Font.DemiBold
                                                 elide: Text.ElideRight
-                                                Layout.fillWidth: true
                                                 renderType: Text.NativeRendering
                                             }
 
                                             Text {
+                                                Layout.fillWidth: true
                                                 text: modelData.secondary
                                                 color: themeModel.textMuted
                                                 font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
+                                                font.pixelSize: 11
                                                 elide: Text.ElideRight
-                                                Layout.fillWidth: true
+                                                visible: text.length > 0
                                                 renderType: Text.NativeRendering
                                             }
 
                                             Text {
-                                                text: modelData.entityId
-                                                color: themeModel.textMuted
-                                                opacity: 0.85
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 9
-                                                elide: Text.ElideMiddle
                                                 Layout.fillWidth: true
+                                                text: modelData.entityId
+                                                color: Qt.rgba(themeModel.textMuted.r, themeModel.textMuted.g, themeModel.textMuted.b, 0.82)
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 10
+                                                elide: Text.ElideMiddle
                                                 renderType: Text.NativeRendering
                                             }
                                         }
 
-                                        Rectangle {
-                                            radius: 999
-                                            color: modelData.stateTone === "active" ? themeModel.active : themeModel.cardStrong
-                                            border.width: 1
-                                            border.color: modelData.stateTone === "active"
-                                                          ? themeModel.activeBorder
-                                                          : themeModel.border
-                                            implicitWidth: stateLabel.implicitWidth + 20
-                                            implicitHeight: 28
+                                        Column {
+                                            spacing: 6
 
-                                            Text {
-                                                id: stateLabel
-                                                anchors.centerIn: parent
-                                                text: modelData.state
-                                                color: themeModel.text
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
-                                                renderType: Text.NativeRendering
+                                            GlassChip {
+                                                label: modelData.state
+                                                labelColor: modelData.stateTone === "active" ? themeModel.text : themeModel.textMuted
+                                                fillColor: modelData.stateTone === "active"
+                                                           ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.16)
+                                                           : Qt.rgba(1, 1, 1, 0.06)
+                                                strokeColor: modelData.stateTone === "active"
+                                                             ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.26)
+                                                             : Qt.rgba(1, 1, 1, 0.08)
+                                            }
+
+                                            GlassChip {
+                                                label: modelData.domainLabel
                                             }
                                         }
                                     }
@@ -655,105 +990,128 @@ Window {
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 8
-
-                                        Rectangle {
-                                            radius: 999
-                                            color: themeModel.cardStrong
-                                            border.width: 1
-                                            border.color: themeModel.border
-                                            implicitWidth: domainText.implicitWidth + 18
-                                            implicitHeight: 24
-
-                                            Text {
-                                                id: domainText
-                                                anchors.centerIn: parent
-                                                text: modelData.domainLabel
-                                                color: themeModel.textMuted
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 9
-                                                font.weight: Font.DemiBold
-                                                renderType: Text.NativeRendering
-                                            }
-                                        }
 
                                         Text {
                                             Layout.fillWidth: true
                                             text: modelData.updatedText
                                             color: themeModel.textMuted
                                             font.family: backend.uiFontFamily
-                                            font.pixelSize: 9
+                                            font.pixelSize: 10
                                             elide: Text.ElideRight
                                             renderType: Text.NativeRendering
                                         }
-                                    }
 
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        PillButton {
-                                            id: actionButton
-                                            visible: modelData.canToggle
-                                            enabled: modelData.canToggle
-                                            labelText: modelData.actionLabel
-                                            strokeColor: themeModel.activeBorder
-                                            onClicked: backend.activateEntity(modelData.entityId)
-                                        }
-
-                                        PillButton {
-                                            id: pinButton
-                                            labelText: modelData.isPinned ? glyph("push_pin") : glyph("push_pin_outline")
-                                            labelFamily: backend.materialFontFamily
-                                            labelSize: 18
-                                            strokeColor: modelData.isPinned ? themeModel.activeBorder : themeModel.border
-                                            fillColor: modelData.isPinned ? themeModel.active : themeModel.cardStrong
+                                        SoftButton {
+                                            text: modelData.isPinned ? "Pinned" : "Pin"
+                                            iconText: modelData.isPinned ? glyph("push_pin") : glyph("push_pin_outline")
+                                            fillColor: modelData.isPinned
+                                                       ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.15)
+                                                       : Qt.rgba(1, 1, 1, 0.05)
+                                            strokeColor: modelData.isPinned
+                                                         ? Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.24)
+                                                         : Qt.rgba(1, 1, 1, 0.08)
                                             onClicked: backend.togglePinned(modelData.entityId)
                                         }
 
-                                        Item { Layout.fillWidth: true }
+                                        SoftButton {
+                                            visible: modelData.canToggle
+                                            text: modelData.actionLabel
+                                            iconText: glyph("play_arrow")
+                                            fillColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.15)
+                                            strokeColor: Qt.rgba(themeModel.primary.r, themeModel.primary.g, themeModel.primary.b, 0.24)
+                                            onClicked: backend.activateEntity(modelData.entityId)
+                                        }
 
-                                        PillButton {
-                                            id: expandButton
-                                            labelText: expanded ? "Less" : "More"
+                                        SoftButton {
+                                            text: entityCard.expanded ? "Hide" : "Details"
+                                            iconText: entityCard.expanded ? glyph("expand_more") : glyph("chevron_right")
                                             onClicked: entityCard.expanded = !entityCard.expanded
                                         }
                                     }
 
-                                    ColumnLayout {
-                                        visible: expanded
+                                    Rectangle {
                                         Layout.fillWidth: true
-                                        spacing: 6
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            radius: 14
-                                            color: themeModel.cardStrong
-                                            border.width: 1
-                                            border.color: themeModel.border
-                                            implicitHeight: detailsText.implicitHeight + 20
-
-                                            Text {
-                                                id: detailsText
-                                                anchors.fill: parent
-                                                anchors.margins: 10
-                                                text: modelData.details.length > 0 ? modelData.details : modelData.entityId
-                                                color: themeModel.textMuted
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
-                                                wrapMode: Text.WordWrap
-                                                renderType: Text.NativeRendering
-                                            }
-                                        }
+                                        visible: entityCard.expanded
+                                        radius: 17
+                                        color: Qt.rgba(1, 1, 1, 0.045)
+                                        border.width: 1
+                                        border.color: Qt.rgba(1, 1, 1, 0.07)
+                                        implicitHeight: detailsText.implicitHeight + 20
 
                                         Text {
-                                            Layout.fillWidth: true
-                                            text: "Raw state: " + modelData.rawState
+                                            id: detailsText
+                                            anchors.fill: parent
+                                            anchors.margins: 10
+                                            text: modelData.details.length > 0
+                                                  ? modelData.details
+                                                  : "No extra attributes were exposed for this entity."
                                             color: themeModel.textMuted
                                             font.family: backend.uiFontFamily
-                                            font.pixelSize: 9
+                                            font.pixelSize: 10
                                             wrapMode: Text.WordWrap
                                             renderType: Text.NativeRendering
                                         }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                visible: backend.entities.length === 0
+                                anchors.centerIn: parent
+                                width: parent.width - 8
+                                height: 170
+                                radius: 24
+                                color: Qt.rgba(1, 1, 1, 0.045)
+                                border.width: 1
+                                border.color: Qt.rgba(1, 1, 1, 0.08)
+
+                                Column {
+                                    anchors.centerIn: parent
+                                    width: parent.width - 48
+                                    spacing: 10
+
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 52
+                                        height: 52
+                                        radius: 20
+                                        color: Qt.rgba(1, 1, 1, 0.06)
+                                        border.width: 1
+                                        border.color: Qt.rgba(1, 1, 1, 0.10)
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: glyph("home")
+                                            font.family: backend.materialFontFamily
+                                            font.pixelSize: 24
+                                            color: themeModel.textMuted
+                                            renderType: Text.NativeRendering
+                                        }
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: backend.available
+                                              ? "No entities matched your search."
+                                              : "Your Home Assistant stream is not ready yet."
+                                        horizontalAlignment: Text.AlignHCenter
+                                        color: themeModel.text
+                                        font.family: backend.displayFontFamily
+                                        font.pixelSize: 16
+                                        font.weight: Font.DemiBold
+                                        wrapMode: Text.WordWrap
+                                        renderType: Text.NativeRendering
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: backend.statusHint
+                                        horizontalAlignment: Text.AlignHCenter
+                                        color: themeModel.textMuted
+                                        font.family: backend.uiFontFamily
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                        renderType: Text.NativeRendering
                                     }
                                 }
                             }
@@ -762,15 +1120,5 @@ Window {
                 }
             }
         }
-    }
-
-    Shortcut {
-        sequence: "Esc"
-        onActivated: backend.closeWindow()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+R"
-        onActivated: backend.refresh()
     }
 }
