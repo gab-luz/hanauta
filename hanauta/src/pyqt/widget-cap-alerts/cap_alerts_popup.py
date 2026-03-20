@@ -95,20 +95,20 @@ class AlertCard(QFrame):
         self.display_font = display_font
         self.setObjectName("alertCard")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
 
         top = QHBoxLayout()
-        top.setSpacing(10)
-        icon = AnimatedWeatherIcon(24)
+        top.setSpacing(12)
+        icon = AnimatedWeatherIcon(28)
         icon.set_icon_path(animated_icon_path(alert.icon_name))
         top.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(3)
+        title_col.setSpacing(5)
         event = QLabel(alert.event)
         event.setObjectName("alertEvent")
-        event.setFont(QFont(display_font, 15, QFont.Weight.DemiBold))
+        event.setFont(QFont(display_font, 17, QFont.Weight.DemiBold))
         headline = QLabel(alert.headline)
         headline.setObjectName("alertHeadline")
         headline.setWordWrap(True)
@@ -118,10 +118,16 @@ class AlertCard(QFrame):
         top.addLayout(title_col, 1)
         layout.addLayout(top)
 
-        meta = QLabel(f"{alert.severity} • {alert.urgency} • {relative_expiry(alert)}")
-        meta.setObjectName("alertMeta")
-        meta.setFont(QFont(ui_font, 9, QFont.Weight.DemiBold))
-        layout.addWidget(meta)
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(8)
+        for text in (alert.severity, alert.urgency, relative_expiry(alert) or "Live"):
+            chip = QLabel(text)
+            chip.setObjectName("metaChip")
+            chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chip.setFont(QFont(ui_font, 9, QFont.Weight.DemiBold))
+            meta_row.addWidget(chip, 0)
+        meta_row.addStretch(1)
+        layout.addLayout(meta_row)
 
         area = QLabel(alert.area_desc or "Affected area unavailable.")
         area.setObjectName("alertBody")
@@ -136,6 +142,11 @@ class AlertCard(QFrame):
         tip.setFont(QFont(ui_font, 10))
         layout.addWidget(tip)
 
+        support = QFrame()
+        support.setObjectName("supportCard")
+        support_layout = QVBoxLayout(support)
+        support_layout.setContentsMargins(12, 12, 12, 12)
+        support_layout.setSpacing(4)
         contacts = QLabel(
             "\n".join(
                 [
@@ -148,7 +159,8 @@ class AlertCard(QFrame):
         contacts.setObjectName("alertContacts")
         contacts.setWordWrap(True)
         contacts.setFont(QFont(ui_font, 9))
-        layout.addWidget(contacts)
+        support_layout.addWidget(contacts)
+        layout.addWidget(support)
 
         actions = QHBoxLayout()
         actions.addStretch(1)
@@ -185,7 +197,7 @@ class CapAlertsPopup(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setWindowTitle("Hanauta CAP Alerts")
-        self.setFixedSize(480, 620)
+        self.setFixedSize(508, 690)
 
         self._build_ui()
         self._apply_styles()
@@ -207,7 +219,7 @@ class CapAlertsPopup(QWidget):
         root.addWidget(self.panel)
 
         layout = QVBoxLayout(self.panel)
-        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(14)
 
         header = QHBoxLayout()
@@ -243,10 +255,43 @@ class CapAlertsPopup(QWidget):
         header.addLayout(actions)
         layout.addLayout(header)
 
+        self.hero = QFrame()
+        self.hero.setObjectName("heroCard")
+        hero_layout = QVBoxLayout(self.hero)
+        hero_layout.setContentsMargins(16, 16, 16, 16)
+        hero_layout.setSpacing(10)
+        hero_top = QHBoxLayout()
+        hero_top.setSpacing(10)
+        self.hero_icon = AnimatedWeatherIcon(30)
+        self.hero_icon.set_icon_path(animated_icon_path("thunderstorms"))
+        hero_top.addWidget(self.hero_icon, 0, Qt.AlignmentFlag.AlignTop)
+        hero_titles = QVBoxLayout()
+        hero_titles.setSpacing(4)
+        self.hero_title = QLabel("Watching local official alerts")
+        self.hero_title.setObjectName("heroTitle")
+        self.hero_title.setWordWrap(True)
+        self.hero_title.setFont(QFont(self.display_font, 19, QFont.Weight.DemiBold))
         self.status_label = QLabel("Loading official alerts…")
         self.status_label.setObjectName("status")
         self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
+        hero_titles.addWidget(self.hero_title)
+        hero_titles.addWidget(self.status_label)
+        hero_top.addLayout(hero_titles, 1)
+        hero_layout.addLayout(hero_top)
+
+        self.hero_meta_row = QHBoxLayout()
+        self.hero_meta_row.setSpacing(8)
+        self.hero_scope = QLabel("Live feed")
+        self.hero_scope.setObjectName("metaChip")
+        self.hero_scope.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hero_scope.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+        self.hero_location = QLabel("Waiting for location")
+        self.hero_location.setObjectName("heroMeta")
+        self.hero_location.setWordWrap(True)
+        self.hero_meta_row.addWidget(self.hero_scope, 0)
+        self.hero_meta_row.addWidget(self.hero_location, 1)
+        hero_layout.addLayout(self.hero_meta_row)
+        layout.addWidget(self.hero)
 
         self.scroll = QScrollArea()
         self.scroll.setObjectName("scroll")
@@ -254,6 +299,7 @@ class CapAlertsPopup(QWidget):
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.content = QWidget()
+        self.content.setObjectName("scrollContent")
         self.content_layout = QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(10)
@@ -302,7 +348,12 @@ class CapAlertsPopup(QWidget):
                 font-family: "{self.ui_font}";
             }}
             QFrame#panel {{
-                background: {rgba(theme.surface_container, 0.95)};
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 {rgba(theme.surface_container_high, 0.97)},
+                    stop: 0.52 {rgba(theme.surface_container, 0.94)},
+                    stop: 1 {rgba(theme.surface, 0.92)}
+                );
                 border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 30px;
             }}
@@ -310,16 +361,33 @@ class CapAlertsPopup(QWidget):
                 color: {yellow};
                 letter-spacing: 1.8px;
             }}
-            QLabel#subtitle, QLabel#status, QLabel#alertBody, QLabel#alertContacts {{
+            QLabel#subtitle, QLabel#status, QLabel#alertBody, QLabel#alertContacts, QLabel#heroMeta, QLabel#alertHeadline {{
                 color: {theme.text_muted};
             }}
+            QFrame#heroCard {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 {rgba(theme.primary_container, 0.26)},
+                    stop: 0.45 {rgba(yellow, 0.20)},
+                    stop: 1 {rgba(theme.surface_container_high, 0.94)}
+                );
+                border: 1px solid {rgba(yellow, 0.22)};
+                border-radius: 24px;
+            }}
+            QLabel#heroTitle, QLabel#title, QLabel#alertEvent {{
+                color: {theme.text};
+            }}
             QFrame#alertCard {{
-                background: {rgba(theme.surface_container_high, 0.82)};
+                background: {rgba(theme.surface_container_high, 0.84)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 24px;
             }}
-            QLabel#alertMeta {{
+            QLabel#metaChip {{
+                background: {rgba(yellow, 0.12)};
+                border: 1px solid {rgba(yellow, 0.22)};
+                border-radius: 999px;
                 color: {yellow};
+                padding: 6px 10px;
             }}
             QLabel#alertTip {{
                 color: {theme.text};
@@ -327,6 +395,11 @@ class CapAlertsPopup(QWidget):
                 border: 1px solid rgba(246,201,69,0.22);
                 border-radius: 16px;
                 padding: 10px 12px;
+            }}
+            QFrame#supportCard {{
+                background: {rgba(theme.on_surface, 0.035)};
+                border: 1px solid {rgba(theme.outline, 0.12)};
+                border-radius: 18px;
             }}
             QPushButton#iconButton {{
                 background: {rgba(theme.surface_container_high, 0.90)};
@@ -339,11 +412,19 @@ class CapAlertsPopup(QWidget):
                 color: #101114;
                 border: none;
                 border-radius: 16px;
-                padding: 8px 12px;
+                padding: 9px 14px;
             }}
             QScrollArea#scroll {{
                 background: transparent;
                 border: none;
+            }}
+            QWidget#scrollContent {{
+                background: {rgba(theme.surface_container_high, 0.42)};
+                border: 1px solid {rgba(theme.outline, 0.10)};
+                border-radius: 22px;
+            }}
+            QScrollArea#scroll > QWidget > QWidget {{
+                background: transparent;
             }}
             """
         )
@@ -374,6 +455,9 @@ class CapAlertsPopup(QWidget):
         label = location.label if hasattr(location, "label") else ("demo mode" if demo else "your saved location")
         if not isinstance(alerts, list) or not alerts:
             self.title_label.setText("No active official alerts")
+            self.hero_title.setText("No current alert bulletin")
+            self.hero_location.setText(label)
+            self.hero_icon.set_icon_path(animated_icon_path("not-available"))
             self.status_label.setText(
                 "Demo mode is enabled but no sample alerts were generated."
                 if demo
@@ -381,6 +465,12 @@ class CapAlertsPopup(QWidget):
             )
             return
         self.title_label.setText(f"{len(alerts)} active alert(s)")
+        top = alerts[0] if isinstance(alerts[0], CapAlert) else None
+        if top is not None:
+            self.hero_title.setText(top.event)
+            self.hero_icon.set_icon_path(animated_icon_path(top.icon_name))
+        self.hero_scope.setText("Demo feed" if demo else "Live feed")
+        self.hero_location.setText(label)
         self.status_label.setText(
             "Demo mode is enabled. These are sample alerts from random countries for UI testing."
             if demo
