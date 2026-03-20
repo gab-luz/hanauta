@@ -10,8 +10,9 @@ from pathlib import Path
 from urllib import parse, request
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
 WALLPAPER_SCRIPT = ROOT / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "scripts" / "run_matugen.sh"
 MATUGEN_BINARY = ROOT / "bin" / "matugen"
@@ -56,6 +57,51 @@ def run_detached(command: list[str]) -> None:
 
 def matugen_available() -> bool:
     return MATUGEN_SCRIPT.exists() and MATUGEN_BINARY.exists() and bool(MATUGEN_BINARY.stat().st_mode & 0o111)
+
+
+def wallpaper_aware_enabled(settings: dict) -> bool:
+    appearance = settings.get("appearance", {})
+    if not isinstance(appearance, dict):
+        return False
+    if bool(appearance.get("use_matugen_palette", False)):
+        return True
+    return str(appearance.get("theme_choice", "")).strip().lower() == "wallpaper_aware"
+
+
+def preferred_wallpaper_path(settings: dict) -> Path | None:
+    if CURRENT_WALLPAPER.exists() and CURRENT_WALLPAPER.is_file():
+        return CURRENT_WALLPAPER.resolve()
+    appearance = settings.get("appearance", {})
+    if not isinstance(appearance, dict):
+        return CURRENT_WALLPAPER if CURRENT_WALLPAPER.exists() else None
+    configured = Path(str(appearance.get("wallpaper_path", ""))).expanduser()
+    if configured.exists() and configured.is_file():
+        return configured
+    if CURRENT_WALLPAPER.exists() and CURRENT_WALLPAPER.is_file():
+        return CURRENT_WALLPAPER
+    return None
+
+
+def maybe_refresh_matugen(settings: dict, state: dict[str, object]) -> None:
+    if not wallpaper_aware_enabled(settings) or not matugen_available():
+        state["last_matugen_wallpaper"] = ""
+        state["last_matugen_mtime"] = 0.0
+        return
+    wallpaper = preferred_wallpaper_path(settings)
+    if wallpaper is None:
+        return
+    try:
+        mtime = wallpaper.stat().st_mtime
+    except OSError:
+        return
+    last_wallpaper = str(state.get("last_matugen_wallpaper", ""))
+    last_mtime = float(state.get("last_matugen_mtime", 0.0) or 0.0)
+    current_wallpaper = str(wallpaper.resolve())
+    if current_wallpaper == last_wallpaper and abs(mtime - last_mtime) < 0.0001:
+        return
+    run_detached([str(MATUGEN_SCRIPT), str(wallpaper)])
+    state["last_matugen_wallpaper"] = current_wallpaper
+    state["last_matugen_mtime"] = mtime
 
 
 def image_paths_for_folder(folder: Path) -> list[Path]:
@@ -193,30 +239,33 @@ def run_local_randomizer_once() -> int:
 
 
 def main() -> int:
+    state: dict[str, object] = {"last_matugen_wallpaper": "", "last_matugen_mtime": 0.0}
+    next_konachan_run = 0.0
+    next_local_run = 0.0
     if "--once" in sys.argv:
         return run_once()
     if "--local-once" in sys.argv:
         return run_local_randomizer_once()
     while True:
         settings = load_settings_state()
+        maybe_refresh_matugen(settings, state)
         appearance = settings.get("appearance", {})
         if not isinstance(appearance, dict):
-            time.sleep(60)
+            time.sleep(5)
             continue
+        now = time.monotonic()
         provider = str(appearance.get("wallpaper_provider", "")).strip().lower()
         enabled = bool(appearance.get("konachan_enabled", False))
         interval = max(120, int(appearance.get("konachan_interval_seconds", 120) or 120))
-        if provider == "konachan" and enabled:
+        if provider == "konachan" and enabled and now >= next_konachan_run:
             run_once()
-            time.sleep(interval)
-            continue
+            next_konachan_run = now + interval
         local_enabled = bool(appearance.get("local_randomizer_enabled", False))
         local_interval = max(120, int(appearance.get("local_randomizer_interval_seconds", 120) or 120))
-        if provider and provider != "konachan" and local_enabled:
+        if provider and provider != "konachan" and local_enabled and now >= next_local_run:
             run_local_randomizer_once()
-            time.sleep(local_interval)
-            continue
-        time.sleep(60)
+            next_local_run = now + local_interval
+        time.sleep(5)
 
 
 if __name__ == "__main__":

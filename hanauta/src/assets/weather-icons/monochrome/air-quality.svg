@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" aria-label="Air quality outline animated">
+  <defs>
+    <clipPath id="aq-outline-clip">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="6.5"/>
+    </clipPath>
+  </defs>
+
+  <!-- container -->
+  <rect x="2.5" y="2.5" width="19" height="19" rx="6.5" fill="#1f1f1f" opacity="0.08"/>
+
+  <!-- AQI sensor dot -->
+  <circle cx="6.9" cy="17" r="1.15" fill="#1f1f1f">
+    <animate attributeName="opacity" values="0.55;1;0.55" dur="2s" repeatCount="indefinite"/>
+  </circle>
+
+  <g clip-path="url(#aq-outline-clip)" stroke="#1f1f1f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- wave 1 -->
+    <path d="M5.2 9.5c1-.7 2.01-1.05 3.02-1.05 1.03 0 2.07.33 3.11.99 1.05.66 2.1.99 3.14.99 1.08 0 2.19-.37 3.34-1.11" opacity="0.95">
+      <animateTransform attributeName="transform" type="translate" values="-0.7 0;0.7 0;-0.7 0" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.45;0.95;0.45" dur="3s" repeatCount="indefinite"/>
+    </path>
+
+    <!-- wave 2 -->
+    <path d="M4.6 12.3c1.02-.67 2.03-1.01 3.02-1.01 1 0 2 .29 2.98.87.95.57 1.91.86 2.87.86 1 0 2.03-.33 3.09-.98" opacity="0.75">
+      <animateTransform attributeName="transform" type="translate" values="0.6 0;-0.6 0;0.6 0" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="2.5s" repeatCount="indefinite"/>
+    </path>
+
+    <!-- wave 3 -->
+    <path d="M5.6 15.1c.8-.47 1.58-.71 2.35-.71.82 0 1.66.24 2.51.72.82.46 1.63.69 2.45.69.85 0 1.75-.27 2.71-.81" opacity="0.58">
+      <animateTransform attributeName="transform" type="translate" values="-0.4 0;0.4 0;-0.4 0" dur="2.1s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.22;0.6;0.22" dur="2.1s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- floating dust / particles -->
+  <g fill="#1f1f1f">
+    <circle cx="17.1" cy="17.2" r="0.72" opacity="0">
+      <animate attributeName="cy" values="17.2;14.1;11.5;8.9" dur="2.9s" begin="0s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.25;0.5;0" dur="2.9s" begin="0s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="18.3" cy="18.3" r="0.48" opacity="0">
+      <animate attributeName="cy" values="18.3;15.8;13.2;10.7" dur="2.3s" begin="0.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.2;0.38;0" dur="2.3s" begin="0.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="14.8" cy="17.8" r="0.38" opacity="0">
+      <animate attributeName="cy" values="17.8;15.4;13;10.9" dur="2s" begin="1s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.16;0.3;0" dur="2s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg>
