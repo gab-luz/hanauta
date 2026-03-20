@@ -13,8 +13,8 @@ from urllib import parse, request
 ROOT = Path(__file__).resolve().parents[4]
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
-WALLPAPER_SCRIPT = ROOT / "scripts" / "set_wallpaper.sh"
-MATUGEN_SCRIPT = ROOT / "scripts" / "run_matugen.sh"
+WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
+MATUGEN_SCRIPT = ROOT / "hanauta" / "scripts" / "run_matugen.sh"
 MATUGEN_BINARY = ROOT / "bin" / "matugen"
 KONACHAN_CACHE_DIR = ROOT / "walls" / "Konachan-cache"
 

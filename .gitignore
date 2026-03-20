@@ -64,6 +64,8 @@ Makefile
 TODO.md
 NOTES.md
 hanauta/walls/Konachan-cache
+walls/Konachan-cache
+hanauta/walls/Konachan-cache/
 # Local app state / secrets
 *.env
 *.sqlite
