@@ -17,6 +17,8 @@ NWS_HEADERS = {
     "User-Agent": "Hanauta CAP Alerts/1.0 (weather integration)",
     "Accept": "application/geo+json, application/json",
 }
+_DEMO_CACHE: list["CapAlert"] = []
+_DEMO_CACHE_EXPIRES: datetime | None = None
 SEVERITY_RANK = {
     "extreme": 4,
     "severe": 3,
@@ -147,7 +149,10 @@ def fetch_active_alerts(location: WeatherCity | None) -> list[CapAlert]:
 
 
 def random_test_alerts() -> list[CapAlert]:
+    global _DEMO_CACHE, _DEMO_CACHE_EXPIRES
     now = datetime.now(timezone.utc)
+    if _DEMO_CACHE and _DEMO_CACHE_EXPIRES is not None and now < _DEMO_CACHE_EXPIRES:
+        return list(_DEMO_CACHE)
     samples = [
         CapAlert(
             identifier="test-br-sp-1",
@@ -248,7 +253,9 @@ def random_test_alerts() -> list[CapAlert]:
     count = random.randint(1, min(3, len(samples)))
     alerts = random.sample(samples, count)
     alerts.sort(key=lambda item: (-SEVERITY_RANK.get(item.severity.lower(), 0), item.event.lower()))
-    return alerts
+    _DEMO_CACHE = list(alerts)
+    _DEMO_CACHE_EXPIRES = now + timedelta(minutes=10)
+    return list(alerts)
 
 
 def top_alert(alerts: list[CapAlert]) -> CapAlert | None:

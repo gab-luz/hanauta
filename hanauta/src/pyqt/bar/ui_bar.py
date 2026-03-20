@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -42,7 +44,7 @@ from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
 from pyqt.shared.rss import load_cache as load_rss_cache
 from pyqt.shared.rss import save_cache as save_rss_cache
-from pyqt.shared.cap_alerts import CapAlert, configured_alert_location, fetch_active_alerts, relative_expiry, test_mode_enabled, top_alert
+from pyqt.shared.cap_alerts import CapAlert, configured_alert_location, fallback_tip, fetch_active_alerts, relative_expiry, test_mode_enabled, top_alert
 from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
 from pyqt.shared.crypto import (
     build_price_alerts as build_crypto_price_alerts,
@@ -85,6 +87,7 @@ DESKTOP_CLOCK_BINARY = HANAUTA_ROOT / "bin" / "hanauta-clock"
 NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
 WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
 CAP_ALERTS_POPUP = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alerts_popup.py"
+CAP_ALERTS_OVERLAY = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alert_overlay.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
 GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
@@ -1072,10 +1075,14 @@ class CyberBar(QWidget):
         self._game_mode_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
         self._cap_alerts_popup_process: Optional[subprocess.Popen] = None
+        self._cap_alert_overlay_process: Optional[subprocess.Popen] = None
         self._weather_worker: Optional[WeatherWorker] = None
         self._cap_alert_worker: Optional[CapAlertWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
         self._cap_alerts: list[CapAlert] = []
+        self._cap_alert_seen_ids: set[str] = set()
+        self._cap_alert_pulse_phase = 0.0
+        self._cap_alert_pulse_tick = 0
         self._cava_buffer = ""
         self._battery_base: Optional[Path] = self._detect_battery_base()
         self._settings_watcher: Optional[QFileSystemWatcher] = None
@@ -1284,12 +1291,12 @@ class CyberBar(QWidget):
         self.cap_alert_chip.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.cap_alert_chip.clicked.connect(self._open_cap_alerts_popup)
         self.cap_alert_layout = QHBoxLayout(self.cap_alert_chip)
-        self.cap_alert_layout.setContentsMargins(10, 4, 12, 4)
+        self.cap_alert_layout.setContentsMargins(10, 2, 12, 2)
         self.cap_alert_layout.setSpacing(8)
         self.cap_alert_warning = QLabel(material_icon("warning"))
         self.cap_alert_warning.setObjectName("capAlertWarning")
         self.cap_alert_warning.setFont(QFont(self.material_font, 16))
-        self.cap_alert_icon = AnimatedWeatherIcon(18)
+        self.cap_alert_icon = AnimatedWeatherIcon(32)
         self.cap_alert_text = QLabel("Local weather alerts")
         self.cap_alert_text.setObjectName("capAlertText")
         self.cap_alert_text.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
@@ -1297,6 +1304,11 @@ class CyberBar(QWidget):
         self.cap_alert_layout.addWidget(self.cap_alert_icon)
         self.cap_alert_layout.addWidget(self.cap_alert_text)
         self.cap_alert_chip.hide()
+        self.cap_alert_glow_frame = QFrame(self.cap_alert_chip)
+        self.cap_alert_glow_frame.setObjectName("capAlertGlow")
+        self.cap_alert_glow_frame.lower()
+        self.cap_alert_glow_frame.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.cap_alert_glow_frame.hide()
 
         self.status_chip = QFrame()
         self.status_chip.setObjectName("statusChip")
@@ -1628,6 +1640,7 @@ class CyberBar(QWidget):
         self.datetime_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
         self.media_layout.setContentsMargins(14, chip_vertical_padding, 14, chip_vertical_padding)
         self.status_layout.setContentsMargins(10, chip_vertical_padding, 10, chip_vertical_padding)
+        self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
         self._apply_vertical_offset(self.ai_wrap, self.bar_settings.get("launcher_offset", 0))
         self._apply_vertical_offset(self.launcher_wrap, self.bar_settings.get("launcher_offset", 0))
         self._apply_vertical_offset(self.workspace_wrap, self.bar_settings.get("workspace_offset", 0))
@@ -1690,6 +1703,11 @@ class CyberBar(QWidget):
                 background: {rgba("#f6cf5a", 0.18)};
                 border: 1px solid {rgba("#f6cf5a", 0.42)};
                 border-radius: {chip_radius_css};
+            }}
+            #capAlertGlow {{
+                background: transparent;
+                border: 2px solid rgba(255, 224, 120, 0.45);
+                border-radius: {max(8, chip_radius)}px;
             }}
             #capAlertChip:hover {{
                 background: {rgba("#f6cf5a", 0.24)};
@@ -1760,6 +1778,7 @@ class CyberBar(QWidget):
             #capAlertWarning {{
                 color: #ffd95a;
                 font-family: "{self.material_font}";
+                font-size: 17px;
             }}
             #capAlertText {{
                 color: #ffe8a1;
@@ -2031,6 +2050,7 @@ class CyberBar(QWidget):
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
         self._sync_cap_alert_chip()
+        self._poll_cap_alerts()
         self._sync_desktop_clock_process()
         self._update_locale_button()
 
@@ -2124,7 +2144,11 @@ class CyberBar(QWidget):
 
         self.cap_alert_timer = QTimer(self)
         self.cap_alert_timer.timeout.connect(self._poll_cap_alerts)
-        self.cap_alert_timer.start(300000)
+        self.cap_alert_timer.start(60000)
+
+        self.cap_alert_pulse_timer = QTimer(self)
+        self.cap_alert_pulse_timer.timeout.connect(self._tick_cap_alert_pulse)
+        self.cap_alert_pulse_timer.start(90)
 
         self.rss_notify_timer = QTimer(self)
         self.rss_notify_timer.timeout.connect(self._poll_rss_notifications)
@@ -2358,10 +2382,12 @@ class CyberBar(QWidget):
     def _poll_cap_alerts(self) -> None:
         if not self._cap_alerts_service_visible():
             self._cap_alerts = []
+            self._cap_alert_seen_ids.clear()
             self._sync_cap_alert_chip()
             return
         if configured_alert_location() is None and not test_mode_enabled():
             self._cap_alerts = []
+            self._cap_alert_seen_ids.clear()
             self._sync_cap_alert_chip()
             return
         if self._cap_alert_worker is not None and self._cap_alert_worker.isRunning():
@@ -2372,7 +2398,19 @@ class CyberBar(QWidget):
         self._cap_alert_worker.start()
 
     def _apply_cap_alerts(self, alerts_obj: object) -> None:
-        self._cap_alerts = list(alerts_obj) if isinstance(alerts_obj, list) else []
+        alerts = list(alerts_obj) if isinstance(alerts_obj, list) else []
+        active_ids = {alert.identifier for alert in alerts if isinstance(alert, CapAlert)}
+        new_ids = active_ids - self._cap_alert_seen_ids
+        self._cap_alerts = alerts
+        if active_ids:
+            self._cap_alert_seen_ids = active_ids
+        else:
+            self._cap_alert_seen_ids.clear()
+        if new_ids:
+            top = top_alert(self._cap_alerts)
+            if top is not None:
+                self._play_cap_alert_sound()
+                self._show_cap_alert_overlay(top)
         self._sync_cap_alert_chip()
 
     def _finish_cap_alert_worker(self) -> None:
@@ -2383,6 +2421,7 @@ class CyberBar(QWidget):
         alert = top_alert(self._cap_alerts) if visible else None
         if alert is None:
             self.cap_alert_chip.hide()
+            self.cap_alert_glow_frame.hide()
             self.cap_alert_chip.setToolTip("")
             return
         summary = f"{alert.event} • {relative_expiry(alert)}".strip(" •")
@@ -2404,7 +2443,65 @@ class CyberBar(QWidget):
         if location is not None:
             tooltip_parts.append(f"Location: {location.label}")
         self.cap_alert_chip.setToolTip("\n".join(part for part in tooltip_parts if part))
+        self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
+        self.cap_alert_glow_frame.show()
         self.cap_alert_chip.show()
+
+    def _tick_cap_alert_pulse(self) -> None:
+        if not self.cap_alert_chip.isVisible():
+            self.cap_alert_glow_frame.hide()
+            return
+        self._cap_alert_pulse_tick = (self._cap_alert_pulse_tick + 1) % 360
+        phase = self._cap_alert_pulse_tick / 18.0
+        alpha = 0.20 + (0.30 * ((math.sin(phase) + 1.0) / 2.0))
+        width = 2 if math.sin(phase * 1.2) < 0.35 else 3
+        self.cap_alert_glow_frame.setStyleSheet(
+            f"background: transparent; border: {width}px solid rgba(255, 224, 120, {alpha:.3f}); border-radius: 14px;"
+        )
+        self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
+        self.cap_alert_glow_frame.show()
+
+    def _play_cap_alert_sound(self) -> None:
+        sound_path = Path("/usr/share/sounds/freedesktop/stereo/complete.ogg")
+        if sound_path.exists() and shutil.which("paplay"):
+            try:
+                subprocess.Popen(
+                    ["paplay", "--volume=18000", str(sound_path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception:
+                pass
+
+    def _show_cap_alert_overlay(self, alert: CapAlert) -> None:
+        if not CAP_ALERTS_OVERLAY.exists():
+            return
+        if self._singleton_active(self._cap_alert_overlay_process, CAP_ALERTS_OVERLAY):
+            self._terminate_singleton_process("_cap_alert_overlay_process", CAP_ALERTS_OVERLAY)
+        command = entry_command(
+            CAP_ALERTS_OVERLAY,
+            "--title",
+            alert.event,
+            "--headline",
+            alert.headline or alert.event,
+            "--area",
+            alert.area_desc or "",
+            "--tip",
+            alert.instruction or fallback_tip(alert),
+            "--contact",
+            alert.contact_number or "",
+            "--url",
+            alert.web or "",
+            "--icon",
+            alert.icon_name,
+        )
+        if not command:
+            return
+        try:
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:
+            return
 
     def _send_action_notification(
         self,
@@ -3155,6 +3252,8 @@ class CyberBar(QWidget):
             self._crypto_widget_process.terminate()
         if self._cap_alerts_popup_process is not None and self._cap_alerts_popup_process.poll() is None:
             self._cap_alerts_popup_process.terminate()
+        if self._cap_alert_overlay_process is not None and self._cap_alert_overlay_process.poll() is None:
+            self._cap_alert_overlay_process.terminate()
         if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
             self._vps_widget_process.terminate()
         if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
@@ -3181,6 +3280,8 @@ class CyberBar(QWidget):
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         self._update_window_mask()
+        if hasattr(self, "cap_alert_glow_frame"):
+            self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
 
     def moveEvent(self, event) -> None:  # type: ignore[override]
         super().moveEvent(event)
