@@ -3,14 +3,15 @@
 
 from __future__ import annotations
 
-import sys
+import html
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib import error, request
+from urllib import request
 
 from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QPixmap
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -19,10 +20,12 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFrame,
     QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -31,7 +34,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 
 APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
@@ -47,26 +49,65 @@ AI_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "ai-popup"
 BACKEND_SETTINGS_FILE = AI_STATE_DIR / "backend_settings.json"
 
 
+def rgba(color: str, alpha: float) -> str:
+    q = QColor(color)
+    q.setAlphaF(max(0.0, min(1.0, alpha)))
+    return q.name(QColor.NameFormat.HexArgb)
+
+
+def mix(color_a: str, color_b: str, amount: float) -> str:
+    a = QColor(color_a)
+    b = QColor(color_b)
+    t = max(0.0, min(1.0, amount))
+    r = round(a.red() + (b.red() - a.red()) * t)
+    g = round(a.green() + (b.green() - a.green()) * t)
+    b_ = round(a.blue() + (b.blue() - a.blue()) * t)
+    return QColor(r, g, b_).name()
+
+
 def apply_theme_globals() -> None:
-    global THEME, PANEL_BG, CARD_BG, CARD_BG_SOFT, BORDER, BORDER_SOFT
-    global TEXT, TEXT_MID, TEXT_DIM, ACCENT, ACCENT_SOFT, ACCENT_ALT
+    global THEME, PANEL_BG, PANEL_BG_DEEP, PANEL_BG_FLOAT
+    global CARD_BG, CARD_BG_SOFT, CARD_BG_RAISED, CARD_BG_ALT
+    global BORDER, BORDER_SOFT, BORDER_HARD, BORDER_ACCENT
+    global TEXT, TEXT_MID, TEXT_DIM, TEXT_SOFT
+    global ACCENT, ACCENT_SOFT, ACCENT_ALT, ACCENT_GLOW
     global USER_BG, ASSISTANT_BG, INPUT_BG, BOTTOM_BG
+    global SHADOW, HOVER_BG, HERO_TOP, HERO_BOTTOM
+
     THEME = load_theme_palette()
     PANEL_BG = THEME.panel_bg
+    PANEL_BG_DEEP = mix(THEME.panel_bg, "#000000", 0.18)
+    PANEL_BG_FLOAT = rgba(THEME.panel_bg, 0.96)
+
     CARD_BG = THEME.app_running_bg
     CARD_BG_SOFT = THEME.chip_bg
+    CARD_BG_RAISED = mix(THEME.app_running_bg, "#ffffff", 0.04)
+    CARD_BG_ALT = rgba(THEME.surface_container, 0.88)
+
     BORDER = THEME.panel_border
     BORDER_SOFT = THEME.chip_border
+    BORDER_HARD = rgba(THEME.panel_border, 0.92)
+    BORDER_ACCENT = rgba(THEME.app_focused_border, 0.95)
+
     TEXT = THEME.text
     TEXT_MID = THEME.text_muted
     TEXT_DIM = THEME.inactive
+    TEXT_SOFT = mix(THEME.text_muted, THEME.inactive, 0.40)
+
     ACCENT = THEME.primary
     ACCENT_SOFT = THEME.accent_soft
     ACCENT_ALT = THEME.tertiary
-    USER_BG = THEME.media_active_start
-    ASSISTANT_BG = THEME.app_running_bg
-    INPUT_BG = THEME.surface_container
-    BOTTOM_BG = THEME.chip_bg
+    ACCENT_GLOW = rgba(THEME.primary, 0.22)
+
+    USER_BG = mix(THEME.media_active_start, THEME.panel_bg, 0.18)
+    ASSISTANT_BG = mix(THEME.app_running_bg, THEME.panel_bg, 0.05)
+    INPUT_BG = rgba(THEME.surface_container, 0.98)
+    BOTTOM_BG = rgba(THEME.chip_bg, 0.90)
+
+    SHADOW = rgba(THEME.primary, 0.16)
+    HOVER_BG = rgba(THEME.hover_bg, 0.92)
+    HERO_TOP = mix(THEME.panel_bg, THEME.primary, 0.16)
+    HERO_BOTTOM = mix(THEME.app_running_bg, THEME.panel_bg, 0.24)
 
 
 apply_theme_globals()
@@ -126,6 +167,23 @@ class ChatItemData:
     chips: list[SourceChipData] = field(default_factory=list)
 
 
+class SurfaceFrame(QFrame):
+    def __init__(self, bg: str = CARD_BG, border: str = BORDER_SOFT, radius: int = 24, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: {radius}px;
+            }}
+            QLabel {{
+                color: {TEXT};
+            }}
+            """
+        )
+
+
 class FadeCard(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -136,10 +194,36 @@ class FadeCard(QFrame):
 
     def set_offset(self, value: int) -> None:
         self._offset = value
-        self.updateGeometry()
         self.setContentsMargins(0, value, 0, 0)
 
     yOffset = pyqtProperty(int, fget=get_offset, fset=set_offset)
+
+
+class ChatInputEdit(QPlainTextEdit):
+    send_requested = pyqtSignal()
+
+    def __init__(self, ui_font: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._min_height = 48
+        self._max_height = 122
+        self.setFont(QFont(ui_font, 12))
+        self.setPlaceholderText('Message the model...  Enter to send • Shift+Enter for newline')
+        self.setTabChangesFocus(True)
+        self.document().documentLayout().documentSizeChanged.connect(self._sync_height)
+        self._sync_height()
+
+    def _sync_height(self) -> None:
+        doc_height = int(self.document().size().height())
+        new_height = max(self._min_height, min(self._max_height, doc_height + 18))
+        self.setFixedHeight(new_height)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            self.send_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+        QTimer.singleShot(0, self._sync_height)
 
 
 class BackendPill(QPushButton):
@@ -148,29 +232,31 @@ class BackendPill(QPushButton):
         self.profile = profile
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(34, 34)
+        self.setFixedSize(40, 40)
         self.setFont(QFont(ui_font, 11, QFont.Weight.DemiBold))
         self.setIcon(_backend_icon(profile.icon_name))
-        self.setIconSize(QPixmap(14, 14).size())
+        self.setIconSize(QPixmap(18, 18).size())
         self.setText("")
         self.setToolTip(profile.label)
         self.setStyleSheet(
             f"""
             QPushButton {{
-                background: {CARD_BG_SOFT};
-                color: {TEXT_MID};
+                background: {rgba(CARD_BG_SOFT, 0.90)};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 999px;
+                border-radius: 20px;
                 padding: 0;
             }}
             QPushButton:hover {{
-                background: {THEME.hover_bg};
-                color: {TEXT};
+                background: {HOVER_BG};
+                border: 1px solid {BORDER_ACCENT};
             }}
             QPushButton:checked {{
                 background: {ACCENT_SOFT};
-                color: {ACCENT};
-                border: 1px solid {THEME.app_focused_border};
+                border: 1px solid {BORDER_ACCENT};
+            }}
+            QPushButton:disabled {{
+                background: {rgba(CARD_BG_SOFT, 0.45)};
+                border: 1px solid {rgba(BORDER_SOFT, 0.50)};
             }}
             """
         )
@@ -185,7 +271,7 @@ def _backend_icon(icon_name: str) -> QIcon:
     path = _backend_icon_path(icon_name)
     if path is not None:
         return QIcon(str(path))
-    placeholder = QPixmap(14, 14)
+    placeholder = QPixmap(18, 18)
     placeholder.fill(Qt.GlobalColor.transparent)
     return QIcon(placeholder)
 
@@ -212,6 +298,7 @@ def validate_backend(profile: BackendProfile, payload: dict[str, object]) -> tup
         return False, "API key is required."
     if not profile.needs_api_key and not host:
         return False, "Host is required."
+
     if profile.provider == "openai_compat":
         url = host.rstrip("/")
         if not url.startswith(("http://", "https://")):
@@ -232,6 +319,7 @@ def validate_backend(profile: BackendProfile, payload: dict[str, object]) -> tup
                     return False, f"HTTP {response.status}"
         except Exception:
             return False, "Host did not respond."
+
     return True, "Connection settings look valid."
 
 
@@ -248,13 +336,14 @@ class BackendSettingsDialog(QDialog):
         self.profile_map = {profile.key: profile for profile in profiles}
         self.settings = json.loads(json.dumps(settings))
         self.ui_font = ui_font
+
         self.setWindowTitle("AI Backend Settings")
-        self.resize(520, 420)
+        self.resize(560, 430)
         self.setModal(True)
         self.setStyleSheet(
             f"""
             QDialog {{
-                background: {THEME.surface_container};
+                background: {PANEL_BG};
                 color: {TEXT};
             }}
             QLabel {{
@@ -264,22 +353,24 @@ class BackendSettingsDialog(QDialog):
                 background: {INPUT_BG};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 999px;
-                padding: 8px 10px;
+                border-radius: 18px;
+                padding: 10px 12px;
+                selection-background-color: {ACCENT_SOFT};
             }}
             QComboBox QAbstractItemView {{
-                background: {THEME.surface};
+                background: {CARD_BG};
                 color: {TEXT};
                 selection-background-color: {ACCENT_SOFT};
+                border: 1px solid {BORDER_SOFT};
             }}
             QCheckBox {{
                 color: {TEXT};
                 spacing: 8px;
             }}
             QCheckBox::indicator {{
-                width: 16px;
-                height: 16px;
-                border-radius: 8px;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
                 border: 1px solid {BORDER_SOFT};
                 background: {CARD_BG};
             }}
@@ -288,23 +379,17 @@ class BackendSettingsDialog(QDialog):
                 border: 1px solid {ACCENT};
             }}
             QPushButton {{
-                min-height: 34px;
+                min-height: 36px;
                 background: {CARD_BG_SOFT};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
-                border-radius: 999px;
+                border-radius: 18px;
                 padding: 0 14px;
                 font-weight: 600;
             }}
             QPushButton:hover {{
-                background: {THEME.hover_bg};
-                border: 1px solid {THEME.app_focused_border};
-            }}
-            QPushButton:pressed {{
-                background: {THEME.hover_bg};
-            }}
-            QDialogButtonBox QPushButton {{
-                min-width: 96px;
+                background: {HOVER_BG};
+                border: 1px solid {BORDER_ACCENT};
             }}
             """
         )
@@ -313,60 +398,84 @@ class BackendSettingsDialog(QDialog):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(12)
 
-        title = QLabel("Backend Settings")
-        title.setFont(QFont(ui_font, 13, QFont.Weight.DemiBold))
-        root.addWidget(title)
+        shell = SurfaceFrame(bg=rgba(CARD_BG, 0.92), border=BORDER_SOFT, radius=28)
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(18, 18, 18, 18)
+        shell_layout.setSpacing(12)
+        root.addWidget(shell)
+
+        title = QLabel("Backend settings")
+        title.setFont(QFont(ui_font, 14, QFont.Weight.DemiBold))
+        shell_layout.addWidget(title)
+
+        subtitle = QLabel("Teste e habilite os providers antes de expor os ícones na sidebar.")
+        subtitle.setFont(QFont(ui_font, 10))
+        subtitle.setStyleSheet(f"color: {TEXT_DIM};")
+        shell_layout.addWidget(subtitle)
 
         self.backend_combo = QComboBox()
         for profile in profiles:
             self.backend_combo.addItem(profile.label, profile.key)
         self.backend_combo.currentIndexChanged.connect(self._load_selected_backend)
-        root.addWidget(self.backend_combo)
+        shell_layout.addWidget(self.backend_combo)
 
-        self.enabled_check = QCheckBox("Enable backend icon after successful test")
-        root.addWidget(self.enabled_check)
+        self.enabled_check = QCheckBox("Mostrar backend na barra após teste bem-sucedido")
+        shell_layout.addWidget(self.enabled_check)
 
         self.host_input = QLineEdit()
         self.host_input.setPlaceholderText("Host")
-        root.addWidget(self.host_input)
+        shell_layout.addWidget(self.host_input)
 
         self.model_input = QLineEdit()
         self.model_input.setPlaceholderText("Model")
-        root.addWidget(self.model_input)
+        shell_layout.addWidget(self.model_input)
 
         self.api_key_input = QLineEdit()
         self.api_key_input.setPlaceholderText("API key")
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        root.addWidget(self.api_key_input)
+        shell_layout.addWidget(self.api_key_input)
 
-        self.status_label = QLabel("Configure a backend and run Test.")
+        self.status_label = QLabel("Configure um backend e clique em Test.")
+        self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(f"color: {TEXT_MID};")
-        root.addWidget(self.status_label)
+        shell_layout.addWidget(self.status_label)
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(8)
+
         self.test_button = QPushButton("Test")
         self.test_button.clicked.connect(self._test_current_backend)
+        actions.addWidget(self.test_button)
+
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self._save_current_backend)
-        self.test_button.setStyleSheet(
-            f"QPushButton {{ background: {CARD_BG_SOFT}; color: {TEXT}; border: 1px solid {BORDER_SOFT}; border-radius: 999px; }}"
-            f"QPushButton:hover {{ background: {THEME.hover_bg}; color: {TEXT}; }}"
-        )
         self.save_button.setStyleSheet(
-            f"QPushButton {{ background: {ACCENT}; color: {THEME.active_text}; border: 1px solid {ACCENT}; border-radius: 999px; }}"
-            f"QPushButton:hover {{ background: {THEME.secondary}; color: {THEME.active_text}; }}"
+            f"""
+            QPushButton {{
+                min-height: 36px;
+                background: {ACCENT};
+                color: {THEME.active_text};
+                border: 1px solid {ACCENT};
+                border-radius: 18px;
+                padding: 0 14px;
+                font-weight: 700;
+            }}
+            QPushButton:hover {{
+                background: {mix(ACCENT, '#ffffff', 0.08)};
+                border: 1px solid {ACCENT};
+            }}
+            """
         )
-        actions.addWidget(self.test_button)
         actions.addWidget(self.save_button)
-        root.addLayout(actions)
+        actions.addStretch(1)
+        shell_layout.addLayout(actions)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setText("Close")
         buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
         buttons.button(QDialogButtonBox.StandardButton.Close).clicked.connect(self.accept)
-        root.addWidget(buttons)
+        shell_layout.addWidget(buttons)
 
         self._load_selected_backend()
 
@@ -397,8 +506,8 @@ class BackendSettingsDialog(QDialog):
         self.api_key_input.setVisible(profile.needs_api_key)
         self.host_input.setVisible(not profile.needs_api_key)
         tested = bool(payload.get("tested", False))
-        last_status = str(payload.get("last_status", "Configure a backend and run Test."))
-        self.status_label.setText(last_status if last_status else "Configure a backend and run Test.")
+        last_status = str(payload.get("last_status", "Configure um backend e clique em Test."))
+        self.status_label.setText(last_status if last_status else "Configure um backend e clique em Test.")
         self.status_label.setStyleSheet(f"color: {ACCENT if tested else TEXT_MID};")
 
     def _test_current_backend(self) -> None:
@@ -426,7 +535,7 @@ class BackendSettingsDialog(QDialog):
 class HeaderBadge(QFrame):
     def __init__(self, text: str, ui_font: str, accent: bool = False) -> None:
         super().__init__()
-        bg = ACCENT_SOFT if accent else CARD_BG
+        bg = ACCENT_SOFT if accent else rgba(CARD_BG_SOFT, 0.92)
         fg = ACCENT if accent else TEXT_MID
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 5, 10, 5)
@@ -449,12 +558,12 @@ class HeaderBadge(QFrame):
 
 
 class ActionIcon(QToolButton):
-    def __init__(self, text: str, tooltip: str, ui_font: str) -> None:
-        super().__init__()
+    def __init__(self, text: str, tooltip: str, ui_font: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         self.setText(text)
         self.setToolTip(tooltip)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(28, 28)
+        self.setFixedSize(30, 30)
         self.setFont(QFont(ui_font, 11, QFont.Weight.Bold))
         self.setStyleSheet(
             f"""
@@ -462,11 +571,29 @@ class ActionIcon(QToolButton):
                 background: transparent;
                 color: {TEXT_DIM};
                 border: none;
-                border-radius: 999px;
+                border-radius: 15px;
             }}
             QToolButton:hover {{
-                background: {THEME.hover_bg};
+                background: {HOVER_BG};
                 color: {TEXT};
+            }}
+            """
+        )
+
+
+class AvatarBadge(QLabel):
+    def __init__(self, text: str, bg: str, fg: str, ui_font: str, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedSize(30, 30)
+        self.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
+        self.setStyleSheet(
+            f"""
+            QLabel {{
+                background: {bg};
+                color: {fg};
+                border: 1px solid {rgba(fg, 0.18)};
+                border-radius: 15px;
             }}
             """
         )
@@ -475,17 +602,36 @@ class ActionIcon(QToolButton):
 class MessageCard(FadeCard):
     def __init__(self, item: ChatItemData, ui_font: str) -> None:
         super().__init__()
+        self.item = item
         self.browser: QTextBrowser | None = None
-        bubble_bg = USER_BG if item.role == "user" else ASSISTANT_BG
-        bubble_border = THEME.app_focused_border if item.role == "user" else BORDER_SOFT
-        title_color = ACCENT_ALT if item.role == "user" else ACCENT
-        self.setObjectName("messageCard")
-        self.setStyleSheet(
+        self.bubble: QFrame | None = None
+
+        self.setStyleSheet("background: transparent; border: none;")
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
+
+        is_user = item.role == "user"
+        bubble_bg = USER_BG if is_user else ASSISTANT_BG
+        bubble_border = BORDER_ACCENT if is_user else rgba(BORDER_SOFT, 0.95)
+        title_color = ACCENT_ALT if is_user else ACCENT
+
+        avatar = AvatarBadge(
+            "Y" if is_user else "AI",
+            bg=ACCENT_SOFT if is_user else rgba(CARD_BG_SOFT, 0.96),
+            fg=ACCENT_ALT if is_user else ACCENT,
+            ui_font=ui_font,
+        )
+
+        bubble = QFrame()
+        bubble.setObjectName("messageBubble")
+        bubble.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        bubble.setStyleSheet(
             f"""
-            QFrame#messageCard {{
+            QFrame#messageBubble {{
                 background: {bubble_bg};
                 border: 1px solid {bubble_border};
-                border-radius: 20px;
+                border-radius: 24px;
             }}
             QLabel {{
                 color: {TEXT};
@@ -498,10 +644,9 @@ class MessageCard(FadeCard):
             }}
             """
         )
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 16)
-        root.setSpacing(10)
+        bubble_layout = QVBoxLayout(bubble)
+        bubble_layout.setContentsMargins(16, 14, 16, 16)
+        bubble_layout.setSpacing(10)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
@@ -518,14 +663,16 @@ class MessageCard(FadeCard):
 
         if item.meta:
             meta = QLabel(item.meta)
-            meta.setFont(QFont(ui_font, 10))
+            meta.setFont(QFont(ui_font, 9))
             meta.setStyleSheet(f"color: {TEXT_DIM};")
             header.addWidget(meta, 0, Qt.AlignmentFlag.AlignVCenter)
 
         header.addStretch(1)
-        header.addWidget(ActionIcon("⧉", "Copy", ui_font))
+        copy_button = ActionIcon("⧉", "Copy response", ui_font)
+        copy_button.clicked.connect(self._copy_body)
+        header.addWidget(copy_button)
         header.addWidget(ActionIcon("⋯", "More", ui_font))
-        root.addLayout(header)
+        bubble_layout.addLayout(header)
 
         browser = QTextBrowser()
         browser.setOpenExternalLinks(False)
@@ -541,7 +688,7 @@ class MessageCard(FadeCard):
                 background: transparent;
                 border: none;
                 font-size: 12px;
-                line-height: 1.45;
+                line-height: 1.50;
             }}
             """
         )
@@ -550,24 +697,43 @@ class MessageCard(FadeCard):
             body {{
                 color: {TEXT};
                 font-size: 12px;
-                line-height: 1.45;
+                line-height: 1.50;
                 margin: 0;
             }}
-            b {{ color: {THEME.on_surface}; }}
-            code, pre {{
-                background: {CARD_BG_SOFT};
-                border-radius: 12px;
+            p {{
+                margin-top: 0;
+                margin-bottom: 8px;
+            }}
+            b {{
+                color: {TEXT};
+                font-weight: 700;
+            }}
+            code {{
+                background: {rgba(CARD_BG_SOFT, 0.94)};
+                padding: 2px 6px;
+                border-radius: 10px;
                 color: {TEXT};
             }}
-            a {{ color: {ACCENT}; }}
+            pre {{
+                background: {rgba(CARD_BG_SOFT, 0.96)};
+                border: 1px solid {rgba(BORDER_SOFT, 0.95)};
+                padding: 10px 12px;
+                border-radius: 16px;
+                color: {TEXT};
+                white-space: pre-wrap;
+            }}
+            a {{
+                color: {ACCENT};
+                text-decoration: none;
+            }}
+            ul {{
+                margin: 6px 0 8px 18px;
+            }}
             """
         )
         browser.setHtml(item.body)
         browser.document().contentsChanged.connect(lambda b=browser: self._fit_browser_height(b))
-        self.browser = browser
-        self._fit_browser_height(browser)
-        QTimer.singleShot(0, lambda b=browser: self._fit_browser_height(b))
-        root.addWidget(browser)
+        bubble_layout.addWidget(browser)
 
         if item.chips:
             chips_wrap = QWidget()
@@ -577,7 +743,23 @@ class MessageCard(FadeCard):
             for chip in item.chips:
                 chips_layout.addWidget(self._chip(chip.text, ui_font))
             chips_layout.addStretch(1)
-            root.addWidget(chips_wrap)
+            bubble_layout.addWidget(chips_wrap)
+
+        self.browser = browser
+        self.bubble = bubble
+        self._fit_browser_height(browser)
+
+        if is_user:
+            root.addStretch(1)
+            root.addWidget(bubble, 0)
+            root.addWidget(avatar, 0, Qt.AlignmentFlag.AlignBottom)
+        else:
+            root.addWidget(avatar, 0, Qt.AlignmentFlag.AlignTop)
+            root.addWidget(bubble, 0)
+            root.addStretch(1)
+
+    def _copy_body(self) -> None:
+        QApplication.clipboard().setText(self.browser.toPlainText() if self.browser else "")
 
     def _chip(self, text: str, ui_font: str) -> QPushButton:
         chip = QPushButton(text)
@@ -586,7 +768,7 @@ class MessageCard(FadeCard):
         chip.setStyleSheet(
             f"""
             QPushButton {{
-                background: {CARD_BG_SOFT};
+                background: {rgba(CARD_BG_SOFT, 0.92)};
                 color: {TEXT};
                 border: 1px solid {BORDER_SOFT};
                 border-radius: 999px;
@@ -594,7 +776,8 @@ class MessageCard(FadeCard):
                 text-align: left;
             }}
             QPushButton:hover {{
-                background: {THEME.hover_bg};
+                background: {HOVER_BG};
+                border: 1px solid {BORDER_ACCENT};
             }}
             """
         )
@@ -604,11 +787,13 @@ class MessageCard(FadeCard):
         viewport_width = max(0, browser.viewport().width())
         if viewport_width > 0:
             browser.document().setTextWidth(viewport_width)
-        height = int(browser.document().documentLayout().documentSize().height() + 12)
+        height = int(browser.document().documentLayout().documentSize().height() + 8)
         browser.setFixedHeight(max(28, height))
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
+        if self.bubble is not None:
+            self.bubble.setMaximumWidth(max(280, int(self.width() * 0.80)))
         if self.browser is not None:
             self._fit_browser_height(self.browser)
 
@@ -625,31 +810,32 @@ class ComposerBar(QFrame):
             f"""
             QFrame#composerBar {{
                 background: {BOTTOM_BG};
-                border: 1px solid {BORDER_SOFT};
-                border-radius: 20px;
-            }}
-            QLineEdit {{
-                background: {INPUT_BG};
-                color: {TEXT};
-                border: 1px solid {BORDER_SOFT};
-                border-radius: 999px;
-                font-size: 12px;
-                padding: 0 14px;
+                border: 1px solid {rgba(BORDER_SOFT, 0.95)};
+                border-radius: 24px;
             }}
             QLabel {{
                 color: {TEXT_DIM};
+            }}
+            QPlainTextEdit {{
+                background: {INPUT_BG};
+                color: {TEXT};
+                border: 1px solid {rgba(BORDER_SOFT, 0.98)};
+                border-radius: 20px;
+                font-size: 12px;
+                padding: 10px 12px;
+                selection-background-color: {ACCENT_SOFT};
             }}
             QPushButton {{
                 background: {ACCENT};
                 color: {THEME.active_text};
                 border: none;
-                border-radius: 999px;
+                border-radius: 18px;
                 padding: 0 16px;
                 font-size: 11px;
-                font-weight: 700;
+                font-weight: 800;
             }}
             QPushButton:hover {{
-                background: {THEME.secondary};
+                background: {mix(ACCENT, '#ffffff', 0.08)};
             }}
             """
         )
@@ -658,42 +844,38 @@ class ComposerBar(QFrame):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        self.entry = QLineEdit()
-        self.entry.setMinimumHeight(46)
-        self.entry.setPlaceholderText('Message the model... "/" for commands')
-        self.entry.setFont(QFont(ui_font, 12))
-        self.entry.returnPressed.connect(self._emit_send)
+        self.entry = ChatInputEdit(ui_font)
+        self.entry.send_requested.connect(self._emit_send)
         layout.addWidget(self.entry)
 
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
         footer.setSpacing(10)
 
-        self.provider_label.setFont(QFont(ui_font, 10))
+        self.provider_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
         self.provider_label.setStyleSheet(f"color: {TEXT_MID};")
         footer.addWidget(self.provider_label)
 
         footer.addStretch(1)
 
-        hint = QLabel("/clear")
-        hint.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
-        hint.setStyleSheet(f"color: {TEXT};")
+        hint = HeaderBadge("/clear", ui_font, accent=False)
         footer.addWidget(hint)
 
         send_button = QPushButton("Send")
-        send_button.setMinimumHeight(32)
+        send_button.setMinimumHeight(36)
         send_button.clicked.connect(self._emit_send)
         footer.addWidget(send_button)
         layout.addLayout(footer)
 
     def set_profile(self, profile: BackendProfile) -> None:
-        self.provider_label.setText(f"{profile.label}    {profile.model}")
+        self.provider_label.setText(f"{profile.label}  •  {profile.model}")
 
     def _emit_send(self) -> None:
-        text = self.entry.text().strip()
+        text = self.entry.toPlainText().strip()
         if text:
             self.send_requested.emit(text)
             self.entry.clear()
+            self.entry._sync_height()
 
 
 class SidebarPanel(QFrame):
@@ -709,37 +891,49 @@ class SidebarPanel(QFrame):
             BackendProfile("openai", "OpenAI", "openai", "gpt-4.1-mini", "api.openai.com", "openai", True),
             BackendProfile("mistral", "Mistral", "openai", "mistral-small", "api.mistral.ai", "mistral", True),
         ]
-        self.backend_settings = load_backend_settings()
         self.profile_by_key = {profile.key: profile for profile in self.profiles}
+        self.backend_settings = load_backend_settings()
         self.current_profile: BackendProfile | None = None
         self._card_animations: list[QPropertyAnimation] = []
 
         self.setObjectName("sidebarPanel")
-        self.setFixedWidth(430)
+        self.setFixedWidth(452)
         self.setStyleSheet(
             f"""
             QFrame#sidebarPanel {{
-                background: {PANEL_BG};
-                border: 1px solid {BORDER};
-                border-radius: 30px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {PANEL_BG_FLOAT},
+                    stop:0.55 {rgba(HERO_BOTTOM, 0.97)},
+                    stop:1 {rgba(PANEL_BG_DEEP, 0.99)});
+                border: 1px solid {BORDER_HARD};
+                border-radius: 34px;
             }}
             """
         )
 
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(42)
-        shadow.setOffset(0, 14)
-        glow = QColor(THEME.primary)
-        glow.setAlpha(120)
+        shadow.setBlurRadius(54)
+        shadow.setOffset(0, 18)
+        glow = QColor(SHADOW)
         shadow.setColor(glow)
         self.setGraphicsEffect(shadow)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(14)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(12)
 
         root.addWidget(self._build_hero())
         root.addWidget(self._build_backend_strip())
+
+        convo_shell = SurfaceFrame(bg=rgba(CARD_BG, 0.72), border=rgba(BORDER_SOFT, 0.85), radius=28)
+        convo_layout = QVBoxLayout(convo_shell)
+        convo_layout.setContentsMargins(10, 10, 10, 10)
+        convo_layout.setSpacing(8)
+
+        convo_label = QLabel("Conversation")
+        convo_label.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
+        convo_label.setStyleSheet(f"color: {TEXT}; padding-left: 4px;")
+        convo_layout.addWidget(convo_label)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -757,7 +951,7 @@ class SidebarPanel(QFrame):
                 margin: 8px 0;
             }}
             QScrollBar::handle:vertical {{
-                background: {THEME.app_running_border};
+                background: {rgba(THEME.app_running_border, 0.95)};
                 border-radius: 4px;
                 min-height: 24px;
             }}
@@ -766,10 +960,12 @@ class SidebarPanel(QFrame):
 
         self.content = QWidget()
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(0, 4, 0, 8)
-        self.content_layout.setSpacing(14)
+        self.content_layout.setContentsMargins(4, 4, 4, 8)
+        self.content_layout.setSpacing(12)
         self.scroll.setWidget(self.content)
-        root.addWidget(self.scroll, 1)
+        convo_layout.addWidget(self.scroll, 1)
+
+        root.addWidget(convo_shell, 1)
 
         self.composer = ComposerBar(ui_font)
         self.composer.send_requested.connect(self.add_user_message)
@@ -778,14 +974,45 @@ class SidebarPanel(QFrame):
         self.populate_demo()
         self._refresh_available_backends()
 
+    def _grouped_profiles(self) -> list[tuple[str, list[BackendProfile]]]:
+        local = [self.profile_by_key[key] for key in ("koboldcpp", "lmstudio", "ollama")]
+        cloud = [self.profile_by_key[key] for key in ("gemini", "openai", "mistral")]
+        return [("Local", local), ("Cloud", cloud)]
+
+    def _build_group_row(self, title: str, profiles: list[BackendProfile]) -> QFrame:
+        frame = SurfaceFrame(bg=rgba(CARD_BG_SOFT, 0.68), border=rgba(BORDER_SOFT, 0.90), radius=20)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        label = QLabel(title)
+        label.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        label.setStyleSheet(f"color: {TEXT_MID};")
+        layout.addWidget(label)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        for profile in profiles:
+            button = BackendPill(profile, self.ui_font)
+            button.clicked.connect(lambda checked=False, p=profile, b=button: self._select_backend(p, b))
+            self.backend_buttons[profile.key] = button
+            row.addWidget(button)
+        row.addStretch(1)
+        layout.addLayout(row)
+        return frame
+
     def _build_hero(self) -> QFrame:
         frame = QFrame()
+        frame.setObjectName("heroCard")
         frame.setStyleSheet(
             f"""
-            QFrame {{
-                background: {CARD_BG};
-                border: 1px solid {BORDER_SOFT};
-                border-radius: 20px;
+            QFrame#heroCard {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {rgba(HERO_TOP, 0.98)},
+                    stop:1 {rgba(HERO_BOTTOM, 0.94)});
+                border: 1px solid {rgba(BORDER_SOFT, 0.95)};
+                border-radius: 26px;
             }}
             QLabel {{
                 color: {TEXT};
@@ -794,18 +1021,24 @@ class SidebarPanel(QFrame):
         )
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(10)
+
+        orb = QLabel("◉")
+        orb.setFont(QFont(self.ui_font, 13, QFont.Weight.Bold))
+        orb.setStyleSheet(f"color: {ACCENT};")
+        top.addWidget(orb, 0, Qt.AlignmentFlag.AlignTop)
+
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(2)
+        title_wrap.setSpacing(3)
 
         title = QLabel("Hanauta AI")
-        title.setFont(QFont(self.ui_font, 15, QFont.Weight.DemiBold))
-        subtitle = QLabel("Backend-aware native chat sidebar.")
+        title.setFont(QFont(self.ui_font, 16, QFont.Weight.DemiBold))
+        subtitle = QLabel("Sidebar nativa com cara de shell, mas estável no X11.")
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet(f"color: {TEXT_DIM};")
         title_wrap.addWidget(title)
@@ -826,10 +1059,10 @@ class SidebarPanel(QFrame):
                 background: transparent;
                 color: {TEXT_DIM};
                 border: none;
-                border-radius: 999px;
+                border-radius: 17px;
             }}
             QPushButton:hover {{
-                background: {THEME.hover_bg};
+                background: {HOVER_BG};
                 color: {TEXT};
             }}
             """
@@ -838,25 +1071,39 @@ class SidebarPanel(QFrame):
         top.addWidget(close_button)
         layout.addLayout(top)
 
+        badges = QHBoxLayout()
+        badges.setContentsMargins(0, 0, 0, 0)
+        badges.setSpacing(8)
+        badges.addWidget(HeaderBadge("X11 safe", self.ui_font))
+        badges.addWidget(HeaderBadge("Material colors", self.ui_font, accent=True))
+        badges.addWidget(HeaderBadge("Local + cloud", self.ui_font))
+        badges.addStretch(1)
+        layout.addLayout(badges)
+
+        status_shell = SurfaceFrame(bg=rgba(CARD_BG_SOFT, 0.64), border=rgba(BORDER_SOFT, 0.90), radius=18)
+        status_layout = QVBoxLayout(status_shell)
+        status_layout.setContentsMargins(12, 10, 12, 10)
+        status_layout.setSpacing(4)
+
         self.header_status = QLabel("Configure backends with the gear icon.")
         self.header_status.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
-        self.header_status.setStyleSheet(f"color: {TEXT_MID};")
-        layout.addWidget(self.header_status)
+        self.header_status.setStyleSheet(f"color: {TEXT};")
+        status_layout.addWidget(self.header_status)
+
+        self.header_substatus = QLabel("Nenhum backend ativo ainda.")
+        self.header_substatus.setFont(QFont(self.ui_font, 9))
+        self.header_substatus.setStyleSheet(f"color: {TEXT_DIM};")
+        status_layout.addWidget(self.header_substatus)
+        layout.addWidget(status_shell)
+
         return frame
 
     def _build_backend_strip(self) -> QFrame:
-        frame = QFrame()
-        frame.setStyleSheet(
-            f"""
-            QFrame {{
-                background: {CARD_BG_SOFT};
-                border: 1px solid {BORDER_SOFT};
-                border-radius: 20px;
-            }}
-            """
-        )
+        self.backend_buttons: dict[str, BackendPill] = {}
+
+        frame = SurfaceFrame(bg=rgba(CARD_BG, 0.82), border=rgba(BORDER_SOFT, 0.88), radius=26)
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
         label = QLabel("Backends")
@@ -864,35 +1111,35 @@ class SidebarPanel(QFrame):
         label.setStyleSheet(f"color: {TEXT};")
         layout.addWidget(label)
 
-        pills = QWidget()
-        pills_layout = QHBoxLayout(pills)
-        pills_layout.setContentsMargins(0, 0, 0, 0)
-        pills_layout.setSpacing(8)
-        self.backend_buttons: dict[str, BackendPill] = {}
-        for profile in self.profiles:
-            button = BackendPill(profile, self.ui_font)
-            button.clicked.connect(lambda checked=False, p=profile, b=button: self._select_backend(p, b))
-            self.backend_buttons[profile.key] = button
-            pills_layout.addWidget(button)
-        pills_layout.addStretch(1)
-        layout.addWidget(pills)
+        desc = QLabel("Os modelos ficam sempre visíveis; só os testados podem ser ativados.")
+        desc.setWordWrap(True)
+        desc.setFont(QFont(self.ui_font, 9))
+        desc.setStyleSheet(f"color: {TEXT_DIM};")
+        layout.addWidget(desc)
+
+        for group_name, profiles in self._grouped_profiles():
+            layout.addWidget(self._build_group_row(group_name, profiles))
 
         self.backend_hint = QLabel()
+        self.backend_hint.setWordWrap(True)
         self.backend_hint.setFont(QFont(self.ui_font, 10))
-        self.backend_hint.setStyleSheet(f"color: {TEXT_DIM};")
+        self.backend_hint.setStyleSheet(f"color: {TEXT_DIM}; padding-top: 2px;")
         self._refresh_backend_hint()
         layout.addWidget(self.backend_hint)
         return frame
 
     def _refresh_backend_hint(self) -> None:
         if self.current_profile is None:
-            self.backend_hint.setText("No backend enabled yet. Open the gear icon and test one first.")
+            self.backend_hint.setText("Nenhum backend ativo. Teste um provider para destravar a composição.")
             self.header_status.setText("No active backend.")
+            self.header_substatus.setText("A barra continua operando em X11 sem depender de blur ou Wayland APIs.")
             return
-        self.backend_hint.setText(
-            f"{self.current_profile.provider}  •  {self.current_profile.model}  •  {self.current_profile.host}"
-        )
+        payload = self.backend_settings.get(self.current_profile.key, {})
+        host = str(payload.get("host", self.current_profile.host))
+        model = str(payload.get("model", self.current_profile.model))
+        self.backend_hint.setText(f"{self.current_profile.label}  •  {model}  •  {host}")
         self.header_status.setText(f"Active backend: {self.current_profile.label}")
+        self.header_substatus.setText(f"{self.current_profile.provider}  •  {model}")
 
     def _select_backend(self, profile: BackendProfile, active_button: BackendPill) -> None:
         settings = self.backend_settings.get(profile.key, {})
@@ -911,12 +1158,14 @@ class SidebarPanel(QFrame):
         for profile in self.profiles:
             payload = self.backend_settings.get(profile.key, {})
             button = self.backend_buttons.get(profile.key)
-            visible = bool(payload.get("enabled", True) and payload.get("tested", False))
+            ready = bool(payload.get("enabled", True) and payload.get("tested", False))
             if button is not None:
-                button.setVisible(visible)
+                button.setEnabled(ready)
                 button.setChecked(False)
-            if visible:
+                button.setToolTip(f"{profile.label} — {'ready' if ready else 'not tested'}")
+            if ready:
                 available.append(profile)
+
         self.current_profile = available[0] if available else None
         if self.current_profile is not None:
             active = self.backend_buttons.get(self.current_profile.key)
@@ -924,7 +1173,7 @@ class SidebarPanel(QFrame):
                 active.setChecked(True)
             self.composer.set_profile(self.current_profile)
             self.composer.entry.setEnabled(True)
-            self.composer.entry.setPlaceholderText('Message the model... "/" for commands')
+            self.composer.entry.setPlaceholderText('Message the model...  Enter to send • Shift+Enter for newline')
         else:
             self.composer.provider_label.setText("No tested backend configured")
             self.composer.entry.setEnabled(False)
@@ -941,9 +1190,22 @@ class SidebarPanel(QFrame):
         self._clear_cards()
         self.add_card(
             ChatItemData(
+                role="assistant",
+                title="System",
+                body=(
+                    "<p><b>Visual target:</b> camadas suaves, pills compactas, contraste controlado e um composer que parece shell bar.</p>"
+                    "<p>O layout abaixo já foi pensado para <b>X11</b>, sem depender de blur do compositor.</p>"
+                ),
+                meta="design brief",
+                chips=[SourceChipData("x11"), SourceChipData("native qt"), SourceChipData("material-like")],
+            ),
+            animate=False,
+        )
+        self.add_card(
+            ChatItemData(
                 role="user",
                 title="You",
-                body="<p>Give me a compact comparison between KoboldCpp, LM Studio, and Ollama for local inference.</p>",
+                body="<p>Quero uma popup IA no espírito do end-4, mas sem quebrar fora do Hyprland.</p>",
                 meta="prompt",
             ),
             animate=False,
@@ -951,24 +1213,22 @@ class SidebarPanel(QFrame):
         self.add_card(
             ChatItemData(
                 role="assistant",
-                title="Gemini",
+                title="Hanauta AI",
                 meta="draft answer",
                 body=(
-                    "<p><b>Quick split:</b></p>"
-                    "<p><b>KoboldCpp</b> is best when you want a lightweight local server focused on text-generation workflows and GGUF models.</p>"
-                    "<p><b>LM Studio</b> is better when you want a polished desktop experience with a built-in model browser and an OpenAI-compatible local API.</p>"
-                    "<p><b>Ollama</b> is strongest when you want a CLI-first runtime with simple model management and scripting.</p>"
-                    "<p><b>Practical choice:</b> LM Studio for UI, Ollama for scripting, KoboldCpp for hobbyist tuning and roleplay-oriented setups.</p>"
+                    "<p><b>Direção:</b> usar cards mais encorpados, hierarquia mais clara e bolhas alinhadas por papel.</p>"
+                    "<p><b>Troca técnica:</b> o fade das mensagens passa a usar <code>QGraphicsOpacityEffect</code>, o que fica mais confiável em <b>QWidget</b> filho.</p>"
+                    "<p><b>Resultado:</b> você mantém o espírito shell/sidebar do end-4 sem depender de Wayland-only visuals.</p>"
                 ),
                 chips=[
-                    SourceChipData("koboldcpp"),
-                    SourceChipData("lm studio"),
-                    SourceChipData("ollama"),
+                    SourceChipData("backend aware"),
+                    SourceChipData("safe on x11"),
+                    SourceChipData("denser layout"),
                 ],
             ),
             animate=False,
         )
-        self.content_layout.addStretch(1)
+        QTimer.singleShot(0, self._scroll_to_bottom)
 
     def _clear_cards(self) -> None:
         while self.content_layout.count():
@@ -976,6 +1236,7 @@ class SidebarPanel(QFrame):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        self.content_layout.addStretch(1)
 
     def add_card(self, data: ChatItemData, animate: bool = True) -> None:
         card = MessageCard(data, self.ui_font)
@@ -985,51 +1246,60 @@ class SidebarPanel(QFrame):
             self._animate_card_in(card)
 
     def _animate_card_in(self, card: MessageCard) -> None:
-        opacity = card.windowOpacity()
-        card.setWindowOpacity(0.0)
-        anim = QPropertyAnimation(card, b"windowOpacity", self)
-        anim.setDuration(220)
-        anim.setStartValue(0.0)
-        anim.setEndValue(max(1.0, opacity))
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        opacity_effect = QGraphicsOpacityEffect(card)
+        opacity_effect.setOpacity(0.0)
+        card.setGraphicsEffect(opacity_effect)
+
+        fade = QPropertyAnimation(opacity_effect, b"opacity", self)
+        fade.setDuration(220)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         slide = QPropertyAnimation(card, b"yOffset", self)
         slide.setDuration(240)
-        slide.setStartValue(14)
+        slide.setStartValue(12)
         slide.setEndValue(0)
         slide.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        self._card_animations.extend([anim, slide])
-        anim.finished.connect(lambda: self._drop_animation(anim))
-        slide.finished.connect(lambda: self._drop_animation(slide))
-        anim.start()
+        self._card_animations.extend([fade, slide])
+        fade.finished.connect(lambda eff=opacity_effect, anim=fade: self._drop_animation(anim, eff))
+        slide.finished.connect(lambda anim=slide: self._drop_animation(anim))
+        fade.start()
         slide.start()
 
-    def _drop_animation(self, animation: QPropertyAnimation) -> None:
+    def _drop_animation(self, animation: QPropertyAnimation, effect: QGraphicsOpacityEffect | None = None) -> None:
         if animation in self._card_animations:
             self._card_animations.remove(animation)
+        if effect is not None and animation.state() == QPropertyAnimation.State.Stopped:
+            parent = effect.parent()
+            if isinstance(parent, QWidget):
+                parent.setGraphicsEffect(None)
+            effect.deleteLater()
 
     def add_user_message(self, text: str) -> None:
         if self.current_profile is None:
             return
+
         spacer = None
         if self.content_layout.count() and self.content_layout.itemAt(self.content_layout.count() - 1).spacerItem():
             spacer = self.content_layout.takeAt(self.content_layout.count() - 1)
 
-        self.add_card(ChatItemData(role="user", title="You", body=f"<p>{text}</p>", meta="prompt"))
+        safe = html.escape(text).replace("\n", "<br>")
+        self.add_card(ChatItemData(role="user", title="You", body=f"<p>{safe}</p>", meta="prompt"))
         self.add_card(
             ChatItemData(
                 role="assistant",
-                title=self.current_profile.label if self.current_profile is not None else "Assistant",
-                meta=self.current_profile.model if self.current_profile is not None else "unconfigured",
+                title=self.current_profile.label,
+                meta=self.current_profile.model,
                 body=(
-                    "<p><b>Mock response:</b> this recreated popup is now using the Hanauta palette and a denser sidebar layout.</p>"
-                    f"<p>Active backend: <b>{self.current_profile.label if self.current_profile is not None else 'None'}</b> on <b>{self.current_profile.host if self.current_profile is not None else 'n/a'}</b>.</p>"
-                    "<p>The next step is wiring this send handler back into the actual backend request layer if you want live completions instead of a mock UI.</p>"
+                    "<p><b>Mock response:</b> a nova popup agora está mais densa, mais arredondada e com camadas visuais mais próximas de uma shell sidebar.</p>"
+                    f"<p>Backend atual: <b>{html.escape(self.current_profile.label)}</b> em <b>{html.escape(self.current_profile.host)}</b>.</p>"
+                    "<p>Próximo passo real: ligar este composer ao request layer e fazer streaming/token-by-token na mesma bubble.</p>"
                 ),
                 chips=[
-                    SourceChipData(self.current_profile.provider if self.current_profile is not None else "no-backend"),
-                    SourceChipData(self.current_profile.model if self.current_profile is not None else "setup-required"),
+                    SourceChipData(self.current_profile.provider),
+                    SourceChipData(self.current_profile.model),
                 ],
             )
         )
@@ -1051,6 +1321,9 @@ class DemoWindow(QMainWindow):
         self.ui_font = ui_font
         self._theme_mtime = palette_mtime()
         self._slide_animation: QPropertyAnimation | None = None
+        self._fade_animation: QPropertyAnimation | None = None
+        self._drag_offset: QPoint | None = None
+
         self.setWindowTitle("Hanauta AI")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(
@@ -1068,7 +1341,7 @@ class DemoWindow(QMainWindow):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self._build_panel()
 
-        self.resize(430, 900)
+        self.resize(452, 930)
         self._place_window()
         QTimer.singleShot(40, self._animate_in)
 
@@ -1091,20 +1364,20 @@ class DemoWindow(QMainWindow):
         apply_theme_globals()
         self._build_panel()
 
-
     def _place_window(self) -> None:
-        screen = QApplication.primaryScreen()
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         if screen is None:
-            self.move(12, 42)
+            self.move(16, 44)
             return
         geo = screen.availableGeometry()
-        self.move(14, geo.y() + 44)
+        self.move(16, geo.y() + 40)
 
     def _animate_in(self) -> None:
         start = self.pos() + QPoint(-28, 0)
         end = self.pos()
         self.move(start)
         self.setWindowOpacity(0.0)
+
         self._slide_animation = QPropertyAnimation(self, b"pos", self)
         self._slide_animation.setDuration(240)
         self._slide_animation.setStartValue(start)
@@ -1112,12 +1385,30 @@ class DemoWindow(QMainWindow):
         self._slide_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._slide_animation.start()
 
-        fade = QPropertyAnimation(self, b"windowOpacity", self)
-        fade.setDuration(220)
-        fade.setStartValue(0.0)
-        fade.setEndValue(1.0)
-        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
-        fade.start()
+        self._fade_animation = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade_animation.setDuration(220)
+        self._fade_animation.setStartValue(0.0)
+        self._fade_animation.setEndValue(1.0)
+        self._fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_animation.start()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton and event.position().y() <= 110:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event) -> None:  # type: ignore[override]
         if event.key() == Qt.Key.Key_Escape:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import subprocess
 import sys
@@ -46,13 +47,14 @@ def save_settings_state(payload: dict) -> None:
     SETTINGS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def run_detached(command: list[str]) -> None:
+def run_detached(command: list[str], *, env: dict[str, str] | None = None) -> None:
     subprocess.Popen(
         command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
+        env=env,
     )
 
 
@@ -67,6 +69,13 @@ def wallpaper_aware_enabled(settings: dict) -> bool:
     if bool(appearance.get("use_matugen_palette", False)):
         return True
     return str(appearance.get("theme_choice", "")).strip().lower() == "wallpaper_aware"
+
+
+def wallpaper_change_notifications_enabled(settings: dict) -> bool:
+    appearance = settings.get("appearance", {})
+    if not isinstance(appearance, dict):
+        return False
+    return bool(appearance.get("wallpaper_change_notifications_enabled", False))
 
 
 def preferred_wallpaper_path(settings: dict) -> Path | None:
@@ -100,7 +109,10 @@ def maybe_refresh_matugen(settings: dict, state: dict[str, object]) -> None:
     current_wallpaper = str(wallpaper.resolve())
     if current_wallpaper == last_wallpaper and abs(mtime - last_mtime) < 0.0001:
         return
-    run_detached([str(MATUGEN_SCRIPT), str(wallpaper)])
+    matugen_env = dict(os.environ)
+    if not wallpaper_change_notifications_enabled(settings):
+        matugen_env["HANAUTA_SUPPRESS_MATUGEN_NOTIFY"] = "1"
+    run_detached([str(MATUGEN_SCRIPT), str(wallpaper)], env=matugen_env)
     state["last_matugen_wallpaper"] = current_wallpaper
     state["last_matugen_mtime"] = mtime
 
@@ -223,7 +235,10 @@ def apply_wallpaper(path: Path, settings: dict) -> None:
     if matugen_available():
         appearance["use_matugen_palette"] = True
         appearance["theme_choice"] = "wallpaper_aware"
-        run_detached([str(MATUGEN_SCRIPT), str(path)])
+        matugen_env = dict(os.environ)
+        if not wallpaper_change_notifications_enabled(settings):
+            matugen_env["HANAUTA_SUPPRESS_MATUGEN_NOTIFY"] = "1"
+        run_detached([str(MATUGEN_SCRIPT), str(path)], env=matugen_env)
     save_settings_state(settings)
     prune_konachan_cache(keep=path)
 

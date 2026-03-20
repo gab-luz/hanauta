@@ -3007,6 +3007,18 @@ class CyberBar(QWidget):
     def _python_bin(self) -> str:
         return python_executable()
 
+    def _widget_launch_env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        source_path = str(PROJECT_ROOT)
+        existing = str(env.get("PYTHONPATH", "")).strip()
+        if existing:
+            parts = [part for part in existing.split(":") if part]
+            if source_path not in parts:
+                env["PYTHONPATH"] = f"{source_path}:{existing}"
+        else:
+            env["PYTHONPATH"] = source_path
+        return env
+
     def _singleton_active(self, process: Optional[subprocess.Popen], script_path: Path) -> bool:
         return any(background_match_exists(pattern) for pattern in entry_patterns(script_path))
 
@@ -3041,8 +3053,14 @@ class CyberBar(QWidget):
                 command = [str(script_path)]
             if not command:
                 raise RuntimeError(f"No launch command available for {script_path}")
-            if not run_bg_detached(command):
-                raise RuntimeError(f"Failed to launch {script_path}")
+            subprocess.Popen(
+                command,
+                cwd=str(PROJECT_ROOT.parents[1]),
+                env=self._widget_launch_env(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
         except Exception:
             setattr(self, attr_name, None)
             return False
