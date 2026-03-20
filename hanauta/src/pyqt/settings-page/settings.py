@@ -466,6 +466,7 @@ def load_settings_state() -> dict:
             "notification_toast_max_width": 356,
             "notification_toast_max_height": 280,
             "use_matugen_palette": False,
+            "matugen_notifications_enabled": False,
         },
         "home_assistant": {
             "url": "",
@@ -623,6 +624,7 @@ def load_settings_state() -> dict:
     except Exception:
         appearance["notification_toast_max_height"] = 280
     appearance.setdefault("use_matugen_palette", False)
+    appearance.setdefault("matugen_notifications_enabled", False)
     theme_choice = str(appearance.get("theme_choice", "")).strip().lower()
     if theme_choice not in THEME_CHOICES:
         theme_choice = "wallpaper_aware" if appearance.get("use_matugen_palette", False) else str(appearance.get("theme_mode", "dark")).strip().lower()
@@ -3057,8 +3059,21 @@ class SettingsWindow(QWidget):
             self.ui_font,
             matugen_button,
         )
+        self.matugen_notifications_switch = SwitchButton(
+            bool(self.settings_state["appearance"].get("matugen_notifications_enabled", True))
+        )
+        self.matugen_notifications_switch.toggledValue.connect(self._set_matugen_notifications_enabled)
+        matugen_notifications = SettingsRow(
+            material_icon("notifications_active"),
+            "Matugen notifications",
+            "Show a desktop notification when wallpaper-driven colors are refreshed.",
+            self.icon_font,
+            self.ui_font,
+            self.matugen_notifications_switch,
+        )
         layout.addWidget(interval)
         layout.addWidget(matugen)
+        layout.addWidget(matugen_notifications)
         return card
 
     def _build_display_card(self) -> QWidget:
@@ -6090,6 +6105,16 @@ class SettingsWindow(QWidget):
         self._refresh_current_accent()
         self._apply_styles()
         self._sync_accent_controls()
+
+    def _set_matugen_notifications_enabled(self, enabled: bool) -> None:
+        self.settings_state["appearance"]["matugen_notifications_enabled"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(
+                "Matugen notifications enabled."
+                if enabled
+                else "Matugen notifications disabled."
+            )
 
     def _set_theme_choice(self, choice: str) -> None:
         choice = str(choice).strip().lower()

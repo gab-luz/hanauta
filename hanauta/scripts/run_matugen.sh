@@ -4,18 +4,44 @@ MATUGEN="$HOME/.config/i3/bin/matugen"
 WALLPAPER="$1"
 PYQT_THEME_DIR="$HOME/.local/state/hanauta/theme"
 PYQT_THEME_FILE="$PYQT_THEME_DIR/pyqt_palette.json"
+SETTINGS_FILE="$HOME/.local/state/hanauta/notification-center/settings.json"
+
+matugen_notifications_enabled() {
+  python3 - "$SETTINGS_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+enabled = True
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+appearance = payload.get("appearance", {}) if isinstance(payload, dict) else {}
+if isinstance(appearance, dict):
+    enabled = bool(appearance.get("matugen_notifications_enabled", True))
+print("1" if enabled else "0")
+PY
+}
+
+notify_matugen() {
+  if [ "$(matugen_notifications_enabled)" = "1" ]; then
+    notify-send "$1" "$2"
+  fi
+}
 
 if [ -z "$WALLPAPER" ]; then
   WALLPAPER="$HOME/.wallpapers/tokyo.png"
 fi
 
 if [ ! -x "$MATUGEN" ]; then
-  notify-send "Matugen" "Matugen not found at ~/.config/i3/bin/matugen"
+  notify_matugen "Matugen" "Matugen not found at ~/.config/i3/bin/matugen"
   exit 1
 fi
 
 if [ ! -f "$WALLPAPER" ]; then
-  notify-send "Matugen" "Wallpaper not found: $WALLPAPER"
+  notify_matugen "Matugen" "Wallpaper not found: $WALLPAPER"
   exit 1
 fi
 
@@ -68,7 +94,7 @@ PY
 fi
 
 if [ -z "$JSON" ]; then
-  notify-send "Matugen" "Failed to generate colors"
+  notify_matugen "Matugen" "Failed to generate colors"
   exit 1
 fi
 
@@ -199,4 +225,4 @@ sassc -t expanded "$HOME/.config/i3/hanauta/src/eww/eww.scss.src" /tmp/eww.css &
 
 eww -c "$HOME/.config/i3/hanauta/src/eww" daemon --restart 2>/dev/null
 
-notify-send "Matugen" "Applied colors from $(basename $WALLPAPER)"
+notify_matugen "Matugen" "Applied colors from $(basename "$WALLPAPER")"

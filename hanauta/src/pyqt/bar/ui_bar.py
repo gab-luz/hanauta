@@ -1155,7 +1155,7 @@ class CyberBar(QWidget):
         self.launcher_trigger.clicked.connect(self._open_launcher)
         self.launcher_trigger.hoveredChanged.connect(self._update_launcher_wordmark_colors)
         self.launcher_trigger_layout = QHBoxLayout(self.launcher_trigger)
-        self.launcher_trigger_layout.setContentsMargins(10, 0, 10, 2)
+        self.launcher_trigger_layout.setContentsMargins(10, 0, 10, 0)
         self.launcher_trigger_layout.setSpacing(5)
         self.launcher_trigger_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.launcher_note = QLabel("♪")
@@ -1165,7 +1165,7 @@ class CyberBar(QWidget):
         self.launcher_text = QLabel("hanauta")
         self.launcher_text.setObjectName("launcherText")
         self.launcher_text.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        self.launcher_text.setFixedHeight(15)
+        self.launcher_text.setFixedHeight(16)
         self.launcher_trigger_layout.addWidget(self.launcher_note)
         self.launcher_trigger_layout.addWidget(self.launcher_text)
         self.launcher_layout.addWidget(self.ai_button)
@@ -1731,14 +1731,14 @@ class CyberBar(QWidget):
                 font-size: 13px;
                 font-weight: 700;
                 letter-spacing: 0.3px;
-                padding-bottom: 3px;
+                padding-bottom: 2px;
             }}
             QLabel#launcherText {{
                 font-family: "{self.ui_font}";
                 font-size: 10px;
                 font-weight: 600;
                 letter-spacing: 0.6px;
-                padding-bottom: 3px;
+                padding-bottom: 0px;
             }}
             #launcherChip:hover {{
                 background: {rgba(theme.surface_container_high, 0.92)};
