@@ -103,6 +103,31 @@ def detect_font(*families: str) -> str:
     return "Sans Serif"
 
 
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    text = str(color or "").strip().lstrip("#")
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) != 6:
+        return (255, 255, 255)
+    try:
+        return (int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
+    except Exception:
+        return (255, 255, 255)
+
+
+def _relative_luminance(color: str) -> float:
+    def channel(value: int) -> float:
+        srgb = value / 255.0
+        return srgb / 12.92 if srgb <= 0.04045 else ((srgb + 0.055) / 1.055) ** 2.4
+
+    r, g, b = _hex_to_rgb(color)
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def _is_dark(color: str) -> bool:
+    return _relative_luminance(color) < 0.42
+
+
 def load_settings_state() -> dict:
     try:
         payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
@@ -149,6 +174,7 @@ class Backend(QObject):
         self._entities_raw: list[dict] = []
         self._entities: list[dict[str, object]] = []
         self._pinned_entities: list[dict[str, object]] = []
+        self._favorite_entities: list[dict[str, object]] = []
         self._search_query = ""
         self._busy = False
         self._available = False
@@ -205,6 +231,7 @@ class Backend(QObject):
                 "iconName": icon_name,
                 "iconGlyph": material_icon(icon_name),
                 "iconSource": icon_source_for_entity(entity, tint_color=self._icon_tint),
+                "favoriteIconSource": icon_source_for_entity(entity, tint_color="#F5F7FF"),
                 "isPinned": entity_id in pinned_set,
                 "canToggle": action is not None,
                 "actionLabel": (
@@ -232,6 +259,11 @@ class Backend(QObject):
 
         self._entities = mapped
         self._pinned_entities = [pinned_map[entity_id] for entity_id in pinned_list if entity_id in pinned_map][:5]
+        favorite_items = [
+            item for item in mapped
+            if bool(item.get("canToggle")) and not bool(item.get("isPinned"))
+        ]
+        self._favorite_entities = favorite_items[:6]
         self.entitiesChanged.emit()
         self.pinnedEntitiesChanged.emit()
 
@@ -265,6 +297,10 @@ class Backend(QObject):
     @pyqtProperty("QVariantList", notify=pinnedEntitiesChanged)
     def pinnedEntities(self) -> list[dict[str, object]]:
         return self._pinned_entities
+
+    @pyqtProperty("QVariantList", notify=entitiesChanged)
+    def favoriteEntities(self) -> list[dict[str, object]]:
+        return self._favorite_entities
 
     @pyqtProperty(str, notify=statusChanged)
     def statusHeadline(self) -> str:
@@ -456,6 +492,7 @@ class Backend(QObject):
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Home Assistant")
+    app.setQuitOnLastWindowClosed(False)
     signal.signal(signal.SIGINT, lambda *_args: app.quit())
 
     if not QML_FILE.exists():
@@ -469,12 +506,18 @@ def main() -> int:
     card_base = blend(theme.surface_container_high, theme.surface_container, 0.42)
     card_strong_base = blend(theme.surface_container_high, theme.surface_container, 0.58)
     field_base = blend(theme.surface_container_high, theme.surface_container, 0.52)
+    panel_reference = blend(panel_start_base, panel_end_base, 0.5)
+    dark_mode_surface = _is_dark(panel_reference)
+    fg = "#F5F7FF" if dark_mode_surface else "#15181E"
+    fg_muted = "#C9D1E2" if dark_mode_surface else "#4D5562"
+    icon_tint = "#E4EBFF" if dark_mode_surface else blend(theme.primary, "#2A3140", 0.62)
+    on_primary = "#08111F" if _is_dark(theme.primary) else "#F7FAFF"
 
     theme_map = {
         "primary": theme.primary,
-        "onPrimary": theme.on_primary,
-        "text": theme.text,
-        "textMuted": theme.text_muted,
+        "onPrimary": on_primary,
+        "text": fg,
+        "textMuted": fg_muted,
         "surface": theme.surface,
         "surfaceContainer": theme.surface_container,
         "surfaceContainerHigh": theme.surface_container_high,
@@ -491,29 +534,77 @@ def main() -> int:
         "activeBorder": rgba(theme.primary, 0.40),
         "hover": rgba(theme.primary, 0.13),
         "pressed": rgba(theme.primary, 0.20),
-        "iconTint": theme.primary,
-        "iconMuted": rgba(theme.text_muted, 0.94),
+        "iconTint": icon_tint,
+        "iconMuted": rgba(fg_muted, 0.96),
         "good": "#78d8a0",
         "warning": "#ffce73",
         "danger": "#ff8f8f",
+        "surfaceIsDark": dark_mode_surface,
     }
 
     engine = QQmlApplicationEngine()
-    backend = Backend(icon_tint=str(theme.primary))
+    backend = Backend(icon_tint=str(icon_tint))
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("themeModel", theme_map)
-    engine.load(QUrl.fromLocalFile(str(QML_FILE)))
 
-    if not engine.rootObjects():
+    current_root: dict[str, object | None] = {"window": None}
+    qml_mtime = QML_FILE.stat().st_mtime_ns
+
+    def _position_root(window: object) -> None:
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        width = int(window.property("width"))
+        window.setProperty("x", available.x() + available.width() - width - 46)
+        window.setProperty("y", available.y() + 88)
+
+    def _load_qml() -> bool:
+        existing = current_root.get("window")
+        if existing is not None:
+            try:
+                existing.setProperty("visible", False)
+            except Exception:
+                pass
+            try:
+                existing.close()
+            except Exception:
+                pass
+            try:
+                existing.deleteLater()
+            except Exception:
+                pass
+
+        engine.clearComponentCache()
+        engine.load(QUrl.fromLocalFile(str(QML_FILE)))
+        roots = engine.rootObjects()
+        if not roots:
+            return False
+        root = roots[-1]
+        current_root["window"] = root
+        _position_root(root)
+        return True
+
+    if not _load_qml():
         print("ERROR: failed to load Home Assistant widget QML.", file=sys.stderr)
         return 3
 
-    root = engine.rootObjects()[0]
-    screen = QGuiApplication.primaryScreen()
-    if screen is not None:
-        available = screen.availableGeometry()
-        root.setProperty("x", available.x() + available.width() - int(root.property("width")) - 46)
-        root.setProperty("y", available.y() + 88)
+    qml_reload_timer = QTimer()
+    qml_reload_timer.setInterval(1200)
+
+    def _maybe_reload_qml() -> None:
+        nonlocal qml_mtime
+        try:
+            current_mtime = QML_FILE.stat().st_mtime_ns
+        except FileNotFoundError:
+            return
+        if current_mtime == qml_mtime:
+            return
+        qml_mtime = current_mtime
+        _load_qml()
+
+    qml_reload_timer.timeout.connect(_maybe_reload_qml)
+    qml_reload_timer.start()
 
     backend.closeRequested.connect(app.quit)
     return app.exec()

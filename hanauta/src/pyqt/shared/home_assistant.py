@@ -339,7 +339,7 @@ def prefetch_entity_icons(entities: list[dict], *, tint_color: str = "#FFFFFF", 
     seen: set[str] = set()
     count = 0
     for entity in entities:
-        icon_name = entity_custom_mdi_icon_name(entity)
+        icon_name = entity_mdi_icon_name(entity)
         if not icon_name or icon_name in seen:
             continue
         seen.add(icon_name)
@@ -349,12 +349,22 @@ def prefetch_entity_icons(entities: list[dict], *, tint_color: str = "#FFFFFF", 
             break
 
 
+def _existing_cached_icon_path(icon_name: str, tint_color: str = "#FFFFFF") -> Path | None:
+    tinted = cached_mdi_icon_path(icon_name, tint_color=tint_color)
+    if tinted.exists() and tinted.is_file():
+        return tinted
+    plain = HOME_ASSISTANT_ICON_DIR / f"{str(icon_name).strip().replace('/', '-')}.svg"
+    if plain.exists() and plain.is_file():
+        return plain
+    return None
+
+
 def icon_source_for_entity(entity: dict, *, tint_color: str = "#FFFFFF") -> str:
-    icon_name = entity_custom_mdi_icon_name(entity)
+    icon_name = entity_mdi_icon_name(entity)
     if not icon_name:
         return ""
-    icon_path = cached_mdi_icon_path(icon_name, tint_color=tint_color)
-    if not icon_path.exists() or not icon_path.is_file():
+    icon_path = _existing_cached_icon_path(icon_name, tint_color=tint_color)
+    if icon_path is None:
         return ""
     return QUrl.fromLocalFile(str(icon_path)).toString()
 
