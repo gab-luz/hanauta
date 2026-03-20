@@ -26,6 +26,7 @@ WALLPAPER_CACHE_BINARY = ROOT / "hanauta" / "bin" / "hanauta-wallcache"
 QML_FILE = Path(__file__).resolve().with_suffix(".qml")
 DEFAULT_WALLPAPER_FOLDER = ROOT / "hanauta" / "walls"
 KONACHAN_CACHE_DIR = DEFAULT_WALLPAPER_FOLDER / "Konachan-cache"
+MAX_KONACHAN_CACHE_ITEMS = 20
 KONACHAN_PROVIDER_DAEMON = Path(__file__).resolve().with_name("wallpaper_provider_daemon.py")
 WALLPAPER_THUMBNAIL_SERVICE = Path(__file__).resolve().with_name("wallpaper_thumbnail_service.py")
 WALLPAPER_INDEX_CACHE = Path.home() / ".local" / "state" / "hanauta" / "service" / "wallpaper-index.json"
@@ -219,6 +220,33 @@ def download_konachan_candidate(candidate: dict[str, str]) -> Path | None:
         except Exception:
             pass
     return None
+
+
+def prune_konachan_cache(*, keep: Path | None = None) -> None:
+    KONACHAN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    keep_path = keep.resolve() if keep is not None and keep.exists() else None
+    images = [
+        path
+        for path in KONACHAN_CACHE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+    ]
+    if len(images) <= MAX_KONACHAN_CACHE_ITEMS:
+        return
+    images.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    retained: set[Path] = set(images[:MAX_KONACHAN_CACHE_ITEMS])
+    if keep_path is not None:
+        retained.add(keep_path)
+    for path in images:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in retained:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 
 class Backend(QObject):
@@ -827,6 +855,7 @@ class Backend(QObject):
             self.notify.emit(self._status)
             return
         self._apply_wallpaper_path(path, pin_selection=False)
+        prune_konachan_cache(keep=path)
         self._status = f"Applied Konachan suggestion {index + 1} for tags: {self.konachanTags}"
         self.statusChanged.emit()
 
@@ -844,6 +873,7 @@ class Backend(QObject):
                 return
             if provider_key == "konachan":
                 KONACHAN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                prune_konachan_cache()
                 self._persist_provider("konachan", KONACHAN_CACHE_DIR)
                 self._status = "Konachan live feed enabled. Loading tagged suggestions now."
                 self.statusChanged.emit()

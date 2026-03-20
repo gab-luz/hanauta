@@ -17,6 +17,7 @@ WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "hanauta" / "scripts" / "run_matugen.sh"
 MATUGEN_BINARY = ROOT / "bin" / "matugen"
 KONACHAN_CACHE_DIR = ROOT / "walls" / "Konachan-cache"
+MAX_KONACHAN_CACHE_ITEMS = 20
 
 
 def load_settings_state() -> dict:
@@ -115,6 +116,33 @@ def image_paths_for_folder(folder: Path) -> list[Path]:
     ]
 
 
+def prune_konachan_cache(*, keep: Path | None = None) -> None:
+    KONACHAN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    keep_path = keep.resolve() if keep is not None and keep.exists() else None
+    images = [
+        path
+        for path in KONACHAN_CACHE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+    ]
+    if len(images) <= MAX_KONACHAN_CACHE_ITEMS:
+        return
+    images.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    retained: set[Path] = set(images[:MAX_KONACHAN_CACHE_ITEMS])
+    if keep_path is not None:
+        retained.add(keep_path)
+    for path in images:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in retained:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def build_request(tags: str) -> request.Request:
     chosen_page = random.randint(1, 80)
     query = parse.urlencode(
@@ -197,6 +225,7 @@ def apply_wallpaper(path: Path, settings: dict) -> None:
         appearance["theme_choice"] = "wallpaper_aware"
         run_detached([str(MATUGEN_SCRIPT), str(path)])
     save_settings_state(settings)
+    prune_konachan_cache(keep=path)
 
 
 def run_once() -> int:
