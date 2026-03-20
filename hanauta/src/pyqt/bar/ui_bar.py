@@ -77,6 +77,7 @@ CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_w
 REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
+HOME_ASSISTANT_WIDGET = APP_DIR / "pyqt" / "widget-home-assistant" / "home_assistant_widget.py"
 POWERMENU_WIDGET = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 OBS_STATUS = APP_DIR / "pyqt" / "widget-obs" / "obs_status.py"
@@ -102,6 +103,7 @@ ASSETS_DIR = source_root() / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
+HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 OBS_ICON = ASSETS_DIR / "OBS Studio.svg"
 OBS_STREAMING_ACTIVE_ICON = ASSETS_DIR / "obs-streaming-active.svg"
 OBS_STREAMING_INACTIVE_ICON = ASSETS_DIR / "obs-streaming-inactive.svg"
@@ -134,6 +136,7 @@ MATERIAL_ICONS = {
     "md-bitcoin": "\uebc5",
     "currency_bitcoin": "\uebc5",
     "dashboard": "\ue871",
+    "home": "\ue88a",
     "music_note": "\ue405",
     "notifications": "\ue7f4",
     "notifications_active": "\ue7f7",
@@ -1338,6 +1341,11 @@ class CyberBar(QWidget):
         self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.christian_button.clicked.connect(self._open_christian_widget)
         self.christian_button.setIconSize(QSize(16, 16))
+        self.home_assistant_button = QPushButton("")
+        self.home_assistant_button.setObjectName("statusIconButton")
+        self.home_assistant_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.home_assistant_button.clicked.connect(self._open_home_assistant_widget)
+        self.home_assistant_button.setIconSize(QSize(18, 18))
         self.reminders_button = QPushButton(REMINDERS_BAR_GLYPH)
         self.reminders_button.setObjectName("statusIconButton")
         self.reminders_button.setProperty("nerdIcon", True)
@@ -1385,7 +1393,7 @@ class CyberBar(QWidget):
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.home_assistant_button, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.caps_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
@@ -1393,6 +1401,7 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.net_icon)
         self.status_layout.addWidget(self.vpn_icon)
         self.status_layout.addWidget(self.christian_button)
+        self.status_layout.addWidget(self.home_assistant_button)
         self.status_layout.addWidget(self.reminders_button)
         self.status_layout.addWidget(self.caps_lock_button)
         self.status_layout.addWidget(self.num_lock_button)
@@ -1435,7 +1444,9 @@ class CyberBar(QWidget):
         self.battery_value.setVisible(has_battery)
         self._set_vpn_button_icon(False)
         self._set_christian_button_icon()
+        self._set_home_assistant_button_icon()
         self._sync_christian_button_visibility()
+        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -1603,6 +1614,7 @@ class CyberBar(QWidget):
         self.net_icon.setToolTip("Wi-Fi button")
         self.vpn_icon.setToolTip("VPN button")
         self.christian_button.setToolTip("Christian widget button")
+        self.home_assistant_button.setToolTip("Home Assistant widget button")
         self.reminders_button.setToolTip("Reminders widget button")
         self.ntfy_button.setToolTip("ntfy publisher button")
         self.caffeine_icon.setToolTip("Caffeine icon")
@@ -1941,6 +1953,7 @@ class CyberBar(QWidget):
         self._set_vpn_button_icon(bool(self.vpn_icon.property("active")))
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
+        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -2048,6 +2061,7 @@ class CyberBar(QWidget):
         self._apply_bar_icon_overrides()
         self._apply_styles()
         self._sync_christian_button_visibility()
+        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -2063,6 +2077,7 @@ class CyberBar(QWidget):
     def _apply_bar_icon_overrides(self) -> None:
         self._apply_icon_to_widget(self.locale_button, "public", material_icon("public"), 16)
         self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
+        self._set_home_assistant_button_icon()
         self._set_pomodoro_button_icon()
         self._set_reminders_button_icon()
         self._set_rss_button_icon()
@@ -2343,6 +2358,7 @@ class CyberBar(QWidget):
         self._poll_battery()
         self._poll_lock_states()
         self._sync_christian_button_visibility()
+        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -2659,6 +2675,19 @@ class CyberBar(QWidget):
         self.christian_button.setText(self._bar_icon_overrides.get("christian_widget", material_icon("auto_awesome")))
         self.christian_button.setFont(QFont(self.material_font, 16))
 
+    def _set_home_assistant_button_icon(self) -> None:
+        icon = tinted_svg_icon(HOME_ASSISTANT_ICON, QColor(self.theme.primary), 18)
+        self.home_assistant_button.setProperty("iconKey", "home")
+        self.home_assistant_button.setProperty("nerdIcon", False)
+        self.home_assistant_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.home_assistant_button.setIcon(icon)
+            self.home_assistant_button.setIconSize(QSize(18, 18))
+            self.home_assistant_button.setText("")
+            return
+        self.home_assistant_button.setIcon(QIcon())
+        self.home_assistant_button.setText(material_icon("home"))
+
     def _set_reminders_button_icon(self) -> None:
         icon = tinted_svg_icon(REMINDER_ICON, QColor(self.theme.primary), 20)
         self.reminders_button.setProperty("iconKey", "reminder_widget")
@@ -2754,6 +2783,15 @@ class CyberBar(QWidget):
         enabled = bool(service.get("enabled", True))
         show_in_bar = bool(service.get("show_in_bar", service.get("show_in_notification_center", False)))
         self.christian_button.setVisible(enabled and show_in_bar)
+
+    def _sync_home_assistant_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("home_assistant", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", False))
+        self.home_assistant_button.setVisible(enabled and show_in_bar)
 
     def _sync_reminders_button_visibility(self) -> None:
         services = load_service_settings()
@@ -3082,6 +3120,11 @@ class CyberBar(QWidget):
         if not CHRISTIAN_WIDGET.exists():
             return
         self._toggle_singleton_process("_christian_widget_process", CHRISTIAN_WIDGET, python_bin=self._python_bin())
+
+    def _open_home_assistant_widget(self) -> None:
+        if not HOME_ASSISTANT_WIDGET.exists():
+            return
+        self._toggle_singleton_process("_home_assistant_widget_process", HOME_ASSISTANT_WIDGET, python_bin=self._python_bin())
 
     def _open_reminders_widget(self) -> None:
         if not REMINDERS_WIDGET.exists():

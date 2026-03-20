@@ -265,6 +265,7 @@ DEFAULT_SERVICE_SETTINGS = {
     "home_assistant": {
         "enabled": True,
         "show_in_notification_center": True,
+        "show_in_bar": False,
     },
     "vpn_control": {
         "enabled": True,
@@ -387,6 +388,10 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["preferred_interface"] = str(
                 current.get("preferred_interface", defaults.get("preferred_interface", ""))
             ).strip()
+        elif key == "home_assistant":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", False))
+            )
         elif key == "reminders_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
@@ -3994,6 +3999,28 @@ class SettingsWindow(QWidget):
             )
         )
 
+        self.ha_bar_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["home_assistant"].get(
+                    "show_in_bar",
+                    False,
+                )
+            )
+        )
+        self.ha_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("home_assistant", enabled)
+        )
+        content_layout.addWidget(
+            SettingsRow(
+                material_icon("home"),
+                "Show on bar",
+                "Adds a Home Assistant icon to the bar so the popup can be opened directly.",
+                self.icon_font,
+                self.ui_font,
+                self.ha_bar_switch,
+            )
+        )
+
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.ha_save_button = QPushButton("Save")
@@ -5392,7 +5419,7 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
-            if key in {"reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
+            if key in {"home_assistant", "reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -5435,6 +5462,11 @@ class SettingsWindow(QWidget):
                 switch._apply_state()
         if key == "reminders_widget":
             switch = getattr(self, "reminders_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
+        if key == "home_assistant":
+            switch = getattr(self, "ha_bar_switch", None)
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
