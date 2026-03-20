@@ -133,13 +133,14 @@ def load_wallpaper_index_cache() -> dict:
     return payload if isinstance(folders, dict) else {}
 
 
-def run_detached(command: list[str]) -> None:
+def run_detached(command: list[str], *, env: dict[str, str] | None = None) -> None:
     subprocess.Popen(
         command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
+        env=env,
     )
 
 
@@ -587,7 +588,10 @@ class Backend(QObject):
         else:
             run_detached(["feh", "--bg-fill", str(wallpaper_path)])
         if self._matugen_available:
-            run_detached([str(MATUGEN_SCRIPT), str(wallpaper_path)])
+            matugen_env = dict(os.environ)
+            if not self._wallpaper_change_notifications_enabled():
+                matugen_env["HANAUTA_SUPPRESS_MATUGEN_NOTIFY"] = "1"
+            run_detached([str(MATUGEN_SCRIPT), str(wallpaper_path)], env=matugen_env)
         self._apply_wallpaper_settings(wallpaper_path)
         self._background_source = file_url(wallpaper_path)
         self.backgroundSourceChanged.emit()

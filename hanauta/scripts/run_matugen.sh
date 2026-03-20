@@ -7,20 +7,24 @@ PYQT_THEME_FILE="$PYQT_THEME_DIR/pyqt_palette.json"
 SETTINGS_FILE="$HOME/.local/state/hanauta/notification-center/settings.json"
 
 matugen_notifications_enabled() {
+  if [ "${HANAUTA_SUPPRESS_MATUGEN_NOTIFY:-0}" = "1" ]; then
+    echo "0"
+    return
+  fi
   python3 - "$SETTINGS_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1]).expanduser()
-enabled = True
+enabled = False
 try:
     payload = json.loads(path.read_text(encoding="utf-8"))
 except Exception:
     payload = {}
 appearance = payload.get("appearance", {}) if isinstance(payload, dict) else {}
 if isinstance(appearance, dict):
-    enabled = bool(appearance.get("matugen_notifications_enabled", True))
+    enabled = bool(appearance.get("matugen_notifications_enabled", False))
 print("1" if enabled else "0")
 PY
 }

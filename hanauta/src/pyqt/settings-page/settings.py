@@ -452,9 +452,9 @@ def detect_font(*families: str) -> str:
     return "Sans Serif"
 
 
-def run_bg(cmd: list[str]) -> None:
+def run_bg(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
     try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     except Exception:
         pass
 
@@ -1040,7 +1040,9 @@ def restore_saved_wallpaper() -> None:
         run_bg(["feh", "--bg-fill", str(wallpaper_path)])
 
     if bool(appearance.get("use_matugen_palette", False)) and MATUGEN_SCRIPT.exists():
-        run_bg([str(MATUGEN_SCRIPT), str(wallpaper_path)])
+        matugen_env = dict(os.environ)
+        matugen_env["HANAUTA_SUPPRESS_MATUGEN_NOTIFY"] = "1"
+        run_bg([str(MATUGEN_SCRIPT), str(wallpaper_path)], env=matugen_env)
 
 
 def restore_saved_vpn() -> None:
@@ -3082,7 +3084,7 @@ class SettingsWindow(QWidget):
             matugen_button,
         )
         self.matugen_notifications_switch = SwitchButton(
-            bool(self.settings_state["appearance"].get("matugen_notifications_enabled", True))
+            bool(self.settings_state["appearance"].get("matugen_notifications_enabled", False))
         )
         self.matugen_notifications_switch.toggledValue.connect(self._set_matugen_notifications_enabled)
         matugen_notifications = SettingsRow(

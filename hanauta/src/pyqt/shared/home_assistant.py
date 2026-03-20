@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, request
@@ -11,10 +12,31 @@ from PyQt6.QtCore import QUrl
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 HOME_ASSISTANT_ICON_DIR = ASSETS_DIR / "home-assistant-icons"
 MDI_ICON_BASE_URL = "https://raw.githubusercontent.com/Templarian/MaterialDesign/master/svg"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+SERVICE_HOME_ASSISTANT_CACHE = SERVICE_STATE_DIR / "home_assistant.json"
+
+_FILL_ATTR_RE = re.compile(r'\sfill="[^"]*"')
+_HEX_RE = re.compile(r"[^0-9a-fA-F]")
 
 
 def normalize_ha_url(url: str) -> str:
     return str(url).strip().rstrip("/")
+
+
+def load_service_home_assistant_cache(base_url: str = "") -> dict | None:
+    try:
+        payload = json.loads(SERVICE_HOME_ASSISTANT_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("payload")
+    if not isinstance(raw, list):
+        return None
+    cached_url = normalize_ha_url(str(payload.get("url", "")))
+    if base_url and cached_url and cached_url != normalize_ha_url(base_url):
+        return None
+    return payload
 
 
 def fetch_home_assistant_json(base_url: str, token: str, path: str, *, timeout: float = 4.0) -> tuple[object | None, str]:
@@ -209,13 +231,22 @@ def entity_icon_name(entity: dict) -> str:
     return mapping.get(domain, "home")
 
 
-def entity_mdi_icon_name(entity: dict) -> str:
+def entity_custom_mdi_icon_name(entity: dict) -> str:
     attrs = entity.get("attributes", {}) if isinstance(entity, dict) else {}
     if isinstance(attrs, dict):
         icon_value = str(attrs.get("icon", "")).strip()
         if icon_value.startswith("mdi:"):
             return icon_value.split(":", 1)[1].strip()
+    return ""
+
+
+def entity_mdi_icon_name(entity: dict) -> str:
+    custom = entity_custom_mdi_icon_name(entity)
+    if custom:
+        return custom
+
     domain = entity_domain(str(entity.get("entity_id", "")))
+    attrs = entity.get("attributes", {}) if isinstance(entity, dict) else {}
     device_class = str(attrs.get("device_class", "")).strip() if isinstance(attrs, dict) else ""
     mapping = {
         "light": "lightbulb",
@@ -244,26 +275,57 @@ def entity_mdi_icon_name(entity: dict) -> str:
     return mapping.get(domain, "home-assistant")
 
 
-def cached_mdi_icon_path(icon_name: str) -> Path:
-    safe = str(icon_name).strip().replace("/", "-")
-    return HOME_ASSISTANT_ICON_DIR / f"{safe}.svg"
+def _normalize_hex_color(color: str, default: str = "#FFFFFF") -> str:
+    text = str(color or "").strip()
+    if text.startswith("#"):
+        text = text[1:]
+    text = _HEX_RE.sub("", text)
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) != 6:
+        return default
+    return f"#{text.upper()}"
 
 
-def ensure_mdi_icon_downloaded(icon_name: str, *, timeout: float = 8.0) -> Path | None:
+def cached_mdi_icon_path(icon_name: str, tint_color: str = "#FFFFFF") -> Path:
+    safe_name = str(icon_name).strip().replace("/", "-")
+    safe_color = _normalize_hex_color(tint_color).replace("#", "")
+    return HOME_ASSISTANT_ICON_DIR / f"{safe_name}--{safe_color}.svg"
+
+
+def _tinted_svg_markup(svg_text: str, tint_color: str) -> str:
+    clean = str(svg_text or "").replace("\ufeff", "").strip()
+    if not clean:
+        return clean
+    clean = _FILL_ATTR_RE.sub("", clean)
+    if "<svg" in clean:
+        clean = clean.replace(
+            "<svg",
+            f'<svg fill="{_normalize_hex_color(tint_color)}" preserveAspectRatio="xMidYMid meet"',
+            1,
+        )
+    return clean
+
+
+def ensure_mdi_icon_downloaded(icon_name: str, *, tint_color: str = "#FFFFFF", timeout: float = 8.0) -> Path | None:
     icon_name = str(icon_name).strip()
     if not icon_name:
         return None
+
     HOME_ASSISTANT_ICON_DIR.mkdir(parents=True, exist_ok=True)
-    target = cached_mdi_icon_path(icon_name)
+    target = cached_mdi_icon_path(icon_name, tint_color=tint_color)
+
     if target.exists() and target.is_file():
         return target
+
     try:
         req = request.Request(
             f"{MDI_ICON_BASE_URL}/{icon_name}.svg",
             headers={"User-Agent": "Mozilla/5.0 HanautaHomeAssistant/1.0"},
         )
         with request.urlopen(req, timeout=timeout) as response:
-            target.write_bytes(response.read())
+            raw_text = response.read().decode("utf-8", errors="replace")
+        target.write_text(_tinted_svg_markup(raw_text, tint_color), encoding="utf-8")
         return target if target.exists() else None
     except Exception:
         try:
@@ -273,23 +335,26 @@ def ensure_mdi_icon_downloaded(icon_name: str, *, timeout: float = 8.0) -> Path 
         return None
 
 
-def prefetch_entity_icons(entities: list[dict], *, limit: int = 96) -> None:
+def prefetch_entity_icons(entities: list[dict], *, tint_color: str = "#FFFFFF", limit: int = 96) -> None:
     seen: set[str] = set()
     count = 0
     for entity in entities:
-        icon_name = entity_mdi_icon_name(entity)
+        icon_name = entity_custom_mdi_icon_name(entity)
         if not icon_name or icon_name in seen:
             continue
         seen.add(icon_name)
-        ensure_mdi_icon_downloaded(icon_name)
+        ensure_mdi_icon_downloaded(icon_name, tint_color=tint_color)
         count += 1
         if count >= limit:
             break
 
 
-def icon_source_for_entity(entity: dict) -> str:
-    icon_path = ensure_mdi_icon_downloaded(entity_mdi_icon_name(entity))
-    if icon_path is None:
+def icon_source_for_entity(entity: dict, *, tint_color: str = "#FFFFFF") -> str:
+    icon_name = entity_custom_mdi_icon_name(entity)
+    if not icon_name:
+        return ""
+    icon_path = cached_mdi_icon_path(icon_name, tint_color=tint_color)
+    if not icon_path.exists() or not icon_path.is_file():
         return ""
     return QUrl.fromLocalFile(str(icon_path)).toString()
 
