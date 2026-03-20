@@ -73,6 +73,7 @@ CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_w
 REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
+POWERMENU_WIDGET = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
 OBS_STATUS = APP_DIR / "pyqt" / "widget-obs" / "obs_status.py"
 UPDATES_WIDGET = APP_DIR / "pyqt" / "widget-updates" / "updates_widget.py"
@@ -87,7 +88,6 @@ GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
-POWERMENU_APP = HANAUTA_ROOT / "bin" / "hanauta-powermenu"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
 STATUS_NOTIFIER_WATCHER = APP_DIR / "pyqt" / "bar" / "status_notifier_watcher.py"
 SCRIPTS_DIR = scripts_root()
@@ -102,6 +102,7 @@ OBS_STREAMING_INACTIVE_ICON = ASSETS_DIR / "obs-streaming-inactive.svg"
 OBS_RECORDING_ACTIVE_ICON = ASSETS_DIR / "obs-recording-active.svg"
 OBS_RECORDING_INACTIVE_ICON = ASSETS_DIR / "obs-recording-inactive.svg"
 RSS_ICON = ASSETS_DIR / "rss-feed.svg"
+REMINDER_ICON = ASSETS_DIR / "reminder-widget.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
@@ -1978,6 +1979,7 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.locale_button, "public", material_icon("public"), 16)
         self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
         self._apply_icon_to_widget(self.pomodoro_button, "timer", material_icon("timer"), 16)
+        self._set_reminders_button_icon()
         self._set_rss_button_icon()
         self._set_obs_button_icon()
         self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 16)
@@ -2431,6 +2433,19 @@ class CyberBar(QWidget):
         self.christian_button.setText(self._bar_icon_overrides.get("christian_widget", material_icon("auto_awesome")))
         self.christian_button.setFont(QFont(self.material_font, 16))
 
+    def _set_reminders_button_icon(self) -> None:
+        icon = tinted_svg_icon(REMINDER_ICON, QColor(self.theme.primary), 16)
+        self.reminders_button.setProperty("iconKey", "reminder_widget")
+        self.reminders_button.setProperty("nerdIcon", False)
+        self.reminders_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.reminders_button.setIcon(icon)
+            self.reminders_button.setIconSize(QSize(16, 16))
+            self.reminders_button.setText("")
+            return
+        self.reminders_button.setIcon(QIcon())
+        self.reminders_button.setText(REMINDERS_BAR_GLYPH)
+
     def _set_rss_button_icon(self) -> None:
         icon = tinted_svg_icon(RSS_ICON, QColor(self.theme.primary), 16)
         self.rss_button.setProperty("iconKey", "rss_feed")
@@ -2842,7 +2857,7 @@ class CyberBar(QWidget):
     def _open_rss_widget(self) -> None:
         if not RSS_WIDGET.exists():
             return
-        self._toggle_singleton_process("_rss_widget_process", RSS_WIDGET)
+        self._toggle_singleton_process("_rss_widget_process", RSS_WIDGET, python_bin=self._python_bin())
 
     def _open_obs_widget(self) -> None:
         if not OBS_WIDGET.exists():
@@ -2879,10 +2894,10 @@ class CyberBar(QWidget):
         self._toggle_singleton_process("_launcher_process", LAUNCHER_APP, python_bin=self._python_bin())
 
     def _toggle_powermenu(self) -> None:
-        if not POWERMENU_APP.exists():
+        if not POWERMENU_WIDGET.exists():
             self.btn_power.setChecked(False)
             return
-        active = self._toggle_singleton_process("_powermenu_process", POWERMENU_APP)
+        active = self._toggle_singleton_process("_powermenu_process", POWERMENU_WIDGET, python_bin=self._python_bin())
         self.btn_power.setChecked(active)
 
     def _open_clipboard(self) -> None:
@@ -2966,7 +2981,7 @@ class CyberBar(QWidget):
         )
 
     def _sync_powermenu_button(self) -> None:
-        active = self._singleton_active(self._powermenu_process, POWERMENU_APP)
+        active = self._singleton_active(self._powermenu_process, POWERMENU_WIDGET)
         if not active:
             self._powermenu_process = None
         self.btn_power.setChecked(active)
