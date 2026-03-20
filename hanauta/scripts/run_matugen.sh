@@ -5,6 +5,99 @@ WALLPAPER="$1"
 PYQT_THEME_DIR="$HOME/.local/state/hanauta/theme"
 PYQT_THEME_FILE="$PYQT_THEME_DIR/pyqt_palette.json"
 SETTINGS_FILE="$HOME/.local/state/hanauta/notification-center/settings.json"
+PICOM_CONFIG="$HOME/.config/i3/picom.conf"
+I3_CONFIG="$HOME/.config/i3/config"
+
+apply_picom_halo() {
+  export PICOM_CONFIG ACCENT OUTLINE
+  python3 - <<'PY'
+from pathlib import Path
+import os
+import re
+
+path = Path(os.environ["PICOM_CONFIG"]).expanduser()
+if not path.exists():
+    raise SystemExit(0)
+
+accent = os.environ.get("ACCENT", "#D0BCFF").strip() or "#D0BCFF"
+outline = os.environ.get("OUTLINE", "#938F99").strip() or "#938F99"
+
+try:
+    text = path.read_text(encoding="utf-8")
+except Exception:
+    raise SystemExit(0)
+
+updates = {
+    "shadow": "true",
+    "shadow-radius": "42",
+    "shadow-opacity": "0.42",
+    "shadow-offset-x": "0",
+    "shadow-offset-y": "0",
+    "shadow-color": f'"{accent}"',
+}
+
+for key, value in updates.items():
+    pattern = re.compile(rf"(?m)^({re.escape(key)}\s*=\s*)([^;]+)(;)")
+    if pattern.search(text):
+        text = pattern.sub(rf"\g<1>{value}\3", text, count=1)
+    else:
+        text += f"\n{key} = {value};\n"
+
+path.write_text(text, encoding="utf-8")
+PY
+
+  if command -v picom >/dev/null 2>&1; then
+    pkill -x picom 2>/dev/null || true
+    picom --config "$PICOM_CONFIG" --daemon >/dev/null 2>&1 &
+    disown || true
+  fi
+}
+
+apply_i3_window_halo() {
+  export I3_CONFIG ACCENT OUTLINE BG FG ERROR
+  python3 - <<'PY'
+from pathlib import Path
+import os
+import re
+
+path = Path(os.environ["I3_CONFIG"]).expanduser()
+if not path.exists():
+    raise SystemExit(0)
+
+accent = os.environ.get("ACCENT", "#D0BCFF").strip() or "#D0BCFF"
+outline = os.environ.get("OUTLINE", "#938F99").strip() or "#938F99"
+bg = os.environ.get("BG", "#141218").strip() or "#141218"
+fg = os.environ.get("FG", "#E6E0E9").strip() or "#E6E0E9"
+error = os.environ.get("ERROR", "#F2B8B5").strip() or "#F2B8B5"
+
+try:
+    text = path.read_text(encoding="utf-8")
+except Exception:
+    raise SystemExit(0)
+
+def replace_line(prefix: str, new_line: str, content: str) -> str:
+    pattern = re.compile(rf"(?m)^{re.escape(prefix)}[^\n]*$")
+    if pattern.search(content):
+        return pattern.sub(new_line, content, count=1)
+    return content + ("\n" if not content.endswith("\n") else "") + new_line + "\n"
+
+text = replace_line("default_border", "default_border pixel 3", text)
+text = replace_line("default_floating_border", "default_floating_border pixel 3", text)
+text = replace_line("client.focused", f"client.focused          {accent} {accent} {fg} {accent} {accent}", text)
+text = replace_line("client.focused_inactive", f"client.focused_inactive {outline} {outline} {fg} {outline} {outline}", text)
+text = replace_line("client.unfocused", f"client.unfocused        {outline} {outline} {fg} {outline} {outline}", text)
+text = replace_line("client.urgent", f"client.urgent           {error} {error} {bg} {error} {error}", text)
+text = replace_line("client.placeholder", f"client.placeholder      {outline} {outline} {fg} {outline} {outline}", text)
+text = replace_line("client.background", f"client.background       {bg}", text)
+
+path.write_text(text, encoding="utf-8")
+PY
+
+  if command -v i3-msg >/dev/null 2>&1; then
+    i3-msg reload >/dev/null 2>&1 || true
+    i3-msg '[window_type="normal"] border pixel 3' >/dev/null 2>&1 || true
+  fi
+}
 
 matugen_notifications_enabled() {
   if [ "${HANAUTA_SUPPRESS_MATUGEN_NOTIFY:-0}" = "1" ]; then
@@ -228,5 +321,7 @@ sassc -t expanded "$HOME/.config/i3/hanauta/src/eww/eww.scss.src" /tmp/eww.css &
   sed '1{/^@charset/d;}' /tmp/eww.css > "$HOME/.config/i3/hanauta/src/eww/eww.css"
 
 eww -c "$HOME/.config/i3/hanauta/src/eww" daemon --restart 2>/dev/null
+apply_picom_halo
+apply_i3_window_halo
 
 notify_matugen "Matugen" "Applied colors from $(basename "$WALLPAPER")"
