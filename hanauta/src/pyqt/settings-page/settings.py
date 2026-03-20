@@ -58,6 +58,7 @@ from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_fon
 from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
+from pyqt.shared.home_assistant import entity_friendly_name, entity_icon_name, entity_secondary_text, prefetch_entity_icons
 from pyqt.shared.rss_settings_bridge import create_rss_settings_widget
 
 ROOT = APP_DIR.parents[1]
@@ -80,6 +81,7 @@ PYQT_THEME_FILE = PYQT_THEME_DIR / "pyqt_palette.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
 BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
+HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark.svg"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 PICOM_DEFAULT_CONFIG = """backend = "glx";
@@ -213,6 +215,19 @@ MATERIAL_ICONS = {
     "sports_esports": "\uea28",
     "open_in_new": "\ue89e",
     "location_on": "\ue0c8",
+    "lightbulb": "\ue0f0",
+    "toggle_on": "\ue9f6",
+    "videocam": "\ue04b",
+    "thermostat": "\ue1ff",
+    "device_thermostat": "\ue1ff",
+    "lock": "\ue897",
+    "music_note": "\ue405",
+    "window": "\uefe8",
+    "mode_fan": "\uf168",
+    "shield": "\ue9e0",
+    "water_drop": "\ue798",
+    "push_pin": "\uef3e",
+    "push_pin_outline": "\uf10f",
 }
 
 
@@ -3965,6 +3980,29 @@ class SettingsWindow(QWidget):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(10)
 
+        hero = QFrame()
+        hero.setObjectName("contentCard")
+        hero_layout = QHBoxLayout(hero)
+        hero_layout.setContentsMargins(12, 12, 12, 12)
+        hero_layout.setSpacing(10)
+        hero_logo = QLabel()
+        hero_logo.setFixedSize(28, 28)
+        hero_logo.setScaledContents(True)
+        hero_logo.setPixmap(QPixmap(str(HOME_ASSISTANT_LOGO)).scaled(28, 28, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        hero_text_wrap = QVBoxLayout()
+        hero_text_wrap.setContentsMargins(0, 0, 0, 0)
+        hero_text_wrap.setSpacing(2)
+        hero_title = QLabel("Home Assistant")
+        hero_title.setFont(QFont(self.display_font, 12))
+        hero_hint = QLabel("Connect your server, pin entities, and optionally expose the popup on the bar.")
+        hero_hint.setWordWrap(True)
+        hero_hint.setStyleSheet("color: rgba(246,235,247,0.72);")
+        hero_text_wrap.addWidget(hero_title)
+        hero_text_wrap.addWidget(hero_hint)
+        hero_layout.addWidget(hero_logo, 0, Qt.AlignmentFlag.AlignTop)
+        hero_layout.addLayout(hero_text_wrap, 1)
+        content_layout.addWidget(hero)
+
         self.ha_url_input = QLineEdit(self.settings_state["home_assistant"].get("url", ""))
         self.ha_url_input.setPlaceholderText("https://homeassistant.local:8123")
         self.ha_token_input = QLineEdit(self.settings_state["home_assistant"].get("token", ""))
@@ -4024,9 +4062,15 @@ class SettingsWindow(QWidget):
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.ha_save_button = QPushButton("Save")
+        self.ha_save_button.setObjectName("primaryButton")
         self.ha_refresh_button = QPushButton("Fetch Entities")
+        self.ha_refresh_button.setObjectName("secondaryButton")
         self.ha_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.ha_refresh_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ha_save_button.setMinimumHeight(42)
+        self.ha_refresh_button.setMinimumHeight(42)
+        self.ha_save_button.setMinimumWidth(144)
+        self.ha_refresh_button.setMinimumWidth(160)
         self.ha_save_button.clicked.connect(self._save_home_assistant_settings)
         self.ha_refresh_button.clicked.connect(self._refresh_home_assistant_entities)
         buttons.addWidget(self.ha_save_button)
@@ -6622,6 +6666,7 @@ class SettingsWindow(QWidget):
             [item for item in payload if isinstance(item, dict)],
             key=lambda item: str(item.get("entity_id", "")),
         )
+        prefetch_entity_icons(self._ha_entities)
         self._ha_entity_map = {str(item.get("entity_id", "")): item for item in self._ha_entities}
         self.ha_status.setText(f"Fetched {len(self._ha_entities)} entities successfully.")
         self._rebuild_ha_entity_list()
@@ -6643,15 +6688,22 @@ class SettingsWindow(QWidget):
         for entity in self._ha_entities[:80]:
             entity_id = str(entity.get("entity_id", ""))
             state = str(entity.get("state", "unknown"))
-            attrs = entity.get("attributes", {}) or {}
-            name = str(attrs.get("friendly_name", entity_id))
-            pin_button = QPushButton("Unpin" if entity_id in pinned else "Pin")
+            name = entity_friendly_name(entity)
+            secondary = entity_secondary_text(entity)
+            detail = f"{entity_id} • {state}"
+            if secondary and secondary != entity_id:
+                detail = f"{secondary} • {state}"
+            pin_button = QPushButton(material_icon("push_pin") if entity_id in pinned else material_icon("push_pin_outline"))
             pin_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            pin_button.setProperty("iconRole", True)
+            pin_button.setFont(QFont(self.icon_font, 18))
+            pin_button.setMinimumSize(42, 42)
+            pin_button.setObjectName("secondaryButton")
             pin_button.clicked.connect(lambda checked=False, current=entity_id: self._toggle_pin_entity(current))
             row = SettingsRow(
-                material_icon("widgets"),
+                material_icon(entity_icon_name(entity)),
                 name,
-                f"{entity_id} • {state}",
+                detail,
                 self.icon_font,
                 self.ui_font,
                 pin_button,

@@ -30,13 +30,16 @@ from pyqt.shared.home_assistant import (
     entity_domain,
     entity_friendly_name,
     entity_icon_name,
+    icon_source_for_entity,
+    entity_relative_update_text,
     entity_secondary_text,
     entity_state_label,
     fetch_home_assistant_json,
     normalize_ha_url,
+    prefetch_entity_icons,
     post_home_assistant_json,
 )
-from pyqt.shared.runtime import entry_command, python_executable
+from pyqt.shared.runtime import entry_command
 from pyqt.shared.theme import blend, load_theme_palette, rgba
 
 
@@ -187,11 +190,14 @@ class Backend(QObject):
                 "entityId": entity_id,
                 "friendlyName": name,
                 "domain": domain,
+                "domainLabel": domain.replace("_", " ").title() or "Entity",
                 "state": state_label,
                 "secondary": secondary,
                 "details": details,
+                "updatedText": entity_relative_update_text(entity),
                 "iconName": icon_name,
                 "iconGlyph": material_icon(icon_name),
+                "iconSource": icon_source_for_entity(entity),
                 "isPinned": entity_id in pinned_set,
                 "canToggle": action is not None,
                 "actionLabel": (
@@ -204,8 +210,9 @@ class Backend(QObject):
                     if str(entity.get("state", "")).strip().lower() in {"on", "playing", "home", "open", "armed_away", "armed_home"}
                     else "idle"
                 ),
+                "rawState": str(entity.get("state", "")).strip(),
             }
-            haystack = " ".join((name, entity_id, domain, secondary)).lower()
+            haystack = " ".join((name, entity_id, domain, secondary, details, str(entity.get("state", "")))).lower()
             if not query or query in haystack:
                 mapped.append(item)
             if entity_id in pinned_set:
@@ -284,7 +291,6 @@ class Backend(QObject):
         self._rebuild_views()
 
     @pyqtSlot()
-    @pyqtSlot()
     def refresh(self) -> None:
         self._settings = load_settings_state()
         if not self._service_enabled():
@@ -318,6 +324,7 @@ class Backend(QObject):
             return
         entities = [item for item in payload if isinstance(item, dict) and str(item.get("entity_id", "")).strip()]
         entities.sort(key=lambda item: entity_friendly_name(item).lower())
+        prefetch_entity_icons(entities)
         self._available = True
         self._entities_raw = entities
         self._rebuild_views()
