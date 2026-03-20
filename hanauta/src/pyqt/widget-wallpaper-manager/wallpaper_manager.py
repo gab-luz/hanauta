@@ -88,6 +88,7 @@ def load_settings_state() -> dict:
             "slideshow_enabled": False,
             "theme_choice": "dark",
             "use_matugen_palette": False,
+            "wallpaper_change_notifications_enabled": False,
             "wallpaper_provider": "",
             "wallpaper_provider_initialized": False,
             "konachan_enabled": False,
@@ -574,6 +575,12 @@ class Backend(QObject):
         item = self._wallpapers[self._current_index]
         return item if isinstance(item, dict) else None
 
+    def _wallpaper_change_notifications_enabled(self) -> bool:
+        appearance = self._settings.get("appearance", {})
+        if not isinstance(appearance, dict):
+            return False
+        return bool(appearance.get("wallpaper_change_notifications_enabled", False))
+
     def _apply_wallpaper_path(self, wallpaper_path: Path, *, pin_selection: bool) -> None:
         if WALLPAPER_SCRIPT.exists():
             run_detached([str(WALLPAPER_SCRIPT), str(wallpaper_path)])
@@ -594,7 +601,8 @@ class Backend(QObject):
         if not pin_selection:
             self._status += " Selection released."
         self.statusChanged.emit()
-        self.notify.emit(self._status)
+        if self._wallpaper_change_notifications_enabled():
+            self.notify.emit(self._status)
 
     def _start_konachan_daemon_once(self) -> None:
         if not KONACHAN_PROVIDER_DAEMON.exists():

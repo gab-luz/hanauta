@@ -465,6 +465,7 @@ def load_settings_state() -> dict:
             "notification_center_card_opacity": 92,
             "notification_toast_max_width": 356,
             "notification_toast_max_height": 280,
+            "wallpaper_change_notifications_enabled": False,
             "use_matugen_palette": False,
             "matugen_notifications_enabled": False,
         },
@@ -623,6 +624,7 @@ def load_settings_state() -> dict:
         )
     except Exception:
         appearance["notification_toast_max_height"] = 280
+    appearance.setdefault("wallpaper_change_notifications_enabled", False)
     appearance.setdefault("use_matugen_palette", False)
     appearance.setdefault("matugen_notifications_enabled", False)
     theme_choice = str(appearance.get("theme_choice", "")).strip().lower()
@@ -3071,9 +3073,24 @@ class SettingsWindow(QWidget):
             self.ui_font,
             self.matugen_notifications_switch,
         )
+        self.wallpaper_change_notifications_switch = SwitchButton(
+            bool(self.settings_state["appearance"].get("wallpaper_change_notifications_enabled", False))
+        )
+        self.wallpaper_change_notifications_switch.toggledValue.connect(
+            self._set_wallpaper_change_notifications_enabled
+        )
+        wallpaper_change_notifications = SettingsRow(
+            material_icon("image"),
+            "Wallpaper change notifications",
+            "Show a desktop notification when Hanauta applies a new wallpaper.",
+            self.icon_font,
+            self.ui_font,
+            self.wallpaper_change_notifications_switch,
+        )
         layout.addWidget(interval)
         layout.addWidget(matugen)
         layout.addWidget(matugen_notifications)
+        layout.addWidget(wallpaper_change_notifications)
         return card
 
     def _build_display_card(self) -> QWidget:
@@ -6114,6 +6131,16 @@ class SettingsWindow(QWidget):
                 "Matugen notifications enabled."
                 if enabled
                 else "Matugen notifications disabled."
+            )
+
+    def _set_wallpaper_change_notifications_enabled(self, enabled: bool) -> None:
+        self.settings_state["appearance"]["wallpaper_change_notifications_enabled"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(
+                "Wallpaper change notifications enabled."
+                if enabled
+                else "Wallpaper change notifications disabled."
             )
 
     def _set_theme_choice(self, choice: str) -> None:
