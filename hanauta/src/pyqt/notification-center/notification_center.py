@@ -1062,7 +1062,7 @@ class GameCarouselCard(QFrame):
         footer.addLayout(self.dots_wrap)
         layout.addLayout(footer)
 
-    def _cover_pixmap(self, path: Path, width: int = 74, height: int = 100) -> QPixmap:
+    def _cover_pixmap(self, path: Path, width: int = 74, height: int = 92) -> QPixmap:
         fallback = QPixmap(width, height)
         fallback.fill(Qt.GlobalColor.transparent)
         if not path.exists():
@@ -1103,7 +1103,7 @@ class GameCarouselCard(QFrame):
         top.setSpacing(10)
         cover = QLabel()
         cover.setObjectName("gameCover")
-        cover.setFixedSize(74, 100)
+        cover.setFixedSize(74, 92)
         cover.setPixmap(self._cover_pixmap(cover_path or Path()))
         top.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
 
