@@ -194,6 +194,8 @@ MATERIAL_ICONS = {
     "notifications_active": "\ue7f7",
     "person": "\ue7fd",
     "partly_cloudy_day": "\uf172",
+    "warning": "\ue002",
+    "science": "\ue39b",
     "calendar_month": "\ue935",
     "event_upcoming": "\ue614",
     "schedule": "\ue8b5",
@@ -210,6 +212,7 @@ MATERIAL_ICONS = {
     "watch": "\ue334",
     "sports_esports": "\uea28",
     "open_in_new": "\ue89e",
+    "location_on": "\ue0c8",
 }
 
 
@@ -289,6 +292,12 @@ DEFAULT_SERVICE_SETTINGS = {
         "enabled": True,
         "show_in_notification_center": True,
         "show_in_bar": False,
+    },
+    "cap_alerts": {
+        "enabled": True,
+        "show_in_notification_center": False,
+        "show_in_bar": True,
+        "test_mode": False,
     },
     "rss_widget": {
         "enabled": True,
@@ -386,7 +395,7 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
-        elif key in {"rss_widget", "obs_widget", "crypto_widget", "game_mode"}:
+        elif key in {"rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
@@ -3813,10 +3822,45 @@ class SettingsWindow(QWidget):
             )
         )
 
+        self.region_location_input = QLineEdit(self.settings_state["weather"].get("name", ""))
+        if self._selected_weather_city is not None:
+            self.region_location_input.setText(self._selected_weather_city.label)
+        self.region_location_input.setPlaceholderText("Type a city, region, or country")
+        self.region_location_input.textEdited.connect(self._queue_weather_city_search)
+        self.region_location_model = QStringListModel(self)
+        self.region_location_completer = QCompleter(self.region_location_model, self)
+        self.region_location_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.region_location_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.region_location_completer.activated[str].connect(self._select_weather_city)
+        self.region_location_input.setCompleter(self.region_location_completer)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("location_on"),
+                "Shared location",
+                "Used to match CAP alerts to your area and reused by the Weather widget.",
+                self.icon_font,
+                self.ui_font,
+                self.region_location_input,
+            )
+        )
+
+        self.region_location_note = QLabel(
+            "If you use a VPN, the detected network region can be wrong for weather and alerts. Save your real location here instead. Hanauta does not send telemetry or your location anywhere."
+        )
+        self.region_location_note.setWordWrap(True)
+        self.region_location_note.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.region_location_note)
+
         self.region_status = QLabel("Regional formatting is ready.")
         self.region_status.setWordWrap(True)
         self.region_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.region_status)
+
+        self.region_location_button = QPushButton("Save shared location")
+        self.region_location_button.setObjectName("primaryButton")
+        self.region_location_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.region_location_button.clicked.connect(self._save_weather_settings)
+        layout.addWidget(self.region_location_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         save_button = QPushButton("Save region settings")
         save_button.setObjectName("primaryButton")
@@ -3853,6 +3897,7 @@ class SettingsWindow(QWidget):
             ("calendar_widget", self._build_calendar_service_section()),
             ("reminders_widget", self._build_reminders_service_section()),
             ("pomodoro_widget", self._build_pomodoro_service_section()),
+            ("cap_alerts", self._build_cap_alerts_service_section()),
             ("rss_widget", self._build_rss_service_section()),
             ("obs_widget", self._build_obs_service_section()),
             ("crypto_widget", self._build_crypto_service_section()),
@@ -4186,8 +4231,8 @@ class SettingsWindow(QWidget):
         layout.addWidget(
             SettingsRow(
                 material_icon("public"),
-                "Forecast city",
-                "Autocomplete search powered by Open-Meteo geocoding.",
+                "Shared location",
+                "Autocomplete search powered by Open-Meteo geocoding. This location is reused by Weather and CAP alerts.",
                 self.icon_font,
                 self.ui_font,
                 self.weather_city_input,
@@ -4212,7 +4257,7 @@ class SettingsWindow(QWidget):
         section = ExpandableServiceSection(
             "weather",
             "Weather",
-            "Choose a city for the weather popup and the bar weather icon.",
+            "Use one saved location for the weather popup, bar weather icon, and official CAP alerts.",
             material_icon("partly_cloudy_day"),
             self.icon_font,
             self.ui_font,
@@ -4221,6 +4266,66 @@ class SettingsWindow(QWidget):
             self._set_weather_enabled,
         )
         self.weather_section = section
+        return section
+
+    def _build_cap_alerts_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.cap_alerts_bar_switch = SwitchButton(
+            bool(self.settings_state["services"]["cap_alerts"].get("show_in_bar", True))
+        )
+        self.cap_alerts_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("cap_alerts", enabled)
+        )
+        self.service_display_switches["cap_alerts"] = self.cap_alerts_bar_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("warning"),
+                "Show alert chip on bar",
+                "Displays a yellow warning chip between media and status icons when active official alerts affect your saved location.",
+                self.icon_font,
+                self.ui_font,
+                self.cap_alerts_bar_switch,
+            )
+        )
+
+        self.cap_alerts_test_mode_switch = SwitchButton(
+            bool(self.settings_state["services"]["cap_alerts"].get("test_mode", False))
+        )
+        self.cap_alerts_test_mode_switch.toggledValue.connect(self._set_cap_alerts_test_mode)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("science"),
+                "Demo alert chip",
+                "Forces sample alert data from random countries so you can test the yellow bar chip and popup without waiting for a real alert.",
+                self.icon_font,
+                self.ui_font,
+                self.cap_alerts_test_mode_switch,
+            )
+        )
+
+        self.cap_alerts_status = QLabel(
+            "Uses your saved shared location for live alerts. If you use a VPN, save your real region here so weather and alerts stay accurate. Hanauta does not send telemetry or your location anywhere."
+        )
+        self.cap_alerts_status.setWordWrap(True)
+        self.cap_alerts_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.cap_alerts_status)
+
+        section = ExpandableServiceSection(
+            "cap_alerts",
+            "CAP Alerts",
+            "Official active local alerts surfaced as a warning chip on the bar, with a detailed help popup on click.",
+            material_icon("warning"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("cap_alerts"),
+            lambda enabled: self._set_service_enabled("cap_alerts", enabled),
+        )
+        self.service_sections["cap_alerts"] = section
         return section
 
     def _build_calendar_service_section(self) -> QWidget:
@@ -5252,7 +5357,7 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
-            if key in {"reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode"}:
+            if key in {"reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -5274,7 +5379,7 @@ class SettingsWindow(QWidget):
                 if switch is not None:
                     switch.setChecked(bool(service.get(setting_key, False)))
                     switch._apply_state()
-        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget", "game_mode"}:
+        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget", "game_mode", "cap_alerts"}:
             display_switch = getattr(self, "service_display_switches", {}).get(key)
             if display_switch is not None:
                 display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
@@ -5323,6 +5428,15 @@ class SettingsWindow(QWidget):
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
+        if key == "cap_alerts":
+            switch = getattr(self, "cap_alerts_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
+            test_switch = getattr(self, "cap_alerts_test_mode_switch", None)
+            if test_switch is not None:
+                test_switch.setChecked(bool(service.get("test_mode", False)))
+                test_switch._apply_state()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -5337,6 +5451,22 @@ class SettingsWindow(QWidget):
             return
         service["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
+
+    def _set_cap_alerts_test_mode(self, enabled: bool) -> None:
+        service = self.settings_state["services"].setdefault("cap_alerts", {})
+        if not service.get("enabled", True) and enabled:
+            return
+        service["test_mode"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "cap_alerts_status"):
+            if enabled:
+                self.cap_alerts_status.setText(
+                    "Demo alert chip is enabled. Hanauta will show sample alerts from random countries for testing, without using your real location."
+                )
+            else:
+                self.cap_alerts_status.setText(
+                    "Uses your saved shared location for live alerts. If you use a VPN, save your real region here so weather and alerts stay accurate. Hanauta does not send telemetry or your location anywhere."
+                )
 
     def _open_bar_icon_config(self) -> None:
         try:
@@ -5794,33 +5924,49 @@ class SettingsWindow(QWidget):
 
     def _queue_weather_city_search(self, text: str) -> None:
         self._selected_weather_city = None
+        self._weather_search_query = text.strip()
         if len(text.strip()) < 2:
-            self.weather_city_model.setStringList([])
+            if hasattr(self, "weather_city_model"):
+                self.weather_city_model.setStringList([])
+            if hasattr(self, "region_location_model"):
+                self.region_location_model.setStringList([])
             return
         self._weather_search_timer.start(250)
 
     def _perform_weather_city_search(self) -> None:
-        if not hasattr(self, "weather_city_input"):
-            return
-        text = self.weather_city_input.text().strip()
+        text = str(getattr(self, "_weather_search_query", "")).strip()
         if len(text) < 2:
-            self.weather_city_model.setStringList([])
+            if hasattr(self, "weather_city_model"):
+                self.weather_city_model.setStringList([])
+            if hasattr(self, "region_location_model"):
+                self.region_location_model.setStringList([])
             return
         matches = search_cities(text)
         self._weather_city_map = {city.label: city for city in matches}
         labels = list(self._weather_city_map.keys())
-        self.weather_city_model.setStringList(labels)
+        if hasattr(self, "weather_city_model"):
+            self.weather_city_model.setStringList(labels)
+        if hasattr(self, "region_location_model"):
+            self.region_location_model.setStringList(labels)
         if labels:
-            self.weather_city_completer.complete()
+            if hasattr(self, "weather_city_completer") and hasattr(self, "weather_city_input") and self.weather_city_input.hasFocus():
+                self.weather_city_completer.complete()
+            if hasattr(self, "region_location_completer") and hasattr(self, "region_location_input") and self.region_location_input.hasFocus():
+                self.region_location_completer.complete()
 
     def _select_weather_city(self, label: str) -> None:
         city = self._weather_city_map.get(label)
         if city is None:
             return
         self._selected_weather_city = city
-        self.weather_city_input.setText(label)
+        if hasattr(self, "weather_city_input"):
+            self.weather_city_input.setText(label)
+        if hasattr(self, "region_location_input"):
+            self.region_location_input.setText(label)
         if hasattr(self, "weather_status"):
             self.weather_status.setText(f"Selected city: {label}")
+        if hasattr(self, "region_status"):
+            self.region_status.setText(f"Selected shared location: {label}")
 
     def _save_weather_settings(self) -> None:
         city = self._selected_weather_city
@@ -5848,6 +5994,8 @@ class SettingsWindow(QWidget):
             self.weather_section.set_enabled(True)
         if hasattr(self, "weather_status"):
             self.weather_status.setText(f"Weather city saved: {city.label}")
+        if hasattr(self, "region_status"):
+            self.region_status.setText(f"Shared location saved: {city.label}")
 
     def _make_transparency_switch(self) -> SwitchButton:
         switch = SwitchButton(bool(self.settings_state["appearance"].get("transparency", True)))
