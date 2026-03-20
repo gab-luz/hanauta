@@ -27,20 +27,21 @@ bindsym $mod+Shift+5 move container to workspace $ws5
 set $gap 1
 
 
-default_border pixel 0
-default_floating_border pixel 0
+default_border pixel 3
+default_floating_border pixel 3
+for_window [window_type="normal"] border pixel 3
 gaps inner $gap
 gaps outer $gap
 # this gap is the gap between window and things like hanauta bar or the hanauta dock
 gaps top 5
 # Colors (mapped from bspwm colors)
 # format: client.<state> border background text indicator child_border
-client.focused          #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
-client.focused_inactive #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
-client.unfocused        #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
-client.urgent           #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
-client.placeholder      #c0caf5 #c0caf5 #1a1b26 #c0caf5 #c0caf5
-client.background       #c0caf5
+client.focused          #ffb68f #ffb68f #f0dfd8 #ffb68f #ffb68f
+client.focused_inactive #9f8d84 #9f8d84 #f0dfd8 #9f8d84 #9f8d84
+client.unfocused        #9f8d84 #9f8d84 #f0dfd8 #9f8d84 #9f8d84
+client.urgent           #ffb4ab #ffb4ab #1a120d #ffb4ab #ffb4ab
+client.placeholder      #9f8d84 #9f8d84 #f0dfd8 #9f8d84 #9f8d84
+client.background       #1a120d
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
