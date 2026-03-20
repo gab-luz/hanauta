@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QFont, QFontDatabase, QGuiApplication
+from PyQt6.QtQml import QQmlApplicationEngine
+from PyQt6.QtWidgets import QApplication
+
+
+APP_DIR = Path(__file__).resolve().parents[2]
+ROOT = APP_DIR.parents[1]
+SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+QML_FILE = Path(__file__).resolve().with_suffix(".qml")
+FONTS_DIR = ROOT / "assets" / "fonts"
+SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
+
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.home_assistant import (
+    entity_action,
+    entity_attributes_text,
+    entity_domain,
+    entity_friendly_name,
+    entity_icon_name,
+    entity_secondary_text,
+    entity_state_label,
+    fetch_home_assistant_json,
+    normalize_ha_url,
+    post_home_assistant_json,
+)
+from pyqt.shared.runtime import entry_command, python_executable
+from pyqt.shared.theme import blend, load_theme_palette, rgba
+
+
+MATERIAL_ICONS = {
+    "close": "\ue5cd",
+    "settings": "\ue8b8",
+    "refresh": "\ue5d5",
+    "search": "\ue8b6",
+    "home": "\ue88a",
+    "person": "\ue7fd",
+    "lightbulb": "\ue0f0",
+    "toggle_on": "\ue9f6",
+    "videocam": "\ue04b",
+    "thermostat": "\ue1ff",
+    "device_thermostat": "\ue1ff",
+    "sensors": "\ue51e",
+    "lock": "\ue897",
+    "music_note": "\ue405",
+    "window": "\uefe8",
+    "mode_fan": "\uf168",
+    "auto_awesome": "\ue65f",
+    "bolt": "\uea0b",
+    "location_on": "\ue0c8",
+    "light_mode": "\ue518",
+    "partly_cloudy_day": "\uf172",
+    "shield": "\ue9e0",
+    "water_drop": "\ue798",
+    "push_pin": "\uef3e",
+    "push_pin_outline": "\uf10f",
+    "play_arrow": "\ue037",
+    "chevron_right": "\ue5cc",
+    "expand_more": "\ue5cf",
+}
+
+
+def material_icon(name: str) -> str:
+    return MATERIAL_ICONS.get(name, "?")
+
+
+def load_app_fonts() -> dict[str, str]:
+    loaded: dict[str, str] = {}
+    font_map = {
+        "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
+        "ui_sans": FONTS_DIR / "InterVariable.ttf",
+        "ui_display": FONTS_DIR / "Outfit-VariableFont_wght.ttf",
+    }
+    for key, path in font_map.items():
+        if not path.exists():
+            continue
+        font_id = QFontDatabase.addApplicationFont(str(path))
+        if font_id < 0:
+            continue
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        if families:
+            loaded[key] = families[0]
+    return loaded
+
+
+def detect_font(*families: str) -> str:
+    for family in families:
+        if family and QFont(family).exactMatch():
+            return family
+    return "Sans Serif"
+
+
+def load_settings_state() -> dict:
+    try:
+        payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    services = payload.get("services", {})
+    if not isinstance(services, dict):
+        services = {}
+    payload["services"] = services
+    home_assistant = payload.get("home_assistant", {})
+    if not isinstance(home_assistant, dict):
+        home_assistant = {}
+    home_assistant.setdefault("url", "")
+    home_assistant.setdefault("token", "")
+    pinned = home_assistant.get("pinned_entities", [])
+    home_assistant["pinned_entities"] = [item for item in pinned if isinstance(item, str)]
+    payload["home_assistant"] = home_assistant
+    return payload
+
+
+def save_settings_state(payload: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+class Backend(QObject):
+    entitiesChanged = pyqtSignal()
+    pinnedEntitiesChanged = pyqtSignal()
+    statusChanged = pyqtSignal()
+    searchQueryChanged = pyqtSignal()
+    busyChanged = pyqtSignal()
+    closeRequested = pyqtSignal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        fonts = load_app_fonts()
+        self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Sans Serif")
+        self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
+        self.material_font = detect_font(fonts.get("material_icons", ""), "Material Icons", self.ui_font)
+        self._settings = load_settings_state()
+        self._entities_raw: list[dict] = []
+        self._entities: list[dict[str, object]] = []
+        self._pinned_entities: list[dict[str, object]] = []
+        self._search_query = ""
+        self._busy = False
+        self._available = False
+        self._latency_ms = -1
+        self._headline = "Home Assistant unavailable"
+        self._hint = "Save your URL and long-lived token in Settings to begin monitoring."
+        self.refresh()
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(15000)
+        self._refresh_timer.timeout.connect(self.refresh)
+        self._refresh_timer.start()
+
+    def _service_enabled(self) -> bool:
+        services = self._settings.get("services", {})
+        if not isinstance(services, dict):
+            return True
+        service = services.get("home_assistant", {})
+        if not isinstance(service, dict):
+            return True
+        return bool(service.get("enabled", True))
+
+    def _rebuild_views(self) -> None:
+        query = self._search_query.strip().lower()
+        pinned_ids = self._settings.get("home_assistant", {}).get("pinned_entities", [])
+        pinned_set = set(item for item in pinned_ids if isinstance(item, str))
+        mapped: list[dict[str, object]] = []
+        pinned: list[dict[str, object]] = []
+        for entity in self._entities_raw:
+            entity_id = str(entity.get("entity_id", "")).strip()
+            name = entity_friendly_name(entity)
+            domain = entity_domain(entity_id)
+            state_label = entity_state_label(entity)
+            secondary = entity_secondary_text(entity)
+            details = entity_attributes_text(entity)
+            icon_name = entity_icon_name(entity)
+            action = entity_action(entity)
+            item = {
+                "entityId": entity_id,
+                "friendlyName": name,
+                "domain": domain,
+                "state": state_label,
+                "secondary": secondary,
+                "details": details,
+                "iconName": icon_name,
+                "iconGlyph": material_icon(icon_name),
+                "isPinned": entity_id in pinned_set,
+                "canToggle": action is not None,
+                "actionLabel": (
+                    "Run"
+                    if action and action[1] == "turn_on" and domain in {"script", "scene"}
+                    else ("Turn off" if action and str(entity.get("state", "")).strip().lower() == "on" else "Turn on")
+                ),
+                "stateTone": (
+                    "active"
+                    if str(entity.get("state", "")).strip().lower() in {"on", "playing", "home", "open", "armed_away", "armed_home"}
+                    else "idle"
+                ),
+            }
+            haystack = " ".join((name, entity_id, domain, secondary)).lower()
+            if not query or query in haystack:
+                mapped.append(item)
+            if entity_id in pinned_set:
+                pinned.append(item)
+        self._entities = mapped
+        self._pinned_entities = pinned[:5]
+        self.entitiesChanged.emit()
+        self.pinnedEntitiesChanged.emit()
+
+    def _set_status(self, headline: str, hint: str) -> None:
+        self._headline = headline
+        self._hint = hint
+        self.statusChanged.emit()
+
+    def _set_busy(self, busy: bool) -> None:
+        if self._busy == busy:
+            return
+        self._busy = busy
+        self.busyChanged.emit()
+
+    @pyqtProperty(str, constant=True)
+    def uiFontFamily(self) -> str:
+        return self.ui_font
+
+    @pyqtProperty(str, constant=True)
+    def displayFontFamily(self) -> str:
+        return self.display_font
+
+    @pyqtProperty(str, constant=True)
+    def materialFontFamily(self) -> str:
+        return self.material_font
+
+    @pyqtProperty("QVariantList", notify=entitiesChanged)
+    def entities(self) -> list[dict[str, object]]:
+        return self._entities
+
+    @pyqtProperty("QVariantList", notify=pinnedEntitiesChanged)
+    def pinnedEntities(self) -> list[dict[str, object]]:
+        return self._pinned_entities
+
+    @pyqtProperty(str, notify=statusChanged)
+    def statusHeadline(self) -> str:
+        return self._headline
+
+    @pyqtProperty(str, notify=statusChanged)
+    def statusHint(self) -> str:
+        return self._hint
+
+    @pyqtProperty(bool, notify=statusChanged)
+    def available(self) -> bool:
+        return self._available
+
+    @pyqtProperty(int, notify=statusChanged)
+    def latencyMs(self) -> int:
+        return self._latency_ms
+
+    @pyqtProperty(str, notify=searchQueryChanged)
+    def searchQuery(self) -> str:
+        return self._search_query
+
+    @pyqtProperty(bool, notify=busyChanged)
+    def busy(self) -> bool:
+        return self._busy
+
+    @pyqtSlot(str, result=str)
+    def materialIcon(self, name: str) -> str:
+        return material_icon(name)
+
+    @pyqtSlot(str)
+    def setSearchQuery(self, query: str) -> None:
+        query = str(query)
+        if query == self._search_query:
+            return
+        self._search_query = query
+        self.searchQueryChanged.emit()
+        self._rebuild_views()
+
+    @pyqtSlot()
+    @pyqtSlot()
+    def refresh(self) -> None:
+        self._settings = load_settings_state()
+        if not self._service_enabled():
+            self._available = False
+            self._latency_ms = -1
+            self._entities_raw = []
+            self._rebuild_views()
+            self._set_status("Home Assistant is disabled", "Enable the integration in Settings to show entities here.")
+            return
+        base_url = normalize_ha_url(self._settings.get("home_assistant", {}).get("url", ""))
+        token = str(self._settings.get("home_assistant", {}).get("token", "")).strip()
+        if not base_url or not token:
+            self._available = False
+            self._latency_ms = -1
+            self._entities_raw = []
+            self._rebuild_views()
+            self._set_status("Home Assistant unavailable", "Add your server URL and long-lived token in Settings.")
+            return
+        self._set_busy(True)
+        started = time.perf_counter()
+        try:
+            payload, error_text = fetch_home_assistant_json(base_url, token, "/api/states")
+        finally:
+            self._set_busy(False)
+        self._latency_ms = int((time.perf_counter() - started) * 1000)
+        if error_text or not isinstance(payload, list):
+            self._available = False
+            self._entities_raw = []
+            self._rebuild_views()
+            self._set_status("Home Assistant unavailable", error_text or "No entities returned from Home Assistant.")
+            return
+        entities = [item for item in payload if isinstance(item, dict) and str(item.get("entity_id", "")).strip()]
+        entities.sort(key=lambda item: entity_friendly_name(item).lower())
+        self._available = True
+        self._entities_raw = entities
+        self._rebuild_views()
+        pinned_count = len(self._settings.get("home_assistant", {}).get("pinned_entities", []))
+        latency_text = f"{self._latency_ms} ms" if self._latency_ms >= 0 else "No latency yet"
+        self._set_status(
+            f"Monitoring {len(entities)} entities",
+            f"{min(pinned_count, 5)} pinned shortcuts • {latency_text}",
+        )
+
+    @pyqtSlot(str)
+    def togglePinned(self, entity_id: str) -> None:
+        entity_id = str(entity_id).strip()
+        if not entity_id:
+            return
+        home_assistant = self._settings.setdefault("home_assistant", {})
+        if not isinstance(home_assistant, dict):
+            home_assistant = {}
+            self._settings["home_assistant"] = home_assistant
+        pinned = [item for item in home_assistant.get("pinned_entities", []) if isinstance(item, str)]
+        if entity_id in pinned:
+            pinned = [item for item in pinned if item != entity_id]
+            message = "Entity removed from pinned shortcuts."
+        else:
+            if len(pinned) >= 5:
+                self._set_status("Pinned shortcuts are full", "You can pin up to five Home Assistant entities.")
+                return
+            pinned.append(entity_id)
+            message = "Entity pinned to the Home Assistant shortcuts row."
+        home_assistant["pinned_entities"] = pinned
+        save_settings_state(self._settings)
+        self._rebuild_views()
+        self._set_status(self._headline, message)
+
+    @pyqtSlot(str)
+    def activateEntity(self, entity_id: str) -> None:
+        entity_id = str(entity_id).strip()
+        entity = next((item for item in self._entities_raw if str(item.get("entity_id", "")).strip() == entity_id), None)
+        if entity is None:
+            self._set_status("Entity unavailable", "That Home Assistant entity is no longer loaded.")
+            return
+        action = entity_action(entity)
+        if action is None:
+            self._set_status(entity_friendly_name(entity), "This entity is view-only right now.")
+            return
+        service_domain, service_name, payload = action
+        base_url = normalize_ha_url(self._settings.get("home_assistant", {}).get("url", ""))
+        token = str(self._settings.get("home_assistant", {}).get("token", "")).strip()
+        _result, error_text = post_home_assistant_json(
+            base_url,
+            token,
+            f"/api/services/{service_domain}/{service_name}",
+            payload,
+        )
+        if error_text:
+            self._set_status("Action failed", error_text)
+            return
+        self._set_status(entity_friendly_name(entity), f"{service_name.replace('_', ' ').title()} sent to {entity_id}.")
+        QTimer.singleShot(900, self.refresh)
+
+    @pyqtSlot()
+    def openSettings(self) -> None:
+        command = entry_command(SETTINGS_PAGE, "--page", "services", "--service-section", "home_assistant")
+        if not command:
+            return
+        try:
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:
+            pass
+
+    @pyqtSlot()
+    def closeWindow(self) -> None:
+        self.closeRequested.emit()
+        QGuiApplication.quit()
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    app.setApplicationName("Hanauta Home Assistant")
+    signal.signal(signal.SIGINT, lambda *_args: app.quit())
+    if not QML_FILE.exists():
+        print(f"ERROR: QML file not found: {QML_FILE}", file=sys.stderr)
+        return 2
+    theme = load_theme_palette()
+    theme_map = {
+        "primary": theme.primary,
+        "onPrimary": theme.on_primary,
+        "text": theme.text,
+        "textMuted": theme.text_muted,
+        "surface": theme.surface,
+        "surfaceContainer": theme.surface_container,
+        "surfaceContainerHigh": theme.surface_container_high,
+        "outline": theme.outline,
+        "panelStart": rgba(theme.surface_container_high, 0.96),
+        "panelEnd": rgba(blend(theme.surface_container, theme.surface, 0.30), 0.93),
+        "card": rgba(theme.surface_container_high, 0.84),
+        "cardStrong": rgba(theme.surface, 0.72),
+        "border": rgba(theme.outline, 0.18),
+        "heroStart": rgba(theme.primary_container, 0.42),
+        "heroEnd": rgba(blend(theme.secondary, theme.surface_container_high, 0.28), 0.94),
+        "active": rgba(theme.primary, 0.18),
+        "activeBorder": rgba(theme.primary, 0.42),
+        "good": "#78d8a0",
+        "warning": "#ffce73",
+        "danger": "#ff8f8f",
+    }
+
+    engine = QQmlApplicationEngine()
+    backend = Backend()
+    engine.rootContext().setContextProperty("backend", backend)
+    engine.rootContext().setContextProperty("themeModel", theme_map)
+    engine.load(QUrl.fromLocalFile(str(QML_FILE)))
+    if not engine.rootObjects():
+        print("ERROR: failed to load Home Assistant widget QML.", file=sys.stderr)
+        return 3
+    root = engine.rootObjects()[0]
+    screen = QGuiApplication.primaryScreen()
+    if screen is not None:
+        available = screen.availableGeometry()
+        root.setProperty("x", available.x() + available.width() - int(root.property("width")) - 46)
+        root.setProperty("y", available.y() + 88)
+    backend.closeRequested.connect(app.quit)
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
