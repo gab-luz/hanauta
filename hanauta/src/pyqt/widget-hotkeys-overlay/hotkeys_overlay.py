@@ -25,6 +25,7 @@ from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, 
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
@@ -297,6 +298,7 @@ class HotkeysOverlay(QWidget):
 
         self._setup_window()
         self._build_ui()
+        self._apply_shadow()
         self._apply_styles()
         self._start_intro_animation()
 
@@ -427,6 +429,13 @@ class HotkeysOverlay(QWidget):
         shell_layout.addWidget(scroll, 1)
 
         root.addWidget(self.scrim, 1)
+
+    def _apply_shadow(self) -> None:
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(54)
+        shadow.setOffset(0, 18)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        self.shell.setGraphicsEffect(shadow)
 
         QShortcut(QKeySequence("Escape"), self, activated=self.close)
 
