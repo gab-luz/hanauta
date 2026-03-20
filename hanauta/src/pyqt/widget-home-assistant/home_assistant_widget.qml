@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import QtQuick.Effects
 
 Window {
     id: root
@@ -14,6 +15,142 @@ Window {
 
     function glyph(name) {
         return backend.materialIcon(name)
+    }
+
+    component IconVisual: Item {
+        id: iconRoot
+        property string glyphText: ""
+        property string iconSource: ""
+        property color tintColor: themeModel.iconTint
+        property int iconSize: 20
+
+        implicitWidth: iconSize
+        implicitHeight: iconSize
+        width: implicitWidth
+        height: implicitHeight
+
+        Text {
+            anchors.centerIn: parent
+            visible: iconRoot.iconSource === ""
+            text: iconRoot.glyphText
+            font.family: backend.materialFontFamily
+            font.pixelSize: iconRoot.iconSize
+            color: iconRoot.tintColor
+            renderType: Text.NativeRendering
+        }
+
+        Item {
+            anchors.centerIn: parent
+            width: iconRoot.iconSize
+            height: iconRoot.iconSize
+            visible: iconRoot.iconSource !== ""
+            layer.enabled: true
+            layer.smooth: true
+
+            layer.effect: MultiEffect {
+                colorization: 1.0
+                colorizationColor: iconRoot.tintColor
+            }
+
+            Image {
+                anchors.fill: parent
+                anchors.margins: 1
+                source: iconRoot.iconSource
+                fillMode: Image.PreserveAspectFit
+                sourceSize.width: iconRoot.iconSize
+                sourceSize.height: iconRoot.iconSize
+                asynchronous: true
+                cache: true
+                smooth: true
+                mipmap: true
+            }
+        }
+    }
+
+    component CircleIconButton: Button {
+        id: circleControl
+        property string iconText: ""
+        property color iconColor: themeModel.iconTint
+        property color baseColor: themeModel.card
+        property color hoverColor: themeModel.hover
+        property color pressColor: themeModel.pressed
+        property color strokeColor: themeModel.border
+
+        implicitWidth: 38
+        implicitHeight: 38
+        hoverEnabled: true
+        padding: 0
+
+        background: Rectangle {
+            radius: width / 2
+            color: !circleControl.enabled
+                   ? themeModel.card
+                   : circleControl.pressed
+                        ? circleControl.pressColor
+                        : circleControl.hovered
+                            ? circleControl.hoverColor
+                            : circleControl.baseColor
+            border.width: 1
+            border.color: circleControl.strokeColor
+            opacity: circleControl.enabled ? 1.0 : 0.55
+        }
+
+        contentItem: Text {
+            text: circleControl.iconText
+            font.family: backend.materialFontFamily
+            font.pixelSize: 18
+            color: circleControl.iconColor
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            renderType: Text.NativeRendering
+        }
+    }
+
+    component PillButton: Button {
+        id: pillControl
+        property color fillColor: themeModel.cardStrong
+        property color hoverColor: themeModel.hover
+        property color pressColor: themeModel.pressed
+        property color strokeColor: themeModel.border
+        property color labelColor: themeModel.text
+        property string labelText: text
+        property string labelFamily: backend.uiFontFamily
+        property int labelSize: 11
+        property int labelWeight: Font.DemiBold
+
+        implicitHeight: 32
+        implicitWidth: Math.max(76, contentItem.implicitWidth + leftPadding + rightPadding)
+        leftPadding: 12
+        rightPadding: 12
+        topPadding: 0
+        bottomPadding: 0
+        hoverEnabled: true
+
+        background: Rectangle {
+            radius: 12
+            color: !pillControl.enabled
+                   ? themeModel.cardStrong
+                   : pillControl.pressed
+                        ? pillControl.pressColor
+                        : pillControl.hovered
+                            ? pillControl.hoverColor
+                            : pillControl.fillColor
+            border.width: 1
+            border.color: pillControl.strokeColor
+            opacity: pillControl.enabled ? 1.0 : 0.55
+        }
+
+        contentItem: Text {
+            text: pillControl.labelText
+            color: pillControl.labelColor
+            font.family: pillControl.labelFamily
+            font.pixelSize: pillControl.labelSize
+            font.weight: pillControl.labelWeight
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            renderType: Text.NativeRendering
+        }
     }
 
     Rectangle {
@@ -40,7 +177,7 @@ Window {
                 x: -44
                 y: -66
                 color: themeModel.heroStart
-                opacity: 0.28
+                opacity: 0.24
             }
 
             Rectangle {
@@ -52,7 +189,7 @@ Window {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 120
                 color: themeModel.primary
-                opacity: 0.08
+                opacity: 0.05
             }
 
             ColumnLayout {
@@ -72,12 +209,11 @@ Window {
                         border.width: 1
                         border.color: themeModel.activeBorder
 
-                        Text {
+                        IconVisual {
                             anchors.centerIn: parent
-                            text: glyph("home")
-                            font.family: backend.materialFontFamily
-                            font.pixelSize: 20
-                            color: themeModel.primary
+                            glyphText: glyph("home")
+                            iconSize: 20
+                            tintColor: themeModel.iconTint
                         }
                     }
 
@@ -91,6 +227,7 @@ Window {
                             font.family: backend.uiFontFamily
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
+                            renderType: Text.NativeRendering
                         }
 
                         Text {
@@ -101,6 +238,7 @@ Window {
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
                             Layout.fillWidth: true
+                            renderType: Text.NativeRendering
                         }
 
                         Text {
@@ -110,47 +248,27 @@ Window {
                             font.pixelSize: 11
                             elide: Text.ElideRight
                             Layout.fillWidth: true
+                            renderType: Text.NativeRendering
                         }
                     }
 
-                    RoundButton {
-                        text: glyph("settings")
-                        font.family: backend.materialFontFamily
-                        font.pixelSize: 18
+                    CircleIconButton {
+                        iconText: glyph("settings")
                         onClicked: backend.openSettings()
-                        background: Rectangle {
-                            radius: width / 2
-                            color: parent.hovered ? themeModel.active : themeModel.card
-                            border.width: 1
-                            border.color: themeModel.border
-                        }
                     }
 
-                    RoundButton {
-                        text: glyph("refresh")
-                        font.family: backend.materialFontFamily
-                        font.pixelSize: 18
+                    CircleIconButton {
+                        iconText: glyph("refresh")
                         enabled: !backend.busy
                         onClicked: backend.refresh()
-                        background: Rectangle {
-                            radius: width / 2
-                            color: parent.hovered ? themeModel.active : themeModel.card
-                            border.width: 1
-                            border.color: themeModel.border
-                        }
                     }
 
-                    RoundButton {
-                        text: glyph("close")
-                        font.family: backend.materialFontFamily
-                        font.pixelSize: 18
+                    CircleIconButton {
+                        iconText: glyph("close")
+                        iconColor: themeModel.text
+                        hoverColor: Qt.rgba(1.0, 0.35, 0.35, 0.16)
+                        pressColor: Qt.rgba(1.0, 0.35, 0.35, 0.24)
                         onClicked: backend.closeWindow()
-                        background: Rectangle {
-                            radius: width / 2
-                            color: parent.hovered ? Qt.rgba(1, 0.35, 0.35, 0.18) : themeModel.card
-                            border.width: 1
-                            border.color: themeModel.border
-                        }
                     }
                 }
 
@@ -188,6 +306,7 @@ Window {
                                 font.family: backend.uiFontFamily
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
+                                renderType: Text.NativeRendering
                             }
 
                             Item { Layout.fillWidth: true }
@@ -207,19 +326,21 @@ Window {
                                     color: themeModel.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 11
+                                    renderType: Text.NativeRendering
                                 }
                             }
                         }
 
                         Text {
                             text: backend.pinnedEntities.length > 0
-                                ? backend.pinnedEntities.length + " pinned shortcuts ready"
-                                : "Pin your most-used entities so they stay at the top like the reference widget."
+                                  ? backend.pinnedEntities.length + " pinned shortcuts ready"
+                                  : "Pin your most-used entities so they stay at the top."
                             color: themeModel.textMuted
                             font.family: backend.uiFontFamily
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
+                            renderType: Text.NativeRendering
                         }
                     }
                 }
@@ -228,20 +349,20 @@ Window {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 48
                     radius: 18
-                    color: themeModel.card
+                    color: themeModel.field
                     border.width: 1
                     border.color: themeModel.border
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.margins: 12
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
                         spacing: 10
 
-                        Text {
-                            text: glyph("search")
-                            font.family: backend.materialFontFamily
-                            font.pixelSize: 18
-                            color: themeModel.primary
+                        IconVisual {
+                            glyphText: glyph("search")
+                            iconSize: 18
+                            tintColor: themeModel.iconTint
                         }
 
                         TextField {
@@ -253,7 +374,12 @@ Window {
                             placeholderTextColor: themeModel.textMuted
                             font.family: backend.uiFontFamily
                             font.pixelSize: 12
-                            background: Rectangle { color: "transparent" }
+                            selectByMouse: true
+                            leftPadding: 0
+                            rightPadding: 0
+                            topPadding: 0
+                            bottomPadding: 0
+                            background: Item {}
                             onTextChanged: backend.setSearchQuery(text)
                         }
                     }
@@ -265,18 +391,22 @@ Window {
                     color: themeModel.textMuted
                     font.family: backend.uiFontFamily
                     font.pixelSize: 10
+                    renderType: Text.NativeRendering
                 }
 
                 Rectangle {
+                    id: shortcutsSection
                     Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? implicitHeight : 0
                     visible: backend.pinnedEntities.length > 0
                     radius: 20
                     color: themeModel.card
                     border.width: 1
                     border.color: themeModel.border
-                    implicitHeight: pinnedFlow.implicitHeight + 28
+                    implicitHeight: shortcutsColumn.implicitHeight + 28
 
                     ColumnLayout {
+                        id: shortcutsColumn
                         anchors.fill: parent
                         anchors.margins: 14
                         spacing: 10
@@ -287,12 +417,13 @@ Window {
                             font.family: backend.uiFontFamily
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
+                            renderType: Text.NativeRendering
                         }
 
                         Flow {
                             id: pinnedFlow
                             Layout.fillWidth: true
-                            width: parent.width
+                            width: shortcutsSection.width - 28
                             spacing: 8
 
                             Repeater {
@@ -300,8 +431,8 @@ Window {
 
                                 delegate: Rectangle {
                                     required property var modelData
-                                    width: (pinnedFlow.width - 8) / 2
-                                    height: 74
+                                    width: Math.max(120, (pinnedFlow.width - pinnedFlow.spacing) / 2)
+                                    height: 78
                                     radius: 18
                                     color: themeModel.cardStrong
                                     border.width: 1
@@ -309,6 +440,7 @@ Window {
 
                                     MouseArea {
                                         anchors.fill: parent
+                                        hoverEnabled: true
                                         onClicked: backend.activateEntity(modelData.entityId)
                                     }
 
@@ -320,31 +452,19 @@ Window {
                                         RowLayout {
                                             Layout.fillWidth: true
 
-                                            Text {
-                                                visible: modelData.iconSource === ""
-                                                text: modelData.iconGlyph
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 18
-                                                color: themeModel.primary
-                                            }
-
-                                            Image {
-                                                visible: modelData.iconSource !== ""
-                                                source: modelData.iconSource
-                                                sourceSize.width: 18
-                                                sourceSize.height: 18
-                                                width: 18
-                                                height: 18
-                                                fillMode: Image.PreserveAspectFit
+                                            IconVisual {
+                                                glyphText: modelData.iconGlyph
+                                                iconSource: modelData.iconSource
+                                                iconSize: 18
+                                                tintColor: themeModel.iconTint
                                             }
 
                                             Item { Layout.fillWidth: true }
 
-                                            Text {
-                                                text: glyph("push_pin")
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 15
-                                                color: themeModel.textMuted
+                                            IconVisual {
+                                                glyphText: glyph("push_pin")
+                                                iconSize: 15
+                                                tintColor: themeModel.iconMuted
                                             }
                                         }
 
@@ -356,6 +476,7 @@ Window {
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
+                                            renderType: Text.NativeRendering
                                         }
 
                                         Text {
@@ -365,6 +486,7 @@ Window {
                                             font.pixelSize: 10
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
+                                            renderType: Text.NativeRendering
                                         }
                                     }
                                 }
@@ -374,14 +496,58 @@ Window {
                 }
 
                 ScrollView {
+                    id: entitiesScroll
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
+                    contentWidth: availableWidth
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    background: Item {}
 
                     Column {
-                        width: parent.width
+                        id: entitiesColumn
+                        width: entitiesScroll.availableWidth
                         spacing: 8
+
+                        Rectangle {
+                            visible: backend.entities.length === 0
+                            width: parent.width
+                            radius: 20
+                            color: themeModel.card
+                            border.width: 1
+                            border.color: themeModel.border
+                            implicitHeight: emptyColumn.implicitHeight + 28
+
+                            ColumnLayout {
+                                id: emptyColumn
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 8
+
+                                Text {
+                                    text: backend.available ? "No entities match your search." : "No Home Assistant entities to show yet."
+                                    color: themeModel.text
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    renderType: Text.NativeRendering
+                                }
+
+                                Text {
+                                    text: backend.available
+                                          ? "Try another search term or clear the field."
+                                          : "Check your Home Assistant URL and token in Settings."
+                                    color: themeModel.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 10
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    renderType: Text.NativeRendering
+                                }
+                            }
+                        }
 
                         Repeater {
                             model: backend.entities
@@ -390,7 +556,8 @@ Window {
                                 id: entityCard
                                 required property var modelData
                                 property bool expanded: false
-                                width: parent.width
+
+                                width: entitiesColumn.width
                                 radius: 20
                                 color: themeModel.card
                                 border.width: 1
@@ -408,31 +575,21 @@ Window {
                                         spacing: 10
 
                                         Rectangle {
-                                            width: 38
-                                            height: 38
-                                            radius: 19
+                                            width: 40
+                                            height: 40
+                                            radius: 20
                                             color: modelData.stateTone === "active" ? themeModel.active : themeModel.cardStrong
                                             border.width: 1
-                                            border.color: modelData.stateTone === "active" ? themeModel.activeBorder : themeModel.border
+                                            border.color: modelData.stateTone === "active"
+                                                          ? themeModel.activeBorder
+                                                          : themeModel.border
 
-                                            Text {
+                                            IconVisual {
                                                 anchors.centerIn: parent
-                                                visible: modelData.iconSource === ""
-                                                text: modelData.iconGlyph
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 18
-                                                color: themeModel.primary
-                                            }
-
-                                            Image {
-                                                anchors.centerIn: parent
-                                                visible: modelData.iconSource !== ""
-                                                source: modelData.iconSource
-                                                sourceSize.width: 18
-                                                sourceSize.height: 18
-                                                width: 18
-                                                height: 18
-                                                fillMode: Image.PreserveAspectFit
+                                                glyphText: modelData.iconGlyph
+                                                iconSource: modelData.iconSource
+                                                iconSize: 18
+                                                tintColor: themeModel.iconTint
                                             }
                                         }
 
@@ -448,6 +605,7 @@ Window {
                                                 font.weight: Font.DemiBold
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
+                                                renderType: Text.NativeRendering
                                             }
 
                                             Text {
@@ -457,16 +615,18 @@ Window {
                                                 font.pixelSize: 10
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
+                                                renderType: Text.NativeRendering
                                             }
 
                                             Text {
                                                 text: modelData.entityId
                                                 color: themeModel.textMuted
-                                                opacity: 0.8
+                                                opacity: 0.85
                                                 font.family: backend.uiFontFamily
                                                 font.pixelSize: 9
                                                 elide: Text.ElideMiddle
                                                 Layout.fillWidth: true
+                                                renderType: Text.NativeRendering
                                             }
                                         }
 
@@ -474,7 +634,9 @@ Window {
                                             radius: 999
                                             color: modelData.stateTone === "active" ? themeModel.active : themeModel.cardStrong
                                             border.width: 1
-                                            border.color: modelData.stateTone === "active" ? themeModel.activeBorder : themeModel.border
+                                            border.color: modelData.stateTone === "active"
+                                                          ? themeModel.activeBorder
+                                                          : themeModel.border
                                             implicitWidth: stateLabel.implicitWidth + 20
                                             implicitHeight: 28
 
@@ -485,6 +647,7 @@ Window {
                                                 color: themeModel.text
                                                 font.family: backend.uiFontFamily
                                                 font.pixelSize: 10
+                                                renderType: Text.NativeRendering
                                             }
                                         }
                                     }
@@ -509,6 +672,7 @@ Window {
                                                 font.family: backend.uiFontFamily
                                                 font.pixelSize: 9
                                                 font.weight: Font.DemiBold
+                                                renderType: Text.NativeRendering
                                             }
                                         }
 
@@ -519,6 +683,7 @@ Window {
                                             font.family: backend.uiFontFamily
                                             font.pixelSize: 9
                                             elide: Text.ElideRight
+                                            renderType: Text.NativeRendering
                                         }
                                     }
 
@@ -526,71 +691,31 @@ Window {
                                         Layout.fillWidth: true
                                         spacing: 8
 
-                                        Button {
+                                        PillButton {
                                             id: actionButton
                                             visible: modelData.canToggle
-                                            text: modelData.actionLabel
+                                            enabled: modelData.canToggle
+                                            labelText: modelData.actionLabel
+                                            strokeColor: themeModel.activeBorder
                                             onClicked: backend.activateEntity(modelData.entityId)
-                                            background: Rectangle {
-                                                radius: 12
-                                                color: parent.hovered ? themeModel.active : themeModel.cardStrong
-                                                border.width: 1
-                                                border.color: themeModel.activeBorder
-                                            }
-                                            contentItem: Text {
-                                                text: actionButton.text
-                                                color: themeModel.text
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 11
-                                                font.weight: Font.DemiBold
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
                                         }
 
-                                        Button {
+                                        PillButton {
                                             id: pinButton
-                                            text: modelData.isPinned ? glyph("push_pin") : glyph("push_pin_outline")
-                                            font.family: backend.materialFontFamily
-                                            font.pixelSize: 18
+                                            labelText: modelData.isPinned ? glyph("push_pin") : glyph("push_pin_outline")
+                                            labelFamily: backend.materialFontFamily
+                                            labelSize: 18
+                                            strokeColor: modelData.isPinned ? themeModel.activeBorder : themeModel.border
+                                            fillColor: modelData.isPinned ? themeModel.active : themeModel.cardStrong
                                             onClicked: backend.togglePinned(modelData.entityId)
-                                            background: Rectangle {
-                                                radius: 12
-                                                color: parent.hovered ? themeModel.active : themeModel.cardStrong
-                                                border.width: 1
-                                                border.color: modelData.isPinned ? themeModel.activeBorder : themeModel.border
-                                            }
-                                            contentItem: Text {
-                                                text: pinButton.text
-                                                color: themeModel.text
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 18
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
                                         }
 
                                         Item { Layout.fillWidth: true }
 
-                                        Button {
+                                        PillButton {
                                             id: expandButton
-                                            text: expanded ? "Less" : "More"
+                                            labelText: expanded ? "Less" : "More"
                                             onClicked: entityCard.expanded = !entityCard.expanded
-                                            background: Rectangle {
-                                                radius: 12
-                                                color: parent.hovered ? themeModel.active : themeModel.cardStrong
-                                                border.width: 1
-                                                border.color: themeModel.border
-                                            }
-                                            contentItem: Text {
-                                                text: expandButton.text
-                                                color: themeModel.text
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 11
-                                                font.weight: Font.DemiBold
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
                                         }
                                     }
 
@@ -605,7 +730,7 @@ Window {
                                             color: themeModel.cardStrong
                                             border.width: 1
                                             border.color: themeModel.border
-                                            implicitHeight: detailsText.implicitHeight + 18
+                                            implicitHeight: detailsText.implicitHeight + 20
 
                                             Text {
                                                 id: detailsText
@@ -616,6 +741,7 @@ Window {
                                                 font.family: backend.uiFontFamily
                                                 font.pixelSize: 10
                                                 wrapMode: Text.WordWrap
+                                                renderType: Text.NativeRendering
                                             }
                                         }
 
@@ -626,6 +752,7 @@ Window {
                                             font.family: backend.uiFontFamily
                                             font.pixelSize: 9
                                             wrapMode: Text.WordWrap
+                                            renderType: Text.NativeRendering
                                         }
                                     }
                                 }

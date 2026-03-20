@@ -2,6 +2,7 @@
 
 #include <gio/gio.h>
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -11,6 +12,7 @@ typedef struct {
     gchar *weather_path;
     gchar *crypto_path;
     gchar *wifi_path;
+    gchar *home_assistant_path;
     gchar *status_path;
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
@@ -216,7 +218,8 @@ static void write_status_json(const gchar *status, const gchar *details) {
         "  \"updated_at\": %s,\n"
         "  \"weather_cache\": \"service/weather.json\",\n"
         "  \"crypto_cache\": \"service/crypto.json\",\n"
-        "  \"wifi_cache\": \"service/wifi.json\"\n"
+        "  \"wifi_cache\": \"service/wifi.json\",\n"
+        "  \"home_assistant_cache\": \"service/home_assistant.json\"\n"
         "}\n",
         status_q,
         details_q,
@@ -626,12 +629,121 @@ cleanup:
     return ok;
 }
 
+static gboolean refresh_home_assistant(void) {
+    gchar *settings = load_file_text(g_service.settings_path);
+    gchar *home_assistant_obj = extract_object_block(settings, "home_assistant");
+    gchar *services_obj = extract_object_block(settings, "services");
+    gchar *service_obj = NULL;
+    gchar *base_url = NULL;
+    gchar *token = NULL;
+    gchar *trimmed_url = NULL;
+    gchar *url_q = NULL;
+    gchar *payload = NULL;
+    gchar *json = NULL;
+    gchar *updated_at = NULL;
+    GDateTime *now = NULL;
+    GError *error = NULL;
+    gboolean ok = FALSE;
+
+    if (services_obj != NULL) {
+        service_obj = extract_object_block(services_obj, "home_assistant");
+    }
+    if (service_obj != NULL && !object_bool(service_obj, "enabled", TRUE)) {
+        g_remove(g_service.home_assistant_path);
+        goto cleanup;
+    }
+    if (home_assistant_obj == NULL) {
+        g_remove(g_service.home_assistant_path);
+        goto cleanup;
+    }
+
+    base_url = object_string(home_assistant_obj, "url", "");
+    token = object_string(home_assistant_obj, "token", "");
+    g_strstrip(base_url);
+    g_strstrip(token);
+    if (base_url[0] == '\0' || token[0] == '\0') {
+        g_remove(g_service.home_assistant_path);
+        goto cleanup;
+    }
+
+    trimmed_url = g_strdup(base_url);
+    g_strstrip(trimmed_url);
+    while (g_str_has_suffix(trimmed_url, "/")) {
+        trimmed_url[strlen(trimmed_url) - 1] = '\0';
+    }
+    if (trimmed_url[0] == '\0') {
+        g_remove(g_service.home_assistant_path);
+        goto cleanup;
+    }
+
+    gchar *auth_header = g_strdup_printf("Authorization: Bearer %s", token);
+    gchar *content_type_header = g_strdup("Content-Type: application/json");
+    gchar *target_url = g_strdup_printf("%s/api/states", trimmed_url);
+    const gchar *argv[] = {
+        "curl",
+        "-fsSL",
+        "-H",
+        auth_header,
+        "-H",
+        content_type_header,
+        "-H",
+        "User-Agent: HanautaService/1.0",
+        target_url,
+        NULL
+    };
+    payload = run_capture(&error, argv);
+    g_free(auth_header);
+    g_free(content_type_header);
+    g_free(target_url);
+
+    if (payload == NULL) {
+        write_status_json("degraded", error != NULL ? error->message : "Home Assistant refresh failed.");
+        g_clear_error(&error);
+        goto cleanup;
+    }
+
+    now = g_date_time_new_now_local();
+    updated_at = g_date_time_format(now, "%Y-%m-%dT%H:%M:%S%z");
+    url_q = escape_json_string(trimmed_url);
+    json = g_strdup_printf(
+        "{\n"
+        "  \"source\": \"home_assistant\",\n"
+        "  \"updated_at\": \"%s\",\n"
+        "  \"url\": %s,\n"
+        "  \"payload\": %s\n"
+        "}\n",
+        updated_at,
+        url_q,
+        payload
+    );
+    ok = g_file_set_contents(g_service.home_assistant_path, json, -1, NULL);
+
+cleanup:
+    g_free(settings);
+    g_free(home_assistant_obj);
+    g_free(services_obj);
+    g_free(service_obj);
+    g_free(base_url);
+    g_free(token);
+    g_free(trimmed_url);
+    g_free(url_q);
+    g_free(payload);
+    g_free(json);
+    g_free(updated_at);
+    if (now != NULL) {
+        g_date_time_unref(now);
+    }
+    g_clear_error(&error);
+    return ok;
+}
+
 static gboolean refresh_all(gpointer user_data) {
     (void)user_data;
     gboolean wifi_ok = refresh_wifi();
     gboolean weather_ok = refresh_weather();
     gboolean crypto_ok = refresh_crypto();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok;
+    gboolean home_assistant_ok = refresh_home_assistant();
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -671,6 +783,7 @@ int main(void) {
     g_service.weather_path = g_build_filename(g_service.state_dir, "weather.json", NULL);
     g_service.crypto_path = g_build_filename(g_service.state_dir, "crypto.json", NULL);
     g_service.wifi_path = g_build_filename(g_service.state_dir, "wifi.json", NULL);
+    g_service.home_assistant_path = g_build_filename(g_service.state_dir, "home_assistant.json", NULL);
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
 
     g_mkdir_with_parents(g_service.state_dir, 0755);
@@ -705,6 +818,7 @@ int main(void) {
     g_free(g_service.weather_path);
     g_free(g_service.crypto_path);
     g_free(g_service.wifi_path);
+    g_free(g_service.home_assistant_path);
     g_free(g_service.status_path);
     return 0;
 }
