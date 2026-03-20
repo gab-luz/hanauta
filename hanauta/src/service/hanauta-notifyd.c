@@ -206,6 +206,7 @@ static gchar *hex_to_rgba(const gchar *hex, gdouble alpha) {
     guint green = 0;
     guint blue = 0;
     gchar component[3] = {0};
+    gchar alpha_buf[G_ASCII_DTOSTR_BUF_SIZE] = {0};
     gdouble clamped = CLAMP(alpha, 0.0, 1.0);
     if (!valid_hex_color(hex)) {
         hex = "#000000";
@@ -219,7 +220,8 @@ static gchar *hex_to_rgba(const gchar *hex, gdouble alpha) {
     component[0] = hex[5];
     component[1] = hex[6];
     blue = (guint)strtoul(component, NULL, 16);
-    return g_strdup_printf("rgba(%u,%u,%u,%.2f)", red, green, blue, clamped);
+    g_ascii_formatd(alpha_buf, sizeof(alpha_buf), "%.2f", clamped);
+    return g_strdup_printf("rgba(%u,%u,%u,%s)", red, green, blue, alpha_buf);
 }
 
 static void load_theme_palette(ThemePalette *theme) {
@@ -409,7 +411,7 @@ static gchar *replace_all(const gchar *source, const gchar *needle, const gchar 
 static gchar *load_toast_css(const ThemePalette *theme) {
     static const gchar *fallback_template =
         "#hanauta-toast-window { background: transparent; }\n"
-        "#card { background: {{CARD_BG}}; border: 1px solid {{CARD_BORDER}}; border-radius: 24px; }\n"
+        "#card { background: {{CARD_BG}}; border: none; border-radius: 24px; box-shadow: 0 0 24px {{CARD_SHADOW}}; }\n"
         "#toastIcon { padding: 0; }\n"
         "#appLabel { color: {{APP_LABEL}}; font-weight: 800; letter-spacing: 0.4px; }\n"
         "#summaryLabel { color: {{SUMMARY_COLOR}}; font-weight: 800; font-size: 15px; }\n"
@@ -422,6 +424,7 @@ static gchar *load_toast_css(const ThemePalette *theme) {
     gchar *template = NULL;
     gchar *card_bg = hex_to_rgba(theme->surface_container, 0.94);
     gchar *card_border = hex_to_rgba(theme->outline, 0.18);
+    gchar *card_shadow = hex_to_rgba(theme->primary, 0.24);
     gchar *app_label = g_strdup(theme->primary);
     gchar *summary_color = g_strdup(theme->on_surface);
     gchar *body_color = hex_to_rgba(theme->on_surface_variant, 0.78);
@@ -444,6 +447,9 @@ static gchar *load_toast_css(const ThemePalette *theme) {
 
     css = replace_all(template, "{{CARD_BG}}", card_bg);
     next = replace_all(css, "{{CARD_BORDER}}", card_border);
+    g_free(css);
+    css = next;
+    next = replace_all(css, "{{CARD_SHADOW}}", card_shadow);
     g_free(css);
     css = next;
     next = replace_all(css, "{{APP_LABEL}}", app_label);
@@ -479,6 +485,7 @@ static gchar *load_toast_css(const ThemePalette *theme) {
     g_free(default_path);
     g_free(card_bg);
     g_free(card_border);
+    g_free(card_shadow);
     g_free(app_label);
     g_free(summary_color);
     g_free(body_color);
@@ -827,10 +834,30 @@ static GtkWidget *make_notification_icon(const gchar *icon_name) {
     return image;
 }
 
+static gboolean clear_transparent_window(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    return FALSE;
+}
+
 static void show_toast(const NotificationPayload *payload) {
     ThemePalette theme;
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    GdkScreen *screen = gtk_widget_get_screen(window);
+    GdkVisual *visual = screen != NULL ? gdk_screen_get_rgba_visual(screen) : NULL;
+    gchar *title = g_strdup_printf("Hanauta Notification %u", payload->id);
+    if (visual != NULL && gdk_screen_is_composited(screen)) {
+        gtk_widget_set_visual(window, visual);
+    }
+    gtk_widget_set_app_paintable(window, TRUE);
+    g_signal_connect(window, "draw", G_CALLBACK(clear_transparent_window), NULL);
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
+    gtk_window_set_type_hint(GTK_WINDOW(window), GDK_WINDOW_TYPE_HINT_NOTIFICATION);
+    gtk_window_set_role(GTK_WINDOW(window), "notification");
     gtk_window_set_skip_taskbar_hint(GTK_WINDOW(window), TRUE);
     gtk_window_set_skip_pager_hint(GTK_WINDOW(window), TRUE);
     gtk_window_set_keep_above(GTK_WINDOW(window), TRUE);
@@ -838,9 +865,11 @@ static void show_toast(const NotificationPayload *payload) {
     gtk_window_set_accept_focus(GTK_WINDOW(window), FALSE);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
     gtk_window_set_default_size(GTK_WINDOW(window), 356, -1);
+    gtk_window_set_title(GTK_WINDOW(window), title);
     gtk_widget_set_name(window, "hanauta-toast-window");
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_set_border_width(GTK_CONTAINER(outer), 18);
     gtk_container_add(GTK_CONTAINER(window), outer);
 
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
@@ -898,6 +927,7 @@ static void show_toast(const NotificationPayload *payload) {
     );
     g_object_unref(provider);
     g_free(css);
+    g_free(title);
 
     ToastWindow *toast = g_new0(ToastWindow, 1);
     toast->window = window;
@@ -1059,6 +1089,7 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
 }
 
 int main(int argc, char **argv) {
+    gdk_set_program_class("HanautaNotification");
     g_daemon.app = gtk_application_new("org.hanauta.Notifyd", G_APPLICATION_NON_UNIQUE);
     g_application_hold(G_APPLICATION(g_daemon.app));
     g_daemon.toasts = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, toast_window_free);
