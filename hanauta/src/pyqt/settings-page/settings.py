@@ -1015,6 +1015,9 @@ def restore_saved_wallpaper() -> None:
     else:
         run_bg(["feh", "--bg-fill", str(wallpaper_path)])
 
+    if bool(appearance.get("use_matugen_palette", False)) and MATUGEN_SCRIPT.exists():
+        run_bg([str(MATUGEN_SCRIPT), str(wallpaper_path)])
+
 
 def restore_saved_vpn() -> None:
     settings = load_settings_state()
@@ -2878,7 +2881,7 @@ class SettingsWindow(QWidget):
         light = ThemeModeCard(material_icon("light_mode"), "Light", self.icon_font, self.ui_font)
         dark = ThemeModeCard(material_icon("dark_mode"), "Dark", self.icon_font, self.ui_font)
         custom = ThemeModeCard(material_icon("palette"), "Custom", self.icon_font, self.ui_font)
-        wallpaper_aware = ThemeModeCard(material_icon("auto_awesome"), "Wallpaper aware", self.icon_font, self.ui_font)
+        wallpaper_aware = ThemeModeCard(material_icon("auto_awesome"), "Wallpaper Aware (matugen)", self.icon_font, self.ui_font)
         self.theme_buttons = {
             "light": light,
             "dark": dark,
@@ -6359,7 +6362,8 @@ class SettingsWindow(QWidget):
         self._wallpaper_sync_worker = None
 
     def _apply_matugen_palette(self, force: bool = False) -> None:
-        if not self.wallpaper.exists() or not self.wallpaper.is_file():
+        wallpaper_path = self.wallpaper if self.wallpaper.exists() and self.wallpaper.is_file() else self._pick_wallpaper()
+        if not wallpaper_path.exists() or not wallpaper_path.is_file():
             return
         if force and not self.settings_state["appearance"].get("use_matugen_palette", False):
             self.settings_state["appearance"]["use_matugen_palette"] = True
@@ -6372,7 +6376,7 @@ class SettingsWindow(QWidget):
             sync_static_theme_from_settings(self.settings_state, apply_gtk=False)
             return
         if MATUGEN_SCRIPT.exists():
-            run_bg([str(MATUGEN_SCRIPT), str(self.wallpaper)])
+            run_bg([str(MATUGEN_SCRIPT), str(wallpaper_path)])
 
     def _wallpaper_mode_for_output(self, output_name: str) -> str:
         fit_modes = self.settings_state["appearance"].get("wallpaper_fit_modes", {})

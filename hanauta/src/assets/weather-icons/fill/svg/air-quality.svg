@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    @keyframes wind-flow {
+      0%, 100% { transform: translateX(0px); }
+      50% { transform: translateX(3px); }
+    }
+    @keyframes particle-pulse {
+      0%, 100% { transform: scale(1) translateY(0); opacity: 0.4; }
+      50% { transform: scale(1.3) translateY(-2px); opacity: 1; }
+    }
+    @keyframes sparkle-shine {
+      0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.7; }
+      50% { transform: scale(1.1) rotate(15deg); opacity: 1; }
+    }
+    
+    /* Gentle flowing animation for the wind */
+    .wind-line { animation: wind-flow 3.5s ease-in-out infinite; }
+    .wind-line:nth-child(2) { animation-delay: 0.8s; }
+    .wind-line:nth-child(3) { animation-delay: 1.6s; }
+    
+    /* Floating dots representing measured air particles */
+    .aqi-particle { 
+      animation: particle-pulse 3s ease-in-out infinite; 
+      transform-origin: center; 
+      fill: currentColor; 
+      stroke: none; 
+    }
+    .aqi-particle-2 { animation-delay: 1.5s; }
+    
+    /* Sparkle representing clean/pure air */
+    .clean-sparkle { 
+      animation: sparkle-shine 4s ease-in-out infinite; 
+      transform-origin: center; 
+      fill: currentColor; 
+      stroke: none; 
+    }
+  </style>
+
+  <g class="wind-line">
+    <path d="M4 12h11.5a3.5 3.5 0 0 0 0-7h-1"/>
+  </g>
+  <g class="wind-line">
+    <path d="M2 17h6.5a2.5 2.5 0 0 0 0-5h-1"/>
+  </g>
+  <g class="wind-line">
+    <path d="M6 7h4.5a2.5 2.5 0 0 1 0 5h-1"/>
+  </g>
+
+  <path class="clean-sparkle" d="M19 14l.8 2.2l2.2.8l-2.2.8l-.8 2.2l-.8-2.2l-2.2-.8l2.2-.8z"/>
+  
+  <circle class="aqi-particle" cx="19" cy="5" r="1.2" />
+  <circle class="aqi-particle aqi-particle-2" cx="15.5" cy="19.5" r="1" />
+</svg>

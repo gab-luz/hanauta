@@ -34,7 +34,7 @@ fi
   if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" ]; then
     "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" >/tmp/hanauta-wallcache.log 2>&1 &
   fi
-  "$HOME/.config/i3/hanauta/bin/hanauta-settings" --restore-displays >/tmp/hanauta-display-restore.log 2>&1 &
-  "$HOME/.config/i3/hanauta/bin/hanauta-settings" --restore-wallpaper >/tmp/hanauta-wallpaper-restore.log 2>&1 &
-  "$HOME/.config/i3/hanauta/bin/hanauta-settings" --restore-vpn >/tmp/hanauta-vpn-restore.log 2>&1 &
+  "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" --restore-displays >/tmp/hanauta-display-restore.log 2>&1 &
+  "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" --restore-wallpaper >/tmp/hanauta-wallpaper-restore.log 2>&1 &
+  "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" --restore-vpn >/tmp/hanauta-vpn-restore.log 2>&1 &
 } >>"$LOG" 2>&1
