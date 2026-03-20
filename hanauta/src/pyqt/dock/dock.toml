@@ -37,5 +37,6 @@ window_name = [
   "i3",
   "Hanauta Settings",
   "Hanauta Launcher",
-  "Hanauta Desktop Clock"
+  "Hanauta Desktop Clock",
+  "hanauta-notifyd"
 ]
