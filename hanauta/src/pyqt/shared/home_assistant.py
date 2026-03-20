@@ -289,8 +289,7 @@ def _normalize_hex_color(color: str, default: str = "#FFFFFF") -> str:
 
 def cached_mdi_icon_path(icon_name: str, tint_color: str = "#FFFFFF") -> Path:
     safe_name = str(icon_name).strip().replace("/", "-")
-    safe_color = _normalize_hex_color(tint_color).replace("#", "")
-    return HOME_ASSISTANT_ICON_DIR / f"{safe_name}--{safe_color}.svg"
+    return HOME_ASSISTANT_ICON_DIR / f"{safe_name}.svg"
 
 
 def _tinted_svg_markup(svg_text: str, tint_color: str) -> str:
@@ -307,6 +306,17 @@ def _tinted_svg_markup(svg_text: str, tint_color: str) -> str:
     return clean
 
 
+def _purge_legacy_tinted_icon_variants(icon_name: str, keep: Path) -> None:
+    safe_name = str(icon_name).strip().replace("/", "-")
+    for candidate in HOME_ASSISTANT_ICON_DIR.glob(f"{safe_name}--*.svg"):
+        if candidate == keep:
+            continue
+        try:
+            candidate.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def ensure_mdi_icon_downloaded(icon_name: str, *, tint_color: str = "#FFFFFF", timeout: float = 8.0) -> Path | None:
     icon_name = str(icon_name).strip()
     if not icon_name:
@@ -315,9 +325,6 @@ def ensure_mdi_icon_downloaded(icon_name: str, *, tint_color: str = "#FFFFFF", t
     HOME_ASSISTANT_ICON_DIR.mkdir(parents=True, exist_ok=True)
     target = cached_mdi_icon_path(icon_name, tint_color=tint_color)
 
-    if target.exists() and target.is_file():
-        return target
-
     try:
         req = request.Request(
             f"{MDI_ICON_BASE_URL}/{icon_name}.svg",
@@ -325,7 +332,16 @@ def ensure_mdi_icon_downloaded(icon_name: str, *, tint_color: str = "#FFFFFF", t
         )
         with request.urlopen(req, timeout=timeout) as response:
             raw_text = response.read().decode("utf-8", errors="replace")
-        target.write_text(_tinted_svg_markup(raw_text, tint_color), encoding="utf-8")
+        desired = _tinted_svg_markup(raw_text, tint_color)
+        if target.exists() and target.is_file():
+            try:
+                if target.read_text(encoding="utf-8") == desired:
+                    _purge_legacy_tinted_icon_variants(icon_name, target)
+                    return target
+            except Exception:
+                pass
+        target.write_text(desired, encoding="utf-8")
+        _purge_legacy_tinted_icon_variants(icon_name, target)
         return target if target.exists() else None
     except Exception:
         try:
