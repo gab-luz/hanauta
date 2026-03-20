@@ -272,7 +272,13 @@ Window {
 
                     ToolButton {
                         text: "Refresh"
-                        onClicked: backend.refreshProviderContent()
+                        onClicked: {
+                            if (backend.activeProvider === "konachan") {
+                                backend.fetchKonachanCandidates()
+                            } else {
+                                backend.refreshProviderContent()
+                            }
+                        }
                         padding: 0
                         implicitWidth: 88
                         implicitHeight: 38
@@ -424,11 +430,11 @@ Window {
                         ToolButton {
                             Layout.fillWidth: true
                             implicitHeight: 52
-                            text: backend.activeProvider === "konachan" ? "Refresh Konachan Now" : "Randomize wallpapers"
+                            text: backend.activeProvider === "konachan" ? "Random" : "Randomize wallpapers"
                             enabled: !backend.providerSelectionRequired && !backend.busy
                             onClicked: {
                                 if (backend.activeProvider === "konachan") {
-                                    backend.refreshProviderContent()
+                                    backend.fetchKonachanRandom()
                                 } else {
                                     backend.applyRandomWallpaper()
                                 }
@@ -495,7 +501,9 @@ Window {
                             spacing: 12
 
                             Text {
-                                text: backend.wallpapers.length > 0
+                                text: backend.activeProvider === "konachan"
+                                    ? "Konachan live provider"
+                                    : backend.wallpapers.length > 0
                                     ? backend.wallpapers.length + " wallpaper(s)"
                                     : "No wallpapers loaded yet"
                                 color: themeModel.text
@@ -507,15 +515,179 @@ Window {
                             Item { Layout.fillWidth: true }
 
                             Text {
-                                text: backend.busy ? "Preparing provider..." : "ESC closes"
+                                text: backend.activeProvider === "konachan"
+                                    ? "Tags decide the next random wallpaper"
+                                    : backend.busy ? "Preparing provider..." : "ESC closes"
                                 color: themeModel.textMuted
                                 font.family: fontsModel.ui
                                 font.pixelSize: 12
                             }
                         }
 
+                        Rectangle {
+                            visible: backend.activeProvider === "konachan"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: 24
+                            color: themeModel.cardDark
+                            border.width: 1
+                            border.color: themeModel.cardBorder
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 24
+                                spacing: 16
+
+                                Text {
+                                    text: "KONACHAN RANDOM"
+                                    color: themeModel.primary
+                                    font.family: fontsModel.ui
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    text: "Use tags to pull ten fresh Konachan suggestions. Click any thumbnail to apply it, or keep pressing Random to rotate the featured preview until one feels right."
+                                    color: themeModel.text
+                                    font.family: fontsModel.ui
+                                    font.pixelSize: 15
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    radius: 18
+                                    color: Qt.rgba(1, 1, 1, 0.04)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.10)
+                                    implicitHeight: 64
+
+                                    TextField {
+                                        id: konachanTagsField
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        text: backend.konachanTags
+                                        color: themeModel.text
+                                        font.family: fontsModel.ui
+                                        font.pixelSize: 14
+                                        placeholderText: "rating:safe scenery sky city"
+                                        placeholderTextColor: themeModel.textMuted
+                                        verticalAlignment: TextInput.AlignVCenter
+                                        selectByMouse: true
+                                        background: Item {}
+                                        onEditingFinished: backend.setKonachanTags(text)
+                                    }
+                                }
+
+                                Text {
+                                    text: "Examples: rating:safe scenery, rating:safe city night, rating:safe clouds water"
+                                    color: themeModel.textMuted
+                                    font.family: fontsModel.ui
+                                    font.pixelSize: 13
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    radius: 20
+                                    color: Qt.rgba(1, 1, 1, 0.03)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.08)
+
+                                    GridView {
+                                        id: konachanGrid
+                                        anchors.fill: parent
+                                        anchors.margins: 12
+                                        clip: true
+                                        model: backend.konachanCandidates
+                                        cellWidth: 168
+                                        cellHeight: 114
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        interactive: true
+
+                                        delegate: Item {
+                                            required property var modelData
+                                            required property int index
+                                            width: konachanGrid.cellWidth - 10
+                                            height: konachanGrid.cellHeight - 10
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 18
+                                                color: index === backend.konachanCurrentIndex ? themeModel.active : themeModel.cardDark
+                                                border.width: 1
+                                                border.color: index === backend.konachanCurrentIndex ? themeModel.activeBorder : themeModel.cardBorder
+                                            }
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                anchors.margins: 2
+                                                radius: 16
+                                                color: "transparent"
+                                                border.width: index === backend.konachanCurrentIndex ? 2 : 0
+                                                border.color: index === backend.konachanCurrentIndex ? themeModel.primary : "transparent"
+                                            }
+
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 8
+                                                height: 74
+                                                radius: 14
+                                                clip: true
+                                                color: "#18181f"
+
+                                                Image {
+                                                    anchors.fill: parent
+                                                    source: modelData.previewUrl
+                                                    fillMode: Image.PreserveAspectCrop
+                                                    asynchronous: true
+                                                    cache: true
+                                                }
+
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    color: "#000000"
+                                                    opacity: 0.12
+                                                }
+                                            }
+
+                                            Text {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.bottom: parent.bottom
+                                                anchors.margins: 10
+                                                text: modelData.name
+                                                color: themeModel.text
+                                                font.family: fontsModel.ui
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
+                                                elide: Text.ElideRight
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                onEntered: backend.previewKonachanCandidate(index)
+                                                onClicked: backend.applyKonachanCandidate(index)
+                                            }
+                                        }
+
+                                        ScrollBar.vertical: ScrollBar {
+                                            policy: ScrollBar.AsNeeded
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         GridView {
                             id: gridView
+                            visible: backend.activeProvider !== "konachan"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true

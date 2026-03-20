@@ -29,6 +29,7 @@ KONACHAN_CACHE_DIR = DEFAULT_WALLPAPER_FOLDER / "Konachan-cache"
 KONACHAN_PROVIDER_DAEMON = Path(__file__).resolve().with_name("wallpaper_provider_daemon.py")
 WALLPAPER_THUMBNAIL_SERVICE = Path(__file__).resolve().with_name("wallpaper_thumbnail_service.py")
 WALLPAPER_INDEX_CACHE = Path.home() / ".local" / "state" / "hanauta" / "service" / "wallpaper-index.json"
+KONACHAN_USER_AGENT = "Mozilla/5.0 HanautaWallpaperManager/1.0"
 
 PROVIDER_META: dict[str, dict[str, str]] = {
     "d3ext": {
@@ -140,6 +141,86 @@ def run_detached(command: list[str]) -> None:
     )
 
 
+def build_konachan_request(tags: str, *, limit: int = 24) -> request.Request:
+    chosen_page = random.randint(1, 80)
+    query = parse.urlencode(
+        {
+            "limit": limit,
+            "page": chosen_page,
+            "tags": tags or "rating:safe",
+        }
+    )
+    return request.Request(
+        f"https://konachan.net/post.json?{query}",
+        headers={
+            "User-Agent": KONACHAN_USER_AGENT,
+            "Accept": "application/json",
+        },
+    )
+
+
+def fetch_konachan_candidates(tags: str, *, limit: int = 10) -> list[dict[str, str]]:
+    for _ in range(4):
+        try:
+            with request.urlopen(build_konachan_request(tags), timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+        if not isinstance(payload, list) or not payload:
+            continue
+        candidates: list[dict[str, str]] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            file_url = str(item.get("file_url", "")).strip()
+            preview_url = (
+                str(item.get("sample_url", "")).strip()
+                or str(item.get("jpeg_url", "")).strip()
+                or str(item.get("preview_url", "")).strip()
+                or file_url
+            )
+            if not file_url.startswith("http") or not preview_url.startswith("http"):
+                continue
+            if int(item.get("width", 0) or 0) < 1280 or int(item.get("height", 0) or 0) < 720:
+                continue
+            post_id = str(item.get("id", "wallpaper")).strip() or "wallpaper"
+            candidates.append(
+                {
+                    "id": post_id,
+                    "name": f"Konachan #{post_id}",
+                    "fileUrl": file_url,
+                    "previewUrl": preview_url,
+                    "detail": f"{int(item.get('width', 0) or 0)}x{int(item.get('height', 0) or 0)}",
+                }
+            )
+        if candidates:
+            random.shuffle(candidates)
+            return candidates[:limit]
+    return []
+
+
+def download_konachan_candidate(candidate: dict[str, str]) -> Path | None:
+    file_url = str(candidate.get("fileUrl", "")).strip()
+    if not file_url:
+        return None
+    KONACHAN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = Path(parse.urlparse(file_url).path).suffix.lower() or ".jpg"
+    target = KONACHAN_CACHE_DIR / f"konachan-{str(candidate.get('id', 'wallpaper')).strip() or 'wallpaper'}{suffix}"
+    if target.exists():
+        return target
+    try:
+        wallpaper_request = request.Request(file_url, headers={"User-Agent": KONACHAN_USER_AGENT})
+        with request.urlopen(wallpaper_request, timeout=60) as response:
+            target.write_bytes(response.read())
+        return target
+    except Exception:
+        try:
+            target.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return None
+
+
 class Backend(QObject):
     wallpapersChanged = pyqtSignal()
     currentIndexChanged = pyqtSignal()
@@ -155,6 +236,9 @@ class Backend(QObject):
     providerSelectionRequiredChanged = pyqtSignal()
     busyChanged = pyqtSignal()
     randomizerChanged = pyqtSignal()
+    konachanTagsChanged = pyqtSignal()
+    konachanCandidatesChanged = pyqtSignal()
+    konachanCurrentChanged = pyqtSignal()
     closeRequested = pyqtSignal()
     notify = pyqtSignal(str)
 
@@ -162,6 +246,8 @@ class Backend(QObject):
         super().__init__()
         self._settings = load_settings_state()
         self._wallpapers: list[dict[str, object]] = []
+        self._konachan_candidates: list[dict[str, str]] = []
+        self._konachan_current = -1
         self._current_index = 0
         self._pinned_index = -1
         self._status = "Choose your wallpaper pack to start building the library."
@@ -179,6 +265,8 @@ class Backend(QObject):
         self._cache_watch_timer.setInterval(1200)
         self._cache_watch_timer.timeout.connect(self._poll_wallpaper_cache)
         self._cache_watch_timer.start()
+        if self._active_provider() == "konachan":
+            QTimer.singleShot(450, self.fetchKonachanCandidates)
 
     def _provider_initialized(self) -> bool:
         appearance = self._settings.get("appearance", {})
@@ -492,6 +580,14 @@ class Backend(QObject):
             self._settings["appearance"] = appearance
         return appearance
 
+    def _selected_konachan_candidate(self) -> dict[str, str] | None:
+        if self._active_provider() != "konachan":
+            return None
+        if self._konachan_current < 0 or self._konachan_current >= len(self._konachan_candidates):
+            return None
+        item = self._konachan_candidates[self._konachan_current]
+        return item if isinstance(item, dict) else None
+
     @pyqtProperty("QVariantList", notify=wallpapersChanged)
     def wallpapers(self) -> list[dict[str, object]]:
         return self._wallpapers
@@ -523,18 +619,37 @@ class Backend(QObject):
 
     @pyqtProperty(str, notify=selectedWallpaperChanged)
     def selectedWallpaperName(self) -> str:
+        candidate = self._selected_konachan_candidate()
+        if candidate is not None:
+            return str(candidate.get("name", "Konachan suggestion"))
         item = self._selected_item()
         return str(item.get("name", "")) if item else ""
 
     @pyqtProperty(str, notify=selectedWallpaperChanged)
     def selectedWallpaperPath(self) -> str:
+        candidate = self._selected_konachan_candidate()
+        if candidate is not None:
+            detail = str(candidate.get("detail", "")).strip()
+            file_url = str(candidate.get("fileUrl", "")).strip()
+            return detail if detail else file_url
         item = self._selected_item()
         return str(item.get("path", "")) if item else ""
 
     @pyqtProperty(str, notify=selectedWallpaperChanged)
     def selectedWallpaperUrl(self) -> str:
+        candidate = self._selected_konachan_candidate()
+        if candidate is not None:
+            return str(candidate.get("previewUrl", "")).strip()
         item = self._selected_item()
         return str(item.get("url", "")) if item else ""
+
+    @pyqtProperty("QVariantList", notify=konachanCandidatesChanged)
+    def konachanCandidates(self) -> list[dict[str, str]]:
+        return self._konachan_candidates
+
+    @pyqtProperty(int, notify=konachanCurrentChanged)
+    def konachanCurrentIndex(self) -> int:
+        return self._konachan_current
 
     @pyqtProperty("QVariantList", notify=providersChanged)
     def providers(self) -> list[dict[str, object]]:
@@ -571,6 +686,13 @@ class Backend(QObject):
     def canUseLocalRandomizer(self) -> bool:
         provider = self._active_provider()
         return provider not in {"", "konachan"} and bool(self._wallpapers)
+
+    @pyqtProperty(str, notify=konachanTagsChanged)
+    def konachanTags(self) -> str:
+        appearance = self._settings.get("appearance", {})
+        if not isinstance(appearance, dict):
+            return "rating:safe"
+        return str(appearance.get("konachan_tags", "rating:safe")).strip() or "rating:safe"
 
     @pyqtSlot()
     def openProviderDialog(self) -> None:
@@ -613,6 +735,102 @@ class Backend(QObject):
         QTimer.singleShot(350, self._deferred_refresh_wallpapers)
 
     @pyqtSlot(str)
+    def setKonachanTags(self, tags: str) -> None:
+        cleaned = (tags or "").strip() or "rating:safe"
+        appearance = self._appearance()
+        if str(appearance.get("konachan_tags", "rating:safe")).strip() == cleaned:
+            return
+        appearance["konachan_tags"] = cleaned
+        save_settings_state(self._settings)
+        self._konachan_candidates = []
+        self._konachan_current = -1
+        self.konachanTagsChanged.emit()
+        self.konachanCandidatesChanged.emit()
+        self.konachanCurrentChanged.emit()
+        self.selectedWallpaperChanged.emit()
+        self._status = f"Konachan tags updated to: {cleaned}"
+        self.statusChanged.emit()
+        QTimer.singleShot(120, self.fetchKonachanCandidates)
+
+    @pyqtSlot()
+    def fetchKonachanCandidates(self) -> None:
+        if self._active_provider() != "konachan":
+            self.notify.emit("Konachan is not the active wallpaper provider.")
+            return
+        self._set_busy(True)
+        try:
+            candidates = fetch_konachan_candidates(self.konachanTags, limit=10)
+        finally:
+            self._set_busy(False)
+        if not candidates:
+            self._status = f"Could not load Konachan suggestions for tags: {self.konachanTags}"
+            self.statusChanged.emit()
+            self.notify.emit(self._status)
+            return
+        self._konachan_candidates = candidates
+        self._konachan_current = 0
+        self.konachanCandidatesChanged.emit()
+        self.konachanCurrentChanged.emit()
+        self.selectedWallpaperChanged.emit()
+        self._status = f"Loaded {len(candidates)} Konachan suggestions for tags: {self.konachanTags}"
+        self.statusChanged.emit()
+
+    @pyqtSlot()
+    def fetchKonachanRandom(self) -> None:
+        if self._active_provider() != "konachan":
+            self.notify.emit("Konachan is not the active wallpaper provider.")
+            return
+        if not self._konachan_candidates:
+            self.fetchKonachanCandidates()
+            if not self._konachan_candidates:
+                return
+        next_index = random.randrange(len(self._konachan_candidates))
+        if len(self._konachan_candidates) > 1:
+            while next_index == self._konachan_current:
+                next_index = random.randrange(len(self._konachan_candidates))
+        self._konachan_current = next_index
+        self.konachanCurrentChanged.emit()
+        self.selectedWallpaperChanged.emit()
+        self._status = f"Previewing random Konachan suggestion {next_index + 1} of {len(self._konachan_candidates)}."
+        self.statusChanged.emit()
+
+    @pyqtSlot(int)
+    def previewKonachanCandidate(self, index: int) -> None:
+        if self._active_provider() != "konachan":
+            return
+        if index < 0 or index >= len(self._konachan_candidates):
+            return
+        if self._konachan_current == index:
+            return
+        self._konachan_current = index
+        self.konachanCurrentChanged.emit()
+        self.selectedWallpaperChanged.emit()
+
+    @pyqtSlot(int)
+    def applyKonachanCandidate(self, index: int) -> None:
+        if self._active_provider() != "konachan":
+            return
+        if index < 0 or index >= len(self._konachan_candidates):
+            self.notify.emit("That Konachan suggestion is no longer available.")
+            return
+        self._konachan_current = index
+        self.konachanCurrentChanged.emit()
+        self.selectedWallpaperChanged.emit()
+        self._set_busy(True)
+        try:
+            path = download_konachan_candidate(self._konachan_candidates[index])
+        finally:
+            self._set_busy(False)
+        if path is None:
+            self._status = "Failed to download the selected Konachan wallpaper."
+            self.statusChanged.emit()
+            self.notify.emit(self._status)
+            return
+        self._apply_wallpaper_path(path, pin_selection=False)
+        self._status = f"Applied Konachan suggestion {index + 1} for tags: {self.konachanTags}"
+        self.statusChanged.emit()
+
+    @pyqtSlot(str)
     def selectProvider(self, provider_key: str) -> None:
         provider_key = (provider_key or "").strip().lower()
         if provider_key not in PROVIDER_META:
@@ -627,10 +845,11 @@ class Backend(QObject):
             if provider_key == "konachan":
                 KONACHAN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
                 self._persist_provider("konachan", KONACHAN_CACHE_DIR)
-                self._status = "Konachan live feed enabled. Downloading the first safe wallpaper now."
+                self._status = "Konachan live feed enabled. Loading tagged suggestions now."
                 self.statusChanged.emit()
                 self._refresh_wallpapers(allow_scan=False)
                 self._start_konachan_daemon_once()
+                QTimer.singleShot(300, self.fetchKonachanCandidates)
                 return
             target_dir = Path(str(meta.get("folder", ""))).expanduser()
             repo_url = str(meta.get("repo", "")).strip()

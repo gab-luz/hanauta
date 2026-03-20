@@ -63,7 +63,7 @@ Makefile
 # Specific configs that might differ per machine
 TODO.md
 NOTES.md
-
+/home/<user>/.config/i3/hanauta/walls/Konachan-cache
 # Local app state / secrets
 *.env
 *.sqlite
