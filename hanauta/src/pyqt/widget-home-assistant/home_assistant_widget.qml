@@ -259,6 +259,14 @@ Window {
                     }
                 }
 
+                Text {
+                    Layout.fillWidth: true
+                    text: backend.entities.length + " entity cards"
+                    color: themeModel.textMuted
+                    font.family: backend.uiFontFamily
+                    font.pixelSize: 10
+                }
+
                 Rectangle {
                     Layout.fillWidth: true
                     visible: backend.pinnedEntities.length > 0
@@ -313,10 +321,21 @@ Window {
                                             Layout.fillWidth: true
 
                                             Text {
+                                                visible: modelData.iconSource === ""
                                                 text: modelData.iconGlyph
                                                 font.family: backend.materialFontFamily
                                                 font.pixelSize: 18
                                                 color: themeModel.primary
+                                            }
+
+                                            Image {
+                                                visible: modelData.iconSource !== ""
+                                                source: modelData.iconSource
+                                                sourceSize.width: 18
+                                                sourceSize.height: 18
+                                                width: 18
+                                                height: 18
+                                                fillMode: Image.PreserveAspectFit
                                             }
 
                                             Item { Layout.fillWidth: true }
@@ -398,10 +417,22 @@ Window {
 
                                             Text {
                                                 anchors.centerIn: parent
+                                                visible: modelData.iconSource === ""
                                                 text: modelData.iconGlyph
                                                 font.family: backend.materialFontFamily
                                                 font.pixelSize: 18
                                                 color: themeModel.primary
+                                            }
+
+                                            Image {
+                                                anchors.centerIn: parent
+                                                visible: modelData.iconSource !== ""
+                                                source: modelData.iconSource
+                                                sourceSize.width: 18
+                                                sourceSize.height: 18
+                                                width: 18
+                                                height: 18
+                                                fillMode: Image.PreserveAspectFit
                                             }
                                         }
 
@@ -425,6 +456,16 @@ Window {
                                                 font.family: backend.uiFontFamily
                                                 font.pixelSize: 10
                                                 elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+
+                                            Text {
+                                                text: modelData.entityId
+                                                color: themeModel.textMuted
+                                                opacity: 0.8
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 9
+                                                elide: Text.ElideMiddle
                                                 Layout.fillWidth: true
                                             }
                                         }
@@ -452,22 +493,104 @@ Window {
                                         Layout.fillWidth: true
                                         spacing: 8
 
+                                        Rectangle {
+                                            radius: 999
+                                            color: themeModel.cardStrong
+                                            border.width: 1
+                                            border.color: themeModel.border
+                                            implicitWidth: domainText.implicitWidth + 18
+                                            implicitHeight: 24
+
+                                            Text {
+                                                id: domainText
+                                                anchors.centerIn: parent
+                                                text: modelData.domainLabel
+                                                color: themeModel.textMuted
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 9
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.updatedText
+                                            color: themeModel.textMuted
+                                            font.family: backend.uiFontFamily
+                                            font.pixelSize: 9
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
                                         Button {
+                                            id: actionButton
                                             visible: modelData.canToggle
                                             text: modelData.actionLabel
                                             onClicked: backend.activateEntity(modelData.entityId)
+                                            background: Rectangle {
+                                                radius: 12
+                                                color: parent.hovered ? themeModel.active : themeModel.cardStrong
+                                                border.width: 1
+                                                border.color: themeModel.activeBorder
+                                            }
+                                            contentItem: Text {
+                                                text: actionButton.text
+                                                color: themeModel.text
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
                                         }
 
                                         Button {
-                                            text: modelData.isPinned ? "Unpin" : "Pin"
+                                            id: pinButton
+                                            text: modelData.isPinned ? glyph("push_pin") : glyph("push_pin_outline")
+                                            font.family: backend.materialFontFamily
+                                            font.pixelSize: 18
                                             onClicked: backend.togglePinned(modelData.entityId)
+                                            background: Rectangle {
+                                                radius: 12
+                                                color: parent.hovered ? themeModel.active : themeModel.cardStrong
+                                                border.width: 1
+                                                border.color: modelData.isPinned ? themeModel.activeBorder : themeModel.border
+                                            }
+                                            contentItem: Text {
+                                                text: pinButton.text
+                                                color: themeModel.text
+                                                font.family: backend.materialFontFamily
+                                                font.pixelSize: 18
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
                                         }
 
                                         Item { Layout.fillWidth: true }
 
                                         Button {
+                                            id: expandButton
                                             text: expanded ? "Less" : "More"
                                             onClicked: entityCard.expanded = !entityCard.expanded
+                                            background: Rectangle {
+                                                radius: 12
+                                                color: parent.hovered ? themeModel.active : themeModel.cardStrong
+                                                border.width: 1
+                                                border.color: themeModel.border
+                                            }
+                                            contentItem: Text {
+                                                text: expandButton.text
+                                                color: themeModel.text
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
                                         }
                                     }
 
@@ -494,6 +617,15 @@ Window {
                                                 font.pixelSize: 10
                                                 wrapMode: Text.WordWrap
                                             }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Raw state: " + modelData.rawState
+                                            color: themeModel.textMuted
+                                            font.family: backend.uiFontFamily
+                                            font.pixelSize: 9
+                                            wrapMode: Text.WordWrap
                                         }
                                     }
                                 }
