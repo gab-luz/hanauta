@@ -2016,7 +2016,7 @@ class CyberBar(QWidget):
             self._restart_for_theme_refresh()
             return
         self._apply_styles()
-        self._reload_settings_if_needed()
+        self._reload_settings_if_needed(force=True)
 
     def _restart_for_theme_refresh(self) -> None:
         if getattr(self, "_theme_refresh_restart_pending", False):
