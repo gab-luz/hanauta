@@ -196,6 +196,7 @@ class PomodoroWidget(QWidget):
         self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
         self.display_font = detect_font("Rubik", fonts.get("ui_display", ""), "Outfit", self.ui_font)
         self.icon_font = detect_font(fonts.get("material_icons", ""), "Material Icons", self.ui_font)
+        self.material_font = self.icon_font
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self._settings_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
