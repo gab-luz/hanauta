@@ -96,10 +96,8 @@ def load_weather_settings() -> dict[str, object]:
     return weather if isinstance(weather, dict) else {}
 
 
-def configured_city() -> WeatherCity | None:
+def configured_location() -> WeatherCity | None:
     weather = load_weather_settings()
-    if not weather or not weather.get("enabled", False):
-        return None
     try:
         return WeatherCity(
             name=str(weather.get("name", "")).strip(),
@@ -111,6 +109,13 @@ def configured_city() -> WeatherCity | None:
         )
     except Exception:
         return None
+
+
+def configured_city() -> WeatherCity | None:
+    weather = load_weather_settings()
+    if not weather or not weather.get("enabled", False):
+        return None
+    return configured_location()
 
 
 def _get_json(url: str, timeout: float = 5.0) -> dict[str, Any]:
