@@ -13,10 +13,14 @@ import os
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 try:
     import tomllib
@@ -24,7 +28,7 @@ except Exception:  # pragma: no cover
     tomllib = None
 
 from PyQt6.QtCore import QEasingCurve, QProcess, QPropertyAnimation, QRect, Qt, QTimer
-from PyQt6.QtGui import QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap
+from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -37,6 +41,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -221,6 +226,15 @@ class DesktopEntry:
     name: str
     icon: str
     startup_wm_class: str
+    exec: str = ""
+    actions: list["DesktopAction"] = field(default_factory=list)
+
+
+@dataclass
+class DesktopAction:
+    action_id: str
+    name: str
+    exec: str
 
 
 @dataclass
@@ -314,28 +328,52 @@ def scan_desktop_entries() -> tuple[dict[str, DesktopEntry], dict[str, str]]:
             name = ""
             icon = ""
             startup_wm = ""
+            exec_command = ""
+            action_ids: list[str] = []
+            actions: dict[str, DesktopAction] = {}
             in_entry = False
+            current_action_id = ""
             for line in text.splitlines():
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
                 if line == "[Desktop Entry]":
                     in_entry = True
+                    current_action_id = ""
+                    continue
+                if line.startswith("[Desktop Action ") and line.endswith("]"):
+                    in_entry = False
+                    current_action_id = line[len("[Desktop Action ") : -1].strip()
+                    if current_action_id and current_action_id not in actions:
+                        actions[current_action_id] = DesktopAction(current_action_id, current_action_id, "")
                     continue
                 if line.startswith("[") and line.endswith("]") and line != "[Desktop Entry]":
                     in_entry = False
+                    current_action_id = ""
                     continue
-                if not in_entry or "=" not in line:
+                if "=" not in line:
                     continue
                 key, value = line.split("=", 1)
                 key = key.strip()
                 value = value.strip()
-                if key == "Name" and not name:
-                    name = value
-                elif key == "Icon" and not icon:
-                    icon = value
-                elif key == "StartupWMClass" and not startup_wm:
-                    startup_wm = value
+                if in_entry:
+                    if key == "Name" and not name:
+                        name = value
+                    elif key == "Icon" and not icon:
+                        icon = value
+                    elif key == "StartupWMClass" and not startup_wm:
+                        startup_wm = value
+                    elif key == "Exec" and not exec_command:
+                        exec_command = value
+                    elif key == "Actions" and not action_ids:
+                        action_ids = [part.strip() for part in value.split(";") if part.strip()]
+                    continue
+                if current_action_id:
+                    action = actions.setdefault(current_action_id, DesktopAction(current_action_id, current_action_id, ""))
+                    if key == "Name" and (not action.name or action.name == current_action_id):
+                        action.name = value
+                    elif key == "Exec" and not action.exec:
+                        action.exec = value
 
             desktop_id = desktop_file.name
             if not name:
@@ -343,11 +381,14 @@ def scan_desktop_entries() -> tuple[dict[str, DesktopEntry], dict[str, str]]:
             if not startup_wm:
                 startup_wm = desktop_id.replace(".desktop", "")
 
+            ordered_actions = [actions[action_id] for action_id in action_ids if action_id in actions and actions[action_id].exec]
             entry = DesktopEntry(
                 desktop_id=desktop_id,
                 name=name,
                 icon=icon,
                 startup_wm_class=startup_wm,
+                exec=exec_command,
+                actions=ordered_actions,
             )
             entries[desktop_id] = entry
             wm_map[norm(startup_wm)] = desktop_id
@@ -510,6 +551,19 @@ def launch_desktop(desktop_id: str) -> None:
         subprocess.Popen(["gtk-launch", desktop_base], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def desktop_exec_to_command(exec_line: str) -> list[str]:
+    cleaned = (exec_line or "").strip()
+    if not cleaned:
+        return []
+    for token in ("%f", "%F", "%u", "%U", "%i", "%c", "%k", "%d", "%D", "%n", "%N", "%v", "%m"):
+        cleaned = cleaned.replace(token, "")
+    cleaned = cleaned.replace("%%", "%")
+    try:
+        return [part for part in shlex.split(cleaned) if part]
+    except Exception:
+        return []
+
+
 def get_next_focus_id(key: str, ids: list[int], focused: Optional[int]) -> int:
     state = load_json(STATE_PATH, {})
     last = state.get("last_index", {}).get(key, -1)
@@ -584,6 +638,8 @@ def build_dock_items(config: dict) -> list[DockItem]:
             running=len(running_windows),
             focused=on_current_workspace,
             pinned=pinned_flag,
+            desktop_id=desktop_id,
+            desktop_actions=list(entry.actions) if entry else [],
             cmd_click=click_command,
             cmd_new=self_command("new", desktop_id),
         )
@@ -616,6 +672,8 @@ def build_dock_items(config: dict) -> list[DockItem]:
                 running=len(running_windows),
                 focused=any(workspace_by_con_id.get(window.con_id) == current_workspace for window in running_windows),
                 pinned=False,
+                desktop_id=desktop_id if desktop_id else None,
+                desktop_actions=list(desktop_db.get(desktop_id).actions) if desktop_id and desktop_id in desktop_db else [],
                 cmd_click=self_command("activate-wm", wm_class),
                 cmd_new=self_command("activate-wm", wm_class),
             )
@@ -665,15 +723,26 @@ class DockItem:
     running: int
     focused: bool
     pinned: bool
+    desktop_id: str | None
+    desktop_actions: list[DesktopAction]
     cmd_click: str
     cmd_new: str
 
 
 class DockAppButton(QFrame):
-    def __init__(self, item: DockItem, button_height: int, theme) -> None:
+    def __init__(
+        self,
+        item: DockItem,
+        button_height: int,
+        theme,
+        on_toggle_pin: Callable[[DockItem], None],
+        on_run_action: Callable[[DockItem, DesktopAction], None],
+    ) -> None:
         super().__init__()
         self.item = item
         self.theme = theme
+        self.on_toggle_pin = on_toggle_pin
+        self.on_run_action = on_run_action
         self.button_height = max(64, button_height)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setObjectName("dockAppButton")
@@ -754,7 +823,50 @@ class DockAppButton(QFrame):
             run_bg(shlex.split(self.item.cmd_new))
             event.accept()
             return
+        if event.button() == Qt.MouseButton.RightButton:
+            self._show_context_menu(event.globalPosition().toPoint())
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def _show_context_menu(self, global_pos) -> None:
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"""
+            QMenu {{
+                background: {self.theme.panel_bg};
+                border: 1px solid {self.theme.panel_border};
+                border-radius: 16px;
+                padding: 8px;
+                color: {self.theme.text};
+                font-family: "{theme_font_family('ui') or 'Sans Serif'}";
+            }}
+            QMenu::item {{
+                padding: 10px 14px;
+                border-radius: 10px;
+                margin: 2px 0;
+            }}
+            QMenu::item:selected {{
+                background: {self.theme.hover_bg};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                margin: 6px 2px;
+                background: {self.theme.separator};
+            }}
+            """
+        )
+        for action in self.item.desktop_actions:
+            qt_action = QAction(action.name, menu)
+            qt_action.triggered.connect(lambda _checked=False, desktop_action=action: self.on_run_action(self.item, desktop_action))
+            menu.addAction(qt_action)
+        if self.item.desktop_actions:
+            menu.addSeparator()
+        pin_action = QAction("UNPIN" if self.item.pinned else "PIN IT", menu)
+        pin_action.setEnabled(bool(self.item.desktop_id))
+        pin_action.triggered.connect(lambda _checked=False: self.on_toggle_pin(self.item))
+        menu.addAction(pin_action)
+        menu.exec(global_pos)
 
 
 class VolumeButton(QPushButton):
@@ -1357,7 +1469,7 @@ class CyberDock(QWidget):
 
     def _refresh_items(self) -> None:
         items = build_dock_items(self.config)
-        raw = json.dumps([item.__dict__ for item in items], sort_keys=True)
+        raw = json.dumps([asdict(item) for item in items], sort_keys=True)
         if raw == self._last_items_json:
             return
         self._last_items_json = raw
@@ -1370,7 +1482,15 @@ class CyberDock(QWidget):
             if widget is not None:
                 widget.deleteLater()
         for item in items:
-            self.apps_layout.addWidget(DockAppButton(item, self._dock_app_height(), self.theme))
+            self.apps_layout.addWidget(
+                DockAppButton(
+                    item,
+                    self._dock_app_height(),
+                    self.theme,
+                    self._toggle_pin_item,
+                    self._run_desktop_action,
+                )
+            )
         self.apps_layout.activate()
         self._apply_dock_height()
         self.apps_wrap.adjustSize()
@@ -1492,6 +1612,26 @@ class CyberDock(QWidget):
         self._apply_dock_preferences()
         self._refresh_items()
         self._update_position(animated=False)
+
+    def _toggle_pin_item(self, item: DockItem) -> None:
+        desktop_id = item.desktop_id
+        if not desktop_id:
+            return
+        pinned = list((self.config.get("pinned", {}) or {}).get("apps", []) or [])
+        if desktop_id in pinned:
+            pinned = [entry for entry in pinned if entry != desktop_id]
+        else:
+            pinned.append(desktop_id)
+        self.config["pinned"] = {"apps": pinned}
+        save_dock_config(self.config)
+        self._last_items_json = ""
+        self._refresh_items()
+
+    def _run_desktop_action(self, item: DockItem, action: DesktopAction) -> None:
+        command = desktop_exec_to_command(action.exec)
+        if not command:
+            return
+        run_bg(command)
 
     def _preview_transparency(self, value: int) -> None:
         self._transparency_preview = int(value)
