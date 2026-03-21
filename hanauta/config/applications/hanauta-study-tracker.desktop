@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Hanauta Study Tracker
+Comment=Track study sessions, tasks, and streaks
+Exec=sh -c "$HOME/.config/i3/hanauta/bin/hanauta-study-tracker"
+Icon=applications-education
+Terminal=false
+Type=Application
+Categories=Utility;Education;Productivity;
+StartupWMClass=hanauta-study-tracker
