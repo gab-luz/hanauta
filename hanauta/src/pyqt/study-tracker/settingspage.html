@@ -23,8 +23,8 @@
 <div class="study-icon-chip"><span class="material-symbols-outlined text-primary">calendar_today</span></div>
 <button class="study-chip-button" id="openCaldavSettingsButton" type="button">Open Hanauta Settings</button>
 </div>
-<h4 class="font-headline font-bold mb-1">CalDAV Sync</h4>
-<p class="study-muted-copy">Reuse Hanauta's existing CalDAV settings flow instead of a second duplicate screen.</p>
+<h4 class="font-headline font-bold mb-1">Schedule Sync (CalDAV)</h4>
+<p class="study-muted-copy" id="caldavSyncSummary">Reuse Hanauta's existing CalDAV settings flow. This schedule sync stays separate from Study Tracker's own cloud sync.</p>
 </div>
 <div class="study-settings-card">
 <div class="study-settings-card-top">
@@ -33,6 +33,32 @@
 </div>
 <h4 class="font-headline font-bold mb-1">Pomodoro Bridge</h4>
 <p class="study-muted-copy">Let completed focus sessions contribute to study goals and progress automatically.</p>
+</div>
+</div>
+</section>
+
+<section class="glass-panel rounded-lg p-8 border border-outline-variant/5">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary">video_library</span>
+<h3 class="font-headline text-xl font-bold">Jellyfin</h3>
+</div>
+<div class="space-y-4">
+<p class="study-muted-copy">Connect a Jellyfin server so resource imports can recognize course shows, videos, books, audiobooks, and playlists from pasted URLs.</p>
+<div class="study-form-grid">
+<label class="study-form-field study-field-span-2">
+<span class="study-field-label">Instance URL</span>
+<input class="study-input" id="jellyfinInstanceUrlInput" placeholder="https://media.example.com/jellyfin" type="text"/>
+</label>
+<label class="study-form-field study-field-span-2">
+<span class="study-field-label">API Token</span>
+<input class="study-input" id="jellyfinApiTokenInput" placeholder="Paste your Jellyfin API token" type="password"/>
+</label>
+</div>
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="study-status-line" id="jellyfinStatusText">Jellyfin is not configured yet.</p>
+</div>
+<button class="study-chip-button" id="saveJellyfinSettingsButton" type="button">Save Jellyfin Settings</button>
 </div>
 </div>
 </section>
@@ -94,7 +120,7 @@
 <div class="study-sync-panel">
 <div class="study-settings-row-copy">
 <p class="font-headline font-bold text-sm">Online Sync</p>
-<p class="study-muted-copy">Choose a remote target to sync your study data with Nextcloud, generic WebDAV, or PostgreSQL.</p>
+<p class="study-muted-copy">Choose a remote target to sync Study Tracker data itself: streaks, pomodoro sessions, resources, and local study state. This can run alongside CalDAV schedule sync.</p>
 </div>
 <div class="study-form-grid">
 <label class="study-form-field">

@@ -5,7 +5,7 @@
 <p class="study-muted-copy">Keep reusable study material ready for schedules, focus sessions, and reminders.</p>
 </div>
 <div class="study-resource-import">
-<input class="study-input" id="resourceUrlInput" placeholder="Paste a YouTube/Udemy URL, a local document path, or a plain reference note" type="text"/>
+<input class="study-input" id="resourceUrlInput" placeholder="Paste a YouTube, Udemy, or Jellyfin URL, a local document path, or a plain reference note" type="text"/>
 <button class="study-chip-button" id="resourceImportButton" type="button">Add Resource</button>
 </div>
 </div>
@@ -32,7 +32,9 @@
 <button class="study-pill-button active" data-resource-filter="all" type="button">All</button>
 <button class="study-pill-button" data-resource-filter="youtube" type="button">YouTube</button>
 <button class="study-pill-button" data-resource-filter="udemy" type="button">Udemy</button>
+<button class="study-pill-button" data-resource-filter="jellyfin" type="button">Jellyfin</button>
 <button class="study-pill-button" data-resource-filter="book" type="button">Books</button>
+<button class="study-pill-button" data-resource-filter="audio" type="button">Audio</button>
 <button class="study-pill-button" data-resource-filter="other" type="button">Other</button>
 </div>
 <div class="study-resource-grid" id="resourcesGrid"></div>
