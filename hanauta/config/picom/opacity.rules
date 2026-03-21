@@ -1,0 +1,11 @@
+# Hanauta picom opacity rules
+# Syntax:
+#   opacity 100: window_name: Exact Window Title
+#   opacity 100: class: kitty
+#   opacity 100: raw: focused
+
+opacity 100: class: Eww
+opacity 100: class: Alacritty
+opacity 100: class: kitty
+opacity 100: window_name: PyQt Notification Center
+opacity 100: window_name: Hanauta Settings

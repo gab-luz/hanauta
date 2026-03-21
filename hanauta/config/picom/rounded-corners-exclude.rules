@@ -1,0 +1,14 @@
+# Hanauta picom rounded-corner exceptions
+# Same shortcuts as shadow-exclude.rules.
+
+window_type: dock
+window_type: notification
+window_type: utility
+class: Rofi
+class: Conky
+class: mpv
+window_name: PyQt Notification Center
+class: HanautaNotification
+window_name_contains: Hanauta Notification
+window_name: Hanauta Desktop Clock
+window_name: Hanauta Settings

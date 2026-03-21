@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib import error, request
 from urllib import parse
 import locale as pylocale
+import zipfile
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
@@ -76,6 +77,11 @@ WALLPAPER_SOURCE_CACHE_DIR = ROOT / "hanauta" / "vendor" / "wallpaper-sources"
 COMMUNITY_WALLPAPER_DIR = ROOT / "hanauta" / "walls" / "community"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
+PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
+PICOM_SHADOW_EXCLUDE_FILE = PICOM_RULES_DIR / "shadow-exclude.rules"
+PICOM_ROUNDED_EXCLUDE_FILE = PICOM_RULES_DIR / "rounded-corners-exclude.rules"
+PICOM_OPACITY_RULE_FILE = PICOM_RULES_DIR / "opacity.rules"
+PICOM_FADE_EXCLUDE_FILE = PICOM_RULES_DIR / "fade-exclude.rules"
 PYQT_THEME_DIR = Path.home() / ".local" / "state" / "hanauta" / "theme"
 PYQT_THEME_FILE = PYQT_THEME_DIR / "pyqt_palette.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
@@ -84,7 +90,7 @@ BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark.svg"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
-PICOM_DEFAULT_CONFIG = """backend = "glx";
+PICOM_DEFAULT_TEMPLATE = """backend = "glx";
 vsync = true;
 use-damage = true;
 detect-rounded-corners = true;
@@ -111,32 +117,7 @@ transparent-clipping = false;
 corner-radius-rules = [
   "88:name = 'PyQt Notification Center'"
 ];
-shadow-exclude = [
-  "class_g = 'Eww'",
-  "window_type = 'dock'",
-  "class_g = 'Rofi'",
-  "class_g = 'Conky'",
-  "name = 'Hanauta Desktop Clock'",
-  "name = 'Hanauta Clock'",
-];
-
-rounded-corners-exclude = [
-  "window_type = 'dock'",
-  "class_g = 'Rofi'",
-  "class_g = 'Conky'",
-  "class_g = 'mpv'",
-  "name = 'PyQt Notification Center'",
-  "name = 'Hanauta Desktop Clock'",
-  "name = 'Hanauta Clock'"
-  
-];
-
-opacity-rule = [
-  "100:class_g = 'Eww'",
-  "100:class_g = 'Alacritty'",
-  "100:class_g = 'kitty'",
-  "100:name = 'PyQt Notification Center'"
-];
+{picom_rule_blocks}
 
 wintypes:
 {
@@ -148,6 +129,81 @@ wintypes:
 };
 """
 
+PICOM_RULE_FILE_DEFAULTS: dict[Path, str] = {
+    PICOM_SHADOW_EXCLUDE_FILE: """# Hanauta picom shadow exceptions
+# One rule per line. Supported shortcuts:
+#   window_name: Exact Window Title
+#   window_name_contains: Partial Title
+#   class: WM_CLASS
+#   window_type: dock
+#   raw: any-valid-picom-condition
+
+raw: bounding_shaped && !rounded_corners
+class: Eww
+window_type: dock
+window_type: notification
+window_type: utility
+class: Rofi
+class: Conky
+window_name: Hanauta Launcher
+window_name: Hanauta Window Switcher
+window_name: Hanauta Hotkeys
+window_name: Hanauta Weather
+window_name: Hanauta Calendar
+window_name: Hanauta Game Mode
+window_name: Hanauta CAP Alerts
+window_name: Hanauta CAP Alert
+window_name: Hanauta Reminders
+window_name: Hanauta Reminder
+window_name: Hanauta Pomodoro
+window_name: Hanauta OBS
+window_name: Hanauta Crypto
+window_name: Hanauta VPS
+window_name: Hanauta Updates
+window_name: Hanauta AI
+window_name: WireGuard
+window_name: Wi-Fi Control
+window_name: ntfy Publisher
+window_name: Christian Devotion
+class: HanautaNotification
+window_name_contains: Hanauta Notification
+window_name: Hanauta Desktop Clock
+window_name: Hanauta Settings
+""",
+    PICOM_ROUNDED_EXCLUDE_FILE: """# Hanauta picom rounded-corner exceptions
+# Same shortcuts as shadow-exclude.rules.
+
+window_type: dock
+window_type: notification
+window_type: utility
+class: Rofi
+class: Conky
+class: mpv
+window_name: PyQt Notification Center
+class: HanautaNotification
+window_name_contains: Hanauta Notification
+window_name: Hanauta Desktop Clock
+window_name: Hanauta Settings
+""",
+    PICOM_OPACITY_RULE_FILE: """# Hanauta picom opacity rules
+# Syntax:
+#   opacity 100: window_name: Exact Window Title
+#   opacity 100: class: kitty
+#   opacity 100: raw: focused
+
+opacity 100: class: Eww
+opacity 100: class: Alacritty
+opacity 100: class: kitty
+opacity 100: window_name: PyQt Notification Center
+opacity 100: window_name: Hanauta Settings
+""",
+    PICOM_FADE_EXCLUDE_FILE: """# Hanauta picom fade exceptions
+# Same shortcuts as shadow-exclude.rules.
+
+window_name: Hanauta Settings
+""",
+}
+
 WALLPAPER_SOURCE_PRESETS = {
     "caelestia": {
         "label": "Caelestia shell",
@@ -158,6 +214,12 @@ WALLPAPER_SOURCE_PRESETS = {
         "label": "End-4 dots-hyprland",
         "repo": "https://github.com/end-4/dots-hyprland.git",
         "subdirs": ["dots/.config/quickshell/ii/assets/images"],
+    },
+    "catholic_hyprland": {
+        "label": "Catholic wallpapers for Hyprland",
+        "repo": "https://github.com/ZZ-Frater/catholic-wallpapers-for-hyprland.git",
+        "subdirs": [],
+        "archives": ["catholic-wallpapers-for-hyprland.zip"],
     },
 }
 
@@ -465,6 +527,162 @@ def run_text(cmd: list[str]) -> str:
         return result.stdout.strip()
     except Exception:
         return ""
+
+
+def _picom_rule_files() -> dict[str, Path]:
+    return {
+        "shadow-exclude": PICOM_SHADOW_EXCLUDE_FILE,
+        "rounded-corners-exclude": PICOM_ROUNDED_EXCLUDE_FILE,
+        "opacity-rule": PICOM_OPACITY_RULE_FILE,
+        "fade-exclude": PICOM_FADE_EXCLUDE_FILE,
+    }
+
+
+def ensure_picom_rule_files() -> None:
+    PICOM_RULES_DIR.mkdir(parents=True, exist_ok=True)
+    for path, default_text in PICOM_RULE_FILE_DEFAULTS.items():
+        if path.exists():
+            continue
+        path.write_text(default_text, encoding="utf-8")
+
+
+def _escape_picom_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _parse_picom_matcher(text: str) -> str:
+    stripped = text.strip()
+    lowered = stripped.lower()
+    prefixes = {
+        "window_name_contains:": lambda value: f"name *= '{_escape_picom_string(value)}'",
+        "window_name:": lambda value: f"name = '{_escape_picom_string(value)}'",
+        "class:": lambda value: f"class_g = '{_escape_picom_string(value)}'",
+        "window_type:": lambda value: f"window_type = '{_escape_picom_string(value)}'",
+        "raw:": lambda value: value,
+    }
+    for prefix, builder in prefixes.items():
+        if lowered.startswith(prefix):
+            return builder(stripped[len(prefix):].strip())
+    return stripped
+
+
+def _load_picom_rule_list(path: Path) -> list[str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    parsed: list[str] = []
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        matcher = _parse_picom_matcher(stripped)
+        if matcher:
+            parsed.append(matcher)
+    return parsed
+
+
+def _load_picom_opacity_rules(path: Path) -> list[str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    parsed: list[str] = []
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        lowered = stripped.lower()
+        if lowered.startswith("opacity "):
+            payload = stripped[len("opacity "):].strip()
+            amount_text, separator, matcher_text = payload.partition(":")
+            if not separator:
+                continue
+            try:
+                amount = int(float(amount_text.strip()))
+            except ValueError:
+                continue
+            matcher = _parse_picom_matcher(matcher_text.strip())
+            if matcher:
+                parsed.append(f"{amount}:{matcher}")
+            continue
+        parsed.append(stripped)
+    return parsed
+
+
+def _format_picom_rule_block(key: str, entries: list[str]) -> str:
+    lines = [f'{key} = [']
+    lines.extend(f'  "{entry}",' for entry in entries)
+    lines.append("];")
+    return "\n".join(lines)
+
+
+def render_picom_rule_blocks() -> str:
+    ensure_picom_rule_files()
+    blocks = [
+        _format_picom_rule_block("shadow-exclude", _load_picom_rule_list(PICOM_SHADOW_EXCLUDE_FILE)),
+        _format_picom_rule_block("rounded-corners-exclude", _load_picom_rule_list(PICOM_ROUNDED_EXCLUDE_FILE)),
+        _format_picom_rule_block("opacity-rule", _load_picom_opacity_rules(PICOM_OPACITY_RULE_FILE)),
+        _format_picom_rule_block("fade-exclude", _load_picom_rule_list(PICOM_FADE_EXCLUDE_FILE)),
+    ]
+    return "\n\n".join(blocks)
+
+
+def build_default_picom_config() -> str:
+    return PICOM_DEFAULT_TEMPLATE.format(picom_rule_blocks=render_picom_rule_blocks())
+
+
+def sync_picom_rule_blocks(text: str) -> str:
+    ensure_picom_rule_files()
+    updated = text
+    for key, path in _picom_rule_files().items():
+        entries = _load_picom_opacity_rules(path) if key == "opacity-rule" else _load_picom_rule_list(path)
+        block = _format_picom_rule_block(key, entries)
+        pattern = re.compile(rf"(?ms)^\s*{re.escape(key)}\s*=\s*\[.*?^\s*\];")
+        if pattern.search(updated):
+            updated = pattern.sub(block, updated, count=1)
+        else:
+            anchor = "corner-radius-rules = [\n  \"88:name = 'PyQt Notification Center'\"\n];"
+            if anchor in updated:
+                updated = updated.replace(anchor, f"{anchor}\n{block}", 1)
+            else:
+                updated = f"{updated.rstrip()}\n\n{block}\n"
+    return updated
+
+
+def fullscreen_window_active() -> bool:
+    try:
+        result = subprocess.run(
+            ["i3-msg", "-t", "get_tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+    except Exception:
+        return False
+    if result.returncode != 0 or not result.stdout.strip():
+        return False
+    try:
+        tree = json.loads(result.stdout)
+    except Exception:
+        return False
+
+    def search(node: object) -> bool:
+        if not isinstance(node, dict):
+            return False
+        if int(node.get("fullscreen_mode", 0) or 0) > 0 and node.get("window"):
+            return True
+        for key in ("nodes", "floating_nodes"):
+            children = node.get(key, [])
+            if not isinstance(children, list):
+                continue
+            for child in children:
+                if search(child):
+                    return True
+        return False
+
+    return search(tree)
 
 
 def load_settings_state() -> dict:
@@ -1319,10 +1537,11 @@ def parse_xrandr_state() -> list[dict]:
 
 
 def read_picom_text() -> str:
+    ensure_picom_rule_files()
     try:
-        return PICOM_CONFIG_FILE.read_text(encoding="utf-8")
+        return sync_picom_rule_blocks(PICOM_CONFIG_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return PICOM_DEFAULT_CONFIG
+        return build_default_picom_config()
 
 
 def parse_picom_settings(text: str) -> dict[str, object]:
@@ -1744,6 +1963,30 @@ def wallpaper_source_directories(source_key: str, cache_dir: Path) -> list[Path]
     return [cache_dir / str(subdir) for subdir in preset.get("subdirs", [])]
 
 
+def extract_wallpaper_source_archives(source_key: str, cache_dir: Path) -> list[Path]:
+    preset = WALLPAPER_SOURCE_PRESETS.get(source_key, {})
+    archives = preset.get("archives", [])
+    if not isinstance(archives, list):
+        return []
+    extracted_dirs: list[Path] = []
+    for archive_name in archives:
+        archive_path = cache_dir / str(archive_name)
+        if not archive_path.exists() or not archive_path.is_file():
+            continue
+        target_dir = cache_dir / f"{archive_path.stem}-extracted"
+        try:
+            if target_dir.exists():
+                shutil.rmtree(target_dir, ignore_errors=True)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(archive_path) as bundle:
+                bundle.extractall(target_dir)
+            extracted_dirs.append(target_dir)
+        except Exception:
+            shutil.rmtree(target_dir, ignore_errors=True)
+            continue
+    return extracted_dirs
+
+
 def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | None]:
     preset = WALLPAPER_SOURCE_PRESETS.get(source_key)
     if not preset:
@@ -1794,6 +2037,7 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
         return False, str(exc), None
 
     source_dirs = wallpaper_source_directories(source_key, cache_dir)
+    source_dirs.extend(extract_wallpaper_source_archives(source_key, cache_dir))
     candidates: list[Path] = []
     source_labels: list[str] = []
     for source_dir in source_dirs:
@@ -2831,6 +3075,30 @@ class SettingsWindow(QWidget):
         layout.addWidget(value_label)
         return card
 
+    def _format_slideshow_interval_text(self, value: int) -> str:
+        seconds = max(5, int(value))
+        if seconds < 60:
+            return f"{seconds} sec"
+        if seconds < 3600:
+            minutes = seconds // 60
+            remainder = seconds % 60
+            if remainder == 0:
+                return f"{minutes} min"
+            return f"{minutes} min {remainder} sec"
+        if seconds < 86400:
+            hours = seconds // 3600
+            remainder = seconds % 3600
+            minutes = remainder // 60
+            if minutes == 0:
+                return f"{hours} hr"
+            return f"{hours} hr {minutes} min"
+        days = seconds // 86400
+        remainder = seconds % 86400
+        hours = remainder // 3600
+        if hours == 0:
+            return f"{days} day"
+        return f"{days} day {hours} hr"
+
     def _build_wallpaper_colors_card(self) -> QWidget:
         card = QFrame()
         card.setObjectName("appearanceCard")
@@ -2882,18 +3150,21 @@ class SettingsWindow(QWidget):
         self.slideshow_button = ActionCard(material_icon("image"), "Start slideshow", "Rotate wallpapers from the selected folder", self.icon_font, self.ui_font)
         self.sync_caelestia_button = ActionCard(material_icon("photo_library"), "Import Caelestia wallpapers", "Scan Caelestia wallpaper folders and copy every discovered image into Hanauta", self.icon_font, self.ui_font)
         self.sync_end4_button = ActionCard(material_icon("image"), "Import End-4 wallpapers", "Scan End-4 wallpaper folders, including local downloads, and copy every discovered image into Hanauta", self.icon_font, self.ui_font)
+        self.sync_catholic_button = ActionCard(material_icon("photo_library"), "Import Catholic wallpapers", "Download the Catholic Hyprland pack and copy its wallpapers into Hanauta", self.icon_font, self.ui_font)
         self.random_wall_button.clicked.connect(self._apply_random_wallpaper)
         self.choose_picture_button.clicked.connect(self._choose_wallpaper_file)
         self.choose_folder_button.clicked.connect(self._choose_wallpaper_folder)
         self.slideshow_button.clicked.connect(self._toggle_slideshow)
         self.sync_caelestia_button.clicked.connect(lambda: self._sync_wallpaper_source("caelestia"))
         self.sync_end4_button.clicked.connect(lambda: self._sync_wallpaper_source("end4"))
+        self.sync_catholic_button.clicked.connect(lambda: self._sync_wallpaper_source("catholic_hyprland"))
         actions.addWidget(self.random_wall_button)
         actions.addWidget(self.choose_picture_button)
         actions.addWidget(self.choose_folder_button)
         actions.addWidget(self.slideshow_button)
         actions.addWidget(self.sync_caelestia_button)
         actions.addWidget(self.sync_end4_button)
+        actions.addWidget(self.sync_catholic_button)
 
         mode_heading = QLabel("Theme mode")
         mode_heading.setObjectName("appearanceSectionLabel")
@@ -3005,10 +3276,22 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.wallpaper_sync_progress)
 
         self.slideshow_interval = QSlider(Qt.Orientation.Horizontal)
-        self.slideshow_interval.setRange(5, 120)
+        self.slideshow_interval.setRange(5, 86400)
         self.slideshow_interval.setValue(int(self.settings_state["appearance"].get("slideshow_interval", 30)))
         self.slideshow_interval.setFixedWidth(164)
         self.slideshow_interval.valueChanged.connect(self._set_slideshow_interval)
+        self.slideshow_interval_label = QLabel(
+            self._format_slideshow_interval_text(int(self.settings_state["appearance"].get("slideshow_interval", 30)))
+        )
+        self.slideshow_interval_label.setFixedWidth(108)
+        self.slideshow_interval_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.slideshow_interval_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+        slideshow_interval_wrap = QWidget()
+        slideshow_interval_layout = QHBoxLayout(slideshow_interval_wrap)
+        slideshow_interval_layout.setContentsMargins(0, 0, 0, 0)
+        slideshow_interval_layout.setSpacing(10)
+        slideshow_interval_layout.addWidget(self.slideshow_interval)
+        slideshow_interval_layout.addWidget(self.slideshow_interval_label)
 
         transparency = SettingsRow(
             material_icon("opacity"),
@@ -3069,7 +3352,7 @@ class SettingsWindow(QWidget):
             "Set how often folder slideshow rotates the wallpaper.",
             self.icon_font,
             self.ui_font,
-            self.slideshow_interval,
+            slideshow_interval_wrap,
         )
         matugen_button = QPushButton("Refresh palette")
         matugen_button.setObjectName("secondaryButton")
@@ -3505,12 +3788,17 @@ class SettingsWindow(QWidget):
         restart_button.setObjectName("secondaryButton")
         restart_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         restart_button.clicked.connect(self._restart_picom)
+        rules_button = QPushButton("Open rule files")
+        rules_button.setObjectName("secondaryButton")
+        rules_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        rules_button.clicked.connect(self._open_picom_rule_dir)
         reset_button = QPushButton("Reset defaults")
         reset_button.setObjectName("dangerButton")
         reset_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         reset_button.clicked.connect(self._reset_picom_defaults)
         actions.addWidget(apply_button)
         actions.addWidget(restart_button)
+        actions.addWidget(rules_button)
         actions.addWidget(reset_button)
         actions.addStretch(1)
         layout.addLayout(actions)
@@ -6457,7 +6745,7 @@ class SettingsWindow(QWidget):
             self.appearance_status.setText(f"Syncing wallpapers from {source_label}...")
         if hasattr(self, "wallpaper_sync_progress"):
             self.wallpaper_sync_progress.show()
-        for button_name in ("sync_caelestia_button", "sync_end4_button"):
+        for button_name in ("sync_caelestia_button", "sync_end4_button", "sync_catholic_button"):
             button = getattr(self, button_name, None)
             if isinstance(button, QPushButton):
                 button.setEnabled(False)
@@ -6482,7 +6770,7 @@ class SettingsWindow(QWidget):
     def _cleanup_wallpaper_source_worker(self) -> None:
         if hasattr(self, "wallpaper_sync_progress"):
             self.wallpaper_sync_progress.hide()
-        for button_name in ("sync_caelestia_button", "sync_end4_button"):
+        for button_name in ("sync_caelestia_button", "sync_end4_button", "sync_catholic_button"):
             button = getattr(self, button_name, None)
             if isinstance(button, QPushButton):
                 button.setEnabled(True)
@@ -6611,6 +6899,8 @@ class SettingsWindow(QWidget):
         self.settings_state["appearance"]["slideshow_interval"] = int(value)
         save_settings_state(self.settings_state)
         self._slideshow_timer.setInterval(int(value) * 1000)
+        if hasattr(self, "slideshow_interval_label"):
+            self.slideshow_interval_label.setText(self._format_slideshow_interval_text(int(value)))
 
     def _toggle_slideshow(self) -> None:
         if self._slideshow_timer.isActive():
@@ -6632,6 +6922,10 @@ class SettingsWindow(QWidget):
         self._sync_wallpaper_controls()
 
     def _advance_slideshow(self) -> None:
+        if fullscreen_window_active():
+            if hasattr(self, "appearance_status"):
+                self.appearance_status.setText("Slideshow is waiting for fullscreen content to close before rotating.")
+            return
         folder = Path(self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))).expanduser()
         choices = wallpaper_candidates(folder)
         if not choices:
@@ -6797,16 +7091,26 @@ class SettingsWindow(QWidget):
 
     def _apply_picom_settings(self) -> None:
         values = self._current_picom_values()
-        text = update_picom_config(read_picom_text(), values)
+        text = sync_picom_rule_blocks(update_picom_config(read_picom_text(), values))
         try:
             PICOM_CONFIG_FILE.write_text(text, encoding="utf-8")
         except Exception as exc:
             self.picom_status.setText(f"Unable to write picom.conf: {exc}")
             return
         self.picom_state = dict(values)
-        self.picom_status.setText("picom.conf updated. Restart picom to apply immediately.")
+        self.picom_status.setText(f"picom.conf updated. Exception files live in {PICOM_RULES_DIR}. Restart picom to apply immediately.")
+
+    def _open_picom_rule_dir(self) -> None:
+        ensure_picom_rule_files()
+        run_bg(["xdg-open", str(PICOM_RULES_DIR)])
+        self.picom_status.setText(f"Opened picom rule files in {PICOM_RULES_DIR}.")
 
     def _restart_picom(self) -> None:
+        try:
+            PICOM_CONFIG_FILE.write_text(sync_picom_rule_blocks(read_picom_text()), encoding="utf-8")
+        except Exception as exc:
+            self.picom_status.setText(f"Unable to sync picom rule files: {exc}")
+            return
         subprocess.run(["pkill", "-x", "picom"], capture_output=True, text=True, check=False)
         result = subprocess.run(
             ["picom", "--config", str(PICOM_CONFIG_FILE), "--daemon"],
@@ -6821,13 +7125,14 @@ class SettingsWindow(QWidget):
 
     def _reset_picom_defaults(self) -> None:
         try:
-            PICOM_CONFIG_FILE.write_text(PICOM_DEFAULT_CONFIG, encoding="utf-8")
+            ensure_picom_rule_files()
+            PICOM_CONFIG_FILE.write_text(build_default_picom_config(), encoding="utf-8")
         except Exception as exc:
             self.picom_status.setText(f"Unable to reset picom.conf: {exc}")
             return
-        self.picom_state = parse_picom_settings(PICOM_DEFAULT_CONFIG)
+        self.picom_state = parse_picom_settings(build_default_picom_config())
         self._sync_picom_controls()
-        self.picom_status.setText("picom.conf restored to the default profile.")
+        self.picom_status.setText(f"picom.conf restored to the default profile. Rule files are in {PICOM_RULES_DIR}.")
 
     def _sync_picom_controls(self) -> None:
         self.picom_backend_combo.setCurrentText(str(self.picom_state.get("backend", "glx")))
