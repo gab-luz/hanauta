@@ -5,6 +5,7 @@ import signal
 import shlex
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QThread, QTimer, Qt, pyqtSignal
@@ -305,7 +306,17 @@ class UpdatesWidget(QWidget):
         if screen is None:
             return
         available = screen.availableGeometry()
-        self.move(available.x() + available.width() - self.width() - 48, available.y() + 92)
+        anchor_x_text = os.environ.get("HANAUTA_UPDATES_ANCHOR_X", "").strip()
+        anchor_y_text = os.environ.get("HANAUTA_UPDATES_ANCHOR_Y", "").strip()
+        try:
+            anchor_x = int(anchor_x_text)
+            anchor_y = int(anchor_y_text)
+        except ValueError:
+            anchor_x = available.x() + available.width() - self.width() - 48
+            anchor_y = available.y() + 92
+        x = max(available.x() + 12, min(anchor_x - (self.width() // 2), available.right() - self.width() - 12))
+        y = max(available.y() + 12, min(anchor_y, available.bottom() - self.height() - 12))
+        self.move(x, y)
 
     def _animate_in(self) -> None:
         self.setWindowOpacity(0.0)
