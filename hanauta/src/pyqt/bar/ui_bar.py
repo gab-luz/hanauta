@@ -169,6 +169,8 @@ REMINDERS_BAR_GLYPH = "\ue003"
 DEFAULT_BAR_SETTINGS = {
     "launcher_offset": 0,
     "workspace_offset": 0,
+    "workspace_count": 5,
+    "show_workspace_label": False,
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
@@ -516,7 +518,7 @@ def load_region_settings_from_payload(settings: object) -> dict[str, object]:
     }
 
 
-def load_bar_settings_from_payload(settings: object) -> dict[str, int]:
+def load_bar_settings_from_payload(settings: object) -> dict[str, int | bool]:
     current = settings.get("bar", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
@@ -531,6 +533,8 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, int]:
             merged[key] = default
         if key in offset_keys:
             merged[key] = max(-8, min(8, int(merged[key])))
+        elif key == "workspace_count":
+            merged[key] = max(1, min(10, int(merged[key])))
         elif key == "bar_height":
             merged[key] = max(32, min(72, int(merged[key])))
         else:
@@ -542,7 +546,7 @@ def load_region_settings() -> dict[str, object]:
     return load_region_settings_from_payload(load_runtime_settings())
 
 
-def load_bar_settings() -> dict[str, int]:
+def load_bar_settings() -> dict[str, int | bool]:
     return load_bar_settings_from_payload(load_runtime_settings())
 
 
@@ -1420,10 +1424,7 @@ class CyberBar(QWidget):
         self.dots_layout = QHBoxLayout(dots_wrap)
         self.dots_layout.setContentsMargins(0, 0, 0, 0)
         self.dots_layout.setSpacing(6)
-        for ws_num in range(1, 6):
-            dot = WorkspaceDot(ws_num, self._goto_workspace)
-            self.workspace_buttons[ws_num] = dot
-            self.dots_layout.addWidget(dot)
+        self._rebuild_workspace_buttons()
         self.workspace_layout.addWidget(dots_wrap)
         self.workspace_wrap = self._wrap_movable(self.workspace_chip)
         self.left_layout.addWidget(self.workspace_wrap)
@@ -1884,6 +1885,8 @@ class CyberBar(QWidget):
 
     def _apply_bar_settings(self) -> None:
         self.bar_settings = load_bar_settings()
+        self._rebuild_workspace_buttons()
+        self.workspace_label.setVisible(bool(self.bar_settings.get("show_workspace_label", False)))
         merge_all_chips = bool(self.bar_settings.get("merge_all_chips", False))
         bar_height = int(self.bar_settings.get("bar_height", 40))
         outer_vertical_margin = 4
@@ -1923,6 +1926,21 @@ class CyberBar(QWidget):
         self._apply_vertical_offset(self.media_wrap, self.bar_settings.get("media_offset", 0))
         self._apply_vertical_offset(self.status_wrap, self.bar_settings.get("status_offset", 0))
         self._apply_vertical_offset(self.tray_wrap, self.bar_settings.get("tray_offset", 0))
+
+    def _rebuild_workspace_buttons(self) -> None:
+        if not hasattr(self, "dots_layout"):
+            return
+        while self.dots_layout.count():
+            item = self.dots_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.workspace_buttons.clear()
+        workspace_count = int(self.bar_settings.get("workspace_count", 5) or 5)
+        for ws_num in range(1, workspace_count + 1):
+            dot = WorkspaceDot(ws_num, self._goto_workspace)
+            self.workspace_buttons[ws_num] = dot
+            self.dots_layout.addWidget(dot)
 
     def _apply_styles(self) -> None:
         theme = self.theme
