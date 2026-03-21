@@ -1,8 +1,12 @@
-# 🌸 Hanauta
+# ♪ Hanauta
 
-> A wallpaper-reactive desktop theme and workflow layer for **i3** on X11
+> A wallpaper-reactive personal desktop theme and workflow layer for **i3** on X11, open to anyone who wants a calmer, more supportive Linux desktop
 
-Hanauta transforms your X11 desktop into a cohesive, modern experience with native **PyQt6** components. Everything—from the bar to the notification center—adapts dynamically to your wallpaper colors.
+Hanauta is my personal desktop theme, but it is built in the open for anyone who wants to use it, adapt it, or borrow from it. The goal is not just to make X11 look better. The goal is to make the desktop feel more centered, more cohesive, and more helpful in the middle of everyday life.
+
+It leans into a Zen-like direction: less friction, less visual noise, more clarity, and more intention. Everything from the bar to the notification center is designed to reduce clutter, support focus, and help bring a little more order to busy days without making the desktop feel sterile.
+
+Under the hood, Hanauta transforms your X11 desktop into a cohesive, modern experience with native **PyQt6** components. Everything adapts dynamically to your wallpaper colors, but the bigger idea is simple: create a desktop that helps people steady their routines, regain some breathing room, and make life feel a bit more manageable.
 
 ## ✨ What Makes Hanauta Special
 
