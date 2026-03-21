@@ -36,12 +36,12 @@ gaps outer $gap
 gaps top 5
 # Colors (mapped from bspwm colors)
 # format: client.<state> border background text indicator child_border
-client.focused          #aac7ff #aac7ff #e2e2e9 #aac7ff #aac7ff
-client.focused_inactive #8e9099 #8e9099 #e2e2e9 #8e9099 #8e9099
-client.unfocused        #8e9099 #8e9099 #e2e2e9 #8e9099 #8e9099
-client.urgent           #ffb4ab #ffb4ab #111318 #ffb4ab #ffb4ab
-client.placeholder      #8e9099 #8e9099 #e2e2e9 #8e9099 #8e9099
-client.background       #111318
+client.focused          #c0c1ff #c0c1ff #e4e1e9 #c0c1ff #c0c1ff
+client.focused_inactive #918f9a #918f9a #e4e1e9 #918f9a #918f9a
+client.unfocused        #918f9a #918f9a #e4e1e9 #918f9a #918f9a
+client.urgent           #ffb4ab #ffb4ab #131318 #ffb4ab #ffb4ab
+client.placeholder      #918f9a #918f9a #e4e1e9 #918f9a #918f9a
+client.background       #131318
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
@@ -112,6 +112,9 @@ no_focus [title="Hanauta Desktop Clock"]
 
 # Window switcher rules
 for_window [title="Hanauta Window Switcher"] floating enable, border pixel 0, sticky enable
+
+# Hanauta AI popup should open as floating immediately
+for_window [title="Hanauta AI"] floating enable, border pixel 0
 
 # Power menu overlay rules
 for_window [title="Power Menu"] floating enable, border pixel 0, sticky enable
