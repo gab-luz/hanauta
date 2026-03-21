@@ -1,65 +1,4 @@
-<!DOCTYPE html>
-<html class="dark" lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Settings | Hanauta Study Track</title>
-<link href="study_tracker.css" rel="stylesheet"/>
-</head>
-<body class="bg-background text-on-surface min-h-screen overflow-hidden">
-<aside class="fixed left-0 top-0 h-full z-50 h-screen w-20 flex flex-col items-center py-8 bg-[#1a1b26] shadow-[40px_0_60px_-15px_rgba(212,187,255,0.05)]">
-<div class="mb-12">
-<span class="text-xl font-bold text-[#d4bbff] tracking-tighter font-headline">H</span>
-</div>
-<nav class="flex flex-col gap-6 flex-1">
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative" id="navDashboardButton">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="absolute left-full ml-4 px-2 py-1 bg-surface-container-highest text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Overview</span>
-</button>
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative">
-<span class="material-symbols-outlined">menu_book</span>
-</button>
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative">
-<span class="material-symbols-outlined">insights</span>
-</button>
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative">
-<span class="material-symbols-outlined">layers</span>
-</button>
-</nav>
-<button class="bg-[#d4bbff]/20 text-[#d4bbff] rounded-2xl p-3 transition-all duration-300 scale-95 active:scale-90 group relative" id="navSettingsButton">
-<span class="material-symbols-outlined">settings</span>
-<span class="absolute left-full ml-4 px-2 py-1 bg-surface-container-highest text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Settings</span>
-</button>
-</aside>
-<main class="pl-20 h-screen flex flex-col overflow-hidden">
-<header class="fixed top-0 right-0 left-20 z-40 px-8 flex justify-between items-center h-16 bg-[#12131d]/80 backdrop-blur-xl">
-<div class="flex items-center gap-8">
-<h1 class="text-lg font-black text-[#bb9af7] font-headline tracking-tight">Hanauta Study Track</h1>
-<nav class="hidden md:flex gap-6 items-center">
-<a class="text-[#4a4550] hover:text-[#d4bbff] font-headline font-semibold text-sm transition-colors" href="#">Focus Mode</a>
-<a class="text-[#4a4550] hover:text-[#d4bbff] font-headline font-semibold text-sm transition-colors" href="#">Resources</a>
-</nav>
-</div>
-<div class="flex items-center gap-3">
-<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full">
-<span class="material-symbols-outlined text-sm text-primary">bolt</span>
-<span class="text-xs font-bold font-label" id="streakChipText">12 Day Streak</span>
-</div>
-<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full">
-<span class="material-symbols-outlined text-sm text-secondary">timer</span>
-<span class="text-xs font-bold font-label" id="todayChipText">45m Today</span>
-</div>
-<div class="flex gap-3 ml-4">
-<button class="text-[#4a4550] hover:bg-[#1a1b26] p-2 rounded-full transition-colors active:opacity-80">
-<span class="material-symbols-outlined">notifications</span>
-</button>
-<button class="text-[#4a4550] hover:bg-[#1a1b26] p-2 rounded-full transition-colors active:opacity-80">
-<span class="material-symbols-outlined">account_circle</span>
-</button>
-</div>
-</div>
-</header>
-<div class="flex-1 overflow-y-auto no-scrollbar p-8 pt-24">
+<div class="p-8 pt-10">
 <div class="max-w-4xl mx-auto space-y-8 pb-24">
 <section class="space-y-2">
 <h2 class="font-headline text-3xl font-extrabold text-on-background tracking-tight">System Preferences</h2>
@@ -215,6 +154,4 @@
 <span>Study Tracker Runtime</span>
 <span class="flex items-center gap-1"><span class="study-footer-dot"></span><span id="settingsFooterStatus">Encrypted local state</span></span>
 </footer>
-</main>
-</body>
-</html>
+</div>
