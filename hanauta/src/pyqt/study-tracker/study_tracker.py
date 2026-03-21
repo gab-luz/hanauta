@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from copy import deepcopy
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
+from xml.etree import ElementTree as ET
 
 _chromium_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
 _quiet_flags = [
@@ -287,7 +291,7 @@ def make_resource(
     duration_seconds: int = 0,
     provider: str = "",
 ) -> dict[str, Any]:
-    normalized_items = items if isinstance(items, list) and items else [make_resource_item(title, duration_seconds=duration_seconds)]
+    normalized_items = items if isinstance(items, list) else [make_resource_item(title, duration_seconds=duration_seconds)]
     return {
         "id": str(uuid.uuid4()),
         "title": title.strip() or "Untitled resource",
@@ -442,6 +446,9 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
         resource["updated_at"] = str(resource.get("updated_at", resource.get("created_at", now_iso())) or now_iso())
         resource["created_at"] = str(resource.get("created_at", now_iso()) or now_iso())
         resource["items"] = sorted(normalized_items, key=lambda item: int(item.get("position", 0) or 0))
+        resource["document_total_pages"] = max(0, int(resource.get("document_total_pages", 0) or 0))
+        resource["document_current_page"] = max(0, int(resource.get("document_current_page", 0) or 0))
+        resource["document_path"] = str(resource.get("document_path", "") or "")
         normalized_resources.append(resource)
     if not normalized_resources:
         normalized_resources = default_state()["resources"]
@@ -732,6 +739,10 @@ def seconds_to_compact(seconds: int) -> str:
 
 
 def resource_progress(resource: dict[str, Any]) -> tuple[int, int]:
+    if str(resource.get("kind", "")).strip().lower() == "document":
+        current = max(0, int(resource.get("document_current_page", 0) or 0))
+        total = max(1, int(resource.get("document_total_pages", 0) or 1))
+        return min(current, total), total
     items = resource.get("items", [])
     if not isinstance(items, list) or not items:
         return 0, 0
@@ -782,6 +793,8 @@ def build_resources_payload(state: dict[str, Any]) -> dict[str, Any]:
                 "accent": accent,
                 "updated_label": str(resource.get("updated_at", "") or "")[:10],
                 "items": deepcopy(resource.get("items", [])),
+                "document_total_pages": int(resource.get("document_total_pages", 0) or 0),
+                "document_current_page": int(resource.get("document_current_page", 0) or 0),
             }
         )
     cards.sort(key=lambda item: item.get("updated_label", ""), reverse=True)
@@ -842,6 +855,49 @@ def slug_tags(*values: str) -> list[str]:
             if tag not in seen:
                 seen.append(tag)
     return seen[:6]
+
+
+DOCUMENT_SUFFIXES = {".pdf", ".epub", ".doc", ".odt", ".docx", ".mobi", ".djvu"}
+
+
+def is_document_reference(value: str) -> bool:
+    expanded = Path(os.path.expanduser(value)).expanduser()
+    if expanded.suffix.lower() in DOCUMENT_SUFFIXES:
+        return True
+    parsed = urlparse(value)
+    return parsed.scheme == "file" and Path(unquote(parsed.path)).suffix.lower() in DOCUMENT_SUFFIXES
+
+
+def estimate_pages_from_text(text: str) -> int:
+    words = re.findall(r"\w+", text)
+    return max(1, math.ceil(len(words) / 300)) if words else 1
+
+
+def data_uri_for_bytes(payload: bytes, mime_type: str) -> str:
+    return f"data:{mime_type};base64,{base64.b64encode(payload).decode('ascii')}"
+
+
+def generated_document_cover(title: str, extension: str) -> str:
+    label = extension.upper().lstrip(".") or "DOC"
+    svg = f"""
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640" viewBox="0 0 480 640">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#2d2340"/>
+      <stop offset="100%" stop-color="#141218"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="640" rx="42" fill="url(#g)"/>
+  <rect x="34" y="34" width="412" height="572" rx="30" fill="rgba(255,255,255,0.04)" stroke="rgba(212,187,255,0.18)"/>
+  <text x="60" y="120" fill="#d4bbff" font-size="30" font-family="Segoe UI, sans-serif" font-weight="700">{label}</text>
+  <text x="60" y="190" fill="#f3ecff" font-size="42" font-family="Segoe UI, sans-serif" font-weight="700">{title[:26]}</text>
+  <text x="60" y="236" fill="#f3ecff" font-size="42" font-family="Segoe UI, sans-serif" font-weight="700">{title[26:52]}</text>
+  <rect x="60" y="292" width="220" height="10" rx="5" fill="rgba(212,187,255,0.24)"/>
+  <rect x="60" y="324" width="280" height="10" rx="5" fill="rgba(212,187,255,0.18)"/>
+  <rect x="60" y="356" width="180" height="10" rx="5" fill="rgba(212,187,255,0.12)"/>
+</svg>
+""".strip()
+    return f"data:image/svg+xml;utf8,{quote(svg)}"
 
 
 def youtube_sign_in_required(message: str) -> bool:
@@ -1180,8 +1236,24 @@ def build_runtime_script(page_name: str) -> str:
       $("resourceToggleAllButton").dataset.resourceId = resource.id || "";
       $("resourceToggleAllButton").textContent = resource.done_items >= resource.total_items && resource.total_items > 0 ? "Reset All" : "Mark All Done";
     }}
+    const isDocument = String(resource.kind || "").toLowerCase() === "document";
+    if ($("resourceDocumentTracker")) $("resourceDocumentTracker").classList.toggle("hidden", !isDocument);
+    if ($("resourceDocumentProgressText")) $("resourceDocumentProgressText").textContent = `${{resource.document_current_page || 0}} / ${{resource.document_total_pages || 0}} pages`;
+    if ($("resourceDocumentPageInput")) {{
+      $("resourceDocumentPageInput").value = String(resource.document_current_page || 0);
+      $("resourceDocumentPageInput").max = String(resource.document_total_pages || 0);
+      $("resourceDocumentPageInput").dataset.resourceId = resource.id || "";
+    }}
+    if ($("resourceDocumentOpenButton")) $("resourceDocumentOpenButton").dataset.resourceId = resource.id || "";
+    if ($("resourceDocumentPrevButton")) $("resourceDocumentPrevButton").dataset.resourceId = resource.id || "";
+    if ($("resourceDocumentNextButton")) $("resourceDocumentNextButton").dataset.resourceId = resource.id || "";
     const itemsNode = $("resourceItemsList");
     if (!itemsNode) return;
+    itemsNode.classList.toggle("hidden", isDocument);
+    if (isDocument) {{
+      itemsNode.innerHTML = "";
+      return;
+    }}
     const items = Array.isArray(resource.items) ? resource.items : [];
     itemsNode.innerHTML = items.map((item) => {{
       const done = !!item.done;
@@ -1230,6 +1302,7 @@ def build_runtime_script(page_name: str) -> str:
     const resources = filteredResources();
     grid.innerHTML = resources.map((resource) => `
       <button class="study-resource-card${{selectedResourceId === resource.id ? " is-selected" : ""}}" data-resource-id="${{escapeHtml(resource.id)}}" type="button">
+        <div class="study-resource-cover" style="${{resource.thumbnail_url ? `background-image:url('${{escapeHtml(resource.thumbnail_url)}}')` : ''}}"></div>
         <div class="study-resource-card-top">
           <span class="study-resource-type-badge">${{escapeHtml(String(resource.kind || "resource").toUpperCase())}}</span>
           <span class="study-resource-progress-badge">${{resource.progress_percent || 0}}%</span>
@@ -1241,7 +1314,7 @@ def build_runtime_script(page_name: str) -> str:
           <div class="study-resource-meter-fill" style="width:${{resource.progress_percent || 0}}%"></div>
         </div>
         <div class="study-resource-card-foot">
-          <span>${{resource.done_items || 0}} / ${{resource.total_items || 0}} items</span>
+          <span>${{String(resource.kind || "").toLowerCase() === "document" ? `${{resource.document_current_page || 0}} / ${{resource.document_total_pages || 0}} pages` : `${{resource.done_items || 0}} / ${{resource.total_items || 0}} items`}}</span>
           <span>${{escapeHtml(resource.duration_label || "Open")}}</span>
         </div>
       </button>
@@ -1410,8 +1483,34 @@ def build_runtime_script(page_name: str) -> str:
       if (!id || !resourcesState) return;
       const resource = (resourcesState.resources || []).find((item) => item.id === id);
       if (!resource) return;
+      if (String(resource.kind || "").toLowerCase() === "document") return;
       const markDone = !(resource.done_items >= resource.total_items && resource.total_items > 0);
       bridge?.setAllResourceItems(id, markDone);
+    }});
+    $("resourceDocumentOpenButton")?.addEventListener("click", () => {{
+      const id = $("resourceDocumentOpenButton")?.dataset.resourceId || "";
+      if (id) bridge?.openResourceSource(id);
+    }});
+    $("resourceDocumentPrevButton")?.addEventListener("click", () => {{
+      const input = $("resourceDocumentPageInput");
+      const id = input?.dataset.resourceId || "";
+      if (!id || !input) return;
+      const nextValue = Math.max(0, Number.parseInt(input.value || "0", 10) - 1);
+      bridge?.setDocumentPage(id, nextValue);
+    }});
+    $("resourceDocumentNextButton")?.addEventListener("click", () => {{
+      const input = $("resourceDocumentPageInput");
+      const id = input?.dataset.resourceId || "";
+      if (!id || !input) return;
+      const max = Number.parseInt(input.max || "0", 10) || 0;
+      const nextValue = Math.min(max, Number.parseInt(input.value || "0", 10) + 1);
+      bridge?.setDocumentPage(id, nextValue);
+    }});
+    $("resourceDocumentSetButton")?.addEventListener("click", () => {{
+      const input = $("resourceDocumentPageInput");
+      const id = input?.dataset.resourceId || "";
+      if (!id || !input) return;
+      bridge?.setDocumentPage(id, Number.parseInt(input.value || "0", 10) || 0);
     }});
   }}
 
@@ -1647,6 +1746,7 @@ class StudyBridge(QObject):
     resourceItemToggleRequested = pyqtSignal(str, str)
     resourceToggleAllRequested = pyqtSignal(str, bool)
     resourceOpenRequested = pyqtSignal(str)
+    documentPageRequested = pyqtSignal(str, int)
 
     @pyqtSlot()
     def requestBootstrap(self) -> None:
@@ -1728,6 +1828,10 @@ class StudyBridge(QObject):
     def openResourceSource(self, resource_id: str) -> None:
         self.resourceOpenRequested.emit(resource_id)
 
+    @pyqtSlot(str, int)
+    def setDocumentPage(self, resource_id: str, page: int) -> None:
+        self.documentPageRequested.emit(resource_id, page)
+
 
 class StudyTrackerWindow(QWidget):
     resourceImportFinished = pyqtSignal(bool, object, str)
@@ -1786,6 +1890,7 @@ class StudyTrackerWindow(QWidget):
         self.bridge.resourceItemToggleRequested.connect(self.toggle_resource_item)
         self.bridge.resourceToggleAllRequested.connect(self.set_all_resource_items)
         self.bridge.resourceOpenRequested.connect(self.open_resource_source)
+        self.bridge.documentPageRequested.connect(self.set_document_page)
         self.resourceImportFinished.connect(self._finish_resource_import)
         self.resourceImportStatusChanged.connect(self._update_resource_import_status)
 
@@ -1971,6 +2076,142 @@ class StudyTrackerWindow(QWidget):
             )
         ]
 
+    def _document_cover_from_pdf(self, path: Path) -> str:
+        with tempfile.TemporaryDirectory(prefix="hanauta-doc-cover-") as tmpdir:
+            target = Path(tmpdir) / "cover"
+            subprocess.run(
+                ["pdftoppm", "-f", "1", "-singlefile", "-png", str(path), str(target)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            png_path = target.with_suffix(".png")
+            if png_path.exists():
+                return data_uri_for_bytes(png_path.read_bytes(), "image/png")
+        return generated_document_cover(path.stem, path.suffix)
+
+    def _pdf_document_resource(self, path: Path) -> dict[str, Any]:
+        output = subprocess.check_output(["pdfinfo", str(path)], text=True, stderr=subprocess.DEVNULL)
+        match = re.search(r"^Pages:\s+(\d+)", output, re.MULTILINE)
+        page_count = max(1, int(match.group(1))) if match else 1
+        cover = self._document_cover_from_pdf(path)
+        return make_resource(
+            path.stem,
+            kind="document",
+            provider=path.suffix.upper().lstrip("."),
+            source_url=path.resolve().as_uri(),
+            summary=f"Track reading progress for {path.name}.",
+            thumbnail_url=cover,
+            tags=slug_tags(path.stem, path.suffix),
+            items=[],
+        ) | {"document_total_pages": page_count, "document_current_page": 0, "document_path": str(path)}
+
+    def _document_from_zip_based_file(self, path: Path) -> dict[str, Any]:
+        cover = generated_document_cover(path.stem, path.suffix)
+        page_count = 1
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            text_payload = ""
+            if path.suffix.lower() == ".epub":
+                container = ET.fromstring(archive.read("META-INF/container.xml"))
+                rootfile = container.find(".//{*}rootfile")
+                if rootfile is not None:
+                    opf_path = rootfile.attrib.get("full-path", "")
+                    opf_dir = str(Path(opf_path).parent)
+                    opf = ET.fromstring(archive.read(opf_path))
+                    manifest = {}
+                    for item in opf.findall(".//{*}manifest/{*}item"):
+                        manifest[item.attrib.get("id", "")] = item.attrib
+                    cover_id = ""
+                    for meta in opf.findall(".//{*}metadata/{*}meta"):
+                        if meta.attrib.get("name") == "cover":
+                            cover_id = meta.attrib.get("content", "")
+                    if cover_id and cover_id in manifest:
+                        href = manifest[cover_id].get("href", "")
+                        cover_path = str((Path(opf_dir) / href).as_posix()).lstrip("./")
+                        if cover_path in names:
+                            mime_type = manifest[cover_id].get("media-type", "image/jpeg")
+                            cover = data_uri_for_bytes(archive.read(cover_path), mime_type)
+                    spine_ids = [item.attrib.get("idref", "") for item in opf.findall(".//{*}spine/{*}itemref")]
+                    for spine_id in spine_ids:
+                        href = manifest.get(spine_id, {}).get("href", "")
+                        spine_path = str((Path(opf_dir) / href).as_posix()).lstrip("./")
+                        if spine_path in names:
+                            text_payload += " " + re.sub(r"<[^>]+>", " ", archive.read(spine_path).decode("utf-8", errors="ignore"))
+            elif path.suffix.lower() == ".docx":
+                if "docProps/thumbnail.jpeg" in names:
+                    cover = data_uri_for_bytes(archive.read("docProps/thumbnail.jpeg"), "image/jpeg")
+                if "word/document.xml" in names:
+                    text_payload = re.sub(r"<[^>]+>", " ", archive.read("word/document.xml").decode("utf-8", errors="ignore"))
+            elif path.suffix.lower() == ".odt":
+                if "Thumbnails/thumbnail.png" in names:
+                    cover = data_uri_for_bytes(archive.read("Thumbnails/thumbnail.png"), "image/png")
+                if "content.xml" in names:
+                    text_payload = re.sub(r"<[^>]+>", " ", archive.read("content.xml").decode("utf-8", errors="ignore"))
+            page_count = estimate_pages_from_text(text_payload)
+        return make_resource(
+            path.stem,
+            kind="document",
+            provider=path.suffix.upper().lstrip("."),
+            source_url=path.resolve().as_uri(),
+            summary=f"Track reading progress for {path.name}.",
+            thumbnail_url=cover,
+            tags=slug_tags(path.stem, path.suffix),
+            items=[],
+        ) | {"document_total_pages": page_count, "document_current_page": 0, "document_path": str(path)}
+
+    def _document_from_libreoffice(self, path: Path) -> dict[str, Any]:
+        with tempfile.TemporaryDirectory(prefix="hanauta-doc-pdf-") as tmpdir:
+            subprocess.run(
+                ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, str(path)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            converted = Path(tmpdir) / f"{path.stem}.pdf"
+            if not converted.exists():
+                raise RuntimeError("LibreOffice did not generate a PDF preview.")
+            resource = self._pdf_document_resource(converted)
+            resource["title"] = path.stem
+            resource["provider"] = path.suffix.upper().lstrip(".")
+            resource["source_url"] = path.resolve().as_uri()
+            resource["document_path"] = str(path)
+            return resource
+
+    def _generic_document_resource(self, path: Path) -> dict[str, Any]:
+        try:
+            raw = path.read_bytes()
+            text = raw.decode("utf-8", errors="ignore")
+        except Exception:
+            text = path.stem
+        page_count = estimate_pages_from_text(text)
+        return make_resource(
+            path.stem,
+            kind="document",
+            provider=path.suffix.upper().lstrip("."),
+            source_url=path.resolve().as_uri(),
+            summary=f"Track reading progress for {path.name}.",
+            thumbnail_url=generated_document_cover(path.stem, path.suffix),
+            tags=slug_tags(path.stem, path.suffix),
+            items=[],
+        ) | {"document_total_pages": page_count, "document_current_page": 0, "document_path": str(path)}
+
+    def _document_resource_from_reference(self, value: str) -> list[dict[str, Any]]:
+        parsed = urlparse(value)
+        document_path = Path(unquote(parsed.path) if parsed.scheme == "file" else os.path.expanduser(value)).expanduser().resolve()
+        if not document_path.exists():
+            raise RuntimeError("Document path does not exist.")
+        suffix = document_path.suffix.lower()
+        if suffix == ".pdf":
+            resource = self._pdf_document_resource(document_path)
+        elif suffix in {".epub", ".docx", ".odt"}:
+            resource = self._document_from_zip_based_file(document_path)
+        elif suffix == ".doc":
+            resource = self._document_from_libreoffice(document_path)
+        else:
+            resource = self._generic_document_resource(document_path)
+        return [resource]
+
     def _fetch_invidious_instances(self) -> list[str]:
         candidates: list[str] = []
         if requests is not None:
@@ -2144,6 +2385,8 @@ class StudyTrackerWindow(QWidget):
             self.resourceImportFinished.emit(False, [], f"Unable to import resource: {exc}")
 
     def _import_resources_from_url(self, source_url: str) -> list[dict[str, Any]]:
+        if is_document_reference(source_url):
+            return self._document_resource_from_reference(source_url)
         if is_youtube_url(source_url):
             try:
                 return self._youtube_resources_from_url(source_url)
@@ -2218,6 +2461,15 @@ class StudyTrackerWindow(QWidget):
             if isinstance(item, dict):
                 item["done"] = bool(done)
                 item["completed_at"] = stamp if done else ""
+        resource["updated_at"] = now_iso()
+        self._commit_resources()
+
+    def set_document_page(self, resource_id: str, page: int) -> None:
+        resource = resource_by_id(self.state, resource_id)
+        if not isinstance(resource, dict):
+            return
+        total = max(1, int(resource.get("document_total_pages", 0) or 1))
+        resource["document_current_page"] = max(0, min(total, int(page or 0)))
         resource["updated_at"] = now_iso()
         self._commit_resources()
 
