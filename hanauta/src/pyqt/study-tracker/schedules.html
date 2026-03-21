@@ -1,11 +1,14 @@
 <section class="study-calendar-page p-6 gap-6">
+<div class="study-calendar-column study-calendar-column-left">
 <div class="study-calendar-main glass-panel">
 <div class="study-calendar-toolbar">
-<div class="flex items-center gap-6">
-<div>
+<div class="study-calendar-toolbar-top">
+<div class="study-calendar-toolbar-copy">
 <h2 class="font-headline text-xl font-bold text-on-surface">Schedule Planner</h2>
 <p class="study-muted-copy">Plan study resources, life commitments, and recurring slots in one calendar.</p>
 </div>
+<div class="study-calendar-toolbar-panel study-calendar-nav-panel">
+<span class="study-field-label">Range</span>
 <div class="study-calendar-nav">
 <button class="study-chip-button" id="schedulePrevRangeButton" type="button">Prev</button>
 <span class="text-xs font-headline font-semibold px-3 text-on-surface-variant" id="scheduleRangeLabel">This Week</span>
@@ -13,15 +16,16 @@
 <button class="study-chip-button" id="scheduleTodayButton" type="button">Today</button>
 </div>
 </div>
-<div class="flex items-center gap-2">
+</div>
+<div class="study-calendar-toolbar-bottom">
+<div class="study-calendar-toolbar-panel">
+<span class="study-field-label">View</span>
 <div class="study-pill-row">
 <button class="study-pill-button active" id="scheduleViewWeekButton" type="button">Week</button>
 <button class="study-pill-button" id="scheduleViewDayButton" type="button">Day</button>
 <button class="study-pill-button" id="scheduleViewMonthButton" type="button">Month</button>
 <button class="study-pill-button" id="scheduleViewYearButton" type="button">Year</button>
 </div>
-<button class="study-chip-button" id="scheduleAddStudyBlockButton" type="button">Add Study Block</button>
-<button class="study-chip-button" id="scheduleAddLifeTemplateButton" type="button">Add Recurring Slot</button>
 </div>
 </div>
 
@@ -47,8 +51,23 @@
 <div class="study-calendar-status" id="schedulePlannerStatus">Recurring slots can represent school, work, sleep, commuting, or dedicated study windows. Resource plans can fill study slots automatically.</div>
 <div class="study-calendar-viewport" id="scheduleCalendarViewport"></div>
 </div>
+</div>
 
+<div class="study-calendar-column study-calendar-column-right">
 <aside class="study-calendar-sidebar">
+<div class="study-resource-panel glass-panel study-calendar-quick-actions">
+<div class="study-resource-panel-head">
+<div>
+<span class="study-resource-type-badge">CREATE</span>
+<h3 class="font-headline text-xl font-extrabold text-on-surface mt-4">Planner Actions</h3>
+<p class="study-muted-copy">Create study blocks or recurring slots from the planner sidebar.</p>
+</div>
+</div>
+<div class="study-calendar-actions">
+<button class="study-chip-button" id="scheduleAddStudyBlockButton" type="button">Add Study Block</button>
+<button class="study-chip-button" id="scheduleAddLifeTemplateButton" type="button">Add Recurring Slot</button>
+</div>
+</div>
 <div class="study-resource-empty glass-panel" id="scheduleEmptyState">
 <span class="study-resource-empty-badge">Nothing Selected</span>
 <h3 class="font-headline text-2xl font-extrabold text-on-surface">Pick a schedule block</h3>
@@ -187,4 +206,5 @@
 <div class="space-y-3" id="scheduleTemplatesList"></div>
 </div>
 </aside>
+</div>
 </section>
