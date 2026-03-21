@@ -845,7 +845,7 @@ class ChristianDevotionWidget(QWidget):
             return
         try:
             subprocess.Popen(
-                ["notify-send", title, body],
+                ["notify-send", "-a", "Hanauta Bible", title, body],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )

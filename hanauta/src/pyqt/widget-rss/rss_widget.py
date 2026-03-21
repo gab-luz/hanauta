@@ -204,11 +204,12 @@ class Backend(QObject):
             self._refresh_worker = None
 
     def _send_refresh_notification(self, item_count: int, source_count: int) -> None:
-        title = "HanautaRSS"
+        app_name = "Hanauta RSS"
+        title = "RSS Refreshed"
         body = f"Refreshed {item_count} item(s) from {source_count} source(s)."
         try:
             subprocess.Popen(
-                ["notify-send", "-a", title, title, body],
+                ["notify-send", "-a", app_name, title, body],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

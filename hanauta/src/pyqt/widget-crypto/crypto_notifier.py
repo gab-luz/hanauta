@@ -33,7 +33,7 @@ def send_notification(summary: str, body: str, open_url: str, replace_id: int) -
     command = entry_command(
         ACTION_NOTIFICATION_SCRIPT,
         "--app-name",
-        "Hanauta",
+        "Hanauta Crypto",
         "--summary",
         summary,
         "--body",

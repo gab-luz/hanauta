@@ -336,7 +336,7 @@ def send_health_notification(title: str, body: str) -> None:
         return
     try:
         subprocess.Popen(
-            ["notify-send", title, body],
+            ["notify-send", "-a", "Hanauta Health", title, body],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

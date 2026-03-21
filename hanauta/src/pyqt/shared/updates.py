@@ -237,7 +237,7 @@ def send_update_notification(summary: str, body: str, replace_id: int = 31001) -
     command = entry_command(
         ACTION_NOTIFICATION_SCRIPT,
         "--app-name",
-        "Hanauta",
+        "Hanauta Updates",
         "--summary",
         summary,
         "--body",

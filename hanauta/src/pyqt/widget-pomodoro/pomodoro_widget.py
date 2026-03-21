@@ -131,7 +131,7 @@ def load_settings_state() -> dict:
 def notify(title: str, body: str) -> None:
     try:
         subprocess.Popen(
-            ["notify-send", title, body],
+            ["notify-send", "-a", "Hanauta Pomodoro", title, body],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
