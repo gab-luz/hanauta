@@ -946,14 +946,28 @@ class SidebarPanel(QFrame):
                 border: none;
             }}
             QScrollBar:vertical {{
-                background: transparent;
-                width: 8px;
-                margin: 8px 0;
+                background: {rgba(CARD_BG_SOFT, 0.44)};
+                width: 12px;
+                margin: 6px 0 6px 10px;
+                border-radius: 6px;
             }}
             QScrollBar::handle:vertical {{
-                background: {rgba(THEME.app_running_border, 0.95)};
-                border-radius: 4px;
-                min-height: 24px;
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {rgba(ACCENT, 0.78)},
+                    stop:1 {rgba(THEME.app_running_border, 0.98)}
+                );
+                border: 1px solid {rgba(BORDER_ACCENT, 0.72)};
+                border-radius: 6px;
+                min-height: 36px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
             }}
             """
         )
@@ -971,36 +985,8 @@ class SidebarPanel(QFrame):
         self.composer.send_requested.connect(self.add_user_message)
         root.addWidget(self.composer)
 
-        self.populate_demo()
+        self._clear_cards()
         self._refresh_available_backends()
-
-    def _grouped_profiles(self) -> list[tuple[str, list[BackendProfile]]]:
-        local = [self.profile_by_key[key] for key in ("koboldcpp", "lmstudio", "ollama")]
-        cloud = [self.profile_by_key[key] for key in ("gemini", "openai", "mistral")]
-        return [("Local", local), ("Cloud", cloud)]
-
-    def _build_group_row(self, title: str, profiles: list[BackendProfile]) -> QFrame:
-        frame = SurfaceFrame(bg=rgba(CARD_BG_SOFT, 0.68), border=rgba(BORDER_SOFT, 0.90), radius=20)
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
-
-        label = QLabel(title)
-        label.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
-        label.setStyleSheet(f"color: {TEXT_MID};")
-        layout.addWidget(label)
-
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
-        for profile in profiles:
-            button = BackendPill(profile, self.ui_font)
-            button.clicked.connect(lambda checked=False, p=profile, b=button: self._select_backend(p, b))
-            self.backend_buttons[profile.key] = button
-            row.addWidget(button)
-        row.addStretch(1)
-        layout.addLayout(row)
-        return frame
 
     def _build_hero(self) -> QFrame:
         frame = QFrame()
@@ -1034,15 +1020,11 @@ class SidebarPanel(QFrame):
 
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(3)
+        title_wrap.setSpacing(0)
 
         title = QLabel("Hanauta AI")
         title.setFont(QFont(self.ui_font, 16, QFont.Weight.DemiBold))
-        subtitle = QLabel("Sidebar nativa com cara de shell, mas estável no X11.")
-        subtitle.setFont(QFont(self.ui_font, 9))
-        subtitle.setStyleSheet(f"color: {TEXT_DIM};")
         title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
         top.addLayout(title_wrap, 1)
 
         settings_button = ActionIcon("⚙", "Backend settings", self.ui_font)
@@ -1071,29 +1053,15 @@ class SidebarPanel(QFrame):
         top.addWidget(close_button)
         layout.addLayout(top)
 
-        badges = QHBoxLayout()
-        badges.setContentsMargins(0, 0, 0, 0)
-        badges.setSpacing(8)
-        badges.addWidget(HeaderBadge("X11 safe", self.ui_font))
-        badges.addWidget(HeaderBadge("Material colors", self.ui_font, accent=True))
-        badges.addWidget(HeaderBadge("Local + cloud", self.ui_font))
-        badges.addStretch(1)
-        layout.addLayout(badges)
-
         status_shell = SurfaceFrame(bg=rgba(CARD_BG_SOFT, 0.64), border=rgba(BORDER_SOFT, 0.90), radius=18)
         status_layout = QVBoxLayout(status_shell)
         status_layout.setContentsMargins(12, 10, 12, 10)
-        status_layout.setSpacing(4)
+        status_layout.setSpacing(0)
 
         self.header_status = QLabel("Configure backends with the gear icon.")
         self.header_status.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
         self.header_status.setStyleSheet(f"color: {TEXT};")
         status_layout.addWidget(self.header_status)
-
-        self.header_substatus = QLabel("Nenhum backend ativo ainda.")
-        self.header_substatus.setFont(QFont(self.ui_font, 9))
-        self.header_substatus.setStyleSheet(f"color: {TEXT_DIM};")
-        status_layout.addWidget(self.header_substatus)
         layout.addWidget(status_shell)
 
         return frame
@@ -1104,42 +1072,40 @@ class SidebarPanel(QFrame):
         frame = SurfaceFrame(bg=rgba(CARD_BG, 0.82), border=rgba(BORDER_SOFT, 0.88), radius=26)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
+        layout.setSpacing(0)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(16)
 
         label = QLabel("Backends")
         label.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
         label.setStyleSheet(f"color: {TEXT};")
-        layout.addWidget(label)
+        label.setMinimumWidth(92)
+        row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        desc = QLabel("Os modelos ficam sempre visíveis; só os testados podem ser ativados.")
-        desc.setWordWrap(True)
-        desc.setFont(QFont(self.ui_font, 9))
-        desc.setStyleSheet(f"color: {TEXT_DIM};")
-        layout.addWidget(desc)
+        icon_row = QHBoxLayout()
+        icon_row.setContentsMargins(0, 0, 0, 0)
+        icon_row.setSpacing(8)
+        for profile in self.profiles:
+            button = BackendPill(profile, self.ui_font)
+            button.clicked.connect(lambda checked=False, p=profile, b=button: self._select_backend(p, b))
+            self.backend_buttons[profile.key] = button
+            icon_row.addWidget(button)
+        icon_row.addStretch(1)
 
-        for group_name, profiles in self._grouped_profiles():
-            layout.addWidget(self._build_group_row(group_name, profiles))
-
-        self.backend_hint = QLabel()
-        self.backend_hint.setWordWrap(True)
-        self.backend_hint.setFont(QFont(self.ui_font, 10))
-        self.backend_hint.setStyleSheet(f"color: {TEXT_DIM}; padding-top: 2px;")
-        self._refresh_backend_hint()
-        layout.addWidget(self.backend_hint)
+        row.addLayout(icon_row, 1)
+        layout.addLayout(row)
         return frame
 
     def _refresh_backend_hint(self) -> None:
         if self.current_profile is None:
-            self.backend_hint.setText("Nenhum backend ativo. Teste um provider para destravar a composição.")
             self.header_status.setText("No active backend.")
-            self.header_substatus.setText("A barra continua operando em X11 sem depender de blur ou Wayland APIs.")
             return
         payload = self.backend_settings.get(self.current_profile.key, {})
         host = str(payload.get("host", self.current_profile.host))
         model = str(payload.get("model", self.current_profile.model))
-        self.backend_hint.setText(f"{self.current_profile.label}  •  {model}  •  {host}")
-        self.header_status.setText(f"Active backend: {self.current_profile.label}")
-        self.header_substatus.setText(f"{self.current_profile.provider}  •  {model}")
+        self.header_status.setText(f"{self.current_profile.label}  •  {model}  •  {host}")
 
     def _select_backend(self, profile: BackendProfile, active_button: BackendPill) -> None:
         settings = self.backend_settings.get(profile.key, {})
@@ -1185,50 +1151,6 @@ class SidebarPanel(QFrame):
         dialog.exec()
         self.backend_settings = load_backend_settings()
         self._refresh_available_backends()
-
-    def populate_demo(self) -> None:
-        self._clear_cards()
-        self.add_card(
-            ChatItemData(
-                role="assistant",
-                title="System",
-                body=(
-                    "<p><b>Visual target:</b> camadas suaves, pills compactas, contraste controlado e um composer que parece shell bar.</p>"
-                    "<p>O layout abaixo já foi pensado para <b>X11</b>, sem depender de blur do compositor.</p>"
-                ),
-                meta="design brief",
-                chips=[SourceChipData("x11"), SourceChipData("native qt"), SourceChipData("material-like")],
-            ),
-            animate=False,
-        )
-        self.add_card(
-            ChatItemData(
-                role="user",
-                title="You",
-                body="<p>Quero uma popup IA no espírito do end-4, mas sem quebrar fora do Hyprland.</p>",
-                meta="prompt",
-            ),
-            animate=False,
-        )
-        self.add_card(
-            ChatItemData(
-                role="assistant",
-                title="Hanauta AI",
-                meta="draft answer",
-                body=(
-                    "<p><b>Direção:</b> usar cards mais encorpados, hierarquia mais clara e bolhas alinhadas por papel.</p>"
-                    "<p><b>Troca técnica:</b> o fade das mensagens passa a usar <code>QGraphicsOpacityEffect</code>, o que fica mais confiável em <b>QWidget</b> filho.</p>"
-                    "<p><b>Resultado:</b> você mantém o espírito shell/sidebar do end-4 sem depender de Wayland-only visuals.</p>"
-                ),
-                chips=[
-                    SourceChipData("backend aware"),
-                    SourceChipData("safe on x11"),
-                    SourceChipData("denser layout"),
-                ],
-            ),
-            animate=False,
-        )
-        QTimer.singleShot(0, self._scroll_to_bottom)
 
     def _clear_cards(self) -> None:
         while self.content_layout.count():
