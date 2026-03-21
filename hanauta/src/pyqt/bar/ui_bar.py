@@ -48,6 +48,7 @@ from pyqt.shared.rss import save_cache as save_rss_cache
 from pyqt.shared.cap_alerts import CapAlert, configured_alert_location, fallback_tip, fetch_active_alerts, relative_expiry, test_mode_enabled, top_alert
 from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
 from pyqt.shared.updates import collect_update_payload
+from pyqt.shared.health import format_steps_short, health_tooltip, load_current_snapshot, load_health_service_settings, poll_health_reminders
 from pyqt.shared.crypto import (
     build_price_alerts as build_crypto_price_alerts,
     fetch_prices as fetch_crypto_prices,
@@ -75,6 +76,7 @@ WIFI_CONTROL_BINARY = HANAUTA_ROOT / "bin" / "hanauta-wifi-control"
 WIFI_CONTROL = WIFI_CONTROL_PY
 VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
 CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
+HEALTH_WIDGET = APP_DIR / "pyqt" / "widget-health" / "health_widget.py"
 REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
 POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
 RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
@@ -152,6 +154,7 @@ MATERIAL_ICONS = {
     "skip_next": "\ue044",
     "skip_previous": "\ue045",
     "system_update": "\ue62a",
+    "favorite": "\ue87d",
     "shield": "\ue9e0",
     "trip_origin": "\ue57b",
     "vpn_key": "\ue0da",
@@ -1018,6 +1021,17 @@ class UpdateCountWorker(QThread):
         self.loaded.emit(payload)
 
 
+class HealthSnapshotWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        try:
+            payload = load_current_snapshot(sync_remote=True)
+        except Exception:
+            payload = {}
+        self.loaded.emit(payload)
+
+
 class CyberBar(QWidget):
     def __init__(self, ui_path: Optional[Path] = None):
         super().__init__()
@@ -1077,6 +1091,7 @@ class CyberBar(QWidget):
         self._wifi_popup_process: Optional[subprocess.Popen] = None
         self._vpn_popup_process: Optional[subprocess.Popen] = None
         self._christian_widget_process: Optional[subprocess.Popen] = None
+        self._health_widget_process: Optional[subprocess.Popen] = None
         self._reminders_widget_process: Optional[subprocess.Popen] = None
         self._pomodoro_widget_process: Optional[subprocess.Popen] = None
         self._rss_widget_process: Optional[subprocess.Popen] = None
@@ -1095,9 +1110,11 @@ class CyberBar(QWidget):
         self._weather_worker: Optional[WeatherWorker] = None
         self._cap_alert_worker: Optional[CapAlertWorker] = None
         self._updates_worker: Optional[UpdateCountWorker] = None
+        self._health_worker: Optional[HealthSnapshotWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
         self._cap_alerts: list[CapAlert] = []
         self._pending_updates_total = 0
+        self._health_snapshot: dict[str, object] = {}
         self._cap_alert_seen_ids: set[str] = set()
         self._cap_alert_pulse_phase = 0.0
         self._cap_alert_pulse_tick = 0
@@ -1237,6 +1254,20 @@ class CyberBar(QWidget):
         self.date_label.setObjectName("dateLabel")
         self.date_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.date_label.clicked.connect(self._toggle_calendar_popup)
+        self.health_pill = ClickableFrame()
+        self.health_pill.setObjectName("healthPill")
+        self.health_pill.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.health_pill.clicked.connect(self._open_health_widget)
+        self.health_pill_layout = QHBoxLayout(self.health_pill)
+        self.health_pill_layout.setContentsMargins(6, 2, 8, 2)
+        self.health_pill_layout.setSpacing(4)
+        self.health_pill_icon = QLabel(material_icon("favorite"))
+        self.health_pill_icon.setObjectName("healthPillIcon")
+        self.health_pill_icon.setFont(QFont(self.material_font, 14))
+        self.health_pill_value = QLabel("--")
+        self.health_pill_value.setObjectName("healthPillValue")
+        self.health_pill_layout.addWidget(self.health_pill_icon)
+        self.health_pill_layout.addWidget(self.health_pill_value)
         self.updates_pill = ClickableFrame()
         self.updates_pill.setObjectName("updatesPill")
         self.updates_pill.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -1259,6 +1290,7 @@ class CyberBar(QWidget):
         self.datetime_layout.addWidget(self.weather_icon)
         self.datetime_layout.addWidget(self.time_label)
         self.datetime_layout.addWidget(self.date_label)
+        self.datetime_layout.addWidget(self.health_pill)
         self.datetime_layout.addWidget(self.updates_pill)
         self.datetime_layout.addWidget(self.locale_button)
         self.btn_control_center = self._icon_button("dashboard")
@@ -1470,6 +1502,7 @@ class CyberBar(QWidget):
         self._set_vpn_button_icon(False)
         self._set_christian_button_icon()
         self._set_home_assistant_button_icon()
+        self._sync_health_pill_visibility()
         self._sync_christian_button_visibility()
         self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
@@ -1627,6 +1660,7 @@ class CyberBar(QWidget):
         self.weather_icon.setToolTip("Weather button")
         self.time_label.setToolTip("Time label")
         self.date_label.setToolTip("Date label / calendar")
+        self.health_pill.setToolTip("Health")
         self.updates_pill.setToolTip("Updates")
         self.btn_control_center.setToolTip("Control center button")
         self.media_chip.setToolTip("Media chip")
@@ -1747,7 +1781,17 @@ class CyberBar(QWidget):
                 border: none;
                 border-radius: 0px;
             }}
+            #healthPill {{
+                background: transparent;
+                border: none;
+                border-radius: 0px;
+            }}
             #updatesPillIcon {{
+                color: {theme.primary};
+                font-family: "{self.material_font}";
+                font-size: 14px;
+            }}
+            #healthPillIcon {{
                 color: {theme.primary};
                 font-family: "{self.material_font}";
                 font-size: 14px;
@@ -1756,6 +1800,15 @@ class CyberBar(QWidget):
                 color: {theme.text};
                 font-size: 10px;
                 font-weight: 700;
+            }}
+            #healthPillValue {{
+                color: {theme.text};
+                font-size: 10px;
+                font-weight: 700;
+            }}
+            #healthPill:hover {{
+                background: {theme.hover_bg};
+                border-radius: 11px;
             }}
             #updatesPill:hover {{
                 background: {theme.hover_bg};
@@ -2167,6 +2220,11 @@ class CyberBar(QWidget):
         self.updates_timer.start(15 * 60 * 1000)
         QTimer.singleShot(1200, self._poll_updates_count)
 
+        self.health_timer = QTimer(self)
+        self.health_timer.timeout.connect(self._poll_health_snapshot)
+        self.health_timer.start(10 * 60 * 1000)
+        QTimer.singleShot(900, self._poll_health_snapshot)
+
         self.settings_timer = QTimer(self)
         self.settings_timer.timeout.connect(self._reload_settings_if_needed)
         self.settings_timer.start(800)
@@ -2405,6 +2463,7 @@ class CyberBar(QWidget):
         self._poll_caffeine()
         self._poll_battery()
         self._poll_lock_states()
+        poll_health_reminders()
         self._sync_christian_button_visibility()
         self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
@@ -2414,6 +2473,7 @@ class CyberBar(QWidget):
         self._sync_crypto_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
+        self._sync_health_pill_visibility()
         self._sync_weather_visibility()
         self._sync_cap_alert_chip()
 
@@ -2435,6 +2495,28 @@ class CyberBar(QWidget):
     def _finish_updates_worker(self) -> None:
         self._updates_worker = None
 
+    def _poll_health_snapshot(self) -> None:
+        if self._health_worker is not None and self._health_worker.isRunning():
+            return
+        service = load_health_service_settings()
+        enabled = bool(service.get("enabled", False))
+        show_in_bar = bool(service.get("show_in_bar", True))
+        self.health_pill.setVisible(enabled and show_in_bar)
+        if not enabled:
+            return
+        self._health_worker = HealthSnapshotWorker()
+        self._health_worker.loaded.connect(self._apply_health_snapshot)
+        self._health_worker.finished.connect(self._finish_health_worker)
+        self._health_worker.start()
+
+    def _apply_health_snapshot(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        self._health_snapshot = payload
+        self._sync_health_pill()
+
+    def _finish_health_worker(self) -> None:
+        self._health_worker = None
+
     def _sync_updates_pill(self) -> None:
         total = max(0, int(self._pending_updates_total))
         self.updates_pill_count.setText("99+" if total > 99 else str(total))
@@ -2442,6 +2524,20 @@ class CyberBar(QWidget):
         self.updates_pill.setToolTip(tooltip)
         self.updates_pill_icon.setToolTip(tooltip)
         self.updates_pill_count.setToolTip(tooltip)
+
+    def _sync_health_pill(self) -> None:
+        steps = int(self._health_snapshot.get("steps", 0) or 0)
+        self.health_pill_value.setText(format_steps_short(steps))
+        tooltip = health_tooltip(self._health_snapshot) if self._health_snapshot else "Health tracking"
+        self.health_pill.setToolTip(tooltip)
+        self.health_pill_icon.setToolTip(tooltip)
+        self.health_pill_value.setToolTip(tooltip)
+
+    def _sync_health_pill_visibility(self) -> None:
+        service = load_health_service_settings()
+        enabled = bool(service.get("enabled", False))
+        show_in_bar = bool(service.get("show_in_bar", True))
+        self.health_pill.setVisible(enabled and show_in_bar)
 
     def _poll_weather(self) -> None:
         if self._weather_worker is not None and self._weather_worker.isRunning():
@@ -3218,6 +3314,21 @@ class CyberBar(QWidget):
             return
         self._toggle_singleton_process("_christian_widget_process", CHRISTIAN_WIDGET, python_bin=self._python_bin())
 
+    def _open_health_widget(self) -> None:
+        if not HEALTH_WIDGET.exists():
+            return
+        anchor = self.datetime_chip.mapToGlobal(self.datetime_chip.rect().bottomLeft())
+        extra_env = {
+            "HANAUTA_HEALTH_ANCHOR_X": str(anchor.x() + (self.datetime_chip.width() // 2)),
+            "HANAUTA_HEALTH_ANCHOR_Y": str(anchor.y() + 10),
+        }
+        self._toggle_singleton_process(
+            "_health_widget_process",
+            HEALTH_WIDGET,
+            python_bin=self._python_bin(),
+            extra_env=extra_env,
+        )
+
     def _open_home_assistant_widget(self) -> None:
         if not HOME_ASSISTANT_WIDGET.exists():
             return
@@ -3396,6 +3507,8 @@ class CyberBar(QWidget):
             self._weather_popup_process.terminate()
         if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
             self._christian_widget_process.terminate()
+        if self._health_widget_process is not None and self._health_widget_process.poll() is None:
+            self._health_widget_process.terminate()
         if self._pomodoro_widget_process is not None and self._pomodoro_widget_process.poll() is None:
             self._pomodoro_widget_process.terminate()
         if self._rss_widget_process is not None and self._rss_widget_process.poll() is None:

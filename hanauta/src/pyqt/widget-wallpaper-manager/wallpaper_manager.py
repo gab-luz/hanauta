@@ -97,6 +97,7 @@ def load_settings_state() -> dict:
             "wallpaper_mode": "picture",
             "wallpaper_path": str(CURRENT_WALLPAPER),
             "slideshow_folder": str(DEFAULT_WALLPAPER_FOLDER),
+            "slideshow_interval": 30,
             "slideshow_enabled": False,
             "theme_choice": "dark",
             "use_matugen_palette": False,
@@ -107,7 +108,7 @@ def load_settings_state() -> dict:
             "konachan_interval_seconds": 120,
             "konachan_tags": "rating:safe",
             "local_randomizer_enabled": False,
-            "local_randomizer_interval_seconds": 120,
+            "local_randomizer_interval_seconds": 30,
         }
     }
     try:
@@ -998,12 +999,15 @@ class Backend(QObject):
             return
         appearance = self._appearance()
         enabled = not bool(appearance.get("local_randomizer_enabled", False))
+        interval_seconds = max(5, int(appearance.get("slideshow_interval", 30) or 30))
         appearance["local_randomizer_enabled"] = enabled
-        appearance["local_randomizer_interval_seconds"] = 120
+        appearance["local_randomizer_interval_seconds"] = interval_seconds
         save_settings_state(self._settings)
         self.randomizerChanged.emit()
         if enabled:
-            self._status = "Random folder rotation enabled. A new wallpaper will be applied every 2 minutes."
+            self._status = (
+                f"Random folder rotation enabled. A new wallpaper will be applied every {interval_seconds} seconds."
+            )
             self.applyRandomWallpaper()
         else:
             self._status = "Random folder rotation disabled."

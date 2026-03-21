@@ -36,10 +36,16 @@ def load_settings_state() -> dict:
     appearance.setdefault("konachan_enabled", False)
     appearance.setdefault("konachan_interval_seconds", 120)
     appearance.setdefault("konachan_tags", "rating:safe")
+    appearance.setdefault("slideshow_interval", 30)
     appearance.setdefault("local_randomizer_enabled", False)
-    appearance.setdefault("local_randomizer_interval_seconds", 120)
+    appearance.setdefault("local_randomizer_interval_seconds", int(appearance.get("slideshow_interval", 30) or 30))
     payload["appearance"] = appearance
     return payload
+
+
+def configured_local_interval_seconds(appearance: dict) -> int:
+    preferred = appearance.get("slideshow_interval", appearance.get("local_randomizer_interval_seconds", 30))
+    return max(5, int(preferred or 30))
 
 
 def save_settings_state(payload: dict) -> None:
@@ -345,7 +351,7 @@ def main() -> int:
             run_once()
             next_konachan_run = now + interval
         local_enabled = bool(appearance.get("local_randomizer_enabled", False))
-        local_interval = max(120, int(appearance.get("local_randomizer_interval_seconds", 120) or 120))
+        local_interval = configured_local_interval_seconds(appearance)
         if provider and provider != "konachan" and local_enabled and now >= next_local_run and not fullscreen_active:
             run_local_randomizer_once()
             next_local_run = now + local_interval
