@@ -4,13 +4,17 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import subprocess
 import sys
+import threading
+import time
 import uuid
 from copy import deepcopy
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 _chromium_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
 _quiet_flags = [
@@ -50,6 +54,7 @@ HERE = Path(__file__).resolve().parent
 APP_DIR = HERE.parents[1]
 ROOT = HERE.parents[3]
 HTML_FILE = HERE / "code.html"
+RESOURCES_HTML_FILE = HERE / "resources.html"
 SETTINGS_HTML_FILE = HERE / "settingspage.html"
 SCHEDULES_HTML_FILE = HERE / "schedules.html"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "study-tracker"
@@ -67,6 +72,16 @@ try:
     import requests
 except Exception:
     requests = None  # type: ignore[assignment]
+
+try:
+    from bs4 import BeautifulSoup
+except Exception:
+    BeautifulSoup = None  # type: ignore[assignment]
+
+try:
+    from yt_dlp import YoutubeDL
+except Exception:
+    YoutubeDL = None  # type: ignore[assignment]
 
 
 HANAUTA_DARK_PALETTE = {
@@ -237,6 +252,59 @@ def make_task(title: str, estimate_minutes: int, *, active: bool = False) -> dic
     }
 
 
+def make_resource_item(
+    title: str,
+    *,
+    duration_seconds: int = 0,
+    position: int = 0,
+    kind: str = "lesson",
+    external_url: str = "",
+    notes: str = "",
+) -> dict[str, Any]:
+    return {
+        "id": str(uuid.uuid4()),
+        "title": title.strip() or "Untitled item",
+        "duration_seconds": max(0, int(duration_seconds or 0)),
+        "position": max(0, int(position or 0)),
+        "kind": str(kind or "lesson").strip().lower() or "lesson",
+        "external_url": str(external_url or "").strip(),
+        "notes": str(notes or "").strip(),
+        "done": False,
+        "completed_at": "",
+    }
+
+
+def make_resource(
+    title: str,
+    *,
+    kind: str,
+    source_url: str,
+    author: str = "",
+    summary: str = "",
+    thumbnail_url: str = "",
+    tags: list[str] | None = None,
+    items: list[dict[str, Any]] | None = None,
+    duration_seconds: int = 0,
+    provider: str = "",
+) -> dict[str, Any]:
+    normalized_items = items if isinstance(items, list) and items else [make_resource_item(title, duration_seconds=duration_seconds)]
+    return {
+        "id": str(uuid.uuid4()),
+        "title": title.strip() or "Untitled resource",
+        "kind": str(kind or "other").strip().lower() or "other",
+        "provider": str(provider or kind or "other").strip(),
+        "source_url": str(source_url or "").strip(),
+        "author": str(author or "").strip(),
+        "summary": str(summary or "").strip(),
+        "thumbnail_url": str(thumbnail_url or "").strip(),
+        "tags": [str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()],
+        "items": normalized_items,
+        "duration_seconds": max(0, int(duration_seconds or 0)),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+
+
 def default_state() -> dict[str, Any]:
     return {
         "version": 1,
@@ -258,6 +326,36 @@ def default_state() -> dict[str, Any]:
                 "sessions_completed": 1,
             },
             make_task("Shadowing Practice: Genki Chapter 12", 15),
+        ],
+        "resources": [
+            make_resource(
+                "Japanese Listening Sprint",
+                kind="youtube",
+                provider="YouTube",
+                source_url="https://www.youtube.com/watch?v=demo-listening",
+                author="Hanauta Sample",
+                summary="Sample listening resource with chapters to test schedules and focus references.",
+                tags=["japanese", "listening"],
+                items=[
+                    make_resource_item("Warmup and context", duration_seconds=420, position=1, kind="chapter"),
+                    make_resource_item("Main listening exercise", duration_seconds=1320, position=2, kind="chapter"),
+                    make_resource_item("Review and recap", duration_seconds=360, position=3, kind="chapter"),
+                ],
+                duration_seconds=2100,
+            ),
+            make_resource(
+                "Distributed Systems Notes",
+                kind="book",
+                provider="Manual",
+                source_url="",
+                author="Personal notes",
+                summary="Reference notes and excerpts to revisit before backend study blocks.",
+                tags=["backend", "distributed-systems"],
+                items=[
+                    make_resource_item("Consensus chapter", position=1, kind="chapter"),
+                    make_resource_item("Replication chapter", position=2, kind="chapter"),
+                ],
+            ),
         ],
         "active_session": None,
         "preferences": {
@@ -302,6 +400,52 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not normalized_tasks:
         normalized_tasks = default_state()["tasks"]
     state["tasks"] = normalized_tasks
+    resources = state.get("resources", [])
+    if not isinstance(resources, list):
+        resources = []
+    normalized_resources: list[dict[str, Any]] = []
+    for raw_resource in resources:
+        if not isinstance(raw_resource, dict):
+            continue
+        items = raw_resource.get("items", [])
+        normalized_items: list[dict[str, Any]] = []
+        if isinstance(items, list):
+            for index, raw_item in enumerate(items, start=1):
+                if not isinstance(raw_item, dict):
+                    continue
+                item = make_resource_item(
+                    str(raw_item.get("title", "Untitled item")),
+                    duration_seconds=int(raw_item.get("duration_seconds", 0) or 0),
+                    position=int(raw_item.get("position", index) or index),
+                    kind=str(raw_item.get("kind", "lesson") or "lesson"),
+                    external_url=str(raw_item.get("external_url", "") or ""),
+                    notes=str(raw_item.get("notes", "") or ""),
+                )
+                item.update(raw_item)
+                item["done"] = bool(item.get("done", False))
+                item["completed_at"] = str(item.get("completed_at", "") or "")
+                normalized_items.append(item)
+        resource = make_resource(
+            str(raw_resource.get("title", "Untitled resource")),
+            kind=str(raw_resource.get("kind", "other") or "other"),
+            provider=str(raw_resource.get("provider", raw_resource.get("kind", "other")) or "other"),
+            source_url=str(raw_resource.get("source_url", "") or ""),
+            author=str(raw_resource.get("author", "") or ""),
+            summary=str(raw_resource.get("summary", "") or ""),
+            thumbnail_url=str(raw_resource.get("thumbnail_url", "") or ""),
+            tags=list(raw_resource.get("tags", [])) if isinstance(raw_resource.get("tags"), list) else [],
+            items=normalized_items,
+            duration_seconds=int(raw_resource.get("duration_seconds", 0) or 0),
+        )
+        resource.update(raw_resource)
+        resource["tags"] = [str(tag).strip().lower() for tag in resource.get("tags", []) if str(tag).strip()]
+        resource["updated_at"] = str(resource.get("updated_at", resource.get("created_at", now_iso())) or now_iso())
+        resource["created_at"] = str(resource.get("created_at", now_iso()) or now_iso())
+        resource["items"] = sorted(normalized_items, key=lambda item: int(item.get("position", 0) or 0))
+        normalized_resources.append(resource)
+    if not normalized_resources:
+        normalized_resources = default_state()["resources"]
+    state["resources"] = normalized_resources
     active_session = state.get("active_session")
     if not isinstance(active_session, dict):
         state["active_session"] = None
@@ -412,6 +556,7 @@ def build_sync_payload(state: dict[str, Any]) -> dict[str, Any]:
         "insights": list(state.get("insights", [])),
         "session_length_minutes": int(state.get("session_length_minutes", 25) or 25),
         "tasks": deepcopy(state.get("tasks", [])),
+        "resources": deepcopy(state.get("resources", [])),
         "active_session": deepcopy(state.get("active_session")),
         "preferences": {
             "anki_enabled": bool(state.get("preferences", {}).get("anki_enabled", True)) if isinstance(state.get("preferences"), dict) else True,
@@ -426,7 +571,7 @@ def merge_remote_sync_payload(state: dict[str, Any], payload: dict[str, Any]) ->
     if not isinstance(payload, dict):
         return state
     merged = deepcopy(state)
-    for key in ("today_minutes", "last_reset_date", "activity_dates", "insights", "session_length_minutes", "tasks", "active_session"):
+    for key in ("today_minutes", "last_reset_date", "activity_dates", "insights", "session_length_minutes", "tasks", "resources", "active_session"):
         if key in payload:
             merged[key] = payload[key]
     remote_preferences = payload.get("preferences", {})
@@ -499,6 +644,13 @@ def task_by_id(state: dict[str, Any], task_id: str) -> dict[str, Any] | None:
     return None
 
 
+def resource_by_id(state: dict[str, Any], resource_id: str) -> dict[str, Any] | None:
+    for resource in state.get("resources", []):
+        if isinstance(resource, dict) and str(resource.get("id", "")) == resource_id:
+            return resource
+    return None
+
+
 def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
     current_task = active_task(state)
     session = state.get("active_session")
@@ -566,6 +718,88 @@ def build_settings_payload(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def seconds_to_compact(seconds: int) -> str:
+    total = max(0, int(seconds or 0))
+    if total <= 0:
+        return ""
+    hours, rem = divmod(total, 3600)
+    minutes, _ = divmod(rem, 60)
+    if hours and minutes:
+        return f"{hours}h {minutes}m"
+    if hours:
+        return f"{hours}h"
+    return f"{minutes}m"
+
+
+def resource_progress(resource: dict[str, Any]) -> tuple[int, int]:
+    items = resource.get("items", [])
+    if not isinstance(items, list) or not items:
+        return 0, 0
+    total = len(items)
+    done = sum(1 for item in items if isinstance(item, dict) and bool(item.get("done", False)))
+    return done, total
+
+
+def build_resources_payload(state: dict[str, Any]) -> dict[str, Any]:
+    resources = state.get("resources", [])
+    if not isinstance(resources, list):
+        resources = []
+    cards: list[dict[str, Any]] = []
+    total_completed = 0
+    total_items = 0
+    total_duration = 0
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        done, total = resource_progress(resource)
+        total_completed += done
+        total_items += total
+        duration_seconds = max(0, int(resource.get("duration_seconds", 0) or 0))
+        total_duration += duration_seconds
+        kind = str(resource.get("kind", "other") or "other").strip().lower()
+        accent = {
+            "youtube": "tertiary",
+            "udemy": "primary",
+            "book": "secondary",
+            "audio": "primary-fixed",
+            "anki": "error",
+        }.get(kind, "primary")
+        cards.append(
+            {
+                "id": str(resource.get("id", "")),
+                "title": str(resource.get("title", "Untitled resource") or "Untitled resource"),
+                "kind": kind,
+                "provider": str(resource.get("provider", kind.title()) or kind.title()),
+                "author": str(resource.get("author", "") or ""),
+                "summary": str(resource.get("summary", "") or ""),
+                "source_url": str(resource.get("source_url", "") or ""),
+                "thumbnail_url": str(resource.get("thumbnail_url", "") or ""),
+                "tags": list(resource.get("tags", [])) if isinstance(resource.get("tags"), list) else [],
+                "done_items": done,
+                "total_items": total,
+                "progress_percent": int(round((done / total) * 100)) if total else 0,
+                "duration_label": seconds_to_compact(duration_seconds) or "Open",
+                "accent": accent,
+                "updated_label": str(resource.get("updated_at", "") or "")[:10],
+                "items": deepcopy(resource.get("items", [])),
+            }
+        )
+    cards.sort(key=lambda item: item.get("updated_label", ""), reverse=True)
+    return {
+        "resources": cards,
+        "summary": {
+            "resource_count": len(cards),
+            "completed_items": total_completed,
+            "total_items": total_items,
+            "tracked_hours": round(total_duration / 3600, 1) if total_duration else 0,
+        },
+        "import": {
+            "busy": False,
+            "message": "",
+        },
+    }
+
+
 def theme_payload(theme: ThemePalette) -> dict[str, str]:
     surface_low = blend(theme.surface, theme.surface_container, 0.42)
     surface_lowest = blend(theme.surface, theme.surface_container, 0.18)
@@ -592,6 +826,60 @@ def theme_payload(theme: ThemePalette) -> dict[str, str]:
     }
 
 
+def is_youtube_url(value: str) -> bool:
+    host = urlparse(value).netloc.lower()
+    return "youtube.com" in host or "youtu.be" in host
+
+
+def is_udemy_url(value: str) -> bool:
+    return "udemy.com" in urlparse(value).netloc.lower()
+
+
+def slug_tags(*values: str) -> list[str]:
+    seen: list[str] = []
+    for value in values:
+        for tag in re.findall(r"[a-zA-Z0-9\+\#]{3,}", value.lower()):
+            if tag not in seen:
+                seen.append(tag)
+    return seen[:6]
+
+
+def youtube_sign_in_required(message: str) -> bool:
+    lowered = message.lower()
+    triggers = [
+        "sign in",
+        "confirm you’re not a bot",
+        "confirm you're not a bot",
+        "use --cookies",
+        "video unavailable",
+        "precondition check failed",
+        "login required",
+    ]
+    return any(trigger in lowered for trigger in triggers)
+
+
+def extract_youtube_video_id(value: str) -> str:
+    parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    if "youtu.be" in host:
+        return parsed.path.strip("/").split("/")[0]
+    query = parse_qs(parsed.query)
+    if query.get("v"):
+        return query["v"][0]
+    parts = [part for part in parsed.path.split("/") if part]
+    if "watch" in parts and query.get("v"):
+        return query["v"][0]
+    return ""
+
+
+def extract_youtube_playlist_id(value: str) -> str:
+    parsed = urlparse(value)
+    query = parse_qs(parsed.query)
+    if query.get("list"):
+        return query["list"][0]
+    return ""
+
+
 def build_runtime_script(page_name: str) -> str:
     return f"""
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
@@ -608,18 +896,22 @@ def build_runtime_script(page_name: str) -> str:
 
   let studyState = null;
   let settingsState = null;
+  let resourcesState = null;
   let insightIndex = 0;
+  let selectedResourceId = "";
+  let resourceFilter = "all";
   let bridge = null;
 
   function setNavActive(page) {{
     const dashboard = $("navDashboardButton");
+    const resources = $("navResourcesButton");
     const schedule = $("navScheduleButton");
     const settings = $("navSettingsButton");
-    [dashboard, schedule, settings].forEach((button) => {{
+    [dashboard, resources, schedule, settings].forEach((button) => {{
       if (!button) return;
       button.classList.remove("is-active");
     }});
-    const active = page === "settings" ? settings : page === "schedule" ? schedule : dashboard;
+    const active = page === "settings" ? settings : page === "schedule" ? schedule : page === "resources" ? resources : dashboard;
     if (active) {{
       active.classList.add("is-active");
     }}
@@ -862,6 +1154,109 @@ def build_runtime_script(page_name: str) -> str:
     if ($("customThemeSection")) $("customThemeSection").style.display = settingsState.theme_mode === "custom" ? "" : "none";
   }}
 
+  function filteredResources() {{
+    const items = Array.isArray(resourcesState?.resources) ? resourcesState.resources : [];
+    if (resourceFilter === "all") return items;
+    return items.filter((item) => String(item.kind || "").toLowerCase() === resourceFilter);
+  }}
+
+  function renderResourceDetail(resource) {{
+    const empty = $("resourceDetailEmpty");
+    const panel = $("resourceDetailPanel");
+    if (!resource) {{
+      if (empty) empty.classList.remove("hidden");
+      if (panel) panel.classList.add("hidden");
+      return;
+    }}
+    if (empty) empty.classList.add("hidden");
+    if (panel) panel.classList.remove("hidden");
+    if ($("resourceDetailKind")) $("resourceDetailKind").textContent = String(resource.kind || "resource").toUpperCase();
+    if ($("resourceDetailTitle")) $("resourceDetailTitle").textContent = resource.title || "Resource";
+    if ($("resourceDetailMeta")) $("resourceDetailMeta").textContent = `${{resource.provider || "Reference"}}${{resource.author ? ` • ${{resource.author}}` : ""}}`;
+    if ($("resourceDetailSummary")) $("resourceDetailSummary").textContent = resource.summary || "No summary yet.";
+    if ($("resourceDetailProgressText")) $("resourceDetailProgressText").textContent = `${{resource.done_items || 0}} / ${{resource.total_items || 0}} completed`;
+    if ($("resourceOpenSourceButton")) $("resourceOpenSourceButton").dataset.resourceId = resource.id || "";
+    if ($("resourceToggleAllButton")) {{
+      $("resourceToggleAllButton").dataset.resourceId = resource.id || "";
+      $("resourceToggleAllButton").textContent = resource.done_items >= resource.total_items && resource.total_items > 0 ? "Reset All" : "Mark All Done";
+    }}
+    const itemsNode = $("resourceItemsList");
+    if (!itemsNode) return;
+    const items = Array.isArray(resource.items) ? resource.items : [];
+    itemsNode.innerHTML = items.map((item) => {{
+      const done = !!item.done;
+      const itemType = item.kind || "item";
+      const duration = Number(item.duration_seconds || 0) > 0 ? formatMinutes(Math.max(1, Math.round(Number(item.duration_seconds || 0) / 60))).replace(" Today", "") : itemType;
+      return `
+        <button class="study-resource-item${{done ? " is-done" : ""}}" data-resource-id="${{escapeHtml(resource.id)}}" data-resource-item-id="${{escapeHtml(item.id || "")}}" type="button">
+          <span class="study-resource-item-check">${{done ? "done" : "radio_button_unchecked"}}</span>
+          <span class="study-resource-item-copy">
+            <strong>${{escapeHtml(item.title || "Untitled item")}}</strong>
+            <span>${{escapeHtml(duration)}}</span>
+          </span>
+        </button>
+      `;
+    }}).join("");
+    itemsNode.querySelectorAll(".study-resource-item").forEach((node) => {{
+      node.addEventListener("click", () => {{
+        bridge?.toggleResourceItem(node.dataset.resourceId || "", node.dataset.resourceItemId || "");
+      }});
+    }});
+  }}
+
+  function renderResources() {{
+    if (!resourcesState) return;
+    if ($("resourcesCountText")) $("resourcesCountText").textContent = String(resourcesState.summary?.resource_count || 0);
+    if ($("resourcesHoursText")) $("resourcesHoursText").textContent = `${{resourcesState.summary?.tracked_hours || 0}}h`;
+    if ($("resourcesCompletedText")) $("resourcesCompletedText").textContent = `${{resourcesState.summary?.completed_items || 0}} / ${{resourcesState.summary?.total_items || 0}}`;
+    const importBusy = !!resourcesState.import?.busy;
+    const importButton = $("resourceImportButton");
+    const importInput = $("resourceUrlInput");
+    const importStatus = $("resourceImportStatus");
+    if (importButton) {{
+      importButton.disabled = importBusy;
+      importButton.classList.toggle("is-busy", importBusy);
+      importButton.innerHTML = importBusy
+        ? `<span class="study-spinner"></span><span>${{escapeHtml(resourcesState.import?.message || "Fetching resource...")}}</span>`
+        : "Add Resource";
+    }}
+    if (importInput) importInput.disabled = importBusy;
+    if (importStatus) importStatus.textContent = resourcesState.import?.message || "You can keep browsing while new sources are imported.";
+    document.querySelectorAll("[data-resource-filter]").forEach((button) => {{
+      button.classList.toggle("active", button.getAttribute("data-resource-filter") === resourceFilter);
+    }});
+    const grid = $("resourcesGrid");
+    if (!grid) return;
+    const resources = filteredResources();
+    grid.innerHTML = resources.map((resource) => `
+      <button class="study-resource-card${{selectedResourceId === resource.id ? " is-selected" : ""}}" data-resource-id="${{escapeHtml(resource.id)}}" type="button">
+        <div class="study-resource-card-top">
+          <span class="study-resource-type-badge">${{escapeHtml(String(resource.kind || "resource").toUpperCase())}}</span>
+          <span class="study-resource-progress-badge">${{resource.progress_percent || 0}}%</span>
+        </div>
+        <h3 class="font-headline text-lg font-bold text-on-surface">${{escapeHtml(resource.title || "Untitled resource")}}</h3>
+        <p class="study-muted-copy">${{escapeHtml(resource.provider || "")}}${{resource.author ? ` • ${{escapeHtml(resource.author)}}` : ""}}</p>
+        <p class="study-resource-summary-copy">${{escapeHtml(resource.summary || "No summary yet.")}}</p>
+        <div class="study-resource-meter">
+          <div class="study-resource-meter-fill" style="width:${{resource.progress_percent || 0}}%"></div>
+        </div>
+        <div class="study-resource-card-foot">
+          <span>${{resource.done_items || 0}} / ${{resource.total_items || 0}} items</span>
+          <span>${{escapeHtml(resource.duration_label || "Open")}}</span>
+        </div>
+      </button>
+    `).join("");
+    grid.querySelectorAll(".study-resource-card").forEach((node) => {{
+      node.addEventListener("click", () => {{
+        selectedResourceId = node.dataset.resourceId || "";
+        renderResources();
+      }});
+    }});
+    const selected = resources.find((resource) => resource.id === selectedResourceId) || resources[0] || null;
+    if (!selected && selectedResourceId) selectedResourceId = "";
+    renderResourceDetail(selected || null);
+  }}
+
   function setSchedulePanelVisible(visible) {{
     const selectionPanel = $("scheduleSelectionPanel");
     const emptyState = $("scheduleEmptyState");
@@ -912,6 +1307,9 @@ def build_runtime_script(page_name: str) -> str:
     if (CURRENT_PAGE === "settings" && settingsState) {{
       renderSettings();
     }}
+    if (CURRENT_PAGE === "resources" && resourcesState) {{
+      renderResources();
+    }}
   }}
 
   function collectSyncSettings() {{
@@ -929,6 +1327,7 @@ def build_runtime_script(page_name: str) -> str:
 
   function wireNavigation() {{
     $("navDashboardButton")?.addEventListener("click", () => bridge?.navigateTo("dashboard"));
+    $("navResourcesButton")?.addEventListener("click", () => bridge?.navigateTo("resources"));
     $("navScheduleButton")?.addEventListener("click", () => bridge?.navigateTo("schedule"));
     $("navSettingsButton")?.addEventListener("click", () => bridge?.navigateTo("settings"));
   }}
@@ -983,6 +1382,39 @@ def build_runtime_script(page_name: str) -> str:
     $("flushCacheButton")?.addEventListener("click", () => bridge?.flushCache());
   }}
 
+  function wireResourceActions() {{
+    $("resourceImportButton")?.addEventListener("click", () => {{
+      const url = $("resourceUrlInput")?.value?.trim() || "";
+      if (!url) return;
+      bridge?.addResourceFromUrl(url);
+      $("resourceUrlInput").value = "";
+    }});
+    $("resourceUrlInput")?.addEventListener("keydown", (event) => {{
+      if (event.key === "Enter") {{
+        event.preventDefault();
+        $("resourceImportButton")?.click();
+      }}
+    }});
+    document.querySelectorAll("[data-resource-filter]").forEach((button) => {{
+      button.addEventListener("click", () => {{
+        resourceFilter = button.getAttribute("data-resource-filter") || "all";
+        renderResources();
+      }});
+    }});
+    $("resourceOpenSourceButton")?.addEventListener("click", () => {{
+      const id = $("resourceOpenSourceButton")?.dataset.resourceId || "";
+      if (id) bridge?.openResourceSource(id);
+    }});
+    $("resourceToggleAllButton")?.addEventListener("click", () => {{
+      const id = $("resourceToggleAllButton")?.dataset.resourceId || "";
+      if (!id || !resourcesState) return;
+      const resource = (resourcesState.resources || []).find((item) => item.id === id);
+      if (!resource) return;
+      const markDone = !(resource.done_items >= resource.total_items && resource.total_items > 0);
+      bridge?.setAllResourceItems(id, markDone);
+    }});
+  }}
+
   window.setStudyState = function (payloadJson) {{
     studyState = JSON.parse(payloadJson);
     render();
@@ -990,6 +1422,14 @@ def build_runtime_script(page_name: str) -> str:
 
   window.setStudySettings = function (payloadJson) {{
     settingsState = JSON.parse(payloadJson);
+    render();
+  }};
+
+  window.setStudyResources = function (payloadJson) {{
+    resourcesState = JSON.parse(payloadJson);
+    if (selectedResourceId && !(resourcesState.resources || []).some((item) => item.id === selectedResourceId)) {{
+      selectedResourceId = "";
+    }}
     render();
   }};
 
@@ -1079,6 +1519,7 @@ def build_runtime_script(page_name: str) -> str:
     setNavActive(CURRENT_PAGE);
     wireNavigation();
     if (CURRENT_PAGE === "dashboard") wireDashboardActions();
+    if (CURRENT_PAGE === "resources") wireResourceActions();
     if (CURRENT_PAGE === "schedule") wireScheduleActions();
     if (CURRENT_PAGE === "settings") wireSettingsActions();
     new QWebChannel(qt.webChannelTransport, function (channel) {{
@@ -1095,6 +1536,9 @@ def build_html(page_name: str) -> str:
     if page_name == "dashboard":
         html_file = HTML_FILE
         page_label = "Overview"
+    elif page_name == "resources":
+        html_file = RESOURCES_HTML_FILE
+        page_label = "Resources"
     elif page_name == "schedule":
         html_file = SCHEDULES_HTML_FILE
         page_label = "Schedule"
@@ -1120,8 +1564,9 @@ def build_html(page_name: str) -> str:
 <span class="material-symbols-outlined">dashboard</span>
 <span class="study-shell-tooltip absolute left-full ml-4 px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Overview</span>
 </button>
-<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" id="navResourcesButton" type="button">
 <span class="material-symbols-outlined">menu_book</span>
+<span class="study-shell-tooltip absolute left-full ml-4 px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Resources</span>
 </button>
 <button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" id="navScheduleButton" type="button">
 <span class="material-symbols-outlined">calendar_month</span>
@@ -1198,6 +1643,10 @@ class StudyBridge(QObject):
     backupRequested = pyqtSignal()
     exportRequested = pyqtSignal()
     flushCacheRequested = pyqtSignal()
+    resourceImportRequested = pyqtSignal(str)
+    resourceItemToggleRequested = pyqtSignal(str, str)
+    resourceToggleAllRequested = pyqtSignal(str, bool)
+    resourceOpenRequested = pyqtSignal(str)
 
     @pyqtSlot()
     def requestBootstrap(self) -> None:
@@ -1263,8 +1712,27 @@ class StudyBridge(QObject):
     def flushCache(self) -> None:
         self.flushCacheRequested.emit()
 
+    @pyqtSlot(str)
+    def addResourceFromUrl(self, url: str) -> None:
+        self.resourceImportRequested.emit(url)
+
+    @pyqtSlot(str, str)
+    def toggleResourceItem(self, resource_id: str, item_id: str) -> None:
+        self.resourceItemToggleRequested.emit(resource_id, item_id)
+
+    @pyqtSlot(str, bool)
+    def setAllResourceItems(self, resource_id: str, done: bool) -> None:
+        self.resourceToggleAllRequested.emit(resource_id, done)
+
+    @pyqtSlot(str)
+    def openResourceSource(self, resource_id: str) -> None:
+        self.resourceOpenRequested.emit(resource_id)
+
 
 class StudyTrackerWindow(QWidget):
+    resourceImportFinished = pyqtSignal(bool, object, str)
+    resourceImportStatusChanged = pyqtSignal(str)
+
     def __init__(self) -> None:
         super().__init__()
         if not WEBENGINE_AVAILABLE:
@@ -1274,6 +1742,8 @@ class StudyTrackerWindow(QWidget):
         self.theme = resolve_study_theme(self.state)
         self._theme_mtime = palette_mtime()
         self._page_ready = False
+        self._resource_import_busy = False
+        self._resource_import_message = ""
 
         self.setWindowTitle("Hanauta Study Track")
         self.resize(1440, 980)
@@ -1312,6 +1782,12 @@ class StudyTrackerWindow(QWidget):
         self.bridge.backupRequested.connect(self.create_backup)
         self.bridge.exportRequested.connect(self.export_json)
         self.bridge.flushCacheRequested.connect(self.flush_cache)
+        self.bridge.resourceImportRequested.connect(self.add_resource_from_url)
+        self.bridge.resourceItemToggleRequested.connect(self.toggle_resource_item)
+        self.bridge.resourceToggleAllRequested.connect(self.set_all_resource_items)
+        self.bridge.resourceOpenRequested.connect(self.open_resource_source)
+        self.resourceImportFinished.connect(self._finish_resource_import)
+        self.resourceImportStatusChanged.connect(self._update_resource_import_status)
 
         self.session_timer = QTimer(self)
         self.session_timer.timeout.connect(self._tick_session)
@@ -1333,6 +1809,7 @@ class StudyTrackerWindow(QWidget):
         if ok:
             self.push_theme()
             self.push_state()
+            self.push_resources()
             self.push_settings()
 
     def _run_js(self, script: str) -> None:
@@ -1350,6 +1827,15 @@ class StudyTrackerWindow(QWidget):
     def push_settings(self) -> None:
         payload = json.dumps(build_settings_payload(self.state))
         self._run_js(f"window.setStudySettings({json.dumps(payload)});")
+
+    def push_resources(self) -> None:
+        payload_map = build_resources_payload(self.state)
+        payload_map["import"] = {
+            "busy": self._resource_import_busy,
+            "message": self._resource_import_message,
+        }
+        payload = json.dumps(payload_map)
+        self._run_js(f"window.setStudyResources({json.dumps(payload)});")
 
     def push_theme(self) -> None:
         payload = json.dumps(theme_payload(self.theme))
@@ -1415,12 +1901,346 @@ class StudyTrackerWindow(QWidget):
         self._save()
         self.push_state()
 
+    def _commit_resources(self, notification: str | None = None) -> None:
+        self._save()
+        self.push_resources()
+        if notification:
+            notify("Study Resources", notification)
+        if bool(self.state.get("preferences", {}).get("sync", {}).get("auto_sync", False)):
+            self.sync_now()
+
+    def _youtube_resources_from_url(self, url: str) -> list[dict[str, Any]]:
+        if YoutubeDL is None:
+            raise RuntimeError("yt-dlp is unavailable in the current environment.")
+        with YoutubeDL({"quiet": True, "extract_flat": False, "skip_download": True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+        entries = info.get("entries") if isinstance(info, dict) else None
+        if isinstance(entries, list) and entries:
+            resources: list[dict[str, Any]] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                resources.extend(self._youtube_resources_from_entry(entry))
+            return resources
+        if isinstance(info, dict):
+            return self._youtube_resources_from_entry(info)
+        raise RuntimeError("Unable to read YouTube metadata.")
+
+    def _youtube_resources_from_entry(self, info: dict[str, Any]) -> list[dict[str, Any]]:
+        if info.get("_type") == "playlist" and isinstance(info.get("entries"), list):
+            resources: list[dict[str, Any]] = []
+            for entry in info["entries"]:
+                if isinstance(entry, dict):
+                    resources.extend(self._youtube_resources_from_entry(entry))
+            return resources
+        title = str(info.get("title", "YouTube resource") or "YouTube resource")
+        uploader = str(info.get("uploader") or info.get("channel") or "YouTube")
+        webpage_url = str(info.get("webpage_url") or info.get("original_url") or "")
+        duration_seconds = max(0, int(info.get("duration", 0) or 0))
+        chapters = info.get("chapters") if isinstance(info.get("chapters"), list) else []
+        items: list[dict[str, Any]] = []
+        if chapters:
+            for index, chapter in enumerate(chapters, start=1):
+                if not isinstance(chapter, dict):
+                    continue
+                start_time = max(0, int(chapter.get("start_time", 0) or 0))
+                end_time = max(start_time, int(chapter.get("end_time", start_time) or start_time))
+                items.append(
+                    make_resource_item(
+                        str(chapter.get("title", f"Chapter {index}") or f"Chapter {index}"),
+                        duration_seconds=max(0, end_time - start_time),
+                        position=index,
+                        kind="chapter",
+                        external_url=f"{webpage_url}&t={start_time}s" if webpage_url and "?" in webpage_url else webpage_url,
+                    )
+                )
+        if not items:
+            items = [make_resource_item(title, duration_seconds=duration_seconds, position=1, kind="video", external_url=webpage_url)]
+        return [
+            make_resource(
+                title,
+                kind="youtube",
+                provider="YouTube",
+                source_url=webpage_url,
+                author=uploader,
+                summary=str(info.get("description", "") or "")[:280],
+                thumbnail_url=str(info.get("thumbnail", "") or ""),
+                tags=slug_tags(title, uploader),
+                items=items,
+                duration_seconds=duration_seconds,
+            )
+        ]
+
+    def _fetch_invidious_instances(self) -> list[str]:
+        candidates: list[str] = []
+        if requests is not None:
+            try:
+                response = requests.get("https://api.invidious.io/instances.json", timeout=20)
+                response.raise_for_status()
+                payload = response.json()
+                if isinstance(payload, list):
+                    for item in payload:
+                        if isinstance(item, list) and item:
+                            host = str(item[0] or "").strip()
+                            if host:
+                                candidates.append(f"https://{host}")
+            except Exception:
+                pass
+            if not candidates:
+                try:
+                    response = requests.get("https://docs.invidious.io/instances/", timeout=20)
+                    response.raise_for_status()
+                    html = response.text
+                    for host in re.findall(r'https://([a-zA-Z0-9.-]+)', html):
+                        if host not in {"docs.invidious.io", "api.invidious.io"}:
+                            candidates.append(f"https://{host}")
+                except Exception:
+                    pass
+        deduped: list[str] = []
+        for candidate in candidates:
+            if candidate not in deduped:
+                deduped.append(candidate.rstrip("/"))
+        return deduped
+
+    def _invidious_get(self, base_url: str, path: str) -> dict[str, Any]:
+        if requests is None:
+            raise RuntimeError("Python requests is unavailable.")
+        response = requests.get(
+            f"{base_url}{path}",
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Unexpected Invidious response.")
+        if payload.get("error"):
+            raise RuntimeError(str(payload.get("error")))
+        return payload
+
+    def _youtube_resources_from_invidious(self, url: str) -> list[dict[str, Any]]:
+        instances = self._fetch_invidious_instances()
+        if not instances:
+            raise RuntimeError("No public Invidious instances were available.")
+        playlist_id = extract_youtube_playlist_id(url)
+        video_id = extract_youtube_video_id(url)
+        errors: list[str] = []
+        if playlist_id:
+            for base_url in instances:
+                try:
+                    self.resourceImportStatusChanged.emit("Fetching playlist metadata...")
+                    playlist = self._invidious_get(base_url, f"/api/v1/playlists/{playlist_id}")
+                    videos = playlist.get("videos", [])
+                    if not isinstance(videos, list) or not videos:
+                        raise RuntimeError("Playlist items were not available.")
+                    resources: list[dict[str, Any]] = []
+                    for index, entry in enumerate(videos, start=1):
+                        if index > 1:
+                            time.sleep(1)
+                        if not isinstance(entry, dict):
+                            continue
+                        entry_id = str(entry.get("videoId", "") or "")
+                        title = str(entry.get("title", "Playlist item") or "Playlist item")
+                        if not entry_id:
+                            continue
+                        try:
+                            self.resourceImportStatusChanged.emit(f"Importing class {index} of {len(videos)}...")
+                            video_payload = self._invidious_get(base_url, f"/api/v1/videos/{entry_id}")
+                            resources.extend(self._youtube_resources_from_entry(video_payload))
+                        except Exception:
+                            resources.append(
+                                make_resource(
+                                    title,
+                                    kind="youtube",
+                                    provider="YouTube",
+                                    source_url=f"https://www.youtube.com/watch?v={entry_id}&list={playlist_id}",
+                                    author=str(entry.get("author", playlist.get("author", "YouTube")) or "YouTube"),
+                                    summary=str(entry.get("description", "") or "")[:280],
+                                    thumbnail_url=(entry.get("videoThumbnails") or [{}])[-1].get("url", "") if isinstance(entry.get("videoThumbnails"), list) and entry.get("videoThumbnails") else "",
+                                    tags=slug_tags(title, str(playlist.get("title", "") or "")),
+                                    items=[make_resource_item(title, duration_seconds=int(entry.get("lengthSeconds", 0) or 0), position=1, kind="video", external_url=f"https://www.youtube.com/watch?v={entry_id}&list={playlist_id}")],
+                                    duration_seconds=int(entry.get("lengthSeconds", 0) or 0),
+                                )
+                            )
+                    if resources:
+                        return resources
+                except Exception as exc:
+                    errors.append(f"{base_url}: {exc}")
+            raise RuntimeError(errors[0] if errors else "Unable to fetch playlist through Invidious.")
+        if video_id:
+            for base_url in instances:
+                try:
+                    video_payload = self._invidious_get(base_url, f"/api/v1/videos/{video_id}")
+                    return self._youtube_resources_from_entry(video_payload)
+                except Exception as exc:
+                    errors.append(f"{base_url}: {exc}")
+            raise RuntimeError(errors[0] if errors else "Unable to fetch video through Invidious.")
+        raise RuntimeError("The YouTube URL could not be parsed.")
+
+    def _udemy_resources_from_url(self, url: str) -> list[dict[str, Any]]:
+        if requests is None:
+            raise RuntimeError("Python requests is unavailable.")
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+        response.raise_for_status()
+        html = response.text
+        title = "Udemy course"
+        author = "Udemy"
+        summary = ""
+        tags: list[str] = []
+        items: list[dict[str, Any]] = []
+        if BeautifulSoup is not None:
+            soup = BeautifulSoup(html, "html.parser")
+            if soup.title and soup.title.string:
+                title = soup.title.string.split("|")[0].strip() or title
+            meta_description = soup.find("meta", attrs={"name": "description"})
+            if meta_description and meta_description.get("content"):
+                summary = str(meta_description.get("content", "")).strip()
+            instructor = soup.select_one("[data-purpose*='instructor-name-top'], .instructor-links a")
+            if instructor:
+                author = instructor.get_text(" ", strip=True) or author
+            for node in soup.select("[data-purpose*='curriculum-item-title'], [data-purpose*='section-panel-title']"):
+                label = node.get_text(" ", strip=True)
+                if label and label.lower() not in {item["title"].lower() for item in items}:
+                    items.append(make_resource_item(label, position=len(items) + 1, kind="lesson"))
+            breadcrumb = soup.select("a[href*='/topic/'], a[href*='/course/']")
+            tags = slug_tags(title, author, " ".join(node.get_text(" ", strip=True) for node in breadcrumb[:4]))
+        if not items:
+            script_match = re.search(r'"title"\s*:\s*"([^"]+)"', html)
+            if script_match:
+                title = script_match.group(1)
+            lesson_matches = re.findall(r'"title"\s*:\s*"([^"]+)"\s*,\s*"object_index"\s*:\s*\d+', html)
+            for lesson_title in lesson_matches[:200]:
+                if lesson_title and lesson_title.lower() != title.lower():
+                    items.append(make_resource_item(lesson_title, position=len(items) + 1, kind="lesson"))
+        if not items:
+            items = [make_resource_item("Open course page", position=1, kind="lesson", external_url=url)]
+        return [
+            make_resource(
+                title,
+                kind="udemy",
+                provider="Udemy",
+                source_url=url,
+                author=author,
+                summary=summary,
+                tags=tags or slug_tags(title, author, "udemy"),
+                items=items,
+            )
+        ]
+
+    def add_resource_from_url(self, url: str) -> None:
+        source_url = str(url or "").strip()
+        if not source_url or self._resource_import_busy:
+            return
+        self._resource_import_busy = True
+        self._resource_import_message = "Fetching resource..."
+        self.push_resources()
+        threading.Thread(target=self._import_resources_in_background, args=(source_url,), daemon=True).start()
+
+    def _import_resources_in_background(self, source_url: str) -> None:
+        try:
+            resources = self._import_resources_from_url(source_url)
+            self.resourceImportFinished.emit(True, resources, f"Imported {len(resources)} resource{'s' if len(resources) != 1 else ''}.")
+        except Exception as exc:
+            self.resourceImportFinished.emit(False, [], f"Unable to import resource: {exc}")
+
+    def _import_resources_from_url(self, source_url: str) -> list[dict[str, Any]]:
+        if is_youtube_url(source_url):
+            try:
+                return self._youtube_resources_from_url(source_url)
+            except Exception as exc:
+                if youtube_sign_in_required(str(exc)):
+                    self.resourceImportStatusChanged.emit("Trying an Invidious fallback...")
+                    return self._youtube_resources_from_invidious(source_url)
+                raise
+        if is_udemy_url(source_url):
+            return self._udemy_resources_from_url(source_url)
+        parsed = urlparse(source_url)
+        if parsed.scheme or parsed.netloc:
+            label = parsed.netloc or "Manual reference"
+            title = source_url
+            reference_url = source_url
+            summary = "General reference added manually."
+            kind = "other"
+        else:
+            label = "Manual note"
+            title = source_url
+            reference_url = ""
+            summary = "Manual reference note for future schedules, focus sessions, or reminders."
+            kind = "book"
+        return [
+            make_resource(
+                title,
+                kind=kind,
+                provider=label,
+                source_url=reference_url,
+                summary=summary,
+                tags=slug_tags(label, source_url),
+                items=[make_resource_item("Reference entry", position=1, kind="reference", external_url=reference_url, notes=source_url)],
+            )
+        ]
+
+    def _finish_resource_import(self, ok: bool, resources: object, message: str) -> None:
+        self._resource_import_busy = False
+        self._resource_import_message = ""
+        if ok and isinstance(resources, list):
+            existing = self.state.setdefault("resources", [])
+            if isinstance(existing, list):
+                existing[0:0] = resources
+            self._commit_resources(message)
+            return
+        self.push_resources()
+        notify("Study Resources", message)
+
+    def _update_resource_import_status(self, message: str) -> None:
+        if not self._resource_import_busy:
+            return
+        self._resource_import_message = str(message or "Fetching resource...")
+        self.push_resources()
+
+    def toggle_resource_item(self, resource_id: str, item_id: str) -> None:
+        resource = resource_by_id(self.state, resource_id)
+        if not isinstance(resource, dict):
+            return
+        for item in resource.get("items", []):
+            if isinstance(item, dict) and str(item.get("id", "")) == item_id:
+                item["done"] = not bool(item.get("done", False))
+                item["completed_at"] = datetime.now().strftime("%I:%M %p").lstrip("0") if item["done"] else ""
+                resource["updated_at"] = now_iso()
+                self._commit_resources()
+                return
+
+    def set_all_resource_items(self, resource_id: str, done: bool) -> None:
+        resource = resource_by_id(self.state, resource_id)
+        if not isinstance(resource, dict):
+            return
+        stamp = datetime.now().strftime("%I:%M %p").lstrip("0") if done else ""
+        for item in resource.get("items", []):
+            if isinstance(item, dict):
+                item["done"] = bool(done)
+                item["completed_at"] = stamp if done else ""
+        resource["updated_at"] = now_iso()
+        self._commit_resources()
+
+    def open_resource_source(self, resource_id: str) -> None:
+        resource = resource_by_id(self.state, resource_id)
+        if not isinstance(resource, dict):
+            return
+        source_url = str(resource.get("source_url", "") or "").strip()
+        if not source_url:
+            return
+        try:
+            subprocess.Popen(["xdg-open", source_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception as exc:
+            notify("Study Resources", f"Unable to open source: {exc}")
+
     def navigate_to(self, page: str) -> None:
         normalized = str(page).strip().lower()
         if normalized == "settings":
             target = "settings"
         elif normalized == "schedule":
             target = "schedule"
+        elif normalized == "resources":
+            target = "resources"
         else:
             target = "dashboard"
         if target == self.current_page:
