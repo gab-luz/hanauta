@@ -5,7 +5,7 @@
 <p class="study-muted-copy">Keep reusable study material ready for schedules, focus sessions, and reminders.</p>
 </div>
 <div class="study-resource-import">
-<input class="study-input" id="resourceUrlInput" placeholder="Paste a YouTube video, playlist, Udemy course, URL, or even a plain reference note" type="text"/>
+<input class="study-input" id="resourceUrlInput" placeholder="Paste a YouTube/Udemy URL, a local document path, or a plain reference note" type="text"/>
 <button class="study-chip-button" id="resourceImportButton" type="button">Add Resource</button>
 </div>
 </div>
@@ -54,6 +54,21 @@
 <button class="study-chip-button" id="resourceOpenSourceButton" type="button">Open Source</button>
 </div>
 <p class="study-muted-copy" id="resourceDetailSummary">Resource summary</p>
+<div class="study-resource-document hidden" id="resourceDocumentTracker">
+<div class="study-resource-progress">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Page Progress</p>
+<p class="study-muted-copy" id="resourceDocumentProgressText">0 / 0 pages</p>
+</div>
+<button class="study-chip-button" id="resourceDocumentOpenButton" type="button">Open Document</button>
+</div>
+<div class="study-resource-document-controls">
+<button class="study-chip-button" id="resourceDocumentPrevButton" type="button">Previous Page</button>
+<input class="study-input" id="resourceDocumentPageInput" min="0" type="number"/>
+<button class="study-chip-button" id="resourceDocumentSetButton" type="button">Set Page</button>
+<button class="study-chip-button" id="resourceDocumentNextButton" type="button">Next Page</button>
+</div>
+</div>
 <div class="study-resource-progress">
 <div class="study-settings-row-copy">
 <p class="font-headline font-bold text-sm">Progress</p>
