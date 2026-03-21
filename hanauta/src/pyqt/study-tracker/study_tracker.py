@@ -615,13 +615,11 @@ def build_runtime_script(page_name: str) -> str:
     const settings = $("navSettingsButton");
     [dashboard, settings].forEach((button) => {{
       if (!button) return;
-      button.classList.remove("bg-[#d4bbff]/20", "text-[#d4bbff]", "rounded-2xl");
-      button.classList.add("text-[#4a4550]");
+      button.classList.remove("is-active");
     }});
     const active = page === "settings" ? settings : dashboard;
     if (active) {{
-      active.classList.remove("text-[#4a4550]");
-      active.classList.add("bg-[#d4bbff]/20", "text-[#d4bbff]", "rounded-2xl");
+      active.classList.add("is-active");
     }}
   }}
 
@@ -863,8 +861,10 @@ def build_runtime_script(page_name: str) -> str:
   }}
 
   function render() {{
-    if (CURRENT_PAGE === "dashboard" && studyState) {{
+    if (studyState) {{
       renderChips();
+    }}
+    if (CURRENT_PAGE === "dashboard" && studyState) {{
       renderObjective();
       renderInsights();
       renderAgenda();
@@ -968,12 +968,47 @@ def build_runtime_script(page_name: str) -> str:
         background: radial-gradient(circle at top right, var(--study-surfaceLow, #1a1b26) 0%, var(--study-background, #12131d) 100%);
         color: var(--study-text, #e2e1f1);
       }}
-      aside {{
+      aside, .study-shell-rail {{
         background: var(--study-surfaceLow, #1a1b26) !important;
         box-shadow: 40px 0 60px -15px var(--study-railShadow, rgba(212,187,255,0.05)) !important;
       }}
-      header {{
+      header, .study-shell-topbar {{
         background: color-mix(in srgb, var(--study-background, #12131d) 80%, transparent) !important;
+      }}
+      .study-shell-topbar {{
+        border-bottom: 1px solid var(--study-outlineSoft, rgba(149, 142, 156, 0.18));
+      }}
+      .study-shell-main {{
+        background:
+          radial-gradient(circle at top right, var(--study-ambientPrimary, rgba(212, 187, 255, 0.09)) 0%, transparent 36%),
+          radial-gradient(circle at bottom left, var(--study-ambientSecondary, rgba(255, 178, 188, 0.08)) 0%, transparent 32%),
+          transparent;
+      }}
+      .study-shell-brand,
+      .study-shell-title {{
+        color: var(--study-primary, #d4bbff) !important;
+      }}
+      .study-rail-button,
+      .study-shell-nav-link,
+      .study-shell-action-button {{
+        color: var(--study-textMuted, #ccc3d2) !important;
+      }}
+      .study-rail-button:hover,
+      .study-shell-nav-link:hover,
+      .study-shell-action-button:hover {{
+        color: var(--study-primary, #d4bbff) !important;
+        background: color-mix(in srgb, var(--study-surfaceHigh, #282935) 70%, transparent) !important;
+      }}
+      .study-rail-button.is-active {{
+        color: var(--study-primary, #d4bbff) !important;
+        background: color-mix(in srgb, var(--study-primary, #d4bbff) 18%, transparent) !important;
+      }}
+      .study-shell-chip {{
+        background: var(--study-surfaceLow, #1a1b26) !important;
+      }}
+      .study-shell-tooltip {{
+        background: var(--study-surfaceHighest, #333440) !important;
+        color: var(--study-text, #e2e1f1) !important;
       }}
       .glass-panel {{
         background: color-mix(in srgb, var(--study-surfaceLow, #1a1b26) 70%, transparent) !important;
@@ -1017,7 +1052,80 @@ def build_runtime_script(page_name: str) -> str:
 
 def build_html(page_name: str) -> str:
     html_file = HTML_FILE if page_name == "dashboard" else SETTINGS_HTML_FILE
-    base_html = html_file.read_text(encoding="utf-8")
+    page_body = html_file.read_text(encoding="utf-8").strip()
+    page_label = "Overview" if page_name == "dashboard" else "Settings"
+    base_html = f"""<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>{page_label} | Hanauta Study Track</title>
+<link href="study_tracker.css" rel="stylesheet"/>
+</head>
+<body class="bg-background text-on-surface min-h-screen overflow-hidden">
+<aside class="study-shell-rail fixed left-0 top-0 h-full z-50 h-screen w-20 flex flex-col items-center py-8">
+<div class="mb-12">
+<span class="study-shell-brand text-xl font-bold tracking-tighter font-headline">H</span>
+</div>
+<nav class="flex flex-col gap-6 flex-1">
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" id="navDashboardButton" type="button">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="study-shell-tooltip absolute left-full ml-4 px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Overview</span>
+</button>
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
+<span class="material-symbols-outlined">menu_book</span>
+</button>
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
+<span class="material-symbols-outlined">insights</span>
+</button>
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
+<span class="material-symbols-outlined">layers</span>
+</button>
+</nav>
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" id="navSettingsButton" type="button">
+<span class="material-symbols-outlined">settings</span>
+<span class="study-shell-tooltip absolute left-full ml-4 px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Settings</span>
+</button>
+</aside>
+<main class="study-shell-main pl-20 pt-16 h-screen flex flex-col overflow-hidden relative">
+<header class="study-shell-topbar fixed top-0 right-0 left-20 z-40 px-8 flex justify-between items-center h-16 backdrop-blur-xl">
+<div class="flex items-center gap-8">
+<h1 class="study-shell-title text-lg font-black font-headline tracking-tight">Hanauta Study Track</h1>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="study-shell-nav-link font-headline font-semibold text-sm transition-colors" href="#">Focus Mode</a>
+<a class="study-shell-nav-link font-headline font-semibold text-sm transition-colors" href="#">Resources</a>
+</nav>
+</div>
+<div class="flex items-center gap-3">
+<div class="study-shell-chip flex items-center gap-2 px-3 py-1.5 rounded-full">
+<span class="material-symbols-outlined text-sm text-primary">bolt</span>
+<span class="text-xs font-bold font-label" id="streakChipText">12 Day Streak</span>
+</div>
+<div class="study-shell-chip flex items-center gap-2 px-3 py-1.5 rounded-full">
+<span class="material-symbols-outlined text-sm text-secondary">timer</span>
+<span class="text-xs font-bold font-label" id="todayChipText">45m Today</span>
+</div>
+<div class="flex gap-3 ml-4">
+<button class="study-shell-action-button p-2 rounded-full transition-colors active:opacity-80" type="button">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="study-shell-action-button p-2 rounded-full transition-colors active:opacity-80" type="button">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 blur-[120px] rounded-full pointer-events-none"></div>
+<div class="absolute bottom-0 right-0 w-[400px] h-[400px] bg-secondary/5 blur-[100px] rounded-full pointer-events-none"></div>
+<div class="flex-1 overflow-y-auto no-scrollbar relative z-10 pb-32">
+{page_body}
+</div>
+</main>
+<div class="fixed inset-0 pointer-events-none opacity-[0.03] contrast-150 mix-blend-overlay">
+<div class="local-noise w-full h-full"></div>
+</div>
+</body>
+</html>"""
     injected = build_runtime_script(page_name)
     if "</body>" in base_html:
         return base_html.replace("</body>", f"{injected}\n</body>", 1)
