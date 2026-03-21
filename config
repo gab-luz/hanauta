@@ -36,11 +36,11 @@ gaps outer $gap
 gaps top 5
 # Colors (mapped from bspwm colors)
 # format: client.<state> border background text indicator child_border
-client.focused          #97ccf9 #97ccf9 #e0e3e8 #97ccf9 #97ccf9
-client.focused_inactive #8b9198 #8b9198 #e0e3e8 #8b9198 #8b9198
-client.unfocused        #8b9198 #8b9198 #e0e3e8 #8b9198 #8b9198
+client.focused          #92cef6 #92cef6 #dfe3e7 #92cef6 #92cef6
+client.focused_inactive #8b9198 #8b9198 #dfe3e7 #8b9198 #8b9198
+client.unfocused        #8b9198 #8b9198 #dfe3e7 #8b9198 #8b9198
 client.urgent           #ffb4ab #ffb4ab #101417 #ffb4ab #ffb4ab
-client.placeholder      #8b9198 #8b9198 #e0e3e8 #8b9198 #8b9198
+client.placeholder      #8b9198 #8b9198 #dfe3e7 #8b9198 #8b9198
 client.background       #101417
 
 # Startup (from bspwmrc)
