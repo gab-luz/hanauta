@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib import request
 
 from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QIcon, QPixmap
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -557,6 +557,41 @@ class HeaderBadge(QFrame):
         )
 
 
+class AntiAliasButton(QPushButton):
+    def __init__(self, text: str, ui_font: str, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._ui_font = ui_font
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(36)
+        self.setMinimumWidth(88)
+        self.setFont(QFont(ui_font, 11, QFont.Weight.Black))
+        self.setFlat(True)
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        radius = rect.height() / 2.0
+
+        fill = QColor(ACCENT)
+        if self.isDown():
+            fill = QColor(mix(ACCENT, "#000000", 0.12))
+        elif self.underMouse():
+            fill = QColor(mix(ACCENT, "#ffffff", 0.08))
+
+        border = QColor(rgba(BORDER_ACCENT, 0.58))
+        painter.setPen(QPen(border, 1))
+        painter.setBrush(fill)
+        painter.drawRoundedRect(rect, radius, radius)
+
+        painter.setPen(QColor(THEME.active_text))
+        painter.setFont(QFont(self._ui_font, 11, QFont.Weight.Black))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
+
+
 class ActionIcon(QToolButton):
     def __init__(self, text: str, tooltip: str, ui_font: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -825,18 +860,6 @@ class ComposerBar(QFrame):
                 padding: 10px 12px;
                 selection-background-color: {ACCENT_SOFT};
             }}
-            QPushButton {{
-                background: {ACCENT};
-                color: {THEME.active_text};
-                border: none;
-                border-radius: 18px;
-                padding: 0 16px;
-                font-size: 11px;
-                font-weight: 800;
-            }}
-            QPushButton:hover {{
-                background: {mix(ACCENT, '#ffffff', 0.08)};
-            }}
             """
         )
 
@@ -858,11 +881,14 @@ class ComposerBar(QFrame):
 
         footer.addStretch(1)
 
-        hint = HeaderBadge("/clear", ui_font, accent=False)
-        footer.addWidget(hint)
+        clear_hint = QLabel("/clear")
+        clear_hint.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
+        clear_hint.setStyleSheet(
+            f"color: {TEXT_DIM}; background: {rgba(CARD_BG_SOFT, 0.22)}; border: none; padding: 6px 10px;"
+        )
+        footer.addWidget(clear_hint)
 
-        send_button = QPushButton("Send")
-        send_button.setMinimumHeight(36)
+        send_button = AntiAliasButton("Send", ui_font)
         send_button.clicked.connect(self._emit_send)
         footer.addWidget(send_button)
         layout.addLayout(footer)
