@@ -862,6 +862,43 @@ def build_runtime_script(page_name: str) -> str:
     if ($("customThemeSection")) $("customThemeSection").style.display = settingsState.theme_mode === "custom" ? "" : "none";
   }}
 
+  function setSchedulePanelVisible(visible) {{
+    const selectionPanel = $("scheduleSelectionPanel");
+    const emptyState = $("scheduleEmptyState");
+    if (selectionPanel) selectionPanel.classList.toggle("hidden", !visible);
+    if (emptyState) emptyState.classList.toggle("hidden", !!visible);
+  }}
+
+  function selectScheduleBlock(block) {{
+    if (!block) {{
+      document.querySelectorAll(".study-schedule-block").forEach((node) => node.classList.remove("is-selected"));
+      setSchedulePanelVisible(false);
+      return;
+    }}
+    const tone = (block.dataset.scheduleTone || "primary").toLowerCase();
+    document.querySelectorAll(".study-schedule-block").forEach((node) => node.classList.toggle("is-selected", node === block));
+    if ($("scheduleSelectedTitle")) $("scheduleSelectedTitle").textContent = block.dataset.scheduleTitle || "Study Block";
+    if ($("scheduleSelectedWhen")) $("scheduleSelectedWhen").textContent = block.dataset.scheduleWhen || "";
+    if ($("scheduleSelectedCategory")) {{
+      $("scheduleSelectedCategory").textContent = (block.dataset.scheduleCategory || "").toUpperCase();
+      $("scheduleSelectedCategory").className = `text-[10px] font-label font-bold text-${{tone}}`;
+    }}
+    if ($("scheduleSelectedDescription")) $("scheduleSelectedDescription").textContent = block.dataset.scheduleDescription || "";
+    if ($("scheduleSelectedBadge")) {{
+      $("scheduleSelectedBadge").className = `px-3 py-1 bg-${{tone}}/20 text-${{tone}} text-[9px] font-black uppercase tracking-widest rounded-full`;
+      $("scheduleSelectedBadge").textContent = "Selected Block";
+    }}
+    setSchedulePanelVisible(true);
+  }}
+
+  function wireScheduleActions() {{
+    document.querySelectorAll(".study-schedule-block").forEach((block) => {{
+      block.addEventListener("click", () => selectScheduleBlock(block));
+    }});
+    $("scheduleSelectionCloseButton")?.addEventListener("click", () => selectScheduleBlock(null));
+    setSchedulePanelVisible(false);
+  }}
+
   function render() {{
     if (studyState) {{
       renderChips();
@@ -1042,6 +1079,7 @@ def build_runtime_script(page_name: str) -> str:
     setNavActive(CURRENT_PAGE);
     wireNavigation();
     if (CURRENT_PAGE === "dashboard") wireDashboardActions();
+    if (CURRENT_PAGE === "schedule") wireScheduleActions();
     if (CURRENT_PAGE === "settings") wireSettingsActions();
     new QWebChannel(qt.webChannelTransport, function (channel) {{
       bridge = channel.objects.studyBridge;
