@@ -47,6 +47,7 @@ from pyqt.shared.rss import load_cache as load_rss_cache
 from pyqt.shared.rss import save_cache as save_rss_cache
 from pyqt.shared.cap_alerts import CapAlert, configured_alert_location, fallback_tip, fetch_active_alerts, relative_expiry, test_mode_enabled, top_alert
 from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
+from pyqt.shared.updates import collect_update_payload
 from pyqt.shared.crypto import (
     build_price_alerts as build_crypto_price_alerts,
     fetch_prices as fetch_crypto_prices,
@@ -1006,6 +1007,17 @@ class CapAlertWorker(QThread):
         self.loaded.emit(fetch_active_alerts(location))
 
 
+class UpdateCountWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        try:
+            payload = collect_update_payload()
+        except Exception:
+            payload = {}
+        self.loaded.emit(payload)
+
+
 class CyberBar(QWidget):
     def __init__(self, ui_path: Optional[Path] = None):
         super().__init__()
@@ -1082,8 +1094,10 @@ class CyberBar(QWidget):
         self._cap_alert_overlay_process: Optional[subprocess.Popen] = None
         self._weather_worker: Optional[WeatherWorker] = None
         self._cap_alert_worker: Optional[CapAlertWorker] = None
+        self._updates_worker: Optional[UpdateCountWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
         self._cap_alerts: list[CapAlert] = []
+        self._pending_updates_total = 0
         self._cap_alert_seen_ids: set[str] = set()
         self._cap_alert_pulse_phase = 0.0
         self._cap_alert_pulse_tick = 0
@@ -1223,6 +1237,20 @@ class CyberBar(QWidget):
         self.date_label.setObjectName("dateLabel")
         self.date_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.date_label.clicked.connect(self._toggle_calendar_popup)
+        self.updates_pill = ClickableFrame()
+        self.updates_pill.setObjectName("updatesPill")
+        self.updates_pill.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.updates_pill.clicked.connect(self._check_updates)
+        self.updates_pill_layout = QHBoxLayout(self.updates_pill)
+        self.updates_pill_layout.setContentsMargins(6, 2, 8, 2)
+        self.updates_pill_layout.setSpacing(4)
+        self.updates_pill_icon = QLabel(material_icon("system_update"))
+        self.updates_pill_icon.setObjectName("updatesPillIcon")
+        self.updates_pill_icon.setFont(QFont(self.material_font, 14))
+        self.updates_pill_count = QLabel("0")
+        self.updates_pill_count.setObjectName("updatesPillCount")
+        self.updates_pill_layout.addWidget(self.updates_pill_icon)
+        self.updates_pill_layout.addWidget(self.updates_pill_count)
         self.locale_button = QPushButton(self._icon_text("public"))
         self.locale_button.setObjectName("utilityButton")
         self.locale_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -1231,6 +1259,7 @@ class CyberBar(QWidget):
         self.datetime_layout.addWidget(self.weather_icon)
         self.datetime_layout.addWidget(self.time_label)
         self.datetime_layout.addWidget(self.date_label)
+        self.datetime_layout.addWidget(self.updates_pill)
         self.datetime_layout.addWidget(self.locale_button)
         self.btn_control_center = self._icon_button("dashboard")
         self.btn_control_center.setObjectName("utilityButton")
@@ -1320,7 +1349,7 @@ class CyberBar(QWidget):
         self.cap_alert_glow_frame.hide()
 
         self.status_chip = QFrame()
-        self.status_chip.setObjectName("statusChip")
+        self.status_chip.setObjectName("connectivityChip")
         self.status_layout = QHBoxLayout(self.status_chip)
         self.status_layout.setContentsMargins(10, 4, 10, 4)
         self.status_layout.setSpacing(8)
@@ -1417,9 +1446,6 @@ class CyberBar(QWidget):
         self.btn_clip = self._icon_button("content_paste")
         self.btn_clip.setObjectName("statusIconButton")
         self.btn_clip.clicked.connect(self._open_clipboard)
-        self.btn_updates = self._icon_button("system_update")
-        self.btn_updates.setObjectName("statusIconButton")
-        self.btn_updates.clicked.connect(self._check_updates)
         self.btn_power = self._icon_button("power_settings_new")
         self.btn_power.setObjectName("statusIconButton")
         self.btn_power.setCheckable(True)
@@ -1430,7 +1456,6 @@ class CyberBar(QWidget):
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.tray_wrap = self._wrap_movable(self.tray_host)
         self.status_layout.addWidget(self.btn_clip)
-        self.status_layout.addWidget(self.btn_updates)
         self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
         self.status_layout.addWidget(self.btn_power)
         self.status_wrap = self._wrap_movable(self.status_chip)
@@ -1602,6 +1627,7 @@ class CyberBar(QWidget):
         self.weather_icon.setToolTip("Weather button")
         self.time_label.setToolTip("Time label")
         self.date_label.setToolTip("Date label / calendar")
+        self.updates_pill.setToolTip("Updates")
         self.btn_control_center.setToolTip("Control center button")
         self.media_chip.setToolTip("Media chip")
         self.media_icon.setToolTip("Media icon")
@@ -1610,7 +1636,7 @@ class CyberBar(QWidget):
         self.media_prev.setToolTip("Media previous button")
         self.media_play.setToolTip("Media play/pause button")
         self.media_next.setToolTip("Media next button")
-        self.status_chip.setToolTip("Status chip")
+        self.status_chip.setToolTip("Connectivity chip")
         self.net_icon.setToolTip("Wi-Fi button")
         self.vpn_icon.setToolTip("VPN button")
         self.christian_button.setToolTip("Christian widget button")
@@ -1621,7 +1647,6 @@ class CyberBar(QWidget):
         self.battery_icon.setToolTip("Battery icon")
         self.battery_value.setToolTip("Battery value")
         self.btn_clip.setToolTip("Clipboard button")
-        self.btn_updates.setToolTip("Updates button")
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.btn_power.setToolTip("Power button")
 
@@ -1712,10 +1737,29 @@ class CyberBar(QWidget):
                 background: {"transparent" if merge_all_chips else theme.chip_bg};
                 border: 1px solid {"transparent" if merge_all_chips else theme.chip_border};
             }}
-            #statusChip {{
+            #connectivityChip {{
                 background: {media_bg};
                 border: 1px solid {media_border};
                 border-radius: {chip_radius_css};
+            }}
+            #updatesPill {{
+                background: transparent;
+                border: none;
+                border-radius: 0px;
+            }}
+            #updatesPillIcon {{
+                color: {theme.primary};
+                font-family: "{self.material_font}";
+                font-size: 14px;
+            }}
+            #updatesPillCount {{
+                color: {theme.text};
+                font-size: 10px;
+                font-weight: 700;
+            }}
+            #updatesPill:hover {{
+                background: {theme.hover_bg};
+                border-radius: 11px;
             }}
             #capAlertChip {{
                 background: {rgba("#f6cf5a", 0.30)};
@@ -2087,7 +2131,6 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 20)
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
         self._apply_icon_to_widget(self.btn_clip, "content_paste", material_icon("content_paste"), 16)
-        self._apply_icon_to_widget(self.btn_updates, "system_update", material_icon("system_update"), 16)
         self._apply_icon_to_widget(self.btn_power, "power_settings_new", material_icon("power_settings_new"), 20)
         self._apply_icon_to_widget(self.launcher_note, "launcher_note", "♪", 14)
         self._set_vpn_button_icon(self.vpn_icon.property("active") == True)
@@ -2118,6 +2161,11 @@ class CyberBar(QWidget):
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
+
+        self.updates_timer = QTimer(self)
+        self.updates_timer.timeout.connect(self._poll_updates_count)
+        self.updates_timer.start(15 * 60 * 1000)
+        QTimer.singleShot(1200, self._poll_updates_count)
 
         self.settings_timer = QTimer(self)
         self.settings_timer.timeout.connect(self._reload_settings_if_needed)
@@ -2368,6 +2416,32 @@ class CyberBar(QWidget):
         self._sync_game_mode_button_visibility()
         self._sync_weather_visibility()
         self._sync_cap_alert_chip()
+
+    def _poll_updates_count(self) -> None:
+        if self._updates_worker is not None and self._updates_worker.isRunning():
+            return
+        self._updates_worker = UpdateCountWorker()
+        self._updates_worker.loaded.connect(self._apply_updates_count_payload)
+        self._updates_worker.finished.connect(self._finish_updates_worker)
+        self._updates_worker.start()
+
+    def _apply_updates_count_payload(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        system_updates = [str(item) for item in payload.get("system_updates", []) if str(item).strip()]
+        flatpak_updates = [str(item) for item in payload.get("flatpak_updates", []) if str(item).strip()]
+        self._pending_updates_total = len(system_updates) + len(flatpak_updates)
+        self._sync_updates_pill()
+
+    def _finish_updates_worker(self) -> None:
+        self._updates_worker = None
+
+    def _sync_updates_pill(self) -> None:
+        total = max(0, int(self._pending_updates_total))
+        self.updates_pill_count.setText("99+" if total > 99 else str(total))
+        tooltip = "System is up to date." if total == 0 else f"{total} update(s) pending."
+        self.updates_pill.setToolTip(tooltip)
+        self.updates_pill_icon.setToolTip(tooltip)
+        self.updates_pill_count.setToolTip(tooltip)
 
     def _poll_weather(self) -> None:
         if self._weather_worker is not None and self._weather_worker.isRunning():
