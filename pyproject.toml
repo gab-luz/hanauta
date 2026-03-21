@@ -5,10 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.13.5",
     "cryptography>=46.0.5",
     "dbus-next>=0.2.3",
     "pyqt6>=6.10.2",
     "pyqt6-webengine>=6.10.0",
     "psycopg[binary]>=3.2.9",
     "requests>=2.32.5",
+    "yt-dlp>=2025.3.31",
 ]
