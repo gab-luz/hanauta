@@ -51,6 +51,25 @@
 - The bar is intended to stay visible across workspaces. Preserve the current dock/sticky behavior in both Qt window flags and i3 config rules when editing it.
 - The center section contains the clock/date and current media.
 - The media visualizer uses `cava` raw output, configured by `hanauta/src/pyqt/bar/cava_bar.conf`.
+- The current stable visualizer path is:
+  - `cava` stays in ASCII raw mode in `hanauta/src/pyqt/bar/cava_bar.conf`.
+  - `ui_bar.py` reads `cava` from a dedicated `CavaWorker(QThread)`, not from `QProcess` on the GUI thread.
+  - The worker emits parsed frame parts to the bar, and the bar only updates equalizer target levels.
+  - A separate Qt timer renders interpolation for the visible bar heights.
+  - Each equalizer bar is paint-based and constant-size, so the bar does not churn layout geometry every frame.
+- When touching the visualizer, prefer preserving this architecture:
+  - keep `cava` I/O off the GUI thread
+  - keep the equalizer bars paint-based instead of resizing widgets in layouts
+  - keep theme/Matugen color updates separate from audio-frame updates
+- Regressions we already hit:
+  - moving `cava` reading back onto the GUI thread reintroduced visible pauses
+  - switching the live bar to binary `cava` output caused worse cadence and under/over-scaling in this environment
+  - the working setup here is threaded ASCII `cava` plus paint-based bars
+- If pauses come back, check in this order:
+  - whether `cava` is still being read from `CavaWorker`
+  - whether `cava_bar.conf` is still using ASCII raw output
+  - whether any new timers or subprocess polls are running on the main bar thread
+  - whether equalizer rendering has gone back to stylesheet or layout-driven updates
 
 ## Systray Notes
 
