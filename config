@@ -36,12 +36,12 @@ gaps outer $gap
 gaps top 5
 # Colors (mapped from bspwm colors)
 # format: client.<state> border background text indicator child_border
-client.focused          #ffb4a9 #ffb4a9 #f1dedc #ffb4a9 #ffb4a9
-client.focused_inactive #a08c89 #a08c89 #f1dedc #a08c89 #a08c89
-client.unfocused        #a08c89 #a08c89 #f1dedc #a08c89 #a08c89
-client.urgent           #ffb4ab #ffb4ab #1a1110 #ffb4ab #ffb4ab
-client.placeholder      #a08c89 #a08c89 #f1dedc #a08c89 #a08c89
-client.background       #1a1110
+client.focused          #85d6c0 #85d6c0 #dee4e0 #85d6c0 #85d6c0
+client.focused_inactive #89938f #89938f #dee4e0 #89938f #89938f
+client.unfocused        #89938f #89938f #dee4e0 #89938f #89938f
+client.urgent           #ffb4ab #ffb4ab #0e1513 #ffb4ab #ffb4ab
+client.placeholder      #89938f #89938f #dee4e0 #89938f #89938f
+client.background       #0e1513
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
@@ -64,7 +64,7 @@ exec_always --no-startup-id ~/.config/i3/startup.sh
 exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; fi'
 
 # CyberBar (PyQt6 top bar)
-exec_always --no-startup-id sh -c 'pkill -x hanauta-bar 2>/dev/null || true; pkill -x hanauta-game-mode-popup 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; fi'
+exec_always --no-startup-id sh -c 'pkill -x hanauta-bar 2>/dev/null || true; pkill -x hanauta-game-mode-popup 2>/dev/null || true; pkill -x hanauta-ai-popup 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/ai-popup/ai_popup.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; fi'
 # Eww startup removed; PyQt bar and dock are the active shell UI
 
 # Window rules (translated from bspwm rules)
