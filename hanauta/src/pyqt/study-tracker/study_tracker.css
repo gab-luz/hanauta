@@ -963,6 +963,17 @@ button {
   align-items: start;
 }
 
+.study-calendar-column {
+  min-width: 0;
+}
+
+.study-calendar-column-left,
+.study-calendar-column-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .study-calendar-main {
   padding: 1.25rem;
   border-radius: 1.6rem;
@@ -976,15 +987,57 @@ button {
 
 .study-calendar-toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.study-calendar-toolbar-top,
+.study-calendar-toolbar-bottom {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.study-calendar-toolbar-copy {
+  min-width: 0;
+}
+
+.study-calendar-toolbar-panel {
+  display: flex;
   align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(149, 142, 156, 0.12);
+  background: color-mix(in srgb, var(--study-surfaceHigh) 48%, transparent);
+}
+
+.study-calendar-nav-panel {
+  margin-left: auto;
 }
 
 .study-calendar-nav {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.study-calendar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.study-calendar-actions .study-chip-button {
+  flex: 1 1 12rem;
+}
+
+.study-calendar-quick-actions {
+  margin-bottom: 1rem;
 }
 
 .study-calendar-status {
@@ -1209,12 +1262,17 @@ button {
   .study-resource-summary-row,
   .study-resource-grid,
   .study-resource-layout,
-  .study-calendar-page,
   .study-calendar-year,
   .study-resource-document-controls,
   .study-grid-3,
   .study-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .study-calendar-column-left,
+  .study-calendar-column-right {
+    display: flex;
+    flex-direction: column;
   }
 
   .study-field-span-2 {
@@ -1227,14 +1285,29 @@ button {
   }
 
   .study-calendar-toolbar,
+  .study-calendar-toolbar-top,
+  .study-calendar-toolbar-bottom,
   .study-calendar-nav,
+  .study-calendar-actions,
   .study-calendar-week,
   .study-calendar-day {
     display: flex;
     flex-direction: column;
   }
 
+  .study-calendar-toolbar-panel,
+  .study-calendar-nav-panel {
+    margin-left: 0;
+    align-items: stretch;
+  }
+
   .study-calendar-time-rail {
     display: none;
+  }
+}
+
+@media (max-width: 940px) {
+  .study-calendar-page {
+    grid-template-columns: 1fr;
   }
 }

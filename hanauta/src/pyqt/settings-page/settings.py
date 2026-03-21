@@ -355,6 +355,7 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": False,
         "reconnect_on_login": False,
         "preferred_interface": "",
+        "split_tunnel_apps": [],
     },
     "christian_widget": {
         "enabled": False,
@@ -501,6 +502,8 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["preferred_interface"] = str(
                 current.get("preferred_interface", defaults.get("preferred_interface", ""))
             ).strip()
+            apps = current.get("split_tunnel_apps", defaults.get("split_tunnel_apps", []))
+            merged[key]["split_tunnel_apps"] = apps if isinstance(apps, list) else []
         elif key == "home_assistant":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
@@ -1340,10 +1343,10 @@ def restore_saved_vpn() -> None:
         return
     if not bool(vpn.get("enabled", True)) or not bool(vpn.get("reconnect_on_login", False)):
         return
-    iface = str(vpn.get("preferred_interface", "")).strip()
+    iface = str(vpn.get("preferred_interface", "")).strip() or "wg0"
     if not iface:
         return
-    vpn_script = ROOT / "hanauta" / "src" / "eww" / "scripts" / "vpn.sh"
+    vpn_script = ROOT / "hanauta" / "scripts" / "vpn.sh"
     if not vpn_script.exists():
         return
     status_raw = run_text([str(vpn_script), "--status"])
