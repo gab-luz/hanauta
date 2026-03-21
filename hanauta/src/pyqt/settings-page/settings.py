@@ -302,6 +302,8 @@ def material_icon(name: str) -> str:
 DEFAULT_BAR_SETTINGS = {
     "launcher_offset": 0,
     "workspace_offset": 0,
+    "workspace_count": 5,
+    "show_workspace_label": False,
     "datetime_offset": 0,
     "media_offset": 0,
     "status_offset": 0,
@@ -314,7 +316,7 @@ DEFAULT_BAR_SETTINGS = {
 }
 
 
-def merged_bar_settings(payload: object) -> dict[str, int]:
+def merged_bar_settings(payload: object) -> dict[str, int | bool]:
     current = payload if isinstance(payload, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
     offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
@@ -329,6 +331,8 @@ def merged_bar_settings(payload: object) -> dict[str, int]:
             merged[key] = int(default)
         if key in offset_keys:
             merged[key] = max(-8, min(8, int(merged[key])))
+        elif key == "workspace_count":
+            merged[key] = max(1, min(10, int(merged[key])))
         elif key == "bar_height":
             merged[key] = max(32, min(72, int(merged[key])))
         elif key in radius_keys:
@@ -3949,6 +3953,15 @@ class SettingsWindow(QWidget):
         self.bar_workspace_offset_slider.setFixedWidth(164)
         self.bar_workspace_offset_slider.valueChanged.connect(self._set_bar_workspace_offset)
 
+        self.bar_workspace_count_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_workspace_count_slider.setRange(1, 10)
+        self.bar_workspace_count_slider.setValue(int(self.settings_state["bar"].get("workspace_count", 5)))
+        self.bar_workspace_count_slider.setFixedWidth(164)
+        self.bar_workspace_count_slider.valueChanged.connect(self._set_bar_workspace_count)
+
+        self.bar_workspace_label_switch = SwitchButton(bool(self.settings_state["bar"].get("show_workspace_label", False)))
+        self.bar_workspace_label_switch.toggledValue.connect(self._set_bar_show_workspace_label)
+
         self.bar_datetime_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_datetime_offset_slider.setRange(-8, 8)
         self.bar_datetime_offset_slider.setValue(int(self.settings_state["bar"].get("datetime_offset", 0)))
@@ -4018,6 +4031,26 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_workspace_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("window"),
+                "Workspace count",
+                "Choose how many workspace dots the bar should show, from 1 up to 10.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_workspace_count_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("toggle_on"),
+                "Show workspace label",
+                "Show or hide the text label like Workspace 1 before the workspace dots.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_workspace_label_switch,
             )
         )
         layout.addWidget(
@@ -6673,6 +6706,14 @@ class SettingsWindow(QWidget):
 
     def _set_bar_datetime_offset(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["datetime_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_workspace_count(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["workspace_count"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_show_workspace_label(self, enabled: bool) -> None:
+        self.settings_state.setdefault("bar", {})["show_workspace_label"] = bool(enabled)
         self._save_bar_settings()
 
     def _set_bar_media_offset(self, value: int) -> None:
