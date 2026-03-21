@@ -96,6 +96,58 @@
 <h3 class="font-headline text-xl font-bold">Data Management</h3>
 </div>
 <div class="space-y-4">
+<div class="study-sync-panel">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Library Guardrails</p>
+<p class="study-muted-copy">Discourage too many single documents or single videos outside a larger study resource.</p>
+</div>
+<div class="study-form-grid">
+<label class="study-form-field">
+<span class="study-field-label">Loose Singles Limit</span>
+<input class="study-input" id="looseSingleLimitInput" placeholder="5 or -1 for infinite" type="number"/>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">Schedule Singles Limit</span>
+<input class="study-input" id="scheduleLooseSingleLimitInput" placeholder="5 or -1 for infinite" type="number"/>
+</label>
+</div>
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="study-status-line">Single videos or documents beyond this limit should live inside a broader study resource instead.</p>
+</div>
+<button class="study-chip-button" id="saveResourcePolicyButton" type="button">Save Guardrails</button>
+</div>
+</div>
+<div class="study-sync-panel">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Notification Principles</p>
+<p class="study-muted-copy">Choose which schedule-related events can notify you to avoid CalDAV or study reminder spam.</p>
+</div>
+<div class="study-form-grid">
+<label class="study-form-field">
+<span class="study-field-label">Study Blocks</span>
+<button class="study-toggle study-toggle-wide" id="notifyStudyBlocksButton" type="button">Enabled</button>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">Life Blocks</span>
+<button class="study-toggle study-toggle-wide" id="notifyLifeBlocksButton" type="button">Disabled</button>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">CalDAV Events</span>
+<button class="study-toggle study-toggle-wide" id="notifyCaldavEventsButton" type="button">Disabled</button>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">Resource Plans</span>
+<button class="study-toggle study-toggle-wide" id="notifyResourcePlansButton" type="button">Enabled</button>
+</label>
+</div>
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="study-status-line">CalDAV events can stay quiet while study blocks still notify, or vice versa.</p>
+</div>
+<button class="study-chip-button" id="saveNotificationPrefsButton" type="button">Save Notification Rules</button>
+</div>
+</div>
 <div class="study-settings-row">
 <div class="study-settings-row-copy">
 <p class="font-headline font-bold text-sm">Local JSON Backup</p>
