@@ -84,6 +84,14 @@ statusicon() {
   echo "$icon"
 }
 
+summary() {
+  local t a s
+  t="$(title)"
+  a="$(artist)"
+  s="$(status)"
+  printf '%s\x1f%s\x1f%s\n' "$t" "$a" "$s"
+}
+
 player() {
   [ -n "$Control" ] && echo "$Control"
 }
@@ -111,6 +119,7 @@ if [ -z "$Control" ]; then
     album) echo "$default_album" ;;
     status) echo "$default_status" ;;
     statusicon) echo "" ;;
+    summary) printf '%s\x1f%s\x1f%s\n' "$default_title" "$default_artist" "$default_status" ;;
     coverloc) cp "$bkp_cover" "$cover_path" 2>/dev/null; echo "$cover_path" ;;
     *) exit 0 ;;
   esac
@@ -128,6 +137,7 @@ case "$1" in
   album) album ;;
   status) status ;;
   statusicon) statusicon ;;
+  summary) summary ;;
   coverloc) coverloc ;;
   *) exit 0 ;;
 esac
