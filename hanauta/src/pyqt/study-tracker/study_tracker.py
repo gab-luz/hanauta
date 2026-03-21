@@ -51,6 +51,7 @@ APP_DIR = HERE.parents[1]
 ROOT = HERE.parents[3]
 HTML_FILE = HERE / "code.html"
 SETTINGS_HTML_FILE = HERE / "settingspage.html"
+SCHEDULES_HTML_FILE = HERE / "schedules.html"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "study-tracker"
 STATE_FILE = STATE_DIR / "state.json"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
@@ -612,12 +613,13 @@ def build_runtime_script(page_name: str) -> str:
 
   function setNavActive(page) {{
     const dashboard = $("navDashboardButton");
+    const schedule = $("navScheduleButton");
     const settings = $("navSettingsButton");
-    [dashboard, settings].forEach((button) => {{
+    [dashboard, schedule, settings].forEach((button) => {{
       if (!button) return;
       button.classList.remove("is-active");
     }});
-    const active = page === "settings" ? settings : dashboard;
+    const active = page === "settings" ? settings : page === "schedule" ? schedule : dashboard;
     if (active) {{
       active.classList.add("is-active");
     }}
@@ -890,6 +892,7 @@ def build_runtime_script(page_name: str) -> str:
 
   function wireNavigation() {{
     $("navDashboardButton")?.addEventListener("click", () => bridge?.navigateTo("dashboard"));
+    $("navScheduleButton")?.addEventListener("click", () => bridge?.navigateTo("schedule"));
     $("navSettingsButton")?.addEventListener("click", () => bridge?.navigateTo("settings"));
   }}
 
@@ -1051,9 +1054,16 @@ def build_runtime_script(page_name: str) -> str:
 
 
 def build_html(page_name: str) -> str:
-    html_file = HTML_FILE if page_name == "dashboard" else SETTINGS_HTML_FILE
+    if page_name == "dashboard":
+        html_file = HTML_FILE
+        page_label = "Overview"
+    elif page_name == "schedule":
+        html_file = SCHEDULES_HTML_FILE
+        page_label = "Schedule"
+    else:
+        html_file = SETTINGS_HTML_FILE
+        page_label = "Settings"
     page_body = html_file.read_text(encoding="utf-8").strip()
-    page_label = "Overview" if page_name == "dashboard" else "Settings"
     base_html = f"""<!DOCTYPE html>
 <html class="dark" lang="en">
 <head>
@@ -1075,8 +1085,9 @@ def build_html(page_name: str) -> str:
 <button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
 <span class="material-symbols-outlined">menu_book</span>
 </button>
-<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
-<span class="material-symbols-outlined">insights</span>
+<button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" id="navScheduleButton" type="button">
+<span class="material-symbols-outlined">calendar_month</span>
+<span class="study-shell-tooltip absolute left-full ml-4 px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Schedule</span>
 </button>
 <button class="study-rail-button p-3 transition-all duration-300 scale-95 active:scale-90 group relative rounded-2xl" type="button">
 <span class="material-symbols-outlined">layers</span>
@@ -1367,7 +1378,13 @@ class StudyTrackerWindow(QWidget):
         self.push_state()
 
     def navigate_to(self, page: str) -> None:
-        target = "settings" if str(page).strip().lower() == "settings" else "dashboard"
+        normalized = str(page).strip().lower()
+        if normalized == "settings":
+            target = "settings"
+        elif normalized == "schedule":
+            target = "schedule"
+        else:
+            target = "dashboard"
         if target == self.current_page:
             return
         self.current_page = target
