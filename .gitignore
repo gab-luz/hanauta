@@ -65,6 +65,10 @@ TODO.md
 NOTES.md
 hanauta/walls/Konachan-cache/
 walls/Konachan-cache/
+hanauta/walls/catholic-wallpapers-for-hyprland/
+hanauta/walls/Konachan-cache/
+hanauta/walls/community/
+hanauta/vendor/wallpaper-sources/
 # Local app state / secrets
 *.env
 *.sqlite

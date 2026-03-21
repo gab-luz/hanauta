@@ -58,6 +58,41 @@ def run_detached(command: list[str], *, env: dict[str, str] | None = None) -> No
     )
 
 
+def fullscreen_window_active() -> bool:
+    try:
+        result = subprocess.run(
+            ["i3-msg", "-t", "get_tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+    except Exception:
+        return False
+    if result.returncode != 0 or not result.stdout.strip():
+        return False
+    try:
+        tree = json.loads(result.stdout)
+    except Exception:
+        return False
+
+    def search(node: object) -> bool:
+        if not isinstance(node, dict):
+            return False
+        if int(node.get("fullscreen_mode", 0) or 0) > 0 and node.get("window"):
+            return True
+        for key in ("nodes", "floating_nodes"):
+            children = node.get(key, [])
+            if not isinstance(children, list):
+                continue
+            for child in children:
+                if search(child):
+                    return True
+        return False
+
+    return search(tree)
+
+
 def matugen_available() -> bool:
     return MATUGEN_SCRIPT.exists() and MATUGEN_BINARY.exists() and bool(MATUGEN_BINARY.stat().st_mode & 0o111)
 
@@ -214,7 +249,7 @@ def fetch_konachan_wallpaper(tags: str) -> Path | None:
     return None
 
 
-def apply_wallpaper(path: Path, settings: dict) -> None:
+def apply_wallpaper(path: Path, settings: dict, *, provider_key: str, folder: Path | None = None) -> None:
     if not path.exists() or not path.is_file():
         return
     if WALLPAPER_SCRIPT.exists():
@@ -225,11 +260,15 @@ def apply_wallpaper(path: Path, settings: dict) -> None:
     if not isinstance(appearance, dict):
         appearance = {}
         settings["appearance"] = appearance
-    appearance["wallpaper_provider"] = "konachan"
+    appearance["wallpaper_provider"] = provider_key
     appearance["wallpaper_provider_initialized"] = True
-    appearance["konachan_enabled"] = True
+    appearance["konachan_enabled"] = provider_key == "konachan"
     appearance["wallpaper_path"] = str(path)
-    appearance["slideshow_folder"] = str(KONACHAN_CACHE_DIR)
+    if provider_key == "konachan":
+        appearance["slideshow_folder"] = str(KONACHAN_CACHE_DIR)
+        appearance["local_randomizer_enabled"] = False
+    elif folder is not None:
+        appearance["slideshow_folder"] = str(folder)
     appearance["wallpaper_mode"] = "picture"
     appearance["slideshow_enabled"] = False
     if matugen_available():
@@ -255,7 +294,7 @@ def run_once() -> int:
     path = fetch_konachan_wallpaper(str(appearance.get("konachan_tags", "rating:safe")))
     if path is None:
         return 1
-    apply_wallpaper(path, settings)
+    apply_wallpaper(path, settings, provider_key="konachan", folder=KONACHAN_CACHE_DIR)
     return 0
 
 
@@ -278,7 +317,7 @@ def run_local_randomizer_once() -> int:
     if not candidates:
         candidates = images
     chosen = random.choice(candidates)
-    apply_wallpaper(chosen, settings)
+    apply_wallpaper(chosen, settings, provider_key=provider, folder=folder)
     return 0
 
 
@@ -301,12 +340,13 @@ def main() -> int:
         provider = str(appearance.get("wallpaper_provider", "")).strip().lower()
         enabled = bool(appearance.get("konachan_enabled", False))
         interval = max(120, int(appearance.get("konachan_interval_seconds", 120) or 120))
-        if provider == "konachan" and enabled and now >= next_konachan_run:
+        fullscreen_active = fullscreen_window_active()
+        if provider == "konachan" and enabled and now >= next_konachan_run and not fullscreen_active:
             run_once()
             next_konachan_run = now + interval
         local_enabled = bool(appearance.get("local_randomizer_enabled", False))
         local_interval = max(120, int(appearance.get("local_randomizer_interval_seconds", 120) or 120))
-        if provider and provider != "konachan" and local_enabled and now >= next_local_run:
+        if provider and provider != "konachan" and local_enabled and now >= next_local_run and not fullscreen_active:
             run_local_randomizer_once()
             next_local_run = now + local_interval
         time.sleep(5)

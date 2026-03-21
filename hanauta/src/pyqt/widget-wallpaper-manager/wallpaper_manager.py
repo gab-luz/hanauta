@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import signal
 import subprocess
 import sys
 from pathlib import Path
 from urllib import parse, request
+import zipfile
 
 from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QGuiApplication
@@ -50,6 +52,16 @@ PROVIDER_META: dict[str, dict[str, str]] = {
         "repo": "https://github.com/JaKooLit/Wallpaper-Bank.git",
         "mode": "static",
         "cta": "Download pack",
+    },
+    "catholic": {
+        "key": "catholic",
+        "title": "Catholic Hyprland Pack",
+        "subtitle": "Catholic-themed wallpaper pack imported from the Hyprland community repo.",
+        "folder": str(DEFAULT_WALLPAPER_FOLDER / "catholic-wallpapers-for-hyprland"),
+        "repo": "https://github.com/ZZ-Frater/catholic-wallpapers-for-hyprland.git",
+        "mode": "static",
+        "cta": "Download pack",
+        "archives": "catholic-wallpapers-for-hyprland.zip",
     },
     "konachan": {
         "key": "konachan",
@@ -311,7 +323,7 @@ class Backend(QObject):
         appearance = self._settings.get("appearance", {})
         active = str(appearance.get("wallpaper_provider", "")).strip().lower() if isinstance(appearance, dict) else ""
         providers: list[dict[str, object]] = []
-        for key in ("d3ext", "jakoolit", "konachan", "custom"):
+        for key in ("d3ext", "jakoolit", "catholic", "konachan", "custom"):
             meta = dict(PROVIDER_META[key])
             folder = Path(str(meta.get("folder", ""))).expanduser() if meta.get("folder") else Path()
             count = self._cached_count_for_folder(folder)
@@ -412,6 +424,26 @@ class Backend(QObject):
             return False, str(exc)
         output = (result.stdout or "").strip() or (result.stderr or "").strip()
         return result.returncode == 0, output
+
+    def _extract_repo_archives(self, provider_key: str, target_dir: Path) -> tuple[bool, str]:
+        archives_raw = PROVIDER_META.get(provider_key, {}).get("archives", "")
+        archives = [item.strip() for item in str(archives_raw).split(",") if item.strip()]
+        if not archives:
+            return True, ""
+        extracted_count = 0
+        for archive_name in archives:
+            archive_path = target_dir / archive_name
+            if not archive_path.exists() or not archive_path.is_file():
+                continue
+            try:
+                with zipfile.ZipFile(archive_path) as bundle:
+                    bundle.extractall(target_dir)
+                extracted_count += 1
+            except Exception as exc:
+                return False, f"Failed to extract {archive_name}: {exc}"
+        if extracted_count == 0:
+            return True, ""
+        return True, f"Extracted {extracted_count} archive(s)."
 
     def _persist_provider(self, provider_key: str, folder: Path | None = None) -> None:
         appearance = self._settings.setdefault("appearance", {})
@@ -901,8 +933,17 @@ class Backend(QObject):
                 self.statusChanged.emit()
                 self.notify.emit(self._status)
                 return
+            extracted_ok, extracted_message = self._extract_repo_archives(provider_key, target_dir)
+            if not extracted_ok:
+                self._status = f"Failed to prepare {meta['title']}: {extracted_message}"
+                self.statusChanged.emit()
+                self.notify.emit(self._status)
+                return
             self._persist_provider(provider_key, target_dir)
-            self._status = f"{meta['title']} is ready. {output or 'Pack prepared successfully.'}"
+            detail = output or "Pack prepared successfully."
+            if extracted_message:
+                detail = f"{detail} {extracted_message}"
+            self._status = f"{meta['title']} is ready. {detail}"
             self.statusChanged.emit()
             self._trigger_thumbnail_generation(target_dir)
             self._trigger_wallpaper_cache_generation(target_dir)
@@ -1006,7 +1047,7 @@ class Backend(QObject):
             self.statusChanged.emit()
             QTimer.singleShot(2500, self._refresh_wallpapers)
             return
-        if provider in {"d3ext", "jakoolit"}:
+        if provider in {"d3ext", "jakoolit", "catholic"}:
             self.selectProvider(provider)
             return
         self._refresh_wallpapers()
