@@ -70,6 +70,7 @@ hanauta/walls/Konachan-cache/
 hanauta/walls/community/
 hanauta/vendor/wallpaper-sources/
 hanauta/src/pyqt/email-client
+hanauta/src/pyqt/study-tracker
 # Local app state / secrets
 *.env
 *.sqlite

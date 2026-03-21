@@ -629,29 +629,33 @@ class EqualizerBar(QFrame):
         super().__init__()
         self.setObjectName("equalizerBar")
         self.setFixedWidth(4)
+        self.setFixedHeight(16)
         self.color = "#d0bcff"
-        self._set_height(6)
+        self._level = 0.08
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
     def set_color(self, color: str) -> None:
+        if color == self.color:
+            return
         self.color = color
-        self._set_height(self.height())
-
-    def _set_height(self, height: int) -> None:
-        self.setFixedHeight(height)
-        self.setStyleSheet(
-            f"""
-            QFrame {{
-                background: {self.color};
-                border-radius: 2px;
-                min-height: {height}px;
-                max-height: {height}px;
-            }}
-            """
-        )
+        self.update()
 
     def set_level(self, level: float) -> None:
-        height = 4 + int(max(0.0, min(1.0, level)) * 12)
-        self._set_height(height)
+        normalized = max(0.0, min(1.0, float(level)))
+        if abs(normalized - self._level) < 0.01:
+            return
+        self._level = normalized
+        self.update()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor(self.color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        bar_height = 4 + int(self._level * 12)
+        rect = self.rect().adjusted(0, self.height() - bar_height, 0, 0)
+        painter.drawRoundedRect(rect, 2.0, 2.0)
 
 
 @pyqtClassInfo("D-Bus Interface", "org.kde.StatusNotifierWatcher")
@@ -1010,6 +1014,193 @@ class CapAlertWorker(QThread):
         self.loaded.emit(fetch_active_alerts(location))
 
 
+class WorkspaceStateWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        payload: dict[str, object] = {
+            "focused_num": 1,
+            "occupied": [],
+            "urgent": [],
+            "has_real_windows": False,
+        }
+        raw = run_cmd(["i3-msg", "-t", "get_workspaces"])
+        if not raw:
+            self.loaded.emit(payload)
+            return
+        try:
+            workspaces = json.loads(raw)
+        except Exception:
+            self.loaded.emit(payload)
+            return
+        if not isinstance(workspaces, list):
+            self.loaded.emit(payload)
+            return
+        occupied: set[int] = set()
+        urgent: set[int] = set()
+        focused_num = 1
+        for ws in workspaces:
+            if not isinstance(ws, dict):
+                continue
+            num = int(ws.get("num", 0) or 0)
+            if num > 0:
+                occupied.add(num)
+            if ws.get("focused"):
+                focused_num = num
+            if ws.get("urgent"):
+                urgent.add(num)
+        payload["focused_num"] = focused_num
+        payload["occupied"] = sorted(occupied)
+        payload["urgent"] = sorted(urgent)
+        try:
+            payload["has_real_windows"] = focused_workspace_has_real_windows()
+        except Exception:
+            payload["has_real_windows"] = False
+        self.loaded.emit(payload)
+
+
+class MediaStateWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        summary = run_script("mpris.sh", "summary")
+        title = "Play Something"
+        artist = "Artist"
+        status = "Stopped"
+        if summary:
+            parts = summary.split("\x1f")
+            if len(parts) > 0 and parts[0]:
+                title = parts[0]
+            if len(parts) > 1 and parts[1]:
+                artist = parts[1]
+            if len(parts) > 2 and parts[2]:
+                status = parts[2]
+        self.loaded.emit(
+            {
+                "title": title,
+                "artist": artist,
+                "status": status,
+            }
+        )
+
+
+class CavaWorker(QThread):
+    frame_ready = pyqtSignal(object)
+    stream_ended = pyqtSignal()
+
+    def __init__(self, config_path: Path, bars: int, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._config_path = config_path
+        self._bars = max(1, bars)
+        self._process: Optional[subprocess.Popen[bytes]] = None
+        self._running = True
+
+    def stop(self) -> None:
+        self._running = False
+        process = self._process
+        if process is None:
+            return
+        try:
+            process.terminate()
+        except Exception:
+            pass
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+    def run(self) -> None:
+        try:
+            self._process = subprocess.Popen(
+                ["/usr/bin/cava", "-p", str(self._config_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+        except Exception:
+            self._process = None
+            if self._running:
+                self.stream_ended.emit()
+            return
+
+        process = self._process
+        stdout = process.stdout
+        if stdout is None:
+            if self._running:
+                self.stream_ended.emit()
+            return
+
+        try:
+            while self._running:
+                frame = stdout.readline()
+                if not frame:
+                    break
+                parts = [part for part in frame.strip().split(";") if part != ""]
+                if parts:
+                    self.frame_ready.emit(parts[: self._bars])
+        except Exception:
+            pass
+        finally:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=0.2)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+            self._process = None
+
+        if self._running:
+            self.stream_ended.emit()
+
+
+class SystemStateWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def __init__(self, battery_base: Optional[Path], parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._battery_base = battery_base
+
+    def run(self) -> None:
+        payload: dict[str, object] = {
+            "connected": run_script("network.sh", "status") == "Connected",
+            "wg_active": False,
+            "selected_iface": "",
+            "caffeine_on": run_script("caffeine.sh", "status") == "on",
+            "caps_on": run_script("lockstatus.sh", "--caps-status") == "on",
+            "num_on": run_script("lockstatus.sh", "--num-status") == "on",
+            "battery_present": False,
+            "battery_capacity": 0,
+            "battery_status": "",
+        }
+        raw = run_script("vpn.sh", "--status")
+        if raw:
+            try:
+                vpn_payload = json.loads(raw)
+            except Exception:
+                vpn_payload = {}
+            if isinstance(vpn_payload, dict):
+                payload["wg_active"] = vpn_payload.get("wireguard") == "on"
+                payload["selected_iface"] = str(vpn_payload.get("wg_selected", "")).strip()
+
+        if self._battery_base is not None:
+            try:
+                with open(self._battery_base / "capacity", "r", encoding="utf-8") as handle:
+                    payload["battery_capacity"] = int(handle.read().strip())
+                with open(self._battery_base / "status", "r", encoding="utf-8") as handle:
+                    payload["battery_status"] = handle.read().strip()
+                payload["battery_present"] = True
+            except Exception:
+                payload["battery_present"] = False
+        self.loaded.emit(payload)
+
+
 class UpdateCountWorker(QThread):
     loaded = pyqtSignal(object)
 
@@ -1084,7 +1275,8 @@ class CyberBar(QWidget):
         self.workspace_buttons: dict[int, WorkspaceDot] = {}
         self._media_animation: Optional[QPropertyAnimation] = None
         self._media_playing = False
-        self._cava_process: Optional[QProcess] = None
+        self._media_visible = False
+        self._cava_worker: Optional[CavaWorker] = None
         self._ai_popup_process: Optional[subprocess.Popen] = None
         self._launcher_process: Optional[subprocess.Popen] = None
         self._control_center_process: Optional[subprocess.Popen] = None
@@ -1111,14 +1303,18 @@ class CyberBar(QWidget):
         self._cap_alert_worker: Optional[CapAlertWorker] = None
         self._updates_worker: Optional[UpdateCountWorker] = None
         self._health_worker: Optional[HealthSnapshotWorker] = None
+        self._workspace_worker: Optional[WorkspaceStateWorker] = None
+        self._media_worker: Optional[MediaStateWorker] = None
+        self._system_state_worker: Optional[SystemStateWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
         self._cap_alerts: list[CapAlert] = []
         self._pending_updates_total = 0
         self._health_snapshot: dict[str, object] = {}
+        self._focused_workspace_has_real_windows = False
         self._cap_alert_seen_ids: set[str] = set()
         self._cap_alert_pulse_phase = 0.0
         self._cap_alert_pulse_tick = 0
-        self._cava_buffer = ""
+        self._closing = False
         self._battery_base: Optional[Path] = self._detect_battery_base()
         self._settings_watcher: Optional[QFileSystemWatcher] = None
         self._settings_reload_timer: Optional[QTimer] = None
@@ -1283,7 +1479,7 @@ class CyberBar(QWidget):
         self.updates_pill_layout.addWidget(self.updates_pill_icon)
         self.updates_pill_layout.addWidget(self.updates_pill_count)
         self.locale_button = QPushButton(self._icon_text("public"))
-        self.locale_button.setObjectName("utilityButton")
+        self.locale_button.setObjectName("regionButton")
         self.locale_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.locale_button.setFont(QFont(self.material_font, 18))
         self.locale_button.clicked.connect(self._open_region_settings)
@@ -1324,6 +1520,8 @@ class CyberBar(QWidget):
             bar = EqualizerBar()
             self.equalizer_bars.append(bar)
             self.equalizer_layout.addWidget(bar, 0, Qt.AlignmentFlag.AlignBottom)
+        self._equalizer_targets: list[float] = [0.08] * len(self.equalizer_bars)
+        self._equalizer_levels: list[float] = [0.08] * len(self.equalizer_bars)
         self.media_text = QLabel("Nothing playing")
         self.media_text.setObjectName("mediaText")
         self.media_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -1959,7 +2157,21 @@ class CyberBar(QWidget):
                 max-width: 22px;
                 padding: 0;
             }}
+            #regionButton {{
+                background: transparent;
+                border: none;
+                color: {theme.primary};
+                font-family: "{self.material_font}";
+                min-width: 22px;
+                max-width: 22px;
+                padding: 0;
+            }}
             #mediaControl:hover, #utilityButton:hover, #aiToggleButton:hover {{
+                color: {theme.text};
+                background: {theme.hover_bg};
+                border-radius: 11px;
+            }}
+            #regionButton:hover {{
                 color: {theme.text};
                 background: {theme.hover_bg};
                 border-radius: 11px;
@@ -1993,13 +2205,13 @@ class CyberBar(QWidget):
                 border-radius: {max(0, chip_radius - 5)}px;
             }}
             #timeLabel {{
-                color: {theme.text};
+                color: {theme.primary};
                 font-size: 12px;
                 font-weight: 600;
                 padding-right: 2px;
             }}
             #dateLabel {{
-                color: {theme.text_muted};
+                color: {theme.secondary};
                 font-size: 10px;
                 font-weight: 600;
             }}
@@ -2227,35 +2439,35 @@ class CyberBar(QWidget):
 
         self.settings_timer = QTimer(self)
         self.settings_timer.timeout.connect(self._reload_settings_if_needed)
-        self.settings_timer.start(800)
+        self.settings_timer.start(2000)
 
         self.ai_popup_timer = QTimer(self)
         self.ai_popup_timer.timeout.connect(self._sync_ai_button)
-        self.ai_popup_timer.start(1000)
+        self.ai_popup_timer.start(2000)
 
         self.control_center_timer = QTimer(self)
         self.control_center_timer.timeout.connect(self._sync_control_center_button)
-        self.control_center_timer.start(1000)
+        self.control_center_timer.start(2000)
 
         self.wifi_popup_timer = QTimer(self)
         self.wifi_popup_timer.timeout.connect(self._sync_wifi_button)
-        self.wifi_popup_timer.start(1000)
+        self.wifi_popup_timer.start(2000)
 
         self.vpn_popup_timer = QTimer(self)
         self.vpn_popup_timer.timeout.connect(self._sync_vpn_button)
-        self.vpn_popup_timer.start(1000)
+        self.vpn_popup_timer.start(2000)
 
         self.ntfy_popup_timer = QTimer(self)
         self.ntfy_popup_timer.timeout.connect(self._sync_ntfy_button)
-        self.ntfy_popup_timer.start(1000)
+        self.ntfy_popup_timer.start(2000)
 
         self.game_mode_popup_timer = QTimer(self)
         self.game_mode_popup_timer.timeout.connect(self._sync_game_mode_button)
-        self.game_mode_popup_timer.start(1000)
+        self.game_mode_popup_timer.start(2000)
 
         self.weather_popup_timer = QTimer(self)
         self.weather_popup_timer.timeout.connect(self._sync_weather_button)
-        self.weather_popup_timer.start(1000)
+        self.weather_popup_timer.start(2000)
 
         self.obs_state_timer = QTimer(self)
         self.obs_state_timer.timeout.connect(self._poll_obs_state)
@@ -2268,6 +2480,10 @@ class CyberBar(QWidget):
         self.weather_timer = QTimer(self)
         self.weather_timer.timeout.connect(self._poll_weather)
         self.weather_timer.start(900000)
+
+        self.equalizer_timer = QTimer(self)
+        self.equalizer_timer.timeout.connect(self._render_equalizer_frame)
+        self.equalizer_timer.start(16)
 
         self.cap_alert_timer = QTimer(self)
         self.cap_alert_timer.timeout.connect(self._poll_cap_alerts)
@@ -2287,7 +2503,7 @@ class CyberBar(QWidget):
 
         self.powermenu_timer = QTimer(self)
         self.powermenu_timer.timeout.connect(self._sync_powermenu_button)
-        self.powermenu_timer.start(1000)
+        self.powermenu_timer.start(2000)
 
         self._start_cava()
 
@@ -2347,28 +2563,28 @@ class CyberBar(QWidget):
         self.date_label.setText(self._format_date_text(now))
 
     def _poll_workspaces(self) -> None:
-        result = run_cmd(["i3-msg", "-t", "get_workspaces"])
-        if not result:
+        if self._workspace_worker is not None and self._workspace_worker.isRunning():
             return
-        try:
-            workspaces = json.loads(result)
-        except Exception:
+        self._workspace_worker = WorkspaceStateWorker()
+        self._workspace_worker.loaded.connect(self._apply_workspace_state)
+        self._workspace_worker.finished.connect(self._finish_workspace_worker)
+        self._workspace_worker.start()
+
+    def _poll_media(self) -> None:
+        if self._media_worker is not None and self._media_worker.isRunning():
             return
+        self._media_worker = MediaStateWorker()
+        self._media_worker.loaded.connect(self._apply_media_state)
+        self._media_worker.finished.connect(self._finish_media_worker)
+        self._media_worker.start()
 
-        focused_num = 1
-        occupied = set()
-        urgent = set()
-        for ws in workspaces:
-            num = int(ws.get("num", 0))
-            if num > 0:
-                occupied.add(num)
-            if ws.get("focused"):
-                focused_num = num
-            if ws.get("urgent"):
-                urgent.add(num)
-
+    def _apply_workspace_state(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        focused_num = int(payload.get("focused_num", 1) or 1)
+        occupied = {int(item) for item in payload.get("occupied", []) if str(item).strip()}
+        urgent = {int(item) for item in payload.get("urgent", []) if str(item).strip()}
+        self._focused_workspace_has_real_windows = bool(payload.get("has_real_windows", False))
         self.workspace_label.setText(f"Workspace {focused_num}")
-
         for ws_num, button in self.workspace_buttons.items():
             if ws_num in urgent:
                 button.set_state("urgent")
@@ -2378,12 +2594,16 @@ class CyberBar(QWidget):
                 button.set_state("occupied")
             else:
                 button.set_state("empty")
-        self._sync_desktop_clock_process()
+        self._sync_desktop_clock_process(self._focused_workspace_has_real_windows)
 
-    def _poll_media(self) -> None:
-        title = run_script("mpris.sh", "title")
-        status = run_script("mpris.sh", "status")
-        artist = run_script("mpris.sh", "artist")
+    def _finish_workspace_worker(self) -> None:
+        self._workspace_worker = None
+
+    def _apply_media_state(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        title = str(payload.get("title", "Play Something"))
+        artist = str(payload.get("artist", "Artist"))
+        status = str(payload.get("status", "Stopped"))
         has_media = bool(title and title != "Play Something")
 
         if has_media:
@@ -2394,12 +2614,19 @@ class CyberBar(QWidget):
             self.media_text.setText("Nothing playing")
             self.media_play.setText(material_icon("play_arrow"))
 
-        self._media_playing = status == "Playing" and has_media
-        self.media_chip.setProperty("active", self._media_playing)
-        self.style().unpolish(self.media_chip)
-        self.style().polish(self.media_chip)
-        self._update_media_equalizer_color()
-        self._animate_media(has_media)
+        playing_now = status == "Playing" and has_media
+        if playing_now != self._media_playing:
+            self._media_playing = playing_now
+            self.media_chip.setProperty("active", self._media_playing)
+            self.style().unpolish(self.media_chip)
+            self.style().polish(self.media_chip)
+            self._update_media_equalizer_color()
+        if has_media != self._media_visible:
+            self._media_visible = has_media
+            self._animate_media(has_media)
+
+    def _finish_media_worker(self) -> None:
+        self._media_worker = None
 
     def _animate_media(self, visible: bool) -> None:
         target = 1.0 if visible else 0.82
@@ -2413,56 +2640,82 @@ class CyberBar(QWidget):
         self._media_animation.start()
 
     def _start_cava(self) -> None:
-        if self._cava_process is not None:
-            self._cava_process.kill()
-            self._cava_process.deleteLater()
+        if self._cava_worker is not None:
+            self._cava_worker.stop()
+            self._cava_worker.wait(500)
+            self._cava_worker.deleteLater()
+        self._cava_worker = CavaWorker(CAVA_BAR_CONFIG, len(self.equalizer_bars), self)
+        self._cava_worker.frame_ready.connect(self._apply_cava_frame)
+        self._cava_worker.stream_ended.connect(self._handle_cava_exit)
+        self._cava_worker.finished.connect(self._finish_cava_worker)
+        self._cava_worker.start()
 
-        self._cava_process = QProcess(self)
-        self._cava_process.setProgram("/usr/bin/cava")
-        self._cava_process.setArguments(["-p", str(CAVA_BAR_CONFIG)])
-        self._cava_process.readyReadStandardOutput.connect(self._read_cava_output)
-        self._cava_process.finished.connect(self._handle_cava_exit)
-        self._cava_process.start()
+    def _finish_cava_worker(self) -> None:
+        worker = self.sender()
+        if worker is self._cava_worker:
+            self._cava_worker = None
 
-    def _read_cava_output(self) -> None:
-        if self._cava_process is None:
+    def _apply_cava_frame(self, frame: object) -> None:
+        if isinstance(frame, list):
+            parts = frame[: len(self.equalizer_bars)]
+        elif isinstance(frame, tuple):
+            parts = list(frame[: len(self.equalizer_bars)])
+        else:
             return
-        chunk = bytes(self._cava_process.readAllStandardOutput()).decode("utf-8", errors="ignore")
-        if not chunk:
-            return
-        self._cava_buffer += chunk
-        while "\n" in self._cava_buffer:
-            frame, self._cava_buffer = self._cava_buffer.split("\n", 1)
-            self._apply_cava_frame(frame.strip())
-
-    def _apply_cava_frame(self, frame: str) -> None:
-        if not frame:
-            return
-        parts = [part for part in frame.split(";") if part != ""]
         if not parts:
             return
 
         values: list[float] = []
-        for part in parts[: len(self.equalizer_bars)]:
+        for part in parts:
             try:
                 values.append(max(0.0, min(1.0, int(part) / 100.0)))
-            except ValueError:
+            except (TypeError, ValueError):
                 values.append(0.0)
 
         if not self._media_playing:
             values = [0.08 for _ in values]
 
-        for bar, level in zip(self.equalizer_bars, values):
-            bar.set_level(level)
+        if len(values) < len(self.equalizer_bars):
+            values.extend([0.08] * (len(self.equalizer_bars) - len(values)))
+        self._equalizer_targets = values[: len(self.equalizer_bars)]
+
+    def _render_equalizer_frame(self) -> None:
+        if not getattr(self, "equalizer_bars", None):
+            return
+        if not getattr(self, "_equalizer_targets", None):
+            self._equalizer_targets = [0.08] * len(self.equalizer_bars)
+        if not getattr(self, "_equalizer_levels", None):
+            self._equalizer_levels = [0.08] * len(self.equalizer_bars)
+        if len(self._equalizer_targets) != len(self.equalizer_bars):
+            self._equalizer_targets = [0.08] * len(self.equalizer_bars)
+        if len(self._equalizer_levels) != len(self.equalizer_bars):
+            self._equalizer_levels = [0.08] * len(self.equalizer_bars)
+
+        if not self._media_playing:
+            self._equalizer_targets = [0.08] * len(self.equalizer_bars)
+
+        for index, bar in enumerate(self.equalizer_bars):
+            current = float(self._equalizer_levels[index])
+            target = float(self._equalizer_targets[index])
+            smoothing = 0.55 if target >= current else 0.35
+            updated = current + ((target - current) * smoothing)
+            if abs(updated - target) < 0.015:
+                updated = target
+            self._equalizer_levels[index] = updated
+            bar.set_level(updated)
 
     def _handle_cava_exit(self) -> None:
+        if self._closing:
+            return
         QTimer.singleShot(1000, self._start_cava)
 
     def _poll_system(self) -> None:
-        self._poll_network()
-        self._poll_caffeine()
-        self._poll_battery()
-        self._poll_lock_states()
+        if self._system_state_worker is not None and self._system_state_worker.isRunning():
+            return
+        self._system_state_worker = SystemStateWorker(self._battery_base, self)
+        self._system_state_worker.loaded.connect(self._apply_system_state)
+        self._system_state_worker.finished.connect(self._finish_system_state_worker)
+        self._system_state_worker.start()
         poll_health_reminders()
         self._sync_christian_button_visibility()
         self._sync_home_assistant_button_visibility()
@@ -2476,6 +2729,66 @@ class CyberBar(QWidget):
         self._sync_health_pill_visibility()
         self._sync_weather_visibility()
         self._sync_cap_alert_chip()
+
+    def _apply_system_state(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        connected = bool(payload.get("connected", False))
+        self._apply_icon_to_widget(
+            self.net_icon,
+            "wifi" if connected else "wifi_off",
+            material_icon("wifi" if connected else "wifi_off"),
+            16,
+        )
+
+        wg_active = bool(payload.get("wg_active", False))
+        selected_iface = str(payload.get("selected_iface", "")).strip()
+        self._set_vpn_button_icon(wg_active)
+        self.vpn_icon.setProperty("active", wg_active)
+        self.vpn_icon.setToolTip(f"WireGuard: {selected_iface or 'No config selected'}")
+        self.style().unpolish(self.vpn_icon)
+        self.style().polish(self.vpn_icon)
+
+        caffeine_on = bool(payload.get("caffeine_on", False))
+        self.caffeine_icon.setVisible(caffeine_on)
+        self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
+
+        caps_on = bool(payload.get("caps_on", False))
+        num_on = bool(payload.get("num_on", False))
+        self._set_lock_button_state(self.caps_lock_button, caps_on, "Caps Lock")
+        self._set_lock_button_state(self.num_lock_button, num_on, "Num Lock")
+        if self._caps_lock_on is not None and caps_on != self._caps_lock_on:
+            self._send_lock_notification("Caps Lock", caps_on, 12345)
+        if self._num_lock_on is not None and num_on != self._num_lock_on:
+            self._send_lock_notification("Num Lock", num_on, 12346)
+        self._caps_lock_on = caps_on
+        self._num_lock_on = num_on
+
+        battery_present = bool(payload.get("battery_present", False))
+        if not battery_present:
+            self.battery_icon.hide()
+            self.battery_value.hide()
+            return
+        capacity = int(payload.get("battery_capacity", 0) or 0)
+        status = str(payload.get("battery_status", "")).strip()
+        if status == "Charging":
+            icon = "battery_charging_full"
+        elif capacity >= 90:
+            icon = "battery_full"
+        elif capacity >= 65:
+            icon = "battery_5_bar"
+        elif capacity >= 40:
+            icon = "battery_3_bar"
+        elif capacity >= 20:
+            icon = "battery_2_bar"
+        else:
+            icon = "battery_alert"
+        self._apply_icon_to_widget(self.battery_icon, icon, material_icon(icon), 16)
+        self.battery_value.setText(str(capacity))
+        self.battery_icon.show()
+        self.battery_value.show()
+
+    def _finish_system_state_worker(self) -> None:
+        self._system_state_worker = None
 
     def _poll_updates_count(self) -> None:
         if self._updates_worker is not None and self._updates_worker.isRunning():
@@ -3025,13 +3338,15 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.game_mode_button.setVisible(enabled and show_in_bar)
 
-    def _sync_desktop_clock_process(self) -> None:
+    def _sync_desktop_clock_process(self, has_real_windows: bool | None = None) -> None:
         service = self.service_settings.get("desktop_clock_widget", {})
         if not isinstance(service, dict):
             service = {}
         enabled = bool(service.get("enabled", True))
         target = desktop_clock_target()
-        should_run = enabled and target is not None and not focused_workspace_has_real_windows()
+        if has_real_windows is None:
+            has_real_windows = bool(getattr(self, "_focused_workspace_has_real_windows", False))
+        should_run = enabled and target is not None and not has_real_windows
         if not should_run:
             terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
             terminate_background_matches(str(DESKTOP_CLOCK_BINARY))
@@ -3190,7 +3505,9 @@ class CyberBar(QWidget):
         return env
 
     def _singleton_active(self, process: Optional[subprocess.Popen], script_path: Path) -> bool:
-        return any(background_match_exists(pattern) for pattern in entry_patterns(script_path))
+        if process is not None and process.poll() is None:
+            return True
+        return False
 
     def _terminate_singleton_process(self, attr_name: str, script_path: Path) -> None:
         process = getattr(self, attr_name, None)
@@ -3227,7 +3544,7 @@ class CyberBar(QWidget):
             env = self._widget_launch_env()
             if extra_env:
                 env.update(extra_env)
-            subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 cwd=str(PROJECT_ROOT.parents[1]),
                 env=env,
@@ -3238,7 +3555,7 @@ class CyberBar(QWidget):
         except Exception:
             setattr(self, attr_name, None)
             return False
-        setattr(self, attr_name, None)
+        setattr(self, attr_name, process)
         return True
 
     def _toggle_singleton_process(
@@ -3420,7 +3737,7 @@ class CyberBar(QWidget):
     def _sync_control_center_button(self) -> None:
         active = self._control_center_launch_pending or (
             self._control_center_process is not None and self._control_center_process.poll() is None
-        ) or background_match_exists(str(NOTIFICATION_CENTER))
+        )
         if not active:
             self._control_center_process = None
         self.btn_control_center.setChecked(active)
@@ -3430,7 +3747,6 @@ class CyberBar(QWidget):
         button: QPushButton,
         process_attr: str,
         script_path: Path,
-        window_titles: tuple[str, ...],
         *,
         tooltip: str | None = None,
     ) -> bool:
@@ -3438,22 +3754,18 @@ class CyberBar(QWidget):
         active = self._singleton_active(process, script_path)
         if not active:
             setattr(self, process_attr, None)
-        window_active = self._tree_has_window(window_titles)
-        button.setChecked(window_active)
-        button.setProperty("active", window_active)
+        button.setChecked(active)
+        button.setProperty("active", active)
         if tooltip is not None:
             button.setToolTip(tooltip)
-        self.style().unpolish(button)
-        self.style().polish(button)
         button.update()
-        return window_active
+        return active
 
     def _sync_wifi_button(self) -> None:
         self._sync_popup_button(
             self.net_icon,
             "_wifi_popup_process",
             WIFI_CONTROL,
-            ("Wi-Fi Control",),
         )
 
     def _sync_vpn_button(self) -> None:
@@ -3461,7 +3773,6 @@ class CyberBar(QWidget):
             self.vpn_icon,
             "_vpn_popup_process",
             VPN_CONTROL,
-            ("WireGuard",),
         )
 
     def _sync_weather_button(self) -> None:
@@ -3481,7 +3792,6 @@ class CyberBar(QWidget):
             self.game_mode_button,
             "_game_mode_popup_process",
             GAME_MODE_POPUP,
-            ("Hanauta Game Mode",),
             tooltip=str(current.get("note", "Game Mode")),
         )
 
@@ -3492,9 +3802,10 @@ class CyberBar(QWidget):
         self.btn_power.setChecked(active)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        if self._cava_process is not None:
-            self._cava_process.kill()
-            self._cava_process.waitForFinished(300)
+        self._closing = True
+        if self._cava_worker is not None:
+            self._cava_worker.stop()
+            self._cava_worker.wait(500)
         if self._ai_popup_process is not None and self._ai_popup_process.poll() is None:
             self._ai_popup_process.terminate()
         if self._control_center_process is not None and self._control_center_process.poll() is None:
