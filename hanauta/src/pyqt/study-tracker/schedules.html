@@ -54,7 +54,7 @@ Add Block
 <div class="h-12 flex items-center justify-center border-b border-outline-variant/10">
 <span class="text-xs font-label font-bold text-slate-400">MON 23</span>
 </div>
-<div class="absolute top-32 left-1 right-1 h-36 bg-primary-container/20 rounded-lg p-2 border-l-4 border-primary shadow-lg shadow-black/10 group cursor-pointer hover:border-primary/30 transition-all">
+<div class="study-schedule-block absolute top-32 left-1 right-1 h-36 bg-primary-container/20 rounded-lg p-2 border-l-4 border-primary shadow-lg shadow-black/10 group cursor-pointer hover:border-primary/30 transition-all" data-schedule-category="Core Coding" data-schedule-description="Deep work block for advanced Python patterns, debugging drills, and implementation review." data-schedule-end="10:45 AM" data-schedule-start="09:00 AM" data-schedule-title="Advanced Python" data-schedule-tone="primary" data-schedule-when="Monday, 09:00 AM - 10:45 AM">
 <p class="text-[10px] font-label font-black text-primary tracking-tight">09:00 - 10:45</p>
 <h4 class="text-xs font-headline font-bold text-on-surface leading-tight mt-1">Advanced Python</h4>
 <div class="flex items-center gap-1 mt-2">
@@ -67,7 +67,7 @@ Add Block
 <div class="h-12 flex items-center justify-center border-b border-outline-variant/10">
 <span class="text-xs font-label font-bold text-slate-400">TUE 24</span>
 </div>
-<div class="absolute top-52 left-1 right-1 h-44 bg-tertiary-container/30 rounded-lg p-2 border-l-4 border-tertiary shadow-lg ring-2 ring-tertiary/20 cursor-pointer">
+<div class="study-schedule-block absolute top-52 left-1 right-1 h-44 bg-tertiary-container/30 rounded-lg p-2 border-l-4 border-tertiary shadow-lg ring-2 ring-tertiary/20 cursor-pointer" data-schedule-category="Linguistics" data-schedule-description="Focus on Cyrillic cursive handwriting and vocabulary for Lesson 12: The Workplace." data-schedule-end="12:45 PM" data-schedule-start="10:30 AM" data-schedule-title="Russian Prep" data-schedule-tone="tertiary" data-schedule-when="Tuesday, 10:30 AM - 12:45 PM">
 <div class="flex justify-between items-start">
 <p class="text-[10px] font-label font-black text-tertiary tracking-tight">10:30 - 12:45</p>
 <span class="material-symbols-outlined text-tertiary text-xs" style="font-variation-settings: 'FILL' 1;">check_circle</span>
@@ -83,7 +83,7 @@ Add Block
 <div class="h-12 flex items-center justify-center border-b border-outline-variant/10">
 <span class="text-xs font-label font-bold text-slate-400">WED 25</span>
 </div>
-<div class="absolute top-20 left-1 right-1 h-24 bg-secondary-container/20 rounded-lg p-2 border-l-4 border-secondary cursor-pointer transition-all">
+<div class="study-schedule-block absolute top-20 left-1 right-1 h-24 bg-secondary-container/20 rounded-lg p-2 border-l-4 border-secondary cursor-pointer transition-all" data-schedule-category="Reading" data-schedule-description="Short kanji and reading comprehension block before the rest of the day starts moving." data-schedule-end="09:15 AM" data-schedule-start="08:00 AM" data-schedule-title="Kanji Study" data-schedule-tone="secondary" data-schedule-when="Wednesday, 08:00 AM - 09:15 AM">
 <p class="text-[10px] font-label font-black text-secondary tracking-tight">08:00 - 09:15</p>
 <h4 class="text-xs font-headline font-bold text-on-surface leading-tight mt-1">Kanji Study</h4>
 </div>
@@ -92,7 +92,7 @@ Add Block
 <div class="h-12 flex items-center justify-center border-b border-outline-variant/10">
 <span class="text-xs font-label font-bold text-slate-400">THU 26</span>
 </div>
-<div class="absolute top-80 left-1 right-1 h-32 bg-primary-container/20 rounded-lg p-2 border-l-4 border-primary cursor-pointer transition-all">
+<div class="study-schedule-block absolute top-80 left-1 right-1 h-32 bg-primary-container/20 rounded-lg p-2 border-l-4 border-primary cursor-pointer transition-all" data-schedule-category="Machine Learning" data-schedule-description="Review model architecture notes, training intuition, and one focused implementation experiment." data-schedule-end="03:30 PM" data-schedule-start="02:00 PM" data-schedule-title="Deep Learning" data-schedule-tone="primary" data-schedule-when="Thursday, 02:00 PM - 03:30 PM">
 <p class="text-[10px] font-label font-black text-primary tracking-tight">14:00 - 15:30</p>
 <h4 class="text-xs font-headline font-bold text-on-surface leading-tight mt-1">Deep Learning</h4>
 </div>
@@ -116,26 +116,36 @@ Add Block
 </div>
 </div>
 <aside class="w-80 flex flex-col gap-6">
-<div class="bg-surface-container-high rounded-xl p-6 shadow-lg relative overflow-hidden">
+<div class="bg-surface-container-high rounded-xl p-6 shadow-lg relative overflow-hidden" id="scheduleEmptyState">
+<div class="absolute -top-10 -right-10 w-32 h-32 bg-primary/10 blur-[40px] rounded-full"></div>
+<div class="relative">
+<span class="px-3 py-1 bg-primary/15 text-primary text-[9px] font-black uppercase tracking-widest rounded-full">No Block Selected</span>
+<h3 class="text-2xl font-headline font-extrabold text-on-surface mt-4 mb-2">Pick a study block</h3>
+<p class="text-xs text-on-surface-variant leading-relaxed font-medium">
+Click any block in the schedule to inspect its details, category, and quick actions here.
+</p>
+</div>
+</div>
+<div class="bg-surface-container-high rounded-xl p-6 shadow-lg relative overflow-hidden hidden" id="scheduleSelectionPanel">
 <div class="absolute -top-10 -right-10 w-32 h-32 bg-tertiary/10 blur-[40px] rounded-full"></div>
 <div class="flex items-center justify-between mb-6">
-<span class="px-3 py-1 bg-tertiary/20 text-tertiary text-[9px] font-black uppercase tracking-widest rounded-full">Selected Block</span>
-<button class="text-slate-500 hover:text-on-surface transition-colors" type="button">
+<span class="px-3 py-1 bg-tertiary/20 text-tertiary text-[9px] font-black uppercase tracking-widest rounded-full" id="scheduleSelectedBadge">Selected Block</span>
+<button class="text-slate-500 hover:text-on-surface transition-colors" id="scheduleSelectionCloseButton" type="button">
 <span class="material-symbols-outlined text-lg">close</span>
 </button>
 </div>
 <div class="mb-6">
-<h3 class="text-2xl font-headline font-extrabold text-on-surface mb-1">Russian Prep</h3>
+<h3 class="text-2xl font-headline font-extrabold text-on-surface mb-1" id="scheduleSelectedTitle">Russian Prep</h3>
 <div class="flex items-center gap-2 text-slate-400 mb-4">
 <span class="material-symbols-outlined text-sm">schedule</span>
-<span class="text-xs font-medium">Tuesday, 10:30 AM - 12:45 PM</span>
+<span class="text-xs font-medium" id="scheduleSelectedWhen">Tuesday, 10:30 AM - 12:45 PM</span>
 </div>
 <div class="p-4 bg-surface-container-highest rounded-lg mb-6">
 <div class="flex items-center justify-between mb-3">
 <span class="text-[10px] font-label font-bold text-slate-400 uppercase tracking-wider">Track category</span>
-<span class="text-[10px] font-label font-bold text-tertiary">LINGUISTICS</span>
+<span class="text-[10px] font-label font-bold text-tertiary" id="scheduleSelectedCategory">LINGUISTICS</span>
 </div>
-<p class="text-xs text-on-surface-variant leading-relaxed font-medium">
+<p class="text-xs text-on-surface-variant leading-relaxed font-medium" id="scheduleSelectedDescription">
 Focus on Cyrillic cursive handwriting and vocabulary for Lesson 12: "The Workplace".
 </p>
 </div>
