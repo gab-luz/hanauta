@@ -1,462 +1,68 @@
-<!DOCTYPE html>
+<section class="study-resources-page p-8 pb-24">
+<div class="study-resources-toolbar">
+<div>
+<h2 class="font-headline text-3xl font-extrabold text-on-surface tracking-tight">Resources Library</h2>
+<p class="study-muted-copy">Keep reusable study material ready for schedules, focus sessions, and reminders.</p>
+</div>
+<div class="study-resource-import">
+<input class="study-input" id="resourceUrlInput" placeholder="Paste a YouTube video, playlist, Udemy course, URL, or even a plain reference note" type="text"/>
+<button class="study-chip-button" id="resourceImportButton" type="button">Add Resource</button>
+</div>
+</div>
+<p class="study-muted-copy" id="resourceImportStatus">You can keep browsing while new sources are imported.</p>
 
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Hanauta Study Track - Power User Library</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&amp;family=Inter:wght@300;400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              "surface-variant": "#333440",
-              "inverse-primary": "#6c4da4",
-              "primary-fixed": "#ebdcff",
-              "secondary-fixed": "#ffd9dd",
-              "on-secondary-fixed-variant": "#851e39",
-              "error": "#ffb4ab",
-              "surface-bright": "#383844",
-              "surface-tint": "#d4bbff",
-              "on-primary-fixed-variant": "#54358a",
-              "tertiary-fixed": "#d8e2ff",
-              "background": "#12131d",
-              "on-tertiary-fixed-variant": "#0c4393",
-              "surface-dim": "#12131d",
-              "on-secondary-container": "#ff97a7",
-              "on-tertiary-container": "#003b87",
-              "on-surface-variant": "#ccc3d2",
-              "primary-container": "#bb9af7",
-              "surface-container-low": "#1a1b26",
-              "surface-container-high": "#282935",
-              "primary-fixed-dim": "#d4bbff",
-              "tertiary": "#aec6ff",
-              "on-primary-container": "#4c2c82",
-              "on-tertiary": "#002e6b",
-              "inverse-surface": "#e2e1f1",
-              "surface-container-highest": "#333440",
-              "surface": "#12131d",
-              "outline-variant": "#4a4550",
-              "on-secondary": "#660224",
-              "on-primary": "#3d1b72",
-              "secondary": "#ffb2bc",
-              "primary": "#d4bbff",
-              "on-tertiary-fixed": "#001a43",
-              "surface-container": "#1e1f2a",
-              "outline": "#958e9c",
-              "on-secondary-fixed": "#400013",
-              "on-error-container": "#ffdad6",
-              "on-background": "#e2e1f1",
-              "on-surface": "#e2e1f1",
-              "secondary-fixed-dim": "#ffb2bc",
-              "tertiary-fixed-dim": "#aec6ff",
-              "surface-container-lowest": "#0c0d18",
-              "on-primary-fixed": "#260058",
-              "error-container": "#93000a",
-              "tertiary-container": "#81a9ff",
-              "on-error": "#690005",
-              "secondary-container": "#851e39",
-              "inverse-on-surface": "#2f303b"
-            },
-            fontFamily: {
-              "headline": ["Lexend"],
-              "body": ["Inter"],
-              "label": ["Inter"],
-              "mono": ["JetBrains Mono"]
-            },
-            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
-          },
-        },
-      }
-    </script>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        body {
-            background-color: #12131d;
-            font-family: 'Inter', sans-serif;
-            color: #e2e1f1;
-        }
-        .hide-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .hide-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-    </style>
-</head>
-<body class="dark overflow-hidden">
-<!-- SideNavBar Shell -->
-<aside class="fixed left-0 top-0 h-full z-50 h-screen w-20 flex flex-col items-center py-8 bg-[#1a1b26] dark:bg-[#1a1b26] shadow-[40px_0_60px_-15px_rgba(212,187,255,0.05)]">
-<div class="mb-10">
-<span class="text-xl font-bold text-[#d4bbff] tracking-tighter font-headline">H.</span>
+<div class="study-resource-summary-row">
+<div class="study-resource-summary-card">
+<span class="study-field-label">Library Size</span>
+<strong class="study-resource-summary-value" id="resourcesCountText">0</strong>
 </div>
-<nav class="flex flex-col gap-6 flex-1">
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors group relative" title="Dashboard">
-<span class="material-symbols-outlined">dashboard</span>
-<div class="absolute left-full ml-4 px-2 py-1 bg-surface-container-highest text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">Dashboard</div>
-</button>
-<button class="bg-[#d4bbff]/20 text-[#d4bbff] rounded-2xl p-3 transition-all duration-300 group relative" title="Library">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">menu_book</span>
-<div class="absolute left-full ml-4 px-2 py-1 bg-surface-container-highest text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">Library</div>
-</button>
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors group relative" title="Analytics">
-<span class="material-symbols-outlined">insights</span>
-</button>
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors group relative" title="Decks">
-<span class="material-symbols-outlined">layers</span>
-</button>
-</nav>
-<div class="flex flex-col gap-6 mt-auto">
-<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors group relative" title="Settings">
-<span class="material-symbols-outlined">settings</span>
-</button>
-<div class="w-10 h-10 rounded-full bg-surface-container-high border-2 border-primary/20 overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="User profile portrait in dark aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNsVx0S4L5KYEGhQ6-lq4mNH_adt4VuFNbhV43cEArIQoOpzR0YFhG2xdIrTSnDqj8rZ6-7GhZ_b0lA-rKSdTKdUJ3apzU8NIKGchtzDplN91ZoAl-bNAIghRJNXPpjoF33dAcb_h8rEnyWjk8eZCZ34GoU5JSEgmW_4RH9Z6t_u4FB9V8zlwC4UposFPCRlzpWFpuTGS2gcU4X48w3finb2l5xEGIywUXTdsMLpqQGkemHl-xQa8YO3Qj-2JdSTQ-aA1BOQHN43c"/>
+<div class="study-resource-summary-card">
+<span class="study-field-label">Tracked Hours</span>
+<strong class="study-resource-summary-value" id="resourcesHoursText">0h</strong>
 </div>
+<div class="study-resource-summary-card">
+<span class="study-field-label">Completed Items</span>
+<strong class="study-resource-summary-value" id="resourcesCompletedText">0 / 0</strong>
+</div>
+</div>
+
+<div class="study-resource-layout">
+<div class="study-resource-column">
+<div class="study-pill-row study-resource-filter-row">
+<button class="study-pill-button active" data-resource-filter="all" type="button">All</button>
+<button class="study-pill-button" data-resource-filter="youtube" type="button">YouTube</button>
+<button class="study-pill-button" data-resource-filter="udemy" type="button">Udemy</button>
+<button class="study-pill-button" data-resource-filter="book" type="button">Books</button>
+<button class="study-pill-button" data-resource-filter="other" type="button">Other</button>
+</div>
+<div class="study-resource-grid" id="resourcesGrid"></div>
+</div>
+
+<aside class="study-resource-detail">
+<div class="study-resource-empty glass-panel" id="resourceDetailEmpty">
+<span class="study-resource-empty-badge">No Resource Selected</span>
+<h3 class="font-headline text-2xl font-extrabold text-on-surface">Pick a resource</h3>
+<p class="study-muted-copy">Select a card to inspect its chapters, lectures, or reference sections and mark progress from here.</p>
+</div>
+<div class="study-resource-panel glass-panel hidden" id="resourceDetailPanel">
+<div class="study-resource-panel-head">
+<div>
+<span class="study-resource-type-badge" id="resourceDetailKind">RESOURCE</span>
+<h3 class="font-headline text-2xl font-extrabold text-on-surface mt-4" id="resourceDetailTitle">Resource</h3>
+<p class="study-muted-copy" id="resourceDetailMeta">Provider</p>
+</div>
+<button class="study-chip-button" id="resourceOpenSourceButton" type="button">Open Source</button>
+</div>
+<p class="study-muted-copy" id="resourceDetailSummary">Resource summary</p>
+<div class="study-resource-progress">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Progress</p>
+<p class="study-muted-copy" id="resourceDetailProgressText">0 / 0 completed</p>
+</div>
+<button class="study-chip-button" id="resourceToggleAllButton" type="button">Mark All Done</button>
+</div>
+<div class="study-resource-items" id="resourceItemsList"></div>
 </div>
 </aside>
-<!-- TopNavBar Shell -->
-<header class="fixed top-0 right-0 left-20 z-40 px-8 h-16 flex items-center justify-between bg-[#12131d]/80 backdrop-blur-xl">
-<div class="flex items-center gap-8">
-<h1 class="text-lg font-black text-[#bb9af7] font-headline uppercase tracking-widest">Library</h1>
-<div class="flex items-center gap-6">
-<a class="text-[#4a4550] hover:text-[#d4bbff] font-headline font-semibold text-sm transition-colors" href="#">Focus Mode</a>
-<a class="text-[#d4bbff] font-bold border-b-2 border-[#d4bbff] pb-1 font-headline text-sm" href="#">Resources</a>
-</div>
-</div>
-<div class="flex items-center gap-4">
-<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full border border-outline-variant/10">
-<span class="material-symbols-outlined text-primary text-sm" style="font-variation-settings: 'FILL' 1;">bolt</span>
-<span class="text-xs font-mono font-bold text-primary">42 DAY STREAK</span>
-</div>
-<button class="p-2 text-[#4a4550] hover:text-[#d4bbff] transition-colors">
-<span class="material-symbols-outlined">notifications</span>
-</button>
-<button class="p-2 text-[#4a4550] hover:text-[#d4bbff] transition-colors">
-<span class="material-symbols-outlined">account_circle</span>
-</button>
-</div>
-</header>
-<!-- Main Content Canvas -->
-<main class="ml-20 mt-16 p-8 h-[calc(100vh-4rem)] overflow-y-auto hide-scrollbar bg-surface-dim">
-<!-- Library Toolbar -->
-<section class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
-<div class="flex-1 max-w-2xl relative">
-<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline">search</span>
-<input class="w-full bg-surface-container-high border-none rounded-lg pl-12 pr-4 py-3.5 text-on-surface placeholder:text-outline/50 focus:ring-2 focus:ring-primary/30 transition-all font-body" placeholder="Search by title, author or tags..." type="text"/>
-</div>
-<div class="flex items-center gap-3">
-<div class="flex bg-surface-container-low p-1 rounded-lg">
-<button class="px-4 py-2 bg-surface-container-highest text-primary font-headline text-xs font-bold rounded-md shadow-sm">By Progress</button>
-<button class="px-4 py-2 text-outline hover:text-on-surface font-headline text-xs font-bold transition-colors">By Recent</button>
-</div>
-<button class="flex items-center gap-2 bg-primary text-on-primary px-5 py-3 rounded-full font-headline font-bold text-sm hover:opacity-90 active:scale-95 transition-all">
-<span class="material-symbols-outlined text-lg">add</span>
-                    Add Source
-                </button>
 </div>
 </section>
-<!-- Segmented Tabs -->
-<nav class="flex gap-2 mb-8 border-b border-outline-variant/10 pb-4 overflow-x-auto hide-scrollbar">
-<button class="px-6 py-2 bg-primary-container/20 text-primary border border-primary/30 rounded-full text-sm font-headline font-semibold whitespace-nowrap">All Sources</button>
-<button class="px-6 py-2 text-outline hover:bg-surface-container-high rounded-full text-sm font-headline font-semibold transition-all whitespace-nowrap">Courses</button>
-<button class="px-6 py-2 text-outline hover:bg-surface-container-high rounded-full text-sm font-headline font-semibold transition-all whitespace-nowrap">Video</button>
-<button class="px-6 py-2 text-outline hover:bg-surface-container-high rounded-full text-sm font-headline font-semibold transition-all whitespace-nowrap">Books</button>
-<button class="px-6 py-2 text-outline hover:bg-surface-container-high rounded-full text-sm font-headline font-semibold transition-all whitespace-nowrap">Audio</button>
-<button class="px-6 py-2 text-outline hover:bg-surface-container-high rounded-full text-sm font-headline font-semibold transition-all whitespace-nowrap">Anki</button>
-</nav>
-<!-- Bento Grid Library -->
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-<!-- Card 1: Course -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Coding workspace with neon lights" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGYASgLy9aLOxuBBk-7v6LJCuxHURMOPp8j3-4r51RVZ_wO1T7To6IXfrO_WUF7DMm-fTn2NQbyofM65Gd3GyG4LlEavzZ2G_1riEHHpEhrdyE1CHgnxOxfFH0dq424Vt43vtNnYE8bD80X8Z3q6wqufowJfwsGwHhdYYtOxNtTJbDDll02-bo6wXi1VmvuUzW-57kLnLX1tTClae0dyZOo6Hz2HM3e_pLwLZMO8BfKxYvYuMOTBsGAzmZMJ9ZXibnV_qFqQVAYjM"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-primary border border-primary/20 uppercase tracking-tighter">COURSE</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Advanced Flutter Architectures</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Reso Coder</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-primary font-bold">68%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-primary w-[68%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#flutter</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#dart</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">schedule</span> 14h 20m</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">check_circle</span> 18/24 modules</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 2: Book -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Stack of technical books on dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQKycb_82zgFxLtuVUy8DkALSVfU0zqe1nBZPUEinm7cLsb7Qk-w7HR5J6C3xk2by6vc51b3MWxuASjthE6fB_xRSBuitOrXZFbNaH2l1ICFdxyfID6kIzTPkMotowb-nVkILExhK2LBBaN5IBY3w5aPH_j71bCsOylIkQ8M1cAxyjZBK-VG50Pc9ifWYKeyEkM_9QQiZHP8jO9Z_cdikPWQJUtJJZNmkP-7oFCTCWbjGH6tgcbCD4wCBEDV8KkAl0fQY3XZZDb5c"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-[#ffb2bc] border border-[#ffb2bc]/20 uppercase tracking-tighter">BOOK</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Designing Data-Intensive Applications</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Martin Kleppmann</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-secondary font-bold">32%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-secondary w-[32%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#backend</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#dist-sys</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">menu_book</span> 612 pages</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">bookmark</span> Chapter 4</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 3: Video -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Video player interface mock with neon purple" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEt81JyuhHkN01RT8dqTfmjYoRBo4QMJNJloE8msrIcQZr7OvFXxwi-mSDx9VNpGrLO9ydAvkBgnclIpxcLLnOWR6DkOiSXQAd4UedK2Y0p7zUqOGIEKjpq4p_UjBKtUmjjjKbiBFSreTIHul1p3QGSEwlSDHCIlTYTj7ZsxqRliFfCgaqYYQKOYUV2Ms9uFbNeuws8xHSVxLWVox7tPclHGQGZJjqg1pP0qqhErzEumNntcWDtvNggQxWPiqbmPUGXtgl2iRdPHs"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-tertiary border border-tertiary/20 uppercase tracking-tighter">VIDEO</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Zero to Hero: Rust Programming</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">The Primeagen</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-tertiary font-bold">85%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-tertiary w-[85%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#rust</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#systems</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">play_circle</span> 32 videos</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">history</span> 2 videos left</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 4: Anki -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Abstract data nodes and connections" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbT-zefNo97Rw_pcILyw6EH4aZekY_LJx48sa0r0HwS-jlUIo9vmpsqIKoPDMeXhcnJcQ1mcPPfyOnwUyBq6EIlKqhGypyWBXk37AVJ4JMvuCAuXPV_ZOIfsJNxvNH-SxZKCJNhPJRAlraD0PpbGVMyrhVGAwtMiwSHzDgU-MPPmasU34tovmkyuU-X-VV9fH1a6_uKdLxRX5spcWdAKoJ24RuwEHGy_OmZut5p87EU_T8lCEJUkrZUYv39hbohACVQbKw48O2Xt4"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-error border border-error/20 uppercase tracking-tighter">ANKI</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Kanji Kentei Level N1</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Custom Deck</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">RECALL RATE</span>
-<span class="text-[10px] font-mono text-error font-bold">92%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-error w-[92%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#japanese</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#jlpt</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">style</span> 2,100 cards</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">event_repeat</span> 45 due</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 5: Audio -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Sound waves visualization in dark blue" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgMm_tT8fhLU2AJOIYXRkirQ287I_psLC8JpP01DcIM0JFibit5FoPgr2DxF4FVpSxOrkBAtnJik_OKeSLRk9hh7aGS173mUY2bavvFq8s_-zUohZCqG5ScOT7vDXBazxiPiqq0kgxvpuf7711dPCr0wcRP03Z7BdFXg6b0kbf0-u_9pCUHfEgKwhTIQi0ed0CnlY1Nd0YwUozSkC_UacfLM_WLgdZoR43uLVaVVXipgz_WsOvbx1gDp1SkAj_kdUSIonPVOTLJBI"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-primary-fixed border border-primary-fixed/20 uppercase tracking-tighter">AUDIO</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Lex Fridman #345: Andrej Karpathy</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Lex Fridman Podcast</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-primary-fixed font-bold">12%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-primary-fixed w-[12%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#ai</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#tesla</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">equalizer</span> 3h 15m</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">timer</span> 2h 48m left</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 6: Video -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Cybersecurity server room neon lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCNLLgghXqQ84rhkNvh-2vEGCJ4cUAgfalQm4W2h6Mjah1JUPfyqWmSx9mrkgUxsKNgVBGg4rzcrApmdh_ksN8EorbYNYZ6TBuZiiDUsOicO1Upqjpbptml1zUZPAOrcvITFi0DpkZRIjnhQBeoEDXYdBnBuXoJDhVz2VIiyqywZUfVWAqS23hu1hb7HjwP2Y1yD-akbfypfUtCYEfLfY4Xo8SNFij_xWRH0b2MImGmyw3wqBD-SfZY7wlF79f3Zvj6q5FxBJZRII"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-tertiary border border-tertiary/20 uppercase tracking-tighter">VIDEO</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">The Complete Guide to Kubernetes</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Nana Janashia</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-tertiary font-bold">45%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-tertiary w-[45%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#devops</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#cloud</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">play_circle</span> 8.5h total</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">update</span> 4d ago</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 7: Book -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Minimalist design book on dark desk" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgi33P8FfmIZ5zMTNVEVBaB00q4FuM7TiBpFt-4wxvKbjjCXnsRHqtPt0_buMbHi0DO3amK6OlInWxGwB3oj1uSR4YLKPVM8Gd9ZLL0Pw9aAQWQCzAv7iMLVzBPJoiaGe5vCnEI4HnDyqm7ziSCyW8yCPh82Tl8ojnnlFi55kUuOlSVLfiNyxj1XIdq50r7UXYs71FSZjKaNk41z2KeFEHhXOnhD3olZTbLO-azPADuURVNeUokQ9TU7RVwlUuOjwFkrI8q2mj9p8"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-[#ffb2bc] border border-[#ffb2bc]/20 uppercase tracking-tighter">BOOK</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Refactoring UI: Complete Edition</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Adam Wathan &amp; Steve Schoger</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-secondary font-bold">100%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-secondary w-full"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#ui</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#ux</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">task_alt</span> Completed</span>
-<span class="flex items-center gap-1 font-bold text-secondary tracking-tighter">MASTERED</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Card 8: Course -->
-<div class="group bg-surface-container-low rounded-lg overflow-hidden flex flex-col hover:bg-surface-container-high transition-all duration-300">
-<div class="relative h-40 w-full overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="JavaScript code on high definition monitor" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8yVMZuIpuJ5S6q2Jw6basNSYWmcE8U9biFowbdbcIHmxG_sAPV_p5CGjcM-Wme8ZqGNgyms27P001J__vSFg3RqjwquPhty7Ez-VyOWVXu0r9yuEzOcenkWA1NRbFRRi0UcjzePtoXp0vJb_gJ_B02DeuS9P5IPoVaSq3yb-CzxXmDE8NOQmp_UcgTznVyug2X63euCLpLIbw2m6r8YMWERdixe8PvNJYGTy8f6sOhUL_S7X4Cr0NOaPmKPL6SXAPJX-GjGFZaws"/>
-<div class="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-md rounded text-[10px] font-mono font-bold text-primary border border-primary/20 uppercase tracking-tighter">COURSE</div>
-</div>
-<div class="p-5 flex flex-col flex-1">
-<div class="flex justify-between items-start mb-2">
-<h3 class="font-headline font-bold text-on-surface leading-tight">Node.js Design Patterns 2024</h3>
-<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm">more_vert</span></button>
-</div>
-<p class="text-xs text-outline mb-4 font-body">Frontend Masters</p>
-<div class="mt-auto">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-[10px] font-mono text-outline">PROGRESS</span>
-<span class="text-[10px] font-mono text-primary font-bold">5%</span>
-</div>
-<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mb-4">
-<div class="h-full bg-primary w-[5%]"></div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#nodejs</span>
-<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] rounded-full font-mono">#patterns</span>
-</div>
-<div class="flex items-center justify-between text-[11px] text-outline pt-3 border-t border-outline-variant/10">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">schedule</span> 12.5h</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">fiber_new</span> Just Started</span>
-</div>
-</div>
-</div>
-</div>
-</div>
-<!-- Floating Quick Add (Contextual FAB) -->
-<button class="fixed bottom-8 right-8 w-14 h-14 bg-primary text-on-primary rounded-xl shadow-[0_20px_40px_-10px_rgba(212,187,255,0.4)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50">
-<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">add_box</span>
-</button>
-<!-- Stats Footer (Power User Bento) -->
-<footer class="mt-16 grid grid-cols-1 md:grid-cols-4 gap-4 pb-12">
-<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/5">
-<span class="text-[10px] font-mono text-outline uppercase tracking-widest block mb-2">Total Time Tracked</span>
-<div class="flex items-end gap-2">
-<span class="text-2xl font-headline font-black text-primary">1,248</span>
-<span class="text-xs text-outline mb-1 font-body">hours</span>
-</div>
-</div>
-<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/5">
-<span class="text-[10px] font-mono text-outline uppercase tracking-widest block mb-2">Current Library Size</span>
-<div class="flex items-end gap-2">
-<span class="text-2xl font-headline font-black text-secondary">84</span>
-<span class="text-xs text-outline mb-1 font-body">resources</span>
-</div>
-</div>
-<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/5">
-<span class="text-[10px] font-mono text-outline uppercase tracking-widest block mb-2">Monthly Completion</span>
-<div class="flex items-end gap-2">
-<span class="text-2xl font-headline font-black text-tertiary">12</span>
-<span class="text-xs text-outline mb-1 font-body">sources</span>
-</div>
-</div>
-<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/5">
-<span class="text-[10px] font-mono text-outline uppercase tracking-widest block mb-2">Avg. Daily Intensity</span>
-<div class="flex items-end gap-2">
-<span class="text-2xl font-headline font-black text-primary-fixed">4.2</span>
-<span class="text-xs text-outline mb-1 font-body">hrs/day</span>
-</div>
-</div>
-</footer>
-</main>
-</body></html>
