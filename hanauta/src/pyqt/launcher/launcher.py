@@ -14,7 +14,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QThread, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QKeyEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -38,6 +38,8 @@ APP_DIR = source_root()
 ROOT = project_root()
 FONTS_DIR = fonts_root()
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "launcher"
+CACHE_FILE = STATE_DIR / "apps_cache.json"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
@@ -135,6 +137,34 @@ class DesktopApp:
     desktop_id: str
     file_path: Path
 
+    def to_cache_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "comment": self.comment,
+            "exec_line": self.exec_line,
+            "icon_name": self.icon_name,
+            "categories": sorted(self.categories),
+            "desktop_id": self.desktop_id,
+            "file_path": str(self.file_path),
+        }
+
+    @classmethod
+    def from_cache_dict(cls, payload: dict[str, object]) -> DesktopApp | None:
+        try:
+            categories_raw = payload.get("categories", [])
+            categories = {str(item).strip() for item in categories_raw if str(item).strip()} if isinstance(categories_raw, list) else set()
+            return cls(
+                name=str(payload.get("name", "")).strip(),
+                comment=str(payload.get("comment", "")).strip(),
+                exec_line=str(payload.get("exec_line", "")).strip(),
+                icon_name=str(payload.get("icon_name", "")).strip(),
+                categories=categories,
+                desktop_id=str(payload.get("desktop_id", "")).strip(),
+                file_path=Path(str(payload.get("file_path", "")).strip()),
+            )
+        except Exception:
+            return None
+
 
 def parse_desktop_file(path: Path) -> DesktopApp | None:
     try:
@@ -200,6 +230,37 @@ def scan_desktop_apps() -> list[DesktopApp]:
     return apps
 
 
+def load_cached_desktop_apps() -> list[DesktopApp]:
+    try:
+        payload = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    items = payload.get("apps", []) if isinstance(payload, dict) else []
+    if not isinstance(items, list):
+        return []
+    apps: list[DesktopApp] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        app = DesktopApp.from_cache_dict(item)
+        if app is None or not app.name or not app.exec_line or not app.desktop_id:
+            continue
+        apps.append(app)
+    apps.sort(key=lambda entry: entry.name.lower())
+    return apps
+
+
+def save_cached_desktop_apps(apps: list[DesktopApp]) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "apps": [app.to_cache_dict() for app in apps],
+        }
+        CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=True, separators=(",", ":")), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def launch_desktop_app(app: DesktopApp) -> bool:
     try:
         result = subprocess.Popen(
@@ -243,6 +304,15 @@ class SearchLineEdit(QLineEdit):
             event.accept()
             return
         super().keyPressEvent(event)
+
+
+class AppIndexWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def run(self) -> None:
+        apps = scan_desktop_apps()
+        save_cached_desktop_apps(apps)
+        self.loaded.emit(apps)
 
 
 class CategoryButton(QPushButton):
@@ -454,12 +524,12 @@ class LauncherWindow(QWidget):
         self.theme = load_theme_palette()
         self.use_matugen = matugen_enabled()
         self._theme_mtime = palette_mtime()
-        self.apps = scan_desktop_apps()
+        self.apps = load_cached_desktop_apps()
         self.filtered_apps: list[DesktopApp] = []
         self.category = "all"
         self.selected_index = 0
-        self._panel_animation: QPropertyAnimation | None = None
-
+        self._app_index_worker: AppIndexWorker | None = None
+        self._apps_loading = True
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(
             Qt.WindowType.Tool
@@ -472,8 +542,8 @@ class LauncherWindow(QWidget):
         self._build_ui()
         self._apply_shadow()
         self._place_window()
-        self._animate_in()
         self._apply_filter()
+        self._start_app_index_refresh()
         QTimer.singleShot(40, self.search_input.setFocus)
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
@@ -591,15 +661,6 @@ class LauncherWindow(QWidget):
             return
         rect = screen.availableGeometry()
         self.move(rect.center().x() - self.width() // 2, rect.center().y() - self.height() // 2)
-
-    def _animate_in(self) -> None:
-        self.setWindowOpacity(0.0)
-        self._panel_animation = QPropertyAnimation(self, b"windowOpacity", self)
-        self._panel_animation.setDuration(160)
-        self._panel_animation.setStartValue(0.0)
-        self._panel_animation.setEndValue(1.0)
-        self._panel_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._panel_animation.start()
 
     def _apply_styles(self) -> None:
         if self.use_matugen:
@@ -755,6 +816,26 @@ class LauncherWindow(QWidget):
             button.update_theme(self.theme, self.use_matugen)
         self._render_results()
 
+    def _start_app_index_refresh(self) -> None:
+        if self._app_index_worker is not None and self._app_index_worker.isRunning():
+            return
+        self._app_index_worker = AppIndexWorker()
+        self._app_index_worker.loaded.connect(self._apply_app_index)
+        self._app_index_worker.finished.connect(self._finish_app_index_worker)
+        self._app_index_worker.start()
+
+    def _apply_app_index(self, payload_obj: object) -> None:
+        apps = [item for item in payload_obj if isinstance(item, DesktopApp)] if isinstance(payload_obj, list) else []
+        self.apps = apps
+        self._apps_loading = False
+        self._apply_filter()
+
+    def _finish_app_index_worker(self) -> None:
+        self._app_index_worker = None
+        self._apps_loading = False
+        if not self.apps:
+            self._render_results()
+
     def _set_category(self, category: str) -> None:
         self.category = category
         self._apply_filter()
@@ -786,13 +867,26 @@ class LauncherWindow(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
+        if self._apps_loading and not self.apps:
+            empty = QLabel("Loading applications...")
+            empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
+            empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
+            self.results_layout.insertWidget(0, empty)
+            self.results_count.setText("Loading app index")
+            self.footer_label.setText("Launcher cache is refreshing in the background")
+            return
+
         if not self.filtered_apps:
             empty = QLabel("No applications match this search.")
             empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
             empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
             self.results_layout.insertWidget(0, empty)
-            self.results_count.setText("0 applications")
-            self.footer_label.setText("Enter launches the selected app")
+            if self._apps_loading:
+                self.results_count.setText("Refreshing app index...")
+                self.footer_label.setText("Results will update when the background refresh finishes")
+            else:
+                self.results_count.setText("0 applications")
+                self.footer_label.setText("Enter launches the selected app")
             return
 
         for index, app in enumerate(self.filtered_apps):
