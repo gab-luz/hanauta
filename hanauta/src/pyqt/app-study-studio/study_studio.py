@@ -2746,7 +2746,7 @@ class OrganizerWindow(QMainWindow):
 
     def _notify(self, title: str, body: str, icon: str = "") -> None:
         try:
-            command = ["notify-send"]
+            command = ["notify-send", "-a", "Hanauta Life Organizer"]
             if icon:
                 command.extend(["-i", icon])
             command.extend([title, body])

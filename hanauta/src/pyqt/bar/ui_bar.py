@@ -2326,7 +2326,7 @@ class CyberBar(QWidget):
         state_text = "Enabled" if enabled else "Disabled"
         try:
             subprocess.Popen(
-                ["notify-send", "-r", str(replace_id), title, state_text],
+                ["notify-send", "-a", "Hanauta Bar", "-r", str(replace_id), title, state_text],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -3037,7 +3037,7 @@ class CyberBar(QWidget):
         if not ACTION_NOTIFICATION_SCRIPT.exists() or not open_url.strip():
             try:
                 subprocess.Popen(
-                    ["notify-send", summary, body],
+                    ["notify-send", "-a", "Hanauta RSS", summary, body],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
@@ -3049,7 +3049,7 @@ class CyberBar(QWidget):
             entry_command(
                 ACTION_NOTIFICATION_SCRIPT,
                 "--app-name",
-                "Hanauta",
+                "Hanauta RSS",
                 "--summary",
                 summary,
                 "--body",
