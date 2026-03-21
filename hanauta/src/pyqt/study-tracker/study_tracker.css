@@ -706,7 +706,7 @@ button {
 
 .study-resource-summary-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 1rem;
 }
 
@@ -921,6 +921,257 @@ button {
   color: rgba(204, 195, 210, 0.72);
 }
 
+.study-schedule-row {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  background: color-mix(in srgb, var(--study-surfaceHigh) 72%, transparent);
+  border-radius: 1.2rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(149, 142, 156, 0.12);
+  cursor: pointer;
+}
+
+.study-schedule-row:hover {
+  border-color: rgba(212, 187, 255, 0.22);
+}
+
+.study-schedule-row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.study-schedule-row-copy strong {
+  font-size: 0.92rem;
+  color: var(--study-text);
+}
+
+.study-schedule-row-copy span {
+  font-size: 0.74rem;
+  color: rgba(204, 195, 210, 0.72);
+}
+
+.study-calendar-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(20rem, 0.8fr);
+  align-items: start;
+}
+
+.study-calendar-main {
+  padding: 1.25rem;
+  border-radius: 1.6rem;
+  border: 1px solid rgba(149, 142, 156, 0.12);
+}
+
+.study-calendar-sidebar {
+  position: sticky;
+  top: 0;
+}
+
+.study-calendar-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.study-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.study-calendar-status {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  color: rgba(204, 195, 210, 0.78);
+  font-size: 0.82rem;
+}
+
+.study-calendar-viewport {
+  min-height: 40rem;
+  border-radius: 1.4rem;
+  background: color-mix(in srgb, var(--study-surfaceLow) 78%, transparent);
+  border: 1px solid rgba(149, 142, 156, 0.12);
+  overflow: hidden;
+}
+
+.study-calendar-week,
+.study-calendar-day {
+  display: grid;
+  grid-template-columns: 4.5rem repeat(7, minmax(0, 1fr));
+  min-height: 42rem;
+}
+
+.study-calendar-day {
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+}
+
+.study-calendar-time-rail {
+  background: color-mix(in srgb, var(--study-surfaceHighest) 60%, transparent);
+  border-right: 1px solid rgba(149, 142, 156, 0.12);
+}
+
+.study-calendar-time-head,
+.study-calendar-day-head {
+  height: 3rem;
+  border-bottom: 1px solid rgba(149, 142, 156, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(204, 195, 210, 0.72);
+}
+
+.study-calendar-time-cell {
+  height: 4rem;
+  display: flex;
+  justify-content: center;
+  padding-top: 0.35rem;
+  color: rgba(204, 195, 210, 0.56);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.study-calendar-day-column {
+  position: relative;
+  border-right: 1px solid rgba(149, 142, 156, 0.09);
+}
+
+.study-calendar-day-column:last-child {
+  border-right: 0;
+}
+
+.study-calendar-grid-body {
+  position: relative;
+  height: 56rem;
+  background-image: linear-gradient(to bottom, rgba(149, 142, 156, 0.08) 1px, transparent 1px);
+  background-size: 100% 4rem;
+}
+
+.study-calendar-block {
+  position: absolute;
+  left: 0.35rem;
+  right: 0.35rem;
+  border-radius: 1rem;
+  padding: 0.45rem 0.55rem;
+  border-left: 4px solid var(--study-primary);
+  background: color-mix(in srgb, var(--study-primary) 16%, var(--study-surfaceLow));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  text-align: left;
+}
+
+.study-calendar-block.is-life {
+  border-left-color: var(--study-secondary);
+  background: color-mix(in srgb, var(--study-secondary) 14%, var(--study-surfaceLow));
+}
+
+.study-calendar-block.is-template {
+  opacity: 0.88;
+}
+
+.study-calendar-block-time {
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--study-primary);
+}
+
+.study-calendar-block.is-life .study-calendar-block-time {
+  color: var(--study-secondary);
+}
+
+.study-calendar-block-title {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--study-text);
+}
+
+.study-calendar-block-meta {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.62rem;
+  color: rgba(204, 195, 210, 0.72);
+}
+
+.study-calendar-month {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 40rem;
+}
+
+.study-calendar-month-header,
+.study-calendar-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.study-calendar-month-header span {
+  padding: 0.85rem 0.5rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(204, 195, 210, 0.72);
+}
+
+.study-calendar-month-cell {
+  min-height: 8rem;
+  border-top: 1px solid rgba(149, 142, 156, 0.09);
+  border-right: 1px solid rgba(149, 142, 156, 0.09);
+  padding: 0.6rem;
+}
+
+.study-calendar-month-chip {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  text-align: left;
+  font-size: 0.64rem;
+  border-radius: 9999px;
+  padding: 0.22rem 0.5rem;
+  background: color-mix(in srgb, var(--study-primary) 14%, transparent);
+  color: var(--study-primary);
+}
+
+.study-calendar-year {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.study-calendar-year-month {
+  border-radius: 1.1rem;
+  background: color-mix(in srgb, var(--study-surfaceHigh) 82%, transparent);
+  border: 1px solid rgba(149, 142, 156, 0.1);
+  padding: 0.9rem;
+}
+
+.study-calendar-year-month h4 {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--study-text);
+}
+
+.study-calendar-year-month p {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: rgba(204, 195, 210, 0.72);
+}
+
 .study-chip-button:disabled,
 .study-pill-button:disabled,
 .study-toggle:disabled {
@@ -958,6 +1209,8 @@ button {
   .study-resource-summary-row,
   .study-resource-grid,
   .study-resource-layout,
+  .study-calendar-page,
+  .study-calendar-year,
   .study-resource-document-controls,
   .study-grid-3,
   .study-form-grid {
@@ -971,5 +1224,17 @@ button {
   .study-settings-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .study-calendar-toolbar,
+  .study-calendar-nav,
+  .study-calendar-week,
+  .study-calendar-day {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .study-calendar-time-rail {
+    display: none;
   }
 }
