@@ -325,6 +325,32 @@ def default_state() -> dict[str, Any]:
         "activity_dates": [],
         "insights": list(DEFAULT_INSIGHTS),
         "session_length_minutes": 25,
+        "schedule_templates": [
+            {
+                "id": str(uuid.uuid4()),
+                "title": "School",
+                "category": "Life",
+                "kind": "life",
+                "recurrence": "weekly",
+                "day_of_week": 0,
+                "start_time": "08:00",
+                "duration_minutes": 180,
+                "notify": False,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "title": "Evening Study Slot",
+                "category": "Study Slot",
+                "kind": "study_slot",
+                "recurrence": "weekly",
+                "day_of_week": 0,
+                "start_time": "19:00",
+                "duration_minutes": 90,
+                "notify": True,
+            },
+        ],
+        "schedule_blocks": [],
+        "resource_plans": [],
         "tasks": [
             {
                 **make_task("Review N2 Vocabulary Flashcards", 25),
@@ -388,6 +414,16 @@ def default_state() -> dict[str, Any]:
                 "auto_sync": False,
                 "last_status": "Local only. No remote sync target configured yet.",
                 "last_sync_at": "",
+            },
+            "resource_policy": {
+                "loose_single_limit": 5,
+                "schedule_loose_single_limit": 5,
+            },
+            "notifications": {
+                "study_blocks": True,
+                "life_blocks": False,
+                "caldav_events": False,
+                "resource_plans": True,
             },
             "jellyfin": {
                 "instance_url": "",
@@ -477,6 +513,68 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not normalized_resources:
         normalized_resources = default_state()["resources"]
     state["resources"] = normalized_resources
+    templates = state.get("schedule_templates", [])
+    normalized_templates: list[dict[str, Any]] = []
+    if isinstance(templates, list):
+        for raw in templates:
+            if not isinstance(raw, dict):
+                continue
+            normalized_templates.append(
+                {
+                    "id": str(raw.get("id", uuid.uuid4()) or uuid.uuid4()),
+                    "title": str(raw.get("title", "Schedule Slot") or "Schedule Slot"),
+                    "category": str(raw.get("category", "General") or "General"),
+                    "kind": str(raw.get("kind", "life") or "life").strip().lower(),
+                    "resource_id": str(raw.get("resource_id", "") or ""),
+                    "item_id": str(raw.get("item_id", "") or ""),
+                    "recurrence": str(raw.get("recurrence", "weekly") or "weekly").strip().lower(),
+                    "day_of_week": max(0, min(6, int(raw.get("day_of_week", 0) or 0))),
+                    "start_time": str(raw.get("start_time", "08:00") or "08:00"),
+                    "duration_minutes": max(15, int(raw.get("duration_minutes", 60) or 60)),
+                    "notify": bool(raw.get("notify", False)),
+                }
+            )
+    state["schedule_templates"] = normalized_templates
+    blocks = state.get("schedule_blocks", [])
+    normalized_blocks: list[dict[str, Any]] = []
+    if isinstance(blocks, list):
+        for raw in blocks:
+            if not isinstance(raw, dict):
+                continue
+            normalized_blocks.append(
+                {
+                    "id": str(raw.get("id", uuid.uuid4()) or uuid.uuid4()),
+                    "title": str(raw.get("title", "Study Block") or "Study Block"),
+                    "category": str(raw.get("category", "General") or "General"),
+                    "kind": str(raw.get("kind", "study") or "study").strip().lower(),
+                    "date": str(raw.get("date", today_iso()) or today_iso()),
+                    "start_time": str(raw.get("start_time", "08:00") or "08:00"),
+                    "duration_minutes": max(15, int(raw.get("duration_minutes", 60) or 60)),
+                    "resource_id": str(raw.get("resource_id", "") or ""),
+                    "item_id": str(raw.get("item_id", "") or ""),
+                    "source": str(raw.get("source", "manual") or "manual"),
+                    "notify": bool(raw.get("notify", False)),
+                    "notes": str(raw.get("notes", "") or ""),
+                }
+            )
+    state["schedule_blocks"] = normalized_blocks
+    plans = state.get("resource_plans", [])
+    normalized_plans: list[dict[str, Any]] = []
+    if isinstance(plans, list):
+        for raw in plans:
+            if not isinstance(raw, dict):
+                continue
+            normalized_plans.append(
+                {
+                    "id": str(raw.get("id", uuid.uuid4()) or uuid.uuid4()),
+                    "resource_id": str(raw.get("resource_id", "") or ""),
+                    "resource_title": str(raw.get("resource_title", "") or ""),
+                    "classes_per_day": max(1, int(raw.get("classes_per_day", 1) or 1)),
+                    "created_at": str(raw.get("created_at", now_iso()) or now_iso()),
+                    "active": bool(raw.get("active", True)),
+                }
+            )
+    state["resource_plans"] = normalized_plans
     active_session = state.get("active_session")
     if not isinstance(active_session, dict):
         state["active_session"] = None
@@ -518,6 +616,24 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     merged_sync["last_status"] = str(merged_sync.get("last_status", "") or "")
     merged_sync["last_sync_at"] = str(merged_sync.get("last_sync_at", "") or "")
     merged_preferences["sync"] = merged_sync
+    resource_policy = merged_preferences.get("resource_policy", {})
+    if not isinstance(resource_policy, dict):
+        resource_policy = {}
+    merged_policy = dict(default_preferences["resource_policy"])
+    merged_policy.update(resource_policy)
+    loose_single_limit = merged_policy.get("loose_single_limit", 5)
+    schedule_loose_single_limit = merged_policy.get("schedule_loose_single_limit", 5)
+    merged_policy["loose_single_limit"] = -1 if int(loose_single_limit or 0) < 0 else max(0, int(loose_single_limit or 0))
+    merged_policy["schedule_loose_single_limit"] = -1 if int(schedule_loose_single_limit or 0) < 0 else max(0, int(schedule_loose_single_limit or 0))
+    merged_preferences["resource_policy"] = merged_policy
+    notifications = merged_preferences.get("notifications", {})
+    if not isinstance(notifications, dict):
+        notifications = {}
+    merged_notifications = dict(default_preferences["notifications"])
+    merged_notifications.update(notifications)
+    for key in ("study_blocks", "life_blocks", "caldav_events", "resource_plans"):
+        merged_notifications[key] = bool(merged_notifications.get(key, False))
+    merged_preferences["notifications"] = merged_notifications
     jellyfin = merged_preferences.get("jellyfin", {})
     if not isinstance(jellyfin, dict):
         jellyfin = {}
@@ -600,6 +716,9 @@ def build_sync_payload(state: dict[str, Any]) -> dict[str, Any]:
         "activity_dates": list(state.get("activity_dates", [])),
         "insights": list(state.get("insights", [])),
         "session_length_minutes": int(state.get("session_length_minutes", 25) or 25),
+        "schedule_templates": deepcopy(state.get("schedule_templates", [])),
+        "schedule_blocks": deepcopy(state.get("schedule_blocks", [])),
+        "resource_plans": deepcopy(state.get("resource_plans", [])),
         "tasks": deepcopy(state.get("tasks", [])),
         "resources": deepcopy(state.get("resources", [])),
         "active_session": deepcopy(state.get("active_session")),
@@ -608,6 +727,8 @@ def build_sync_payload(state: dict[str, Any]) -> dict[str, Any]:
             "pomodoro_bridge_enabled": bool(state.get("preferences", {}).get("pomodoro_bridge_enabled", True)) if isinstance(state.get("preferences"), dict) else True,
             "theme_mode": str(state.get("preferences", {}).get("theme_mode", "system")) if isinstance(state.get("preferences"), dict) else "system",
             "custom_theme_id": str(state.get("preferences", {}).get("custom_theme_id", "retrowave")) if isinstance(state.get("preferences"), dict) else "retrowave",
+            "resource_policy": deepcopy(state.get("preferences", {}).get("resource_policy", {})) if isinstance(state.get("preferences"), dict) else {},
+            "notifications": deepcopy(state.get("preferences", {}).get("notifications", {})) if isinstance(state.get("preferences"), dict) else {},
         },
     }
 
@@ -616,7 +737,7 @@ def merge_remote_sync_payload(state: dict[str, Any], payload: dict[str, Any]) ->
     if not isinstance(payload, dict):
         return state
     merged = deepcopy(state)
-    for key in ("today_minutes", "last_reset_date", "activity_dates", "insights", "session_length_minutes", "tasks", "resources", "active_session"):
+    for key in ("today_minutes", "last_reset_date", "activity_dates", "insights", "session_length_minutes", "schedule_templates", "schedule_blocks", "resource_plans", "tasks", "resources", "active_session"):
         if key in payload:
             merged[key] = payload[key]
     remote_preferences = payload.get("preferences", {})
@@ -761,6 +882,77 @@ def focus_target_from_state(state: dict[str, Any]) -> tuple[dict[str, Any] | Non
     return resource_item_by_id(state, selected_resource_id, selected_item_id)
 
 
+def parse_clock_minutes(value: str) -> int:
+    try:
+        hours, minutes = str(value or "08:00").split(":", 1)
+        return max(0, min(23 * 60 + 59, int(hours) * 60 + int(minutes)))
+    except Exception:
+        return 8 * 60
+
+
+def format_clock(minutes: int) -> str:
+    total = max(0, int(minutes or 0))
+    hours, mins = divmod(total, 60)
+    return f"{hours:02d}:{mins:02d}"
+
+
+def end_clock(start_time: str, duration_minutes: int) -> str:
+    return format_clock(parse_clock_minutes(start_time) + max(0, int(duration_minutes or 0)))
+
+
+def format_schedule_when(date_value: str, start_time: str, duration_minutes: int) -> str:
+    try:
+        parsed = datetime.strptime(str(date_value), "%Y-%m-%d")
+        day_label = parsed.strftime("%A")
+    except Exception:
+        day_label = "Scheduled"
+    return f"{day_label}, {start_time} - {end_clock(start_time, duration_minutes)}"
+
+
+def is_loose_single_resource(resource: dict[str, Any]) -> bool:
+    kind = str(resource.get("kind", "") or "").strip().lower()
+    items = resource.get("items", [])
+    if kind == "document":
+        return True
+    if not isinstance(items, list):
+        return True
+    return len(items) <= 1 and kind in {"youtube", "jellyfin", "book", "audio", "other"}
+
+
+def loose_single_resources(state: dict[str, Any]) -> list[dict[str, Any]]:
+    return [resource for resource in state.get("resources", []) if isinstance(resource, dict) and is_loose_single_resource(resource)]
+
+
+def build_schedule_target_options(state: dict[str, Any]) -> list[dict[str, Any]]:
+    policy = state.get("preferences", {}).get("resource_policy", {}) if isinstance(state.get("preferences"), dict) else {}
+    loose_limit = int(policy.get("schedule_loose_single_limit", 5) or 0) if isinstance(policy, dict) else 5
+    unlimited = loose_limit < 0
+    loose_used = 0
+    options: list[dict[str, Any]] = []
+    for resource in state.get("resources", []):
+        if not isinstance(resource, dict):
+            continue
+        if is_loose_single_resource(resource):
+            if not unlimited and loose_used >= loose_limit:
+                continue
+            loose_used += 1
+            option_type = "single"
+        else:
+            option_type = "resource"
+        title = str(resource.get("title", "Resource") or "Resource")
+        options.append(
+            {
+                "resource_id": str(resource.get("id", "")),
+                "item_id": "__resource__" if is_loose_single_resource(resource) else "",
+                "title": title,
+                "label": f"{title} ({'single item' if option_type == 'single' else 'resource'})",
+                "type": option_type,
+                "kind": str(resource.get("kind", "resource") or "resource"),
+            }
+        )
+    return options
+
+
 def find_or_create_task_for_focus_target(state: dict[str, Any], resource: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     linked_resource_id = str(resource.get("id", "") or "")
     linked_item_id = str(item.get("id", "") or "")
@@ -838,6 +1030,39 @@ def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
         objective["prefix"] = "Focus session"
         objective["progress_text"] = f"{elapsed // 60} min tracked • {max(0, target_seconds - elapsed) // 60} min left"
         objective["progress_percent"] = min(100, max(8, int((elapsed / target_seconds) * 100)))
+    schedule_blocks: list[dict[str, Any]] = []
+    for block in sorted(state.get("schedule_blocks", []), key=lambda item: (str(item.get("date", "")), str(item.get("start_time", "")))):
+        if not isinstance(block, dict):
+            continue
+        schedule_blocks.append(
+            {
+                "id": str(block.get("id", "")),
+                "title": str(block.get("title", "Study Block") or "Study Block"),
+                "category": str(block.get("category", "General") or "General"),
+                "kind": str(block.get("kind", "study") or "study"),
+                "date": str(block.get("date", today_iso()) or today_iso()),
+                "start_time": str(block.get("start_time", "08:00") or "08:00"),
+                "end_time": end_clock(str(block.get("start_time", "08:00") or "08:00"), int(block.get("duration_minutes", 60) or 60)),
+                "duration_minutes": int(block.get("duration_minutes", 60) or 60),
+                "when": format_schedule_when(str(block.get("date", today_iso()) or today_iso()), str(block.get("start_time", "08:00") or "08:00"), int(block.get("duration_minutes", 60) or 60)),
+                "source": str(block.get("source", "manual") or "manual"),
+                "notes": str(block.get("notes", "") or ""),
+            }
+        )
+    schedule_templates = [
+        {
+            "id": str(template.get("id", "")),
+            "title": str(template.get("title", "Schedule Slot") or "Schedule Slot"),
+            "category": str(template.get("category", "General") or "General"),
+            "kind": str(template.get("kind", "life") or "life"),
+            "day_of_week": int(template.get("day_of_week", 0) or 0),
+            "start_time": str(template.get("start_time", "08:00") or "08:00"),
+            "duration_minutes": int(template.get("duration_minutes", 60) or 60),
+            "notify": bool(template.get("notify", False)),
+        }
+        for template in state.get("schedule_templates", [])
+        if isinstance(template, dict)
+    ]
     return {
         "streak_days": compute_streak_days(state),
         "today_minutes": max(0, int(state.get("today_minutes", 0) or 0)),
@@ -849,6 +1074,9 @@ def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
         "objective": objective,
         "focus_class_options": focus_options,
         "selected_focus_class": selected_focus_option,
+        "schedule_target_options": build_schedule_target_options(state),
+        "schedule_blocks": schedule_blocks,
+        "schedule_templates": schedule_templates,
         "active_session": session_payload,
     }
 
@@ -863,6 +1091,12 @@ def build_settings_payload(state: dict[str, Any]) -> dict[str, Any]:
     jellyfin = preferences.get("jellyfin", {})
     if not isinstance(jellyfin, dict):
         jellyfin = {}
+    resource_policy = preferences.get("resource_policy", {})
+    if not isinstance(resource_policy, dict):
+        resource_policy = {}
+    notifications = preferences.get("notifications", {})
+    if not isinstance(notifications, dict):
+        notifications = {}
     theme_mode = str(preferences.get("theme_mode", "system") or "system").strip().lower()
     custom_theme_id = str(preferences.get("custom_theme_id", "retrowave") or "retrowave").strip().lower()
     sync_provider = str(sync.get("provider", "none") or "none").strip().lower()
@@ -901,6 +1135,16 @@ def build_settings_payload(state: dict[str, Any]) -> dict[str, Any]:
             "instance_url": jellyfin_instance,
             "api_token": str(jellyfin.get("api_token", "") or ""),
             "last_status": str(jellyfin.get("last_status", "Jellyfin is not configured yet.") or "Jellyfin is not configured yet."),
+        },
+        "resource_policy": {
+            "loose_single_limit": int(resource_policy.get("loose_single_limit", 5) or 0),
+            "schedule_loose_single_limit": int(resource_policy.get("schedule_loose_single_limit", 5) or 0),
+        },
+        "notifications": {
+            "study_blocks": bool(notifications.get("study_blocks", True)),
+            "life_blocks": bool(notifications.get("life_blocks", False)),
+            "caldav_events": bool(notifications.get("caldav_events", False)),
+            "resource_plans": bool(notifications.get("resource_plans", True)),
         },
         "theme_summary": theme_summary,
         "sync_summary": sync_summary,
@@ -988,6 +1232,8 @@ def build_resources_payload(state: dict[str, Any]) -> dict[str, Any]:
             }
         )
     cards.sort(key=lambda item: item.get("updated_label", ""), reverse=True)
+    preferences = state.get("preferences", {}) if isinstance(state.get("preferences"), dict) else {}
+    policy = preferences.get("resource_policy", {}) if isinstance(preferences, dict) else {}
     return {
         "resources": cards,
         "summary": {
@@ -995,6 +1241,8 @@ def build_resources_payload(state: dict[str, Any]) -> dict[str, Any]:
             "completed_items": total_completed,
             "total_items": total_items,
             "tracked_hours": round(total_duration / 3600, 1) if total_duration else 0,
+            "loose_single_count": len(loose_single_resources(state)),
+            "loose_single_limit": int(policy.get("loose_single_limit", 5) or 0) if isinstance(policy, dict) else 5,
         },
         "import": {
             "busy": False,
@@ -1189,6 +1437,16 @@ def build_runtime_script(page_name: str) -> str:
   let focusClassQuery = "";
   let focusClassOpen = false;
   let focusClassActiveIndex = -1;
+  let scheduleViewMode = "week";
+  let scheduleAnchorDate = new Date();
+  let scheduleSidebarMode = "empty";
+  let selectedScheduleBlockId = "";
+  let editingScheduleBlockId = "";
+  let editingScheduleTemplateId = "";
+  let scheduleTargetState = {{
+    block: {{ query: "", open: false, activeIndex: -1 }},
+    template: {{ query: "", open: false, activeIndex: -1 }},
+  }};
 
   function setNavActive(page) {{
     const dashboard = $("navDashboardButton");
@@ -1243,6 +1501,101 @@ def build_runtime_script(page_name: str) -> str:
 
   function currentTask() {{
     return studyState?.current_task || null;
+  }}
+
+  function isoDateKey(date) {{
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${{year}}-${{month}}-${{day}}`;
+  }}
+
+  function parseIsoDate(value) {{
+    const [year, month, day] = String(value || "").split("-").map((part) => Number.parseInt(part || "0", 10));
+    if (!year || !month || !day) return new Date();
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
+  }}
+
+  function addDays(date, amount) {{
+    const next = new Date(date);
+    next.setDate(next.getDate() + amount);
+    return next;
+  }}
+
+  function startOfWeek(date) {{
+    const next = new Date(date);
+    const day = (next.getDay() + 6) % 7;
+    next.setDate(next.getDate() - day);
+    next.setHours(12, 0, 0, 0);
+    return next;
+  }}
+
+  function minutesFromClock(value) {{
+    const [hours, minutes] = String(value || "08:00").split(":");
+    return (Number.parseInt(hours || "0", 10) * 60) + Number.parseInt(minutes || "0", 10);
+  }}
+
+  function blockEndClock(startTime, durationMinutes) {{
+    const total = minutesFromClock(startTime) + Number(durationMinutes || 0);
+    const hours = Math.floor(total / 60);
+    const mins = total % 60;
+    return `${{String(hours).padStart(2, "0")}}:${{String(mins).padStart(2, "0")}}`;
+  }}
+
+  function calendarRangeLabel() {{
+    const anchor = new Date(scheduleAnchorDate);
+    if (scheduleViewMode === "day") return anchor.toLocaleDateString([], {{ weekday: "long", month: "short", day: "numeric" }});
+    if (scheduleViewMode === "week") {{
+      const weekStart = startOfWeek(anchor);
+      const weekEnd = addDays(weekStart, 6);
+      return `${{weekStart.toLocaleDateString([], {{ month: "short", day: "numeric" }})}} - ${{weekEnd.toLocaleDateString([], {{ month: "short", day: "numeric", year: "numeric" }})}}`;
+    }}
+    if (scheduleViewMode === "month") return anchor.toLocaleDateString([], {{ month: "long", year: "numeric" }});
+    return String(anchor.getFullYear());
+  }}
+
+  function virtualScheduleBlocks() {{
+    const blocks = Array.isArray(studyState?.schedule_blocks) ? [...studyState.schedule_blocks] : [];
+    const templates = Array.isArray(studyState?.schedule_templates) ? studyState.schedule_templates : [];
+    const rangeStart = scheduleViewMode === "year"
+      ? new Date(scheduleAnchorDate.getFullYear(), 0, 1)
+      : scheduleViewMode === "month"
+        ? new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth(), 1)
+        : scheduleViewMode === "day"
+          ? new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth(), scheduleAnchorDate.getDate())
+          : startOfWeek(scheduleAnchorDate);
+    const rangeEnd = scheduleViewMode === "year"
+      ? new Date(scheduleAnchorDate.getFullYear(), 11, 31)
+      : scheduleViewMode === "month"
+        ? new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth() + 1, 0)
+        : scheduleViewMode === "day"
+          ? new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth(), scheduleAnchorDate.getDate())
+          : addDays(startOfWeek(scheduleAnchorDate), 6);
+    templates.forEach((template) => {{
+      for (let date = new Date(rangeStart); date <= rangeEnd; date = addDays(date, 1)) {{
+        const isDaily = String(template.recurrence || "weekly") === "daily";
+        const matchesWeekday = Number(template.day_of_week || 0) === ((date.getDay() + 6) % 7);
+        if (!isDaily && !matchesWeekday) continue;
+        blocks.push({{
+          id: `template-${{template.id}}-${{isoDateKey(date)}}`,
+          template_id: template.id,
+          resource_id: template.resource_id || "",
+          item_id: template.item_id || "",
+          title: template.title,
+          category: template.category || (template.kind === "study_slot" ? "Study Slot" : "Life"),
+          kind: template.kind === "study_slot" ? "study" : "life",
+          date: isoDateKey(date),
+          start_time: template.start_time || "08:00",
+          end_time: blockEndClock(template.start_time || "08:00", template.duration_minutes || 60),
+          duration_minutes: template.duration_minutes || 60,
+          when: `${{date.toLocaleDateString([], {{ weekday: "long", month: "short", day: "numeric" }})}}, ${{template.start_time || "08:00"}} - ${{blockEndClock(template.start_time || "08:00", template.duration_minutes || 60)}}`,
+          source: "recurring slot",
+          notes: `Recurring ${{template.kind === "study_slot" ? "study slot" : "life slot"}}`,
+          is_template: true,
+        }});
+      }}
+    }});
+    return blocks.sort((a, b) => `${{a.date}} ${{a.start_time}}`.localeCompare(`${{b.date}} ${{b.start_time}}`));
   }}
 
   function setToggleButton(id, enabled, labels = ["Enabled", "Disabled"]) {{
@@ -1554,6 +1907,12 @@ def build_runtime_script(page_name: str) -> str:
     if ($("jellyfinInstanceUrlInput")) $("jellyfinInstanceUrlInput").value = settingsState.jellyfin?.instance_url || "";
     if ($("jellyfinApiTokenInput")) $("jellyfinApiTokenInput").value = settingsState.jellyfin?.api_token || "";
     if ($("jellyfinStatusText")) $("jellyfinStatusText").textContent = settingsState.jellyfin?.last_status || "Jellyfin is not configured yet.";
+    if ($("looseSingleLimitInput")) $("looseSingleLimitInput").value = String(settingsState.resource_policy?.loose_single_limit ?? 5);
+    if ($("scheduleLooseSingleLimitInput")) $("scheduleLooseSingleLimitInput").value = String(settingsState.resource_policy?.schedule_loose_single_limit ?? 5);
+    setToggleButton("notifyStudyBlocksButton", !!settingsState.notifications?.study_blocks, ["Enabled", "Disabled"]);
+    setToggleButton("notifyLifeBlocksButton", !!settingsState.notifications?.life_blocks, ["Enabled", "Disabled"]);
+    setToggleButton("notifyCaldavEventsButton", !!settingsState.notifications?.caldav_events, ["Enabled", "Disabled"]);
+    setToggleButton("notifyResourcePlansButton", !!settingsState.notifications?.resource_plans, ["Enabled", "Disabled"]);
     const provider = settingsState.sync?.provider || "none";
     const showWebdav = provider === "nextcloud" || provider === "webdav";
     const showPostgres = provider === "postgres";
@@ -1605,6 +1964,7 @@ def build_runtime_script(page_name: str) -> str:
     if ($("resourceDetailSummary")) $("resourceDetailSummary").textContent = resource.summary || "No summary yet.";
     if ($("resourceDetailProgressText")) $("resourceDetailProgressText").textContent = `${{resource.done_items || 0}} / ${{resource.total_items || 0}} completed`;
     if ($("resourceOpenSourceButton")) $("resourceOpenSourceButton").dataset.resourceId = resource.id || "";
+    if ($("resourceCreatePlanButton")) $("resourceCreatePlanButton").dataset.resourceId = resource.id || "";
     if ($("resourceToggleAllButton")) {{
       $("resourceToggleAllButton").dataset.resourceId = resource.id || "";
       $("resourceToggleAllButton").textContent = resource.done_items >= resource.total_items && resource.total_items > 0 ? "Reset All" : "Mark All Done";
@@ -1655,6 +2015,10 @@ def build_runtime_script(page_name: str) -> str:
     if ($("resourcesCountText")) $("resourcesCountText").textContent = String(resourcesState.summary?.resource_count || 0);
     if ($("resourcesHoursText")) $("resourcesHoursText").textContent = `${{resourcesState.summary?.tracked_hours || 0}}h`;
     if ($("resourcesCompletedText")) $("resourcesCompletedText").textContent = `${{resourcesState.summary?.completed_items || 0}} / ${{resourcesState.summary?.total_items || 0}}`;
+    if ($("resourcesLooseSinglesText")) {{
+      const limit = Number(resourcesState.summary?.loose_single_limit ?? 5);
+      $("resourcesLooseSinglesText").textContent = `${{resourcesState.summary?.loose_single_count || 0}} / ${{limit < 0 ? "inf" : limit}}`;
+    }}
     const importBusy = !!resourcesState.import?.busy;
     const importButton = $("resourceImportButton");
     const importInput = $("resourceUrlInput");
@@ -1705,40 +2069,604 @@ def build_runtime_script(page_name: str) -> str:
   }}
 
   function setSchedulePanelVisible(visible) {{
-    const selectionPanel = $("scheduleSelectionPanel");
-    const emptyState = $("scheduleEmptyState");
-    if (selectionPanel) selectionPanel.classList.toggle("hidden", !visible);
-    if (emptyState) emptyState.classList.toggle("hidden", !!visible);
+    setScheduleSidebarMode(visible ? "selection" : "empty");
+  }}
+
+  function scheduleBlockById(blockId) {{
+    const blocks = Array.isArray(studyState?.schedule_blocks) ? studyState.schedule_blocks : [];
+    return blocks.find((block) => String(block.id || "") === String(blockId || "")) || null;
+  }}
+
+  function scheduleTemplateById(templateId) {{
+    const templates = Array.isArray(studyState?.schedule_templates) ? studyState.schedule_templates : [];
+    return templates.find((template) => String(template.id || "") === String(templateId || "")) || null;
+  }}
+
+  function scheduleTargetValue(resourceId, itemId) {{
+    const item = String(itemId || "").trim();
+    return item ? `${{resourceId}}::${{item}}` : `${{resourceId}}::__resource__`;
+  }}
+
+  function scheduleTargetOptions() {{
+    return Array.isArray(studyState?.schedule_target_options) ? studyState.schedule_target_options : [];
+  }}
+
+  function scheduleTargetElements(kind) {{
+    return {{
+      combobox: $(`schedule${{kind === "template" ? "Template" : "Block"}}TargetCombobox`),
+      input: $(`schedule${{kind === "template" ? "Template" : "Block"}}TargetInput`),
+      hidden: $(`schedule${{kind === "template" ? "Template" : "Block"}}TargetValue`),
+      menu: $(`schedule${{kind === "template" ? "Template" : "Block"}}TargetOptions`),
+    }};
+  }}
+
+  function scheduleTargetOptionByValue(value) {{
+    return scheduleTargetOptions().find((option) => scheduleTargetValue(option.resource_id || "", option.item_id || "__resource__") === String(value || "")) || null;
+  }}
+
+  function scheduleTargetLabel(option) {{
+    if (!option) return "";
+    return option.label || option.title || "Study target";
+  }}
+
+  function scheduleTargetMeta(option) {{
+    if (!option) return "";
+    const typeLabel = option.type === "single" ? "Single item" : "Resource";
+    const kindLabel = option.kind ? String(option.kind).replace(/_/g, " ") : "study";
+    return `${{typeLabel}} • ${{kindLabel}}`;
+  }}
+
+  function filteredScheduleTargetOptions(kind) {{
+    const query = String(scheduleTargetState[kind]?.query || "").trim().toLowerCase();
+    const options = scheduleTargetOptions();
+    if (!query) return options;
+    return options.filter((option) => {{
+      const label = String(scheduleTargetLabel(option)).toLowerCase();
+      const kindLabel = String(option.kind || "").toLowerCase();
+      return label.includes(query) || kindLabel.includes(query);
+    }});
+  }}
+
+  function closeScheduleTargetMenu(kind) {{
+    const state = scheduleTargetState[kind];
+    if (!state) return;
+    state.open = false;
+    state.activeIndex = -1;
+    scheduleTargetElements(kind).menu?.classList.add("hidden");
+  }}
+
+  function commitScheduleTargetSelection(kind, option) {{
+    if (!option) return;
+    const state = scheduleTargetState[kind];
+    const elements = scheduleTargetElements(kind);
+    const value = scheduleTargetValue(option.resource_id || "", option.item_id || "__resource__");
+    state.query = scheduleTargetLabel(option);
+    if (elements.input) elements.input.value = state.query;
+    if (elements.hidden) elements.hidden.value = value;
+    closeScheduleTargetMenu(kind);
+    if (kind === "template") {{
+      const kindSelect = $("scheduleTemplateKindSelect");
+      const titleInput = $("scheduleTemplateTitleInput");
+      if (kindSelect?.value === "study_slot" && titleInput && (!titleInput.value.trim() || !editingScheduleTemplateId)) {{
+        titleInput.value = option.title || option.label || "Study Slot";
+      }}
+    }}
+  }}
+
+  function renderScheduleTargetOptionsList(kind, query = scheduleTargetState[kind]?.query || "") {{
+    const state = scheduleTargetState[kind];
+    const elements = scheduleTargetElements(kind);
+    const menu = elements.menu;
+    if (!state || !menu) return;
+    const options = filteredScheduleTargetOptions(kind);
+    if (!state.open || !options.length) {{
+      if (!options.length && state.open) {{
+        menu.innerHTML = `<div class="study-combobox-empty">No study targets matched that search yet.</div>`;
+        menu.classList.remove("hidden");
+      }} else {{
+        menu.classList.add("hidden");
+      }}
+      return;
+    }}
+    if (state.activeIndex >= options.length) state.activeIndex = options.length - 1;
+    menu.innerHTML = options.map((option, index) => {{
+      const value = scheduleTargetValue(option.resource_id || "", option.item_id || "__resource__");
+      return `
+        <button class="study-combobox-option${{index === state.activeIndex ? " is-active" : ""}}" data-schedule-target-kind="${{kind}}" data-schedule-target-value="${{escapeHtml(value)}}" type="button">
+          <span class="study-combobox-option-title">${{escapeHtml(option.title || option.label || "Study target")}}</span>
+          <span class="study-combobox-option-meta">${{escapeHtml(scheduleTargetMeta(option))}}</span>
+        </button>
+      `;
+    }}).join("");
+    menu.classList.remove("hidden");
+    menu.querySelectorAll("[data-schedule-target-value]").forEach((node) => {{
+      node.addEventListener("mousedown", (event) => {{
+        event.preventDefault();
+        const option = scheduleTargetOptionByValue(node.getAttribute("data-schedule-target-value") || "");
+        if (option) commitScheduleTargetSelection(kind, option);
+      }});
+    }});
+  }}
+
+  function renderScheduleTargetCombobox(kind, selectedValue = "") {{
+    const state = scheduleTargetState[kind];
+    const elements = scheduleTargetElements(kind);
+    const options = scheduleTargetOptions();
+    if (!state || !elements.input || !elements.hidden || !elements.combobox) return options;
+    if (!options.length) {{
+      elements.input.value = "";
+      elements.hidden.value = "";
+      elements.input.disabled = true;
+      elements.input.placeholder = "Add study resources first";
+      elements.combobox.classList.add("is-disabled");
+      closeScheduleTargetMenu(kind);
+      return options;
+    }}
+    elements.input.disabled = false;
+    elements.input.placeholder = "Search resources, classes, or single items";
+    elements.combobox.classList.remove("is-disabled");
+    const chosenValue = selectedValue || elements.hidden.value || scheduleTargetValue(options[0].resource_id || "", options[0].item_id || "__resource__");
+    const selectedOption = scheduleTargetOptionByValue(chosenValue) || options[0];
+    elements.hidden.value = scheduleTargetValue(selectedOption.resource_id || "", selectedOption.item_id || "__resource__");
+    if (document.activeElement !== elements.input) {{
+      elements.input.value = scheduleTargetLabel(selectedOption);
+      state.query = elements.input.value;
+    }}
+    renderScheduleTargetOptionsList(kind, state.query);
+    return options;
+  }}
+
+  function syncScheduleTemplateTargetVisibility() {{
+    const isStudySlot = ($("scheduleTemplateKindSelect")?.value || "study_slot") === "study_slot";
+    const targetField = $("scheduleTemplateTargetField");
+    if (targetField) targetField.style.display = isStudySlot ? "" : "none";
+    if (!isStudySlot) {{
+      closeScheduleTargetMenu("template");
+    }} else {{
+      renderScheduleTargetCombobox("template", $("scheduleTemplateTargetValue")?.value || "");
+    }}
+  }}
+
+  function wireScheduleTargetCombobox(kind) {{
+    const state = scheduleTargetState[kind];
+    const elements = scheduleTargetElements(kind);
+    const input = elements.input;
+    if (!state || !input) return;
+    input.addEventListener("focus", () => {{
+      state.open = true;
+      state.query = input.value || "";
+      state.activeIndex = -1;
+      renderScheduleTargetOptionsList(kind, state.query);
+    }});
+    input.addEventListener("input", () => {{
+      state.open = true;
+      state.query = input.value || "";
+      state.activeIndex = 0;
+      if (elements.hidden) elements.hidden.value = "";
+      renderScheduleTargetOptionsList(kind, state.query);
+    }});
+    input.addEventListener("keydown", (event) => {{
+      const options = filteredScheduleTargetOptions(kind);
+      if (event.key === "ArrowDown") {{
+        event.preventDefault();
+        state.open = true;
+        state.activeIndex = Math.min(options.length - 1, state.activeIndex + 1);
+        renderScheduleTargetOptionsList(kind, input.value || "");
+        return;
+      }}
+      if (event.key === "ArrowUp") {{
+        event.preventDefault();
+        state.open = true;
+        state.activeIndex = Math.max(0, state.activeIndex - 1);
+        renderScheduleTargetOptionsList(kind, input.value || "");
+        return;
+      }}
+      if (event.key === "Enter") {{
+        if (!state.open) return;
+        event.preventDefault();
+        const option = options[state.activeIndex] || options[0];
+        if (option) commitScheduleTargetSelection(kind, option);
+        return;
+      }}
+      if (event.key === "Escape") {{
+        event.preventDefault();
+        closeScheduleTargetMenu(kind);
+      }}
+    }});
+  }}
+
+  function setScheduleSidebarMode(mode) {{
+    scheduleSidebarMode = mode || "empty";
+    const visibility = {{
+      empty: ["scheduleEmptyState"],
+      selection: ["scheduleSelectionPanel"],
+      "block-form": ["scheduleBlockFormPanel"],
+      "template-form": ["scheduleTemplateFormPanel"],
+    }};
+    ["scheduleEmptyState", "scheduleSelectionPanel", "scheduleBlockFormPanel", "scheduleTemplateFormPanel"].forEach((id) => {{
+      const node = $(id);
+      if (!node) return;
+      node.classList.toggle("hidden", !(visibility[scheduleSidebarMode] || []).includes(id));
+    }});
+  }}
+
+  function scheduleNodeById(blockId) {{
+    const nodes = Array.from(document.querySelectorAll("[data-schedule-id]"));
+    return nodes.find((node) => (node.getAttribute("data-schedule-id") || "") === String(blockId || "")) || null;
+  }}
+
+  function updateScheduleFormStatus(message, kind = "block") {{
+    const node = kind === "template" ? $("scheduleTemplateFormStatus") : $("scheduleBlockFormStatus");
+    if (node) node.textContent = message;
+  }}
+
+  function openScheduleBlockForm(block = null) {{
+    editingScheduleBlockId = block && !block.is_template ? String(block.id || "") : "";
+    const targets = renderScheduleTargetCombobox(
+      "block",
+      block ? scheduleTargetValue(block.resource_id || "", block.item_id || "__resource__") : ""
+    );
+    const title = $("scheduleBlockFormTitle");
+    const dateInput = $("scheduleBlockDateInput");
+    const timeInput = $("scheduleBlockTimeInput");
+    const durationInput = $("scheduleBlockDurationInput");
+    const notesInput = $("scheduleBlockNotesInput");
+    if (title) title.textContent = editingScheduleBlockId ? "Edit Study Block" : "Add Study Block";
+    if (dateInput) dateInput.value = String(block?.date || isoDateKey(scheduleAnchorDate) || "");
+    if (timeInput) timeInput.value = String(block?.start_time || "19:00");
+    if (durationInput) durationInput.value = String(block?.duration_minutes || 60);
+    if (notesInput) notesInput.value = String(block?.notes || "");
+    if (!targets.length) {{
+      updateScheduleFormStatus("Add a resource first, or raise the schedule single-item limit in Settings.", "block");
+      setScheduleSidebarMode("block-form");
+      return;
+    }}
+    updateScheduleFormStatus(
+      editingScheduleBlockId
+        ? "Update the time, target, or notes for this scheduled study block."
+        : "Loose singles are limited by the rule in Settings. Larger resources are preferred.",
+      "block"
+    );
+    setScheduleSidebarMode("block-form");
+  }}
+
+  function openScheduleTemplateForm(template = null) {{
+    editingScheduleTemplateId = template ? String(template.id || "") : "";
+    const titleNode = $("scheduleTemplateFormTitle");
+    const titleInput = $("scheduleTemplateTitleInput");
+    const kindSelect = $("scheduleTemplateKindSelect");
+    const recurrenceSelect = $("scheduleTemplateRecurrenceSelect");
+    const daySelect = $("scheduleTemplateDaySelect");
+    const timeInput = $("scheduleTemplateTimeInput");
+    const durationInput = $("scheduleTemplateDurationInput");
+    const targetHidden = $("scheduleTemplateTargetValue");
+    if (titleNode) titleNode.textContent = editingScheduleTemplateId ? "Edit Recurring Slot" : "Add Recurring Slot";
+    if (titleInput) titleInput.value = String(template?.title || "");
+    if (kindSelect) kindSelect.value = String(template?.kind || "study_slot");
+    if (recurrenceSelect) recurrenceSelect.value = String(template?.recurrence || "weekly");
+    if (daySelect) daySelect.value = String(template?.day_of_week ?? 0);
+    if (timeInput) timeInput.value = String(template?.start_time || "19:00");
+    if (durationInput) durationInput.value = String(template?.duration_minutes || 90);
+    if (targetHidden) targetHidden.value = template ? scheduleTargetValue(template.resource_id || "", template.item_id || "__resource__") : "";
+    renderScheduleTargetCombobox("template", targetHidden?.value || "");
+    syncScheduleTemplateTargetVisibility();
+    updateScheduleFormStatus(
+      editingScheduleTemplateId
+        ? "Adjust this recurring slot so plans and reminders stay aligned."
+        : "Use life blocks for things like school, work, sleep, or commuting. Use study slots for resource plans.",
+      "template"
+    );
+    setScheduleSidebarMode("template-form");
+  }}
+
+  function extractScheduleBlockPayload(node) {{
+    if (!node) return null;
+    return {{
+      id: node.dataset.scheduleId || "",
+      template_id: node.dataset.scheduleTemplateId || "",
+      resource_id: node.dataset.scheduleResourceId || "",
+      item_id: node.dataset.scheduleItemId || "",
+      title: node.dataset.scheduleTitle || "Study Block",
+      when: node.dataset.scheduleWhen || "",
+      category: node.dataset.scheduleCategory || "General",
+      description: node.dataset.scheduleDescription || "",
+      notes: node.dataset.scheduleNotes || "",
+      kind: node.dataset.scheduleKind || "study",
+      date: node.dataset.scheduleDate || "",
+      start_time: node.dataset.scheduleStartTime || "08:00",
+      duration_minutes: Number.parseInt(node.dataset.scheduleDuration || "60", 10) || 60,
+      is_template: node.dataset.scheduleIsTemplate === "true",
+    }};
+  }}
+
+  function updateScheduleSelectionPanel(payload) {{
+    if (!payload) {{
+      selectedScheduleBlockId = "";
+      if ($("scheduleDeleteBlockButton")) $("scheduleDeleteBlockButton").dataset.blockId = "";
+      if ($("scheduleEditBlockButton")) {{
+        $("scheduleEditBlockButton").dataset.blockId = "";
+        $("scheduleEditBlockButton").dataset.templateId = "";
+      }}
+      setScheduleSidebarMode("empty");
+      return;
+    }}
+    if ($("scheduleSelectedTitle")) $("scheduleSelectedTitle").textContent = payload.title || "Study Block";
+    if ($("scheduleSelectedWhen")) $("scheduleSelectedWhen").textContent = payload.when || "";
+    if ($("scheduleSelectedCategory")) $("scheduleSelectedCategory").textContent = String(payload.category || "General").toUpperCase();
+    if ($("scheduleSelectedDescription")) $("scheduleSelectedDescription").textContent = payload.description || "";
+    if ($("scheduleSelectedBadge")) $("scheduleSelectedBadge").textContent = payload.is_template ? "Recurring Slot" : "Selected Block";
+    if ($("scheduleDeleteBlockButton")) {{
+      $("scheduleDeleteBlockButton").dataset.blockId = payload.is_template ? "" : (payload.id || "");
+      $("scheduleDeleteBlockButton").classList.toggle("hidden", !!payload.is_template);
+    }}
+    if ($("scheduleEditBlockButton")) {{
+      $("scheduleEditBlockButton").dataset.blockId = payload.id || "";
+      $("scheduleEditBlockButton").dataset.templateId = payload.template_id || "";
+      $("scheduleEditBlockButton").textContent = payload.is_template ? "Edit Slot" : "Edit Block";
+    }}
+    setScheduleSidebarMode("selection");
   }}
 
   function selectScheduleBlock(block) {{
     if (!block) {{
-      document.querySelectorAll(".study-schedule-block").forEach((node) => node.classList.remove("is-selected"));
-      setSchedulePanelVisible(false);
+      document.querySelectorAll("[data-schedule-id]").forEach((node) => node.classList.remove("is-selected"));
+      updateScheduleSelectionPanel(null);
       return;
     }}
-    const tone = (block.dataset.scheduleTone || "primary").toLowerCase();
-    document.querySelectorAll(".study-schedule-block").forEach((node) => node.classList.toggle("is-selected", node === block));
-    if ($("scheduleSelectedTitle")) $("scheduleSelectedTitle").textContent = block.dataset.scheduleTitle || "Study Block";
-    if ($("scheduleSelectedWhen")) $("scheduleSelectedWhen").textContent = block.dataset.scheduleWhen || "";
-    if ($("scheduleSelectedCategory")) {{
-      $("scheduleSelectedCategory").textContent = (block.dataset.scheduleCategory || "").toUpperCase();
-      $("scheduleSelectedCategory").className = `text-[10px] font-label font-bold text-${{tone}}`;
+    selectedScheduleBlockId = block.dataset.scheduleId || "";
+    document.querySelectorAll("[data-schedule-id]").forEach((node) => node.classList.toggle("is-selected", node === block));
+    updateScheduleSelectionPanel(extractScheduleBlockPayload(block));
+  }}
+
+  function renderSchedule() {{
+    const blocks = virtualScheduleBlocks();
+    const templates = Array.isArray(studyState?.schedule_templates) ? studyState.schedule_templates : [];
+    const targets = Array.isArray(studyState?.schedule_target_options) ? studyState.schedule_target_options : [];
+    if ($("scheduleRangeLabel")) $("scheduleRangeLabel").textContent = calendarRangeLabel();
+    setPillState("scheduleViewWeekButton", scheduleViewMode === "week");
+    setPillState("scheduleViewDayButton", scheduleViewMode === "day");
+    setPillState("scheduleViewMonthButton", scheduleViewMode === "month");
+    setPillState("scheduleViewYearButton", scheduleViewMode === "year");
+    if ($("scheduleBlocksCountText")) $("scheduleBlocksCountText").textContent = String(blocks.length);
+    if ($("scheduleTemplatesCountText")) $("scheduleTemplatesCountText").textContent = String(templates.length);
+    if ($("scheduleTargetsCountText")) $("scheduleTargetsCountText").textContent = String(targets.length);
+    if ($("scheduleLooseSinglesText")) {{
+      const limit = Number(settingsState?.resource_policy?.schedule_loose_single_limit ?? 5);
+      const used = targets.filter((item) => item.type === "single").length;
+      $("scheduleLooseSinglesText").textContent = `${{used}} / ${{limit < 0 ? "inf" : limit}}`;
     }}
-    if ($("scheduleSelectedDescription")) $("scheduleSelectedDescription").textContent = block.dataset.scheduleDescription || "";
-    if ($("scheduleSelectedBadge")) {{
-      $("scheduleSelectedBadge").className = `px-3 py-1 bg-${{tone}}/20 text-${{tone}} text-[9px] font-black uppercase tracking-widest rounded-full`;
-      $("scheduleSelectedBadge").textContent = "Selected Block";
+    const viewport = $("scheduleCalendarViewport");
+    if (viewport) {{
+      const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      if (scheduleViewMode === "week" || scheduleViewMode === "day") {{
+        const startHour = 8;
+        const hourLabels = Array.from({{length: 14}}, (_, index) => `${{String(startHour + index).padStart(2, "0")}}:00`);
+        const rangeStart = scheduleViewMode === "day" ? new Date(scheduleAnchorDate) : startOfWeek(scheduleAnchorDate);
+        const days = scheduleViewMode === "day" ? [rangeStart] : Array.from({{length: 7}}, (_, index) => addDays(rangeStart, index));
+        viewport.innerHTML = `
+          <div class="study-calendar-${{scheduleViewMode}}">
+            <div class="study-calendar-time-rail">
+              <div class="study-calendar-time-head"></div>
+              ${{hourLabels.map((label) => `<div class="study-calendar-time-cell">${{label}}</div>`).join("")}}
+            </div>
+            ${{days.map((day) => {{
+              const dayKey = isoDateKey(day);
+              const dayBlocks = blocks.filter((block) => block.date === dayKey);
+              return `
+                <div class="study-calendar-day-column">
+                  <div class="study-calendar-day-head">${{scheduleViewMode === "day" ? day.toLocaleDateString([], {{ weekday: "long", month: "short", day: "numeric" }}) : `${{weekdays[(day.getDay() + 6) % 7]}} ${{day.getDate()}}`}}</div>
+                  <div class="study-calendar-grid-body">
+                    ${{dayBlocks.map((block) => {{
+                      const top = Math.max(0, ((minutesFromClock(block.start_time || "08:00") - (startHour * 60)) / 60) * 64);
+                      const height = Math.max(42, (Number(block.duration_minutes || 60) / 60) * 64);
+                      const blockClass = `study-calendar-block${{block.kind === "life" ? " is-life" : ""}}${{block.is_template ? " is-template" : ""}}`;
+                      return `
+                        <button class="${{blockClass}}" style="top:${{top}}px;height:${{height}}px" data-schedule-id="${{escapeHtml(block.id)}}" data-schedule-template-id="${{escapeHtml(block.template_id || "")}}" data-schedule-resource-id="${{escapeHtml(block.resource_id || "")}}" data-schedule-item-id="${{escapeHtml(block.item_id || "")}}" data-schedule-date="${{escapeHtml(block.date || "")}}" data-schedule-start-time="${{escapeHtml(block.start_time || "08:00")}}" data-schedule-duration="${{escapeHtml(String(block.duration_minutes || 60))}}" data-schedule-kind="${{escapeHtml(block.kind || "study")}}" data-schedule-is-template="${{block.is_template ? "true" : "false"}}" data-schedule-title="${{escapeHtml(block.title)}}" data-schedule-when="${{escapeHtml(block.when || "")}}" data-schedule-category="${{escapeHtml(block.category || "General")}}" data-schedule-notes="${{escapeHtml(block.notes || "")}}" data-schedule-description="${{escapeHtml(block.notes || `${{block.kind}} block • source: ${{block.source || "manual"}}`)}}" type="button">
+                          <span class="study-calendar-block-time">${{escapeHtml(block.start_time || "08:00")}} - ${{escapeHtml(block.end_time || blockEndClock(block.start_time || "08:00", block.duration_minutes || 60))}}</span>
+                          <span class="study-calendar-block-title">${{escapeHtml(block.title || "Study Block")}}</span>
+                          <span class="study-calendar-block-meta">${{escapeHtml(block.category || "General")}}</span>
+                        </button>
+                      `;
+                    }}).join("")}}
+                  </div>
+                </div>
+              `;
+            }}).join("")}}
+          </div>
+        `;
+      }} else if (scheduleViewMode === "month") {{
+        const first = new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth(), 1);
+        const firstCell = startOfWeek(first);
+        const cells = Array.from({{length: 42}}, (_, index) => addDays(firstCell, index));
+        viewport.innerHTML = `
+          <div class="study-calendar-month">
+            <div class="study-calendar-month-header">${{weekdays.map((label) => `<span>${{label}}</span>`).join("")}}</div>
+            <div class="study-calendar-month-grid">
+              ${{cells.map((day) => {{
+                const dayKey = isoDateKey(day);
+                const dayBlocks = blocks.filter((block) => block.date === dayKey).slice(0, 3);
+                return `
+                  <div class="study-calendar-month-cell">
+                    <strong class="text-sm font-headline text-on-surface">${{day.getDate()}}</strong>
+                    ${{dayBlocks.map((block) => `<button class="study-calendar-month-chip" data-schedule-id="${{escapeHtml(block.id)}}" data-schedule-template-id="${{escapeHtml(block.template_id || "")}}" data-schedule-resource-id="${{escapeHtml(block.resource_id || "")}}" data-schedule-item-id="${{escapeHtml(block.item_id || "")}}" data-schedule-date="${{escapeHtml(block.date || "")}}" data-schedule-start-time="${{escapeHtml(block.start_time || "08:00")}}" data-schedule-duration="${{escapeHtml(String(block.duration_minutes || 60))}}" data-schedule-kind="${{escapeHtml(block.kind || "study")}}" data-schedule-is-template="${{block.is_template ? "true" : "false"}}" data-schedule-title="${{escapeHtml(block.title)}}" data-schedule-when="${{escapeHtml(block.when || "")}}" data-schedule-category="${{escapeHtml(block.category || "General")}}" data-schedule-notes="${{escapeHtml(block.notes || "")}}" data-schedule-description="${{escapeHtml(block.notes || `${{block.kind}} block • source: ${{block.source || "manual"}}`)}}" type="button">${{escapeHtml(block.start_time || "08:00")}} • ${{escapeHtml(block.title || "Block")}}</button>`).join("")}}
+                  </div>
+                `;
+              }}).join("")}}
+            </div>
+          </div>
+        `;
+      }} else {{
+        const months = Array.from({{length: 12}}, (_, index) => index);
+        viewport.innerHTML = `
+          <div class="study-calendar-year">
+            ${{months.map((monthIndex) => {{
+              const monthBlocks = blocks.filter((block) => {{
+                const date = parseIsoDate(block.date || "");
+                return date.getFullYear() === scheduleAnchorDate.getFullYear() && date.getMonth() === monthIndex;
+              }});
+              const studyCount = monthBlocks.filter((block) => block.kind !== "life").length;
+              return `
+                <div class="study-calendar-year-month">
+                  <h4>${{new Date(scheduleAnchorDate.getFullYear(), monthIndex, 1).toLocaleDateString([], {{ month: "long" }})}}</h4>
+                  <p>${{monthBlocks.length}} total blocks</p>
+                  <p>${{studyCount}} study blocks</p>
+                  <p>${{monthBlocks.length - studyCount}} life or recurring slots</p>
+                </div>
+              `;
+            }}).join("")}}
+          </div>
+        `;
+      }}
+      viewport.querySelectorAll("[data-schedule-id]").forEach((block) => {{
+        block.addEventListener("click", () => selectScheduleBlock(block));
+      }});
     }}
-    setSchedulePanelVisible(true);
+    const templatesList = $("scheduleTemplatesList");
+    if (templatesList) {{
+      templatesList.innerHTML = templates.map((template) => `
+        <button class="study-schedule-row" data-template-id="${{escapeHtml(template.id)}}" type="button">
+          <div class="study-schedule-row-copy">
+            <strong>${{escapeHtml(template.title)}}</strong>
+            <span>${{escapeHtml(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][Number(template.day_of_week || 0)] || "Mon")}} • ${{escapeHtml(template.start_time || "08:00")}} • ${{escapeHtml(String(template.duration_minutes || 60))}} min</span>
+            <span>${{escapeHtml(template.kind || "life")}}${{template.notify ? " • notifications on" : ""}}</span>
+          </div>
+        </button>
+      `).join("") || `<div class="study-combobox-empty">No recurring slots yet. Add work, school, sleep, commuting, or study windows.</div>`;
+      templatesList.querySelectorAll("[data-template-id]").forEach((node) => {{
+        node.addEventListener("click", () => {{
+          const template = scheduleTemplateById(node.getAttribute("data-template-id") || "");
+          openScheduleTemplateForm(template);
+        }});
+      }});
+    }}
+    if (scheduleSidebarMode === "block-form") {{
+      renderScheduleTargetCombobox("block", $("scheduleBlockTargetValue")?.value || "");
+    }} else if (scheduleSidebarMode === "template-form") {{
+      renderScheduleTargetCombobox("template", $("scheduleTemplateTargetValue")?.value || "");
+      syncScheduleTemplateTargetVisibility();
+    }} else if (selectedScheduleBlockId) {{
+      const selectedNode = scheduleNodeById(selectedScheduleBlockId);
+      if (selectedNode) {{
+        document.querySelectorAll("[data-schedule-id]").forEach((node) => node.classList.toggle("is-selected", node === selectedNode));
+        updateScheduleSelectionPanel(extractScheduleBlockPayload(selectedNode));
+      }} else {{
+        updateScheduleSelectionPanel(null);
+      }}
+    }} else if (scheduleSidebarMode !== "template-form") {{
+      setScheduleSidebarMode("empty");
+    }}
   }}
 
   function wireScheduleActions() {{
-    document.querySelectorAll(".study-schedule-block").forEach((block) => {{
-      block.addEventListener("click", () => selectScheduleBlock(block));
-    }});
+    wireScheduleTargetCombobox("block");
+    wireScheduleTargetCombobox("template");
     $("scheduleSelectionCloseButton")?.addEventListener("click", () => selectScheduleBlock(null));
-    setSchedulePanelVisible(false);
+    $("scheduleViewWeekButton")?.addEventListener("click", () => {{ scheduleViewMode = "week"; renderSchedule(); }});
+    $("scheduleViewDayButton")?.addEventListener("click", () => {{ scheduleViewMode = "day"; renderSchedule(); }});
+    $("scheduleViewMonthButton")?.addEventListener("click", () => {{ scheduleViewMode = "month"; renderSchedule(); }});
+    $("scheduleViewYearButton")?.addEventListener("click", () => {{ scheduleViewMode = "year"; renderSchedule(); }});
+    $("scheduleTodayButton")?.addEventListener("click", () => {{ scheduleAnchorDate = new Date(); renderSchedule(); }});
+    $("schedulePrevRangeButton")?.addEventListener("click", () => {{
+      scheduleAnchorDate = scheduleViewMode === "day" ? addDays(scheduleAnchorDate, -1)
+        : scheduleViewMode === "week" ? addDays(scheduleAnchorDate, -7)
+        : scheduleViewMode === "month" ? new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth() - 1, 1)
+        : new Date(scheduleAnchorDate.getFullYear() - 1, 0, 1);
+      renderSchedule();
+    }});
+    $("scheduleNextRangeButton")?.addEventListener("click", () => {{
+      scheduleAnchorDate = scheduleViewMode === "day" ? addDays(scheduleAnchorDate, 1)
+        : scheduleViewMode === "week" ? addDays(scheduleAnchorDate, 7)
+        : scheduleViewMode === "month" ? new Date(scheduleAnchorDate.getFullYear(), scheduleAnchorDate.getMonth() + 1, 1)
+        : new Date(scheduleAnchorDate.getFullYear() + 1, 0, 1);
+      renderSchedule();
+    }});
+    $("scheduleDeleteBlockButton")?.addEventListener("click", () => {{
+      const blockId = $("scheduleDeleteBlockButton")?.dataset.blockId || "";
+      if (blockId) bridge?.deleteScheduleBlock(blockId);
+    }});
+    $("scheduleAddLifeTemplateButton")?.addEventListener("click", () => openScheduleTemplateForm(null));
+    $("scheduleAddStudyBlockButton")?.addEventListener("click", () => openScheduleBlockForm(null));
+    $("scheduleTemplateKindSelect")?.addEventListener("change", () => syncScheduleTemplateTargetVisibility());
+    $("scheduleEditBlockButton")?.addEventListener("click", () => {{
+      const templateId = $("scheduleEditBlockButton")?.dataset.templateId || "";
+      if (templateId) {{
+        openScheduleTemplateForm(scheduleTemplateById(templateId));
+        return;
+      }}
+      const blockId = $("scheduleEditBlockButton")?.dataset.blockId || "";
+      if (blockId) openScheduleBlockForm(scheduleBlockById(blockId));
+    }});
+    $("scheduleBlockFormCancelButton")?.addEventListener("click", () => {{
+      if (selectedScheduleBlockId) {{
+        const selectedNode = scheduleNodeById(selectedScheduleBlockId);
+        if (selectedNode) {{
+          selectScheduleBlock(selectedNode);
+          return;
+        }}
+      }}
+      setScheduleSidebarMode("empty");
+    }});
+    $("scheduleTemplateFormCancelButton")?.addEventListener("click", () => {{
+      if (selectedScheduleBlockId) {{
+        const selectedNode = scheduleNodeById(selectedScheduleBlockId);
+        if (selectedNode) {{
+          selectScheduleBlock(selectedNode);
+          return;
+        }}
+      }}
+      setScheduleSidebarMode("empty");
+    }});
+    $("scheduleBlockSaveButton")?.addEventListener("click", () => {{
+      const targetValue = $("scheduleBlockTargetValue")?.value || "";
+      const [resourceId, rawItemId] = targetValue.split("::");
+      const itemId = rawItemId || "__resource__";
+      const date = ($("scheduleBlockDateInput")?.value || "").trim();
+      const startTime = ($("scheduleBlockTimeInput")?.value || "").trim();
+      const duration = Number.parseInt($("scheduleBlockDurationInput")?.value || "60", 10) || 60;
+      const notes = ($("scheduleBlockNotesInput")?.value || "").trim();
+      if (!resourceId || !date || !startTime) {{
+        updateScheduleFormStatus("Choose a target, date, and start time before saving.", "block");
+        return;
+      }}
+      setScheduleSidebarMode(selectedScheduleBlockId ? "selection" : "empty");
+      bridge?.createScheduleBlock(JSON.stringify({{
+        id: editingScheduleBlockId || "",
+        resource_id: resourceId,
+        item_id: itemId,
+        date,
+        start_time: startTime,
+        duration_minutes: duration,
+        notes,
+      }}));
+    }});
+    $("scheduleTemplateSaveButton")?.addEventListener("click", () => {{
+      const title = ($("scheduleTemplateTitleInput")?.value || "").trim();
+      const kind = ($("scheduleTemplateKindSelect")?.value || "study_slot").trim().toLowerCase();
+      const targetValue = $("scheduleTemplateTargetValue")?.value || "";
+      const [resourceId, rawItemId] = targetValue.split("::");
+      const itemId = rawItemId || "__resource__";
+      const recurrence = ($("scheduleTemplateRecurrenceSelect")?.value || "weekly").trim().toLowerCase();
+      const dayOfWeek = Number.parseInt($("scheduleTemplateDaySelect")?.value || "0", 10) || 0;
+      const startTime = ($("scheduleTemplateTimeInput")?.value || "").trim();
+      const duration = Number.parseInt($("scheduleTemplateDurationInput")?.value || "90", 10) || 90;
+      if ((kind === "study_slot" && !resourceId) || (!title && kind !== "study_slot") || !startTime) {{
+        updateScheduleFormStatus(kind === "study_slot" ? "Pick a study target and start time before saving." : "Give the slot a title and start time before saving.", "template");
+        return;
+      }}
+      setScheduleSidebarMode(selectedScheduleBlockId ? "selection" : "empty");
+      bridge?.createScheduleTemplate(JSON.stringify({{
+        id: editingScheduleTemplateId || "",
+        title: title || (scheduleTargetOptionByValue(targetValue)?.title || "Study Slot"),
+        category: kind === "study_slot" ? "Study Slot" : "Life",
+        kind,
+        resource_id: kind === "study_slot" ? resourceId : "",
+        item_id: kind === "study_slot" ? itemId : "",
+        recurrence,
+        day_of_week: dayOfWeek,
+        start_time: startTime,
+        duration_minutes: duration,
+      }}));
+    }});
   }}
 
   function render() {{
@@ -1757,6 +2685,9 @@ def build_runtime_script(page_name: str) -> str:
     }}
     if (currentPage === "resources" && resourcesState) {{
       renderResources();
+    }}
+    if (currentPage === "schedule" && studyState) {{
+      renderSchedule();
     }}
   }}
 
@@ -1777,6 +2708,22 @@ def build_runtime_script(page_name: str) -> str:
     return {{
       instance_url: $("jellyfinInstanceUrlInput")?.value || "",
       api_token: $("jellyfinApiTokenInput")?.value || "",
+    }};
+  }}
+
+  function collectResourcePolicySettings() {{
+    return {{
+      loose_single_limit: Number.parseInt($("looseSingleLimitInput")?.value || "5", 10),
+      schedule_loose_single_limit: Number.parseInt($("scheduleLooseSingleLimitInput")?.value || "5", 10),
+    }};
+  }}
+
+  function collectNotificationSettings() {{
+    return {{
+      study_blocks: !($("notifyStudyBlocksButton")?.classList.contains("off")),
+      life_blocks: !($("notifyLifeBlocksButton")?.classList.contains("off")),
+      caldav_events: !($("notifyCaldavEventsButton")?.classList.contains("off")),
+      resource_plans: !($("notifyResourcePlansButton")?.classList.contains("off")),
     }};
   }}
 
@@ -1880,8 +2827,13 @@ def build_runtime_script(page_name: str) -> str:
       const currentlyOff = $("syncAutoButton")?.classList.contains("off");
       setToggleButton("syncAutoButton", currentlyOff, ["Enabled", "Disabled"]);
     }});
+    ["notifyStudyBlocksButton", "notifyLifeBlocksButton", "notifyCaldavEventsButton", "notifyResourcePlansButton"].forEach((id) => {{
+      $(id)?.addEventListener("click", () => setToggleButton(id, $(id)?.classList.contains("off"), ["Enabled", "Disabled"]));
+    }});
     $("saveSyncSettingsButton")?.addEventListener("click", () => bridge?.saveSyncSettings(JSON.stringify(collectSyncSettings())));
     $("saveJellyfinSettingsButton")?.addEventListener("click", () => bridge?.saveJellyfinSettings(JSON.stringify(collectJellyfinSettings())));
+    $("saveResourcePolicyButton")?.addEventListener("click", () => bridge?.saveResourcePolicy(JSON.stringify(collectResourcePolicySettings())));
+    $("saveNotificationPrefsButton")?.addEventListener("click", () => bridge?.saveNotificationSettings(JSON.stringify(collectNotificationSettings())));
     $("syncNowButton")?.addEventListener("click", () => bridge?.syncNow());
     $("backupButton")?.addEventListener("click", () => bridge?.createBackup());
     $("exportButton")?.addEventListener("click", () => bridge?.exportJson());
@@ -1919,6 +2871,12 @@ def build_runtime_script(page_name: str) -> str:
       if (String(resource.kind || "").toLowerCase() === "document") return;
       const markDone = !(resource.done_items >= resource.total_items && resource.total_items > 0);
       bridge?.setAllResourceItems(id, markDone);
+    }});
+    $("resourceCreatePlanButton")?.addEventListener("click", () => {{
+      const id = $("resourceCreatePlanButton")?.dataset.resourceId || "";
+      if (!id) return;
+      const perDay = Number.parseInt(window.prompt("How many classes or items per day should this resource schedule automatically?", "1") || "1", 10) || 1;
+      bridge?.createResourcePlan(id, perDay);
     }});
     $("resourceDocumentOpenButton")?.addEventListener("click", () => {{
       const id = $("resourceDocumentOpenButton")?.dataset.resourceId || "";
@@ -2061,9 +3019,13 @@ def build_runtime_script(page_name: str) -> str:
     bindCurrentPageActions();
     document.addEventListener("mousedown", (event) => {{
       const combobox = $("sessionClassCombobox");
-      if (!combobox) return;
-      if (combobox.contains(event.target)) return;
+      if (combobox && combobox.contains(event.target)) return;
       closeFocusClassMenu();
+      ["block", "template"].forEach((kind) => {{
+        const targetCombobox = scheduleTargetElements(kind).combobox;
+        if (targetCombobox && targetCombobox.contains(event.target)) return;
+        closeScheduleTargetMenu(kind);
+      }});
     }});
     document.body.addEventListener("htmx:afterSwap", (event) => {{
       const target = event.detail && event.detail.target;
@@ -2192,6 +3154,8 @@ class StudyBridge(QObject):
     customThemeRequested = pyqtSignal(str)
     syncSettingsRequested = pyqtSignal(str)
     jellyfinSettingsRequested = pyqtSignal(str)
+    resourcePolicySettingsRequested = pyqtSignal(str)
+    notificationSettingsRequested = pyqtSignal(str)
     syncNowRequested = pyqtSignal()
     backupRequested = pyqtSignal()
     exportRequested = pyqtSignal()
@@ -2201,6 +3165,10 @@ class StudyBridge(QObject):
     resourceToggleAllRequested = pyqtSignal(str, bool)
     resourceOpenRequested = pyqtSignal(str)
     documentPageRequested = pyqtSignal(str, int)
+    scheduleTemplateRequested = pyqtSignal(str)
+    scheduleBlockRequested = pyqtSignal(str)
+    scheduleBlockDeleteRequested = pyqtSignal(str)
+    resourcePlanRequested = pyqtSignal(str, int)
 
     @pyqtSlot()
     def requestBootstrap(self) -> None:
@@ -2262,6 +3230,14 @@ class StudyBridge(QObject):
     def saveJellyfinSettings(self, payload_json: str) -> None:
         self.jellyfinSettingsRequested.emit(payload_json)
 
+    @pyqtSlot(str)
+    def saveResourcePolicy(self, payload_json: str) -> None:
+        self.resourcePolicySettingsRequested.emit(payload_json)
+
+    @pyqtSlot(str)
+    def saveNotificationSettings(self, payload_json: str) -> None:
+        self.notificationSettingsRequested.emit(payload_json)
+
     @pyqtSlot()
     def syncNow(self) -> None:
         self.syncNowRequested.emit()
@@ -2297,6 +3273,22 @@ class StudyBridge(QObject):
     @pyqtSlot(str, int)
     def setDocumentPage(self, resource_id: str, page: int) -> None:
         self.documentPageRequested.emit(resource_id, page)
+
+    @pyqtSlot(str)
+    def createScheduleTemplate(self, payload_json: str) -> None:
+        self.scheduleTemplateRequested.emit(payload_json)
+
+    @pyqtSlot(str)
+    def createScheduleBlock(self, payload_json: str) -> None:
+        self.scheduleBlockRequested.emit(payload_json)
+
+    @pyqtSlot(str)
+    def deleteScheduleBlock(self, block_id: str) -> None:
+        self.scheduleBlockDeleteRequested.emit(block_id)
+
+    @pyqtSlot(str, int)
+    def createResourcePlan(self, resource_id: str, classes_per_day: int) -> None:
+        self.resourcePlanRequested.emit(resource_id, classes_per_day)
 
 
 class StudyTrackerWindow(QWidget):
@@ -2351,6 +3343,8 @@ class StudyTrackerWindow(QWidget):
         self.bridge.customThemeRequested.connect(self.set_custom_theme)
         self.bridge.syncSettingsRequested.connect(self.save_sync_settings)
         self.bridge.jellyfinSettingsRequested.connect(self.save_jellyfin_settings)
+        self.bridge.resourcePolicySettingsRequested.connect(self.save_resource_policy)
+        self.bridge.notificationSettingsRequested.connect(self.save_notification_settings)
         self.bridge.syncNowRequested.connect(self.sync_now)
         self.bridge.backupRequested.connect(self.create_backup)
         self.bridge.exportRequested.connect(self.export_json)
@@ -2360,6 +3354,10 @@ class StudyTrackerWindow(QWidget):
         self.bridge.resourceToggleAllRequested.connect(self.set_all_resource_items)
         self.bridge.resourceOpenRequested.connect(self.open_resource_source)
         self.bridge.documentPageRequested.connect(self.set_document_page)
+        self.bridge.scheduleTemplateRequested.connect(self.create_schedule_template)
+        self.bridge.scheduleBlockRequested.connect(self.create_schedule_block)
+        self.bridge.scheduleBlockDeleteRequested.connect(self.delete_schedule_block)
+        self.bridge.resourcePlanRequested.connect(self.create_resource_plan)
         self.resourceImportFinished.connect(self._finish_resource_import)
         self.resourceImportStatusChanged.connect(self._update_resource_import_status)
 
@@ -3143,10 +4141,35 @@ class StudyTrackerWindow(QWidget):
         self._resource_import_busy = False
         self._resource_import_message = ""
         if ok and isinstance(resources, list):
+            loose_policy_limit = int(self._resource_policy().get("loose_single_limit", 5) or 0)
+            current_loose_count = len(loose_single_resources(self.state))
+            accepted: list[dict[str, Any]] = []
+            warnings: list[str] = []
+            for resource in resources:
+                if not isinstance(resource, dict):
+                    continue
+                if is_loose_single_resource(resource):
+                    if loose_policy_limit >= 0 and current_loose_count >= loose_policy_limit:
+                        warnings.append(
+                            f"Skipped '{resource.get('title', 'resource')}'. Too many standalone single videos/documents become hard to maintain. Add it inside a broader study resource or raise the limit in Settings."
+                        )
+                        continue
+                    current_loose_count += 1
+                    warnings.append(
+                        f"'{resource.get('title', 'resource')}' is a standalone single item. It is usually better inside a broader study resource so planning stays manageable."
+                    )
+                accepted.append(resource)
+            if not accepted and warnings:
+                self.push_resources()
+                notify("Study Resources", warnings[0])
+                return
             existing = self.state.setdefault("resources", [])
             if isinstance(existing, list):
-                existing[0:0] = resources
-            self._commit_resources(message)
+                existing[0:0] = accepted
+            notice = message
+            if warnings:
+                notice = f"{message} {warnings[0]}"
+            self._commit_resources(notice)
             return
         self.push_resources()
         notify("Study Resources", message)
@@ -3312,6 +4335,251 @@ class StudyTrackerWindow(QWidget):
         )
         self._save()
         self.push_settings()
+
+    def save_resource_policy(self, payload_json: str) -> None:
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return
+        preferences = self.state.setdefault("preferences", {})
+        if not isinstance(preferences, dict):
+            return
+        policy = preferences.setdefault("resource_policy", {})
+        if not isinstance(policy, dict):
+            return
+        loose_limit = int(payload.get("loose_single_limit", 5) or 0)
+        schedule_limit = int(payload.get("schedule_loose_single_limit", 5) or 0)
+        policy["loose_single_limit"] = -1 if loose_limit < 0 else max(0, loose_limit)
+        policy["schedule_loose_single_limit"] = -1 if schedule_limit < 0 else max(0, schedule_limit)
+        self._save()
+        self.push_settings()
+        self.push_resources()
+
+    def save_notification_settings(self, payload_json: str) -> None:
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return
+        preferences = self.state.setdefault("preferences", {})
+        if not isinstance(preferences, dict):
+            return
+        notifications = preferences.setdefault("notifications", {})
+        if not isinstance(notifications, dict):
+            return
+        for key in ("study_blocks", "life_blocks", "caldav_events", "resource_plans"):
+            notifications[key] = bool(payload.get(key, notifications.get(key, False)))
+        self._save()
+        self.push_settings()
+
+    def _resource_policy(self) -> dict[str, Any]:
+        preferences = self.state.setdefault("preferences", {})
+        if not isinstance(preferences, dict):
+            return {"loose_single_limit": 5, "schedule_loose_single_limit": 5}
+        policy = preferences.setdefault("resource_policy", {})
+        if not isinstance(policy, dict):
+            return {"loose_single_limit": 5, "schedule_loose_single_limit": 5}
+        return policy
+
+    def _notifications_policy(self) -> dict[str, Any]:
+        preferences = self.state.setdefault("preferences", {})
+        if not isinstance(preferences, dict):
+            return {}
+        notifications = preferences.setdefault("notifications", {})
+        return notifications if isinstance(notifications, dict) else {}
+
+    def _single_item_policy_message(self, resource: dict[str, Any], *, for_schedule: bool = False) -> str | None:
+        if not is_loose_single_resource(resource):
+            return None
+        policy = self._resource_policy()
+        limit_key = "schedule_loose_single_limit" if for_schedule else "loose_single_limit"
+        limit = int(policy.get(limit_key, 5) or 0)
+        used = len(loose_single_resources(self.state))
+        if limit >= 0 and ((used >= limit and not for_schedule) or (used >= limit and for_schedule)):
+            return (
+                f"This looks like a single {resource.get('kind', 'item')}. Too many standalone singles make study maintenance harder. "
+                f"Put it inside a broader study resource or raise the limit in Settings."
+            )
+        return (
+            f"This is a single standalone item. It is better inside a broader study resource so schedules and progress stay manageable. "
+            f"You are using {used}{'+' if limit >= 0 and used > limit else ''} of {limit if limit >= 0 else 'infinite'} allowed loose singles."
+        )
+
+    def _notify_schedule_policy(self, kind: str, title: str, body: str) -> None:
+        notifications = self._notifications_policy()
+        if kind == "study" and not bool(notifications.get("study_blocks", True)):
+            return
+        if kind == "life" and not bool(notifications.get("life_blocks", False)):
+            return
+        if kind == "resource_plan" and not bool(notifications.get("resource_plans", True)):
+            return
+        notify(title, body)
+
+    def create_schedule_template(self, payload_json: str) -> None:
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return
+        template_id = str(payload.get("id", "") or "")
+        template = {
+            "id": template_id or str(uuid.uuid4()),
+            "title": str(payload.get("title", "Schedule Slot") or "Schedule Slot"),
+            "category": str(payload.get("category", "General") or "General"),
+            "kind": str(payload.get("kind", "life") or "life").strip().lower(),
+            "resource_id": str(payload.get("resource_id", "") or ""),
+            "item_id": str(payload.get("item_id", "") or ""),
+            "recurrence": str(payload.get("recurrence", "weekly") or "weekly").strip().lower(),
+            "day_of_week": max(0, min(6, int(payload.get("day_of_week", 0) or 0))),
+            "start_time": str(payload.get("start_time", "08:00") or "08:00"),
+            "duration_minutes": max(15, int(payload.get("duration_minutes", 60) or 60)),
+            "notify": bool(payload.get("notify", str(payload.get("kind", "life")).strip().lower() == "study_slot")),
+        }
+        templates = self.state.setdefault("schedule_templates", [])
+        updated = False
+        if isinstance(templates, list) and template_id:
+            for index, existing in enumerate(templates):
+                if isinstance(existing, dict) and str(existing.get("id", "")) == template_id:
+                    templates[index] = template
+                    updated = True
+                    break
+        if not updated and isinstance(templates, list):
+            templates.append(template)
+        self._save()
+        self.push_state()
+        self._notify_schedule_policy(
+            "life" if template["kind"] == "life" else "study",
+            "Schedule Planner",
+            f"{'Updated' if updated else 'Added'} recurring slot: {template['title']}.",
+        )
+
+    def create_schedule_block(self, payload_json: str) -> None:
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return
+        block_id = str(payload.get("id", "") or "")
+        resource_id = str(payload.get("resource_id", "") or "")
+        item_id = str(payload.get("item_id", "") or "")
+        date_value = str(payload.get("date", today_iso()) or today_iso())
+        start_time = str(payload.get("start_time", "19:00") or "19:00")
+        duration_minutes = max(15, int(payload.get("duration_minutes", 60) or 60))
+        resource, item = resource_item_by_id(self.state, resource_id, item_id or "__resource__")
+        if not isinstance(resource, dict):
+            return
+        warning = self._single_item_policy_message(resource, for_schedule=True)
+        if warning and is_loose_single_resource(resource):
+            limit = int(self._resource_policy().get("schedule_loose_single_limit", 5) or 0)
+            if limit >= 0:
+                allowed = len([opt for opt in build_schedule_target_options(self.state) if opt.get("type") == "single"])
+                if allowed >= limit:
+                    notify("Schedule Planner", warning)
+                    return
+        title = str((item or {}).get("title", resource.get("title", "Study Block")) or resource.get("title", "Study Block"))
+        block = {
+            "id": block_id or str(uuid.uuid4()),
+            "title": title,
+            "category": "Study",
+            "kind": "study",
+            "date": date_value,
+            "start_time": start_time,
+            "duration_minutes": duration_minutes,
+            "resource_id": resource_id,
+            "item_id": str((item or {}).get("id", item_id or "__resource__") or "__resource__"),
+            "source": "manual",
+            "notify": True,
+            "notes": str(payload.get("notes", "") or warning or f"Scheduled from {resource.get('title', 'resource')}."),
+        }
+        blocks = self.state.setdefault("schedule_blocks", [])
+        updated = False
+        if isinstance(blocks, list) and block_id:
+            for index, existing in enumerate(blocks):
+                if isinstance(existing, dict) and str(existing.get("id", "")) == block_id:
+                    blocks[index] = block
+                    updated = True
+                    break
+        if not updated and isinstance(blocks, list):
+            blocks.append(block)
+        self._save()
+        self.push_state()
+        self._notify_schedule_policy("study", "Schedule Planner", f"{'Updated' if updated else 'Added'} study block for {title}.")
+
+    def delete_schedule_block(self, block_id: str) -> None:
+        blocks = self.state.get("schedule_blocks", [])
+        if not isinstance(blocks, list):
+            return
+        self.state["schedule_blocks"] = [block for block in blocks if not (isinstance(block, dict) and str(block.get("id", "")) == block_id)]
+        self._save()
+        self.push_state()
+
+    def create_resource_plan(self, resource_id: str, classes_per_day: int) -> None:
+        resource = resource_by_id(self.state, resource_id)
+        if not isinstance(resource, dict):
+            return
+        templates = [template for template in self.state.get("schedule_templates", []) if isinstance(template, dict) and str(template.get("kind", "") or "") == "study_slot"]
+        if not templates:
+            notify("Schedule Planner", "Create at least one recurring study slot first, then resource plans can fill it automatically.")
+            return
+        items = resource.get("items", [])
+        if not isinstance(items, list) or not items:
+            items = [{"id": "__resource__", "title": str(resource.get("title", "Study resource") or "Study resource")}]
+        remaining_items = [item for item in items if isinstance(item, dict) and not bool(item.get("done", False))]
+        if not remaining_items:
+            notify("Schedule Planner", "This resource is already complete.")
+            return
+        classes_per_day = max(1, int(classes_per_day or 1))
+        start_date = date.today()
+        created = 0
+        day_counts: dict[str, int] = {}
+        for offset in range(21):
+            current = start_date + timedelta(days=offset)
+            applicable_templates = [template for template in templates if str(template.get("recurrence", "weekly")) == "daily" or int(template.get("day_of_week", 0) or 0) == current.weekday()]
+            for template in applicable_templates:
+                if not remaining_items:
+                    break
+                day_key = current.isoformat()
+                if day_counts.get(day_key, 0) >= classes_per_day:
+                    continue
+                item = remaining_items.pop(0)
+                self.state.setdefault("schedule_blocks", []).append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "title": str(item.get("title", resource.get("title", "Study Block")) or resource.get("title", "Study Block")),
+                        "category": str(resource.get("title", "Study") or "Study"),
+                        "kind": "study",
+                        "date": current.isoformat(),
+                        "start_time": str(template.get("start_time", "19:00") or "19:00"),
+                        "duration_minutes": max(15, int(template.get("duration_minutes", 60) or 60)),
+                        "resource_id": str(resource.get("id", "")),
+                        "item_id": str(item.get("id", "__resource__") or "__resource__"),
+                        "source": "resource_plan",
+                        "notify": True,
+                        "notes": f"Planned automatically from {resource.get('title', 'resource')}.",
+                    }
+                )
+                day_counts[day_key] = day_counts.get(day_key, 0) + 1
+                created += 1
+        plans = self.state.setdefault("resource_plans", [])
+        if isinstance(plans, list):
+            plans.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "resource_id": str(resource.get("id", "")),
+                    "resource_title": str(resource.get("title", "Resource") or "Resource"),
+                    "classes_per_day": classes_per_day,
+                    "created_at": now_iso(),
+                    "active": True,
+                }
+            )
+        self._save()
+        self.push_state()
+        self._notify_schedule_policy("resource_plan", "Schedule Planner", f"Created {created} planned study blocks from {resource.get('title', 'resource')}.")
 
     def _sync_remote_webdav(self, sync: dict[str, Any]) -> tuple[bool, str]:
         if requests is None:
