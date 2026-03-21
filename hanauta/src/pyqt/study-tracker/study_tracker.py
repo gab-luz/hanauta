@@ -249,6 +249,10 @@ def make_task(title: str, estimate_minutes: int, *, active: bool = False) -> dic
         "estimate_minutes": estimate,
         "target_sessions": target_sessions,
         "sessions_completed": 0,
+        "linked_resource_id": "",
+        "linked_item_id": "",
+        "linked_resource_title": "",
+        "linked_item_title": "",
         "done": False,
         "active": active,
         "completed_at": "",
@@ -306,6 +310,8 @@ def make_resource(
         "tags": [str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()],
         "items": normalized_items,
         "duration_seconds": max(0, int(duration_seconds or 0)),
+        "tracked_minutes": 0,
+        "tracked_sessions": 0,
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
@@ -383,6 +389,12 @@ def default_state() -> dict[str, Any]:
                 "last_status": "Local only. No remote sync target configured yet.",
                 "last_sync_at": "",
             },
+            "jellyfin": {
+                "instance_url": "",
+                "api_token": "",
+                "user_id": "",
+                "last_status": "Jellyfin is not configured yet.",
+            },
         },
     }
 
@@ -404,6 +416,10 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
         base["active"] = bool(base.get("active", False))
         base["sessions_completed"] = max(0, int(base.get("sessions_completed", 0) or 0))
         base["target_sessions"] = max(1, int(base.get("target_sessions", 1) or 1))
+        base["linked_resource_id"] = str(base.get("linked_resource_id", "") or "")
+        base["linked_item_id"] = str(base.get("linked_item_id", "") or "")
+        base["linked_resource_title"] = str(base.get("linked_resource_title", "") or "")
+        base["linked_item_title"] = str(base.get("linked_item_title", "") or "")
         normalized_tasks.append(base)
     if not normalized_tasks:
         normalized_tasks = default_state()["tasks"]
@@ -455,6 +471,8 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
         resource["document_total_pages"] = max(0, int(resource.get("document_total_pages", 0) or 0))
         resource["document_current_page"] = max(0, int(resource.get("document_current_page", 0) or 0))
         resource["document_path"] = str(resource.get("document_path", "") or "")
+        resource["tracked_minutes"] = max(0, int(resource.get("tracked_minutes", 0) or 0))
+        resource["tracked_sessions"] = max(0, int(resource.get("tracked_sessions", 0) or 0))
         normalized_resources.append(resource)
     if not normalized_resources:
         normalized_resources = default_state()["resources"]
@@ -500,6 +518,16 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     merged_sync["last_status"] = str(merged_sync.get("last_status", "") or "")
     merged_sync["last_sync_at"] = str(merged_sync.get("last_sync_at", "") or "")
     merged_preferences["sync"] = merged_sync
+    jellyfin = merged_preferences.get("jellyfin", {})
+    if not isinstance(jellyfin, dict):
+        jellyfin = {}
+    merged_jellyfin = dict(default_preferences["jellyfin"])
+    merged_jellyfin.update(jellyfin)
+    merged_jellyfin["instance_url"] = str(merged_jellyfin.get("instance_url", "") or "").strip().rstrip("/")
+    merged_jellyfin["api_token"] = str(merged_jellyfin.get("api_token", "") or "").strip()
+    merged_jellyfin["user_id"] = str(merged_jellyfin.get("user_id", "") or "").strip()
+    merged_jellyfin["last_status"] = str(merged_jellyfin.get("last_status", "Jellyfin is not configured yet.") or "Jellyfin is not configured yet.")
+    merged_preferences["jellyfin"] = merged_jellyfin
     merged_preferences["anki_enabled"] = bool(merged_preferences.get("anki_enabled", True))
     merged_preferences["pomodoro_bridge_enabled"] = bool(merged_preferences.get("pomodoro_bridge_enabled", True))
     theme_mode = str(merged_preferences.get("theme_mode", "system") or "system").strip().lower()
@@ -672,6 +700,17 @@ def resource_item_by_id(state: dict[str, Any], resource_id: str, item_id: str) -
     resource = resource_by_id(state, resource_id)
     if not isinstance(resource, dict):
         return None, None
+    if item_id == "__resource__":
+        synthetic = {
+            "id": "__resource__",
+            "title": str(resource.get("title", "Untitled resource") or "Untitled resource"),
+            "kind": "document" if str(resource.get("kind", "")).lower() == "document" else "resource",
+            "tracked_minutes": int(resource.get("tracked_minutes", 0) or 0),
+            "tracked_sessions": int(resource.get("tracked_sessions", 0) or 0),
+            "external_url": str(resource.get("source_url", "") or ""),
+            "notes": str(resource.get("summary", "") or ""),
+        }
+        return resource, synthetic
     for item in resource.get("items", []):
         if isinstance(item, dict) and str(item.get("id", "")) == item_id:
             return resource, item
@@ -682,6 +721,20 @@ def build_focus_class_options(state: dict[str, Any]) -> list[dict[str, Any]]:
     options: list[dict[str, Any]] = []
     for resource in state.get("resources", []):
         if not isinstance(resource, dict):
+            continue
+        items = resource.get("items", [])
+        if str(resource.get("kind", "")).strip().lower() == "document" or not isinstance(items, list) or not items:
+            options.append(
+                {
+                    "resource_id": str(resource.get("id", "")),
+                    "item_id": "__resource__",
+                    "value": f"{resource.get('id', '')}::__resource__",
+                    "title": str(resource.get("title", "Untitled study target") or "Untitled study target"),
+                    "resource_title": str(resource.get("title", "Resource") or "Resource"),
+                    "tracked_minutes": int(resource.get("tracked_minutes", 0) or 0),
+                    "tracked_sessions": int(resource.get("tracked_sessions", 0) or 0),
+                }
+            )
             continue
         for item in resource.get("items", []):
             if not isinstance(item, dict):
@@ -700,6 +753,40 @@ def build_focus_class_options(state: dict[str, Any]) -> list[dict[str, Any]]:
     return options
 
 
+def focus_target_from_state(state: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    selected_resource_id = str(state.get("selected_focus_resource_id", "") or "")
+    selected_item_id = str(state.get("selected_focus_item_id", "") or "")
+    if not selected_resource_id:
+        return None, None
+    return resource_item_by_id(state, selected_resource_id, selected_item_id)
+
+
+def find_or_create_task_for_focus_target(state: dict[str, Any], resource: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    linked_resource_id = str(resource.get("id", "") or "")
+    linked_item_id = str(item.get("id", "") or "")
+    for task in state.get("tasks", []):
+        if (
+            isinstance(task, dict)
+            and not bool(task.get("done", False))
+            and str(task.get("linked_resource_id", "") or "") == linked_resource_id
+            and str(task.get("linked_item_id", "") or "") == linked_item_id
+        ):
+            return task
+    title = str(item.get("title", resource.get("title", "Study session")) or "Study session")
+    estimate = max(10, int(state.get("session_length_minutes", 25) or 25))
+    task = make_task(title, estimate)
+    task["linked_resource_id"] = linked_resource_id
+    task["linked_item_id"] = linked_item_id
+    task["linked_resource_title"] = str(resource.get("title", "") or "")
+    task["linked_item_title"] = title
+    for existing in state.get("tasks", []):
+        if isinstance(existing, dict):
+            existing["active"] = False
+    state.setdefault("tasks", []).append(task)
+    _ensure_single_active_task(state)
+    return task
+
+
 def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
     current_task = active_task(state)
     session = state.get("active_session")
@@ -708,6 +795,7 @@ def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
     selected_focus_resource_id = str(state.get("selected_focus_resource_id", "") or "")
     selected_focus_item_id = str(state.get("selected_focus_item_id", "") or "")
     selected_focus_option = next((option for option in focus_options if option["resource_id"] == selected_focus_resource_id and option["item_id"] == selected_focus_item_id), None)
+    selected_resource, selected_item = focus_target_from_state(state)
     if isinstance(session, dict):
         session_payload = {
             "task_id": str(session.get("task_id", "")),
@@ -717,6 +805,39 @@ def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
             "target_seconds": max(60, int(session.get("target_seconds", 25 * 60) or 25 * 60)),
             "running": bool(session.get("running", False)),
         }
+    objective = {
+        "prefix": "Choose your next",
+        "title": "study target",
+        "meta": "Link a resource, document, or lesson to start intentional focus blocks.",
+        "progress_text": "0 / 0",
+        "progress_percent": 0,
+    }
+    if isinstance(selected_item, dict):
+        objective["prefix"] = "Current focus target"
+        objective["title"] = str(selected_item.get("title", "study target") or "study target")
+        resource_title = str(selected_resource.get("title", "") or "") if isinstance(selected_resource, dict) else ""
+        item_minutes = int(selected_item.get("tracked_minutes", 0) or 0)
+        item_sessions = int(selected_item.get("tracked_sessions", 0) or 0)
+        objective["meta"] = resource_title if resource_title and resource_title != objective["title"] else "Selected study target"
+        if current_task:
+            objective["meta"] = f"{objective['meta']} • Plan: {current_task.get('title', 'Study task')}" if objective["meta"] else f"Plan: {current_task.get('title', 'Study task')}"
+        objective["progress_text"] = f"{item_minutes} min • {item_sessions} session{'s' if item_sessions != 1 else ''}"
+        objective["progress_percent"] = min(100, max(8, item_minutes if item_minutes > 0 else item_sessions * 25))
+    elif current_task:
+        completed = max(0, int(current_task.get("sessions_completed", 0) or 0))
+        target = max(1, int(current_task.get("target_sessions", 1) or 1))
+        remaining = max(0, target - completed)
+        objective["prefix"] = f"Finish {remaining} Pomodoro{'s' if remaining != 1 else ''} of" if remaining > 0 else "Keep momentum with"
+        objective["title"] = str(current_task.get("title", "study target") or "study target")
+        objective["meta"] = "Agenda item ready to become your next focused study block."
+        objective["progress_text"] = f"{completed} / {target}"
+        objective["progress_percent"] = 100 if current_task.get("done") else max(8, int((completed / target) * 100))
+    if isinstance(session, dict):
+        elapsed = max(0, int(session.get("elapsed_seconds", 0) or 0))
+        target_seconds = max(1, int(session.get("target_seconds", 1) or 1))
+        objective["prefix"] = "Focus session"
+        objective["progress_text"] = f"{elapsed // 60} min tracked • {max(0, target_seconds - elapsed) // 60} min left"
+        objective["progress_percent"] = min(100, max(8, int((elapsed / target_seconds) * 100)))
     return {
         "streak_days": compute_streak_days(state),
         "today_minutes": max(0, int(state.get("today_minutes", 0) or 0)),
@@ -725,6 +846,7 @@ def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
         "insights": state.get("insights", []),
         "tasks": state.get("tasks", []),
         "current_task": current_task,
+        "objective": objective,
         "focus_class_options": focus_options,
         "selected_focus_class": selected_focus_option,
         "active_session": session_payload,
@@ -738,6 +860,9 @@ def build_settings_payload(state: dict[str, Any]) -> dict[str, Any]:
     sync = preferences.get("sync", {})
     if not isinstance(sync, dict):
         sync = {}
+    jellyfin = preferences.get("jellyfin", {})
+    if not isinstance(jellyfin, dict):
+        jellyfin = {}
     theme_mode = str(preferences.get("theme_mode", "system") or "system").strip().lower()
     custom_theme_id = str(preferences.get("custom_theme_id", "retrowave") or "retrowave").strip().lower()
     sync_provider = str(sync.get("provider", "none") or "none").strip().lower()
@@ -747,6 +872,8 @@ def build_settings_payload(state: dict[str, Any]) -> dict[str, Any]:
         "webdav": "WebDAV sync",
         "postgres": "PostgreSQL sync",
     }.get(sync_provider, "Local only")
+    jellyfin_instance = str(jellyfin.get("instance_url", "") or "").strip()
+    jellyfin_summary = jellyfin_instance or "Not configured"
     theme_summary = {
         "system": "System theme",
         "dark": "Dark theme",
@@ -770,8 +897,15 @@ def build_settings_payload(state: dict[str, Any]) -> dict[str, Any]:
             "last_status": str(sync.get("last_status", "Local only. No remote sync target configured yet.") or "Local only. No remote sync target configured yet."),
             "last_sync_at": str(sync.get("last_sync_at", "") or ""),
         },
+        "jellyfin": {
+            "instance_url": jellyfin_instance,
+            "api_token": str(jellyfin.get("api_token", "") or ""),
+            "last_status": str(jellyfin.get("last_status", "Jellyfin is not configured yet.") or "Jellyfin is not configured yet."),
+        },
         "theme_summary": theme_summary,
         "sync_summary": sync_summary,
+        "jellyfin_summary": jellyfin_summary,
+        "caldav_summary": "Schedules can sync through Hanauta Settings independently from Study Tracker cloud sync.",
     }
 
 
@@ -821,16 +955,22 @@ def build_resources_payload(state: dict[str, Any]) -> dict[str, Any]:
         accent = {
             "youtube": "tertiary",
             "udemy": "primary",
+            "jellyfin": "primary",
             "book": "secondary",
             "audio": "primary-fixed",
             "anki": "error",
         }.get(kind, "primary")
+        kind_label = str(resource.get("kind_label", resource.get("media_kind", kind))).strip()
+        if not kind_label:
+            kind_label = kind
         cards.append(
             {
                 "id": str(resource.get("id", "")),
                 "title": str(resource.get("title", "Untitled resource") or "Untitled resource"),
                 "kind": kind,
                 "provider": str(resource.get("provider", kind.title()) or kind.title()),
+                "kind_label": kind_label.upper(),
+                "media_kind": str(resource.get("media_kind", kind) or kind),
                 "author": str(resource.get("author", "") or ""),
                 "summary": str(resource.get("summary", "") or ""),
                 "source_url": str(resource.get("source_url", "") or ""),
@@ -896,6 +1036,37 @@ def is_youtube_url(value: str) -> bool:
 
 def is_udemy_url(value: str) -> bool:
     return "udemy.com" in urlparse(value).netloc.lower()
+
+
+def jellyfin_url_base(value: str) -> str:
+    parsed = urlparse(str(value or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    path = str(parsed.path or "").strip("/")
+    if path:
+        parts = path.split("/")
+        if parts and parts[0].lower() in {"jellyfin", "emby"}:
+            return f"{parsed.scheme}://{parsed.netloc}/{parts[0]}".rstrip("/")
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def extract_jellyfin_item_id(value: str) -> str:
+    parsed = urlparse(str(value or "").strip())
+    candidates = [parsed.query, parsed.fragment]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        query_part = candidate.split("?", 1)[1] if "?" in candidate else candidate
+        params = parse_qs(query_part.lstrip("!/"))
+        for key in ("id", "itemId", "itemid"):
+            found = params.get(key)
+            if found and found[0]:
+                return str(found[0]).strip()
+    parts = [part for part in parsed.path.split("/") if part]
+    for index, part in enumerate(parts):
+        if part.lower() == "items" and index + 1 < len(parts):
+            return str(parts[index + 1]).strip()
+    return ""
 
 
 def slug_tags(*values: str) -> list[str]:
@@ -1088,32 +1259,24 @@ def build_runtime_script(page_name: str) -> str:
   }}
 
   function renderObjective() {{
-    const task = currentTask();
-    const session = studyState?.active_session || null;
     const headline = $("objectiveHeadline");
+    const meta = $("objectiveMeta");
     const progressText = $("objectiveProgressText");
     const progressBar = $("objectiveProgressBar");
     if (!headline || !progressText || !progressBar) return;
-
-    if (!task) {{
+    const objective = studyState?.objective || null;
+    if (!objective) {{
       headline.innerHTML = `Choose your next <br><span class="text-primary" id="objectiveSubject">study target</span>`;
+      if (meta) meta.textContent = "Choose a study target to tie sessions, resources, and schedules together.";
       progressText.textContent = "0 / 0";
       progressBar.style.width = "0%";
       return;
     }}
-
-    const completed = Math.max(0, Number(task.sessions_completed || 0));
-    const target = Math.max(1, Number(task.target_sessions || 1));
-    const remaining = Math.max(0, target - completed);
-    const actionText = remaining > 0 ? `Finish ${{remaining}} Pomodoro${{remaining === 1 ? "" : "s"}} of` : "Keep momentum with";
-    headline.innerHTML = `${{escapeHtml(actionText)}} <br><span class="text-primary" id="objectiveSubject">${{escapeHtml(task.title)}}</span>`;
-    progressText.textContent = `${{completed}} / ${{target}}`;
-    progressBar.style.width = `${{Math.max(6, (completed / target) * 100)}}%`;
-    if (completed <= 0) progressBar.style.width = "8%";
-    if (task.done) progressBar.style.width = "100%";
-    if (session && String(session.task_id || "") === String(task.id || "")) {{
-      progressText.textContent = `${{completed}} / ${{target}} • ${{formatSessionRemaining(session)}}`;
-    }}
+    headline.innerHTML = `${{escapeHtml(objective.prefix || "Choose your next")}} <br><span class="text-primary" id="objectiveSubject">${{escapeHtml(objective.title || "study target")}}</span>`;
+    if (meta) meta.textContent = objective.meta || "";
+    progressText.textContent = objective.progress_text || "0 / 0";
+    const percent = Math.max(0, Math.min(100, Number(objective.progress_percent || 0)));
+    progressBar.style.width = `${{percent}}%`;
   }}
 
   function insightCard(item) {{
@@ -1161,6 +1324,9 @@ def build_runtime_script(page_name: str) -> str:
       : active
         ? `In Progress • ${{completed}}/${{target}} sessions complete`
         : `Estimated: ${{escapeHtml(task.estimate_minutes || 25)}} mins • ${{completed}}/${{target}} sessions`;
+    const linkedLabel = task.linked_item_title
+      ? `${{task.linked_item_title}}${{task.linked_resource_title ? ` • ${{task.linked_resource_title}}` : ""}}`
+      : "";
     const icon = done ? `<span class="material-symbols-outlined text-xs text-on-primary" style="font-variation-settings: 'FILL' 1;">check</span>` : "";
     const badgeClass = done ? "border-primary bg-primary/20" : active ? "border-primary" : "border-outline-variant";
     const rowClass = done
@@ -1189,6 +1355,7 @@ def build_runtime_script(page_name: str) -> str:
         <button class="w-6 h-6 rounded-full border-2 ${{badgeClass}} flex items-center justify-center shrink-0" data-action="${{done ? "reactivate" : "toggle"}}" data-task-id="${{escapeHtml(task.id)}}">${{icon}}</button>
         <div class="flex-1 min-w-0">
           <p class="${{titleClass}}">${{escapeHtml(task.title)}}</p>
+          ${{linkedLabel ? `<p class="text-[11px] font-label text-on-surface-variant/60 mt-1">${{escapeHtml(linkedLabel)}}</p>` : ""}}
           <span class="${{detailClass}}">${{statusText}}</span>
         </div>
         <div class="flex items-center gap-2">${{controls}}</div>
@@ -1229,7 +1396,9 @@ def build_runtime_script(page_name: str) -> str:
     const session = studyState?.active_session || null;
     const task = currentTask();
     const selectedClass = studyState?.selected_focus_class || null;
+    const stopButton = $("studyStopButton");
     if (!label || !hint || !icon) return;
+    if (stopButton) stopButton.classList.toggle("hidden", !session);
     if (session && session.running) {{
       label.textContent = "Pause Session";
       hint.textContent = formatSessionRemaining(session);
@@ -1364,6 +1533,7 @@ def build_runtime_script(page_name: str) -> str:
     if ($("settingsThemeSummary")) $("settingsThemeSummary").textContent = settingsState.theme_summary || "System theme";
     if ($("settingsSyncSummary")) $("settingsSyncSummary").textContent = settingsState.sync_summary || "Local only";
     if ($("settingsFooterStatus")) $("settingsFooterStatus").textContent = settingsState.sync?.last_sync_at ? `Last sync ${{settingsState.sync.last_sync_at}}` : "Encrypted local state";
+    if ($("caldavSyncSummary")) $("caldavSyncSummary").textContent = settingsState.caldav_summary || "Schedules can sync through Hanauta Settings independently from Study Tracker cloud sync.";
     setToggleButton("ankiToggleButton", !!settingsState.anki_enabled);
     setToggleButton("pomodoroToggleButton", !!settingsState.pomodoro_bridge_enabled);
     setToggleButton("syncAutoButton", !!settingsState.sync?.auto_sync, ["Enabled", "Disabled"]);
@@ -1381,6 +1551,9 @@ def build_runtime_script(page_name: str) -> str:
     if ($("syncPostgresDsnInput")) $("syncPostgresDsnInput").value = settingsState.sync?.postgres_dsn || "";
     if ($("syncPostgresTableInput")) $("syncPostgresTableInput").value = settingsState.sync?.postgres_table || "";
     if ($("syncStatusText")) $("syncStatusText").textContent = settingsState.sync?.last_status || "Local only. No remote sync target configured yet.";
+    if ($("jellyfinInstanceUrlInput")) $("jellyfinInstanceUrlInput").value = settingsState.jellyfin?.instance_url || "";
+    if ($("jellyfinApiTokenInput")) $("jellyfinApiTokenInput").value = settingsState.jellyfin?.api_token || "";
+    if ($("jellyfinStatusText")) $("jellyfinStatusText").textContent = settingsState.jellyfin?.last_status || "Jellyfin is not configured yet.";
     const provider = settingsState.sync?.provider || "none";
     const showWebdav = provider === "nextcloud" || provider === "webdav";
     const showPostgres = provider === "postgres";
@@ -1405,7 +1578,15 @@ def build_runtime_script(page_name: str) -> str:
   function filteredResources() {{
     const items = Array.isArray(resourcesState?.resources) ? resourcesState.resources : [];
     if (resourceFilter === "all") return items;
-    return items.filter((item) => String(item.kind || "").toLowerCase() === resourceFilter);
+    return items.filter((item) => {{
+      const kind = String(item.kind || "").toLowerCase();
+      const mediaKind = String(item.media_kind || "").toLowerCase();
+      const provider = String(item.provider || "").toLowerCase();
+      if (resourceFilter === "jellyfin") return kind === "jellyfin" || provider.includes("jellyfin");
+      if (resourceFilter === "book") return kind === "book" || mediaKind === "book";
+      if (resourceFilter === "audio") return kind === "audio" || mediaKind === "audiobook";
+      return kind === resourceFilter || mediaKind === resourceFilter;
+    }});
   }}
 
   function renderResourceDetail(resource) {{
@@ -1418,7 +1599,7 @@ def build_runtime_script(page_name: str) -> str:
     }}
     if (empty) empty.classList.add("hidden");
     if (panel) panel.classList.remove("hidden");
-    if ($("resourceDetailKind")) $("resourceDetailKind").textContent = String(resource.kind || "resource").toUpperCase();
+    if ($("resourceDetailKind")) $("resourceDetailKind").textContent = String(resource.kind_label || resource.kind || "resource").toUpperCase();
     if ($("resourceDetailTitle")) $("resourceDetailTitle").textContent = resource.title || "Resource";
     if ($("resourceDetailMeta")) $("resourceDetailMeta").textContent = `${{resource.provider || "Reference"}}${{resource.author ? ` • ${{resource.author}}` : ""}}`;
     if ($("resourceDetailSummary")) $("resourceDetailSummary").textContent = resource.summary || "No summary yet.";
@@ -1592,6 +1773,13 @@ def build_runtime_script(page_name: str) -> str:
     }};
   }}
 
+  function collectJellyfinSettings() {{
+    return {{
+      instance_url: $("jellyfinInstanceUrlInput")?.value || "",
+      api_token: $("jellyfinApiTokenInput")?.value || "",
+    }};
+  }}
+
   function wireNavigation() {{
     $("navDashboardButton")?.addEventListener("click", () => showPage("dashboard"));
     $("navResourcesButton")?.addEventListener("click", () => showPage("resources"));
@@ -1601,6 +1789,7 @@ def build_runtime_script(page_name: str) -> str:
 
   function wireDashboardActions() {{
     $("studyFabButton")?.addEventListener("click", () => bridge?.startOrPauseSession());
+    $("studyStopButton")?.addEventListener("click", () => bridge?.stopSession());
     $("addTaskButton")?.addEventListener("click", () => {{
       if (!bridge) return;
       const title = window.prompt("What do you want to study next?");
@@ -1692,6 +1881,7 @@ def build_runtime_script(page_name: str) -> str:
       setToggleButton("syncAutoButton", currentlyOff, ["Enabled", "Disabled"]);
     }});
     $("saveSyncSettingsButton")?.addEventListener("click", () => bridge?.saveSyncSettings(JSON.stringify(collectSyncSettings())));
+    $("saveJellyfinSettingsButton")?.addEventListener("click", () => bridge?.saveJellyfinSettings(JSON.stringify(collectJellyfinSettings())));
     $("syncNowButton")?.addEventListener("click", () => bridge?.syncNow());
     $("backupButton")?.addEventListener("click", () => bridge?.createBackup());
     $("exportButton")?.addEventListener("click", () => bridge?.exportJson());
@@ -1993,6 +2183,7 @@ class StudyBridge(QObject):
     focusTaskRequested = pyqtSignal(str)
     reopenTaskRequested = pyqtSignal(str)
     sessionToggleRequested = pyqtSignal()
+    sessionStopRequested = pyqtSignal()
     sessionClassRequested = pyqtSignal(str, str)
     navigateRequested = pyqtSignal(str)
     integrationToggleRequested = pyqtSignal(str, bool)
@@ -2000,6 +2191,7 @@ class StudyBridge(QObject):
     themeModeRequested = pyqtSignal(str)
     customThemeRequested = pyqtSignal(str)
     syncSettingsRequested = pyqtSignal(str)
+    jellyfinSettingsRequested = pyqtSignal(str)
     syncNowRequested = pyqtSignal()
     backupRequested = pyqtSignal()
     exportRequested = pyqtSignal()
@@ -2034,6 +2226,10 @@ class StudyBridge(QObject):
     def startOrPauseSession(self) -> None:
         self.sessionToggleRequested.emit()
 
+    @pyqtSlot()
+    def stopSession(self) -> None:
+        self.sessionStopRequested.emit()
+
     @pyqtSlot(str, str)
     def setSessionClass(self, resource_id: str, item_id: str) -> None:
         self.sessionClassRequested.emit(resource_id, item_id)
@@ -2061,6 +2257,10 @@ class StudyBridge(QObject):
     @pyqtSlot(str)
     def saveSyncSettings(self, payload_json: str) -> None:
         self.syncSettingsRequested.emit(payload_json)
+
+    @pyqtSlot(str)
+    def saveJellyfinSettings(self, payload_json: str) -> None:
+        self.jellyfinSettingsRequested.emit(payload_json)
 
     @pyqtSlot()
     def syncNow(self) -> None:
@@ -2142,6 +2342,7 @@ class StudyTrackerWindow(QWidget):
         self.bridge.focusTaskRequested.connect(self.focus_task)
         self.bridge.reopenTaskRequested.connect(self.reopen_task)
         self.bridge.sessionToggleRequested.connect(self.start_or_pause_session)
+        self.bridge.sessionStopRequested.connect(self.stop_session)
         self.bridge.sessionClassRequested.connect(self.set_session_class)
         self.bridge.navigateRequested.connect(self.navigate_to)
         self.bridge.integrationToggleRequested.connect(self.set_integration_enabled)
@@ -2149,6 +2350,7 @@ class StudyTrackerWindow(QWidget):
         self.bridge.themeModeRequested.connect(self.set_theme_mode)
         self.bridge.customThemeRequested.connect(self.set_custom_theme)
         self.bridge.syncSettingsRequested.connect(self.save_sync_settings)
+        self.bridge.jellyfinSettingsRequested.connect(self.save_jellyfin_settings)
         self.bridge.syncNowRequested.connect(self.sync_now)
         self.bridge.backupRequested.connect(self.create_backup)
         self.bridge.exportRequested.connect(self.export_json)
@@ -2255,6 +2457,13 @@ class StudyTrackerWindow(QWidget):
         for task in self.state.get("tasks", []):
             task["active"] = str(task.get("id", "")) == task_id and not bool(task.get("done", False))
         _ensure_single_active_task(self.state)
+        task = task_by_id(self.state, task_id)
+        if isinstance(task, dict):
+            linked_resource_id = str(task.get("linked_resource_id", "") or "")
+            linked_item_id = str(task.get("linked_item_id", "") or "")
+            if linked_resource_id and linked_item_id:
+                self.state["selected_focus_resource_id"] = linked_resource_id
+                self.state["selected_focus_item_id"] = linked_item_id
         session = self.state.get("active_session")
         if isinstance(session, dict):
             session["task_id"] = task_id
@@ -2279,10 +2488,15 @@ class StudyTrackerWindow(QWidget):
             return
         self.state["selected_focus_resource_id"] = str(resource_id)
         self.state["selected_focus_item_id"] = str(item_id)
+        linked_task = find_or_create_task_for_focus_target(self.state, resource, item)
+        for task in self.state.get("tasks", []):
+            if isinstance(task, dict):
+                task["active"] = str(task.get("id", "")) == str(linked_task.get("id", ""))
         session = self.state.get("active_session")
         if isinstance(session, dict):
             session["resource_id"] = str(resource_id)
             session["item_id"] = str(item_id)
+            session["task_id"] = str(linked_task.get("id", "") or "")
         self._save()
         self.push_state()
 
@@ -2294,6 +2508,226 @@ class StudyTrackerWindow(QWidget):
             notify("Study Resources", notification)
         if bool(self.state.get("preferences", {}).get("sync", {}).get("auto_sync", False)):
             self.sync_now()
+
+    def _jellyfin_settings(self) -> dict[str, Any]:
+        preferences = self.state.setdefault("preferences", {})
+        if not isinstance(preferences, dict):
+            raise RuntimeError("Study tracker preferences are unavailable.")
+        jellyfin = preferences.setdefault("jellyfin", {})
+        if not isinstance(jellyfin, dict):
+            raise RuntimeError("Jellyfin settings are unavailable.")
+        jellyfin["instance_url"] = str(jellyfin.get("instance_url", "") or "").strip().rstrip("/")
+        jellyfin["api_token"] = str(jellyfin.get("api_token", "") or "").strip()
+        jellyfin["user_id"] = str(jellyfin.get("user_id", "") or "").strip()
+        jellyfin["last_status"] = str(jellyfin.get("last_status", "Jellyfin is not configured yet.") or "Jellyfin is not configured yet.")
+        return jellyfin
+
+    def _looks_like_jellyfin_url(self, source_url: str) -> bool:
+        parsed = urlparse(source_url)
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        configured_base = str(self._jellyfin_settings().get("instance_url", "") or "").strip().rstrip("/")
+        candidate_base = jellyfin_url_base(source_url)
+        if configured_base and candidate_base and candidate_base.lower() == configured_base.lower():
+            return True
+        payload = f"{parsed.path}?{parsed.query}#{parsed.fragment}".lower()
+        return "/web/" in payload or "/items/" in payload or "details?id=" in payload or "itemid=" in payload
+
+    def _jellyfin_headers(self) -> dict[str, str]:
+        if requests is None:
+            raise RuntimeError("Python requests is unavailable.")
+        jellyfin = self._jellyfin_settings()
+        base_url = str(jellyfin.get("instance_url", "") or "").strip().rstrip("/")
+        token = str(jellyfin.get("api_token", "") or "").strip()
+        if not base_url or not token:
+            raise RuntimeError("Set the Jellyfin instance URL and API token in Study Tracker settings first.")
+        return {
+            "Accept": "application/json",
+            "X-Emby-Token": token,
+            "X-Emby-Client": "Hanauta Study Track",
+            "X-Emby-Device-Name": "Hanauta Study Track",
+            "X-Emby-Device-Id": "hanauta-study-track",
+        }
+
+    def _jellyfin_request_json(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        jellyfin = self._jellyfin_settings()
+        base_url = str(jellyfin.get("instance_url", "") or "").strip().rstrip("/")
+        response = requests.get(f"{base_url}{path}", headers=self._jellyfin_headers(), params=params, timeout=20)
+        if response.status_code in {401, 403}:
+            raise RuntimeError("Jellyfin authentication failed. Check the API token.")
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Unexpected Jellyfin response.")
+        return payload
+
+    def _jellyfin_primary_image(self, item_id: str) -> str:
+        jellyfin = self._jellyfin_settings()
+        base_url = str(jellyfin.get("instance_url", "") or "").strip().rstrip("/")
+        try:
+            response = requests.get(
+                f"{base_url}/Items/{quote(item_id)}/Images/Primary",
+                headers=self._jellyfin_headers(),
+                timeout=20,
+            )
+            if response.ok and response.content:
+                return data_uri_for_bytes(response.content, response.headers.get("Content-Type", "image/jpeg"))
+        except Exception:
+            pass
+        return ""
+
+    def _jellyfin_user_id(self) -> str:
+        jellyfin = self._jellyfin_settings()
+        cached = str(jellyfin.get("user_id", "") or "").strip()
+        if cached:
+            return cached
+        payload = self._jellyfin_request_json("/Users/Me")
+        user_id = str(payload.get("Id", "") or "").strip()
+        if not user_id:
+            raise RuntimeError("Jellyfin did not return a usable user id.")
+        jellyfin["user_id"] = user_id
+        self._save()
+        return user_id
+
+    def _jellyfin_web_url(self, item_id: str) -> str:
+        base_url = str(self._jellyfin_settings().get("instance_url", "") or "").strip().rstrip("/")
+        return f"{base_url}/web/#/details?id={quote(item_id)}"
+
+    def _jellyfin_runtime_seconds(self, payload: dict[str, Any]) -> int:
+        ticks = int(payload.get("RunTimeTicks", 0) or 0)
+        return max(0, ticks // 10_000_000)
+
+    def _jellyfin_author(self, payload: dict[str, Any]) -> str:
+        for key in ("SeriesName", "AlbumArtist", "Author"):
+            value = str(payload.get(key, "") or "").strip()
+            if value:
+                return value
+        artists = payload.get("Artists", [])
+        if isinstance(artists, list):
+            for artist in artists:
+                label = str(artist or "").strip()
+                if label:
+                    return label
+        people = payload.get("People", [])
+        if isinstance(people, list):
+            for person in people:
+                if isinstance(person, dict):
+                    name = str(person.get("Name", "") or "").strip()
+                    if name:
+                        return name
+        return "Jellyfin"
+
+    def _jellyfin_child_items(self, user_id: str, parent_id: str, include_types: list[str] | None = None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "ParentId": parent_id,
+            "UserId": user_id,
+            "Recursive": "true",
+            "SortBy": "ParentIndexNumber,IndexNumber,SortName",
+            "Fields": "Overview,RunTimeTicks",
+        }
+        if include_types:
+            params["IncludeItemTypes"] = ",".join(include_types)
+        payload = self._jellyfin_request_json(f"/Users/{quote(user_id)}/Items", params=params)
+        items = payload.get("Items", [])
+        return [item for item in items if isinstance(item, dict)]
+
+    def _jellyfin_items_to_resource_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        resource_items: list[dict[str, Any]] = []
+        for index, item in enumerate(items, start=1):
+            item_id = str(item.get("Id", "") or "").strip()
+            title = str(item.get("Name", f"Class {index}") or f"Class {index}")
+            runtime_seconds = self._jellyfin_runtime_seconds(item)
+            item_type = str(item.get("Type", "lesson") or "lesson").strip().lower()
+            resource_items.append(
+                make_resource_item(
+                    title,
+                    duration_seconds=runtime_seconds,
+                    position=index,
+                    kind="lesson" if item_type in {"episode", "video", "movie"} else item_type,
+                    external_url=self._jellyfin_web_url(item_id) if item_id else "",
+                    notes=str(item.get("Overview", "") or "").strip()[:280],
+                )
+            )
+        return resource_items
+
+    def _jellyfin_resource_from_item(self, item: dict[str, Any], *, user_id: str) -> list[dict[str, Any]]:
+        item_id = str(item.get("Id", "") or "").strip()
+        if not item_id:
+            raise RuntimeError("The Jellyfin item did not include an id.")
+        item_type = str(item.get("Type", "") or "").strip().lower()
+        title = str(item.get("Name", "Jellyfin item") or "Jellyfin item")
+        author = self._jellyfin_author(item)
+        summary = str(item.get("Overview", "") or "").strip()[:280]
+        thumbnail = self._jellyfin_primary_image(item_id)
+        duration_seconds = self._jellyfin_runtime_seconds(item)
+        media_kind = {
+            "series": "show",
+            "movie": "video",
+            "video": "video",
+            "episode": "video",
+            "audiobook": "audiobook",
+            "book": "book",
+            "playlist": "playlist",
+        }.get(item_type, item_type or "resource")
+        resource_kind = "jellyfin"
+        if media_kind == "book":
+            resource_kind = "book"
+        elif media_kind == "audiobook":
+            resource_kind = "audio"
+        resource_items: list[dict[str, Any]] = []
+        if item_type == "series":
+            children = self._jellyfin_child_items(user_id, item_id, ["Episode"])
+            resource_items = self._jellyfin_items_to_resource_items(children)
+            duration_seconds = sum(int(entry.get("duration_seconds", 0) or 0) for entry in resource_items)
+        elif item_type == "playlist":
+            children = self._jellyfin_child_items(user_id, item_id, None)
+            resource_items = self._jellyfin_items_to_resource_items(children)
+            duration_seconds = sum(int(entry.get("duration_seconds", 0) or 0) for entry in resource_items)
+        if not resource_items:
+            fallback_kind = "reading" if media_kind == "book" else "lesson" if media_kind in {"show", "playlist"} else "video" if media_kind == "video" else "audio"
+            resource_items = [
+                make_resource_item(
+                    title,
+                    duration_seconds=duration_seconds,
+                    position=1,
+                    kind=fallback_kind,
+                    external_url=self._jellyfin_web_url(item_id),
+                    notes=summary,
+                )
+            ]
+        resource = make_resource(
+            title,
+            kind=resource_kind,
+            provider=f"Jellyfin ({media_kind.title()})",
+            source_url=self._jellyfin_web_url(item_id),
+            author=author,
+            summary=summary,
+            thumbnail_url=thumbnail or generated_document_cover(title, media_kind[:4].upper() or "JF"),
+            tags=slug_tags(title, author, media_kind, "jellyfin"),
+            items=resource_items,
+            duration_seconds=duration_seconds,
+        )
+        resource["media_kind"] = media_kind
+        resource["kind_label"] = media_kind
+        resource["source_id"] = item_id
+        return [resource]
+
+    def _jellyfin_resources_from_url(self, source_url: str) -> list[dict[str, Any]]:
+        item_id = extract_jellyfin_item_id(source_url)
+        if not item_id:
+            raise RuntimeError("Paste a Jellyfin item URL that includes an item id.")
+        configured_base = str(self._jellyfin_settings().get("instance_url", "") or "").strip().rstrip("/")
+        candidate_base = jellyfin_url_base(source_url)
+        if configured_base and candidate_base and candidate_base.lower() != configured_base.lower():
+            raise RuntimeError("That Jellyfin URL does not match the configured Jellyfin instance.")
+        self.resourceImportStatusChanged.emit("Connecting to Jellyfin...")
+        user_id = self._jellyfin_user_id()
+        self.resourceImportStatusChanged.emit("Reading Jellyfin item metadata...")
+        item = self._jellyfin_request_json(
+            f"/Users/{quote(user_id)}/Items/{quote(item_id)}",
+            params={"Fields": "Overview,RunTimeTicks,People"},
+        )
+        return self._jellyfin_resource_from_item(item, user_id=user_id)
 
     def _youtube_resources_from_url(self, url: str) -> list[dict[str, Any]]:
         if YoutubeDL is None:
@@ -2668,6 +3102,8 @@ class StudyTrackerWindow(QWidget):
     def _import_resources_from_url(self, source_url: str) -> list[dict[str, Any]]:
         if is_document_reference(source_url):
             return self._document_resource_from_reference(source_url)
+        if self._looks_like_jellyfin_url(source_url):
+            return self._jellyfin_resources_from_url(source_url)
         if is_youtube_url(source_url):
             try:
                 return self._youtube_resources_from_url(source_url)
@@ -2855,6 +3291,28 @@ class StudyTrackerWindow(QWidget):
         self._save()
         self.push_settings()
 
+    def save_jellyfin_settings(self, payload_json: str) -> None:
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return
+        jellyfin = self._jellyfin_settings()
+        old_instance = str(jellyfin.get("instance_url", "") or "").strip().rstrip("/")
+        old_token = str(jellyfin.get("api_token", "") or "").strip()
+        jellyfin["instance_url"] = str(payload.get("instance_url", "") or "").strip().rstrip("/")
+        jellyfin["api_token"] = str(payload.get("api_token", "") or "").strip()
+        if jellyfin["instance_url"] != old_instance or jellyfin["api_token"] != old_token:
+            jellyfin["user_id"] = ""
+        jellyfin["last_status"] = (
+            "Jellyfin settings saved. Paste a Jellyfin item URL in Resources to import it."
+            if jellyfin["instance_url"] and jellyfin["api_token"]
+            else "Jellyfin is not configured yet."
+        )
+        self._save()
+        self.push_settings()
+
     def _sync_remote_webdav(self, sync: dict[str, Any]) -> tuple[bool, str]:
         if requests is None:
             return False, "Python requests is unavailable."
@@ -2966,16 +3424,22 @@ class StudyTrackerWindow(QWidget):
         self.push_settings()
         notify("Study Tracker", "Live session cache cleared.")
 
-    def start_or_pause_session(self) -> None:
-        task = active_task(self.state)
-        if task is None:
+    def stop_session(self) -> None:
+        if not isinstance(self.state.get("active_session"), dict):
             return
+        self.state["active_session"] = None
+        self._save()
+        self.push_state()
+        notify("Study session", "Focus session stopped without counting progress.")
+
+    def start_or_pause_session(self) -> None:
         selected_resource_id = str(self.state.get("selected_focus_resource_id", "") or "")
         selected_item_id = str(self.state.get("selected_focus_item_id", "") or "")
         selected_resource, selected_item = resource_item_by_id(self.state, selected_resource_id, selected_item_id)
         if not isinstance(selected_resource, dict) or not isinstance(selected_item, dict):
             notify("Study session", "Choose a class from your resources before starting a focus block.")
             return
+        task = find_or_create_task_for_focus_target(self.state, selected_resource, selected_item)
         session = self.state.get("active_session")
         target_seconds = max(60, int(self.state.get("session_length_minutes", 25) or 25) * 60)
         if not isinstance(session, dict):
@@ -3020,7 +3484,7 @@ class StudyTrackerWindow(QWidget):
             return
         task = task_by_id(self.state, str(session.get("task_id", "")))
         resource, resource_item = resource_item_by_id(self.state, str(session.get("resource_id", "") or ""), str(session.get("item_id", "") or ""))
-        added_minutes = max(1, int(session.get("target_seconds", 0) or 0) // 60)
+        added_minutes = max(1, int(session.get("elapsed_seconds", 0) or 0) // 60)
         self.state["today_minutes"] = max(0, int(self.state.get("today_minutes", 0) or 0) + added_minutes)
         self.state.setdefault("activity_dates", [])
         self.state["activity_dates"] = sorted({*self.state["activity_dates"], today_iso()})
@@ -3031,8 +3495,12 @@ class StudyTrackerWindow(QWidget):
                 task["active"] = False
                 task["completed_at"] = datetime.now().strftime("%I:%M %p").lstrip("0")
         if isinstance(resource_item, dict):
-            resource_item["tracked_minutes"] = max(0, int(resource_item.get("tracked_minutes", 0) or 0) + added_minutes)
-            resource_item["tracked_sessions"] = max(0, int(resource_item.get("tracked_sessions", 0) or 0) + 1)
+            if str(resource_item.get("id", "")) == "__resource__":
+                resource["tracked_minutes"] = max(0, int(resource.get("tracked_minutes", 0) or 0) + added_minutes)
+                resource["tracked_sessions"] = max(0, int(resource.get("tracked_sessions", 0) or 0) + 1)
+            else:
+                resource_item["tracked_minutes"] = max(0, int(resource_item.get("tracked_minutes", 0) or 0) + added_minutes)
+                resource_item["tracked_sessions"] = max(0, int(resource_item.get("tracked_sessions", 0) or 0) + 1)
             if isinstance(resource, dict):
                 resource["updated_at"] = now_iso()
         self.state["active_session"] = None
