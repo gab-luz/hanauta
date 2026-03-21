@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Settings | Hanauta Study Track</title>
+<link href="study_tracker.css" rel="stylesheet"/>
+</head>
+<body class="bg-background text-on-surface min-h-screen overflow-hidden">
+<aside class="fixed left-0 top-0 h-full z-50 h-screen w-20 flex flex-col items-center py-8 bg-[#1a1b26] shadow-[40px_0_60px_-15px_rgba(212,187,255,0.05)]">
+<div class="mb-12">
+<span class="text-xl font-bold text-[#d4bbff] tracking-tighter font-headline">H</span>
+</div>
+<nav class="flex flex-col gap-6 flex-1">
+<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative" id="navDashboardButton">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="absolute left-full ml-4 px-2 py-1 bg-surface-container-highest text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Overview</span>
+</button>
+<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative">
+<span class="material-symbols-outlined">menu_book</span>
+</button>
+<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative">
+<span class="material-symbols-outlined">insights</span>
+</button>
+<button class="text-[#4a4550] p-3 hover:text-[#d4bbff]/70 transition-colors scale-95 active:scale-90 group relative">
+<span class="material-symbols-outlined">layers</span>
+</button>
+</nav>
+<button class="bg-[#d4bbff]/20 text-[#d4bbff] rounded-2xl p-3 transition-all duration-300 scale-95 active:scale-90 group relative" id="navSettingsButton">
+<span class="material-symbols-outlined">settings</span>
+<span class="absolute left-full ml-4 px-2 py-1 bg-surface-container-highest text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Settings</span>
+</button>
+</aside>
+<main class="pl-20 h-screen flex flex-col overflow-hidden">
+<header class="fixed top-0 right-0 left-20 z-40 px-8 flex justify-between items-center h-16 bg-[#12131d]/80 backdrop-blur-xl">
+<div class="flex items-center gap-8">
+<h1 class="text-lg font-black text-[#bb9af7] font-headline tracking-tight">Hanauta Study Track</h1>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="text-[#4a4550] hover:text-[#d4bbff] font-headline font-semibold text-sm transition-colors" href="#">Focus Mode</a>
+<a class="text-[#4a4550] hover:text-[#d4bbff] font-headline font-semibold text-sm transition-colors" href="#">Resources</a>
+</nav>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full">
+<span class="material-symbols-outlined text-sm text-primary">bolt</span>
+<span class="text-xs font-bold font-label" id="streakChipText">12 Day Streak</span>
+</div>
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full">
+<span class="material-symbols-outlined text-sm text-secondary">timer</span>
+<span class="text-xs font-bold font-label" id="todayChipText">45m Today</span>
+</div>
+<div class="flex gap-3 ml-4">
+<button class="text-[#4a4550] hover:bg-[#1a1b26] p-2 rounded-full transition-colors active:opacity-80">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-[#4a4550] hover:bg-[#1a1b26] p-2 rounded-full transition-colors active:opacity-80">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<div class="flex-1 overflow-y-auto no-scrollbar p-8 pt-24">
+<div class="max-w-4xl mx-auto space-y-8 pb-24">
+<section class="space-y-2">
+<h2 class="font-headline text-3xl font-extrabold text-on-background tracking-tight">System Preferences</h2>
+<p class="text-on-surface-variant text-sm">Tune study integrations, theme behavior, and data sync.</p>
+</section>
+<section class="glass-panel rounded-lg p-8 border border-outline-variant/5">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary">hub</span>
+<h3 class="font-headline text-xl font-bold">Integrations</h3>
+</div>
+<div class="study-grid-3">
+<div class="study-settings-card">
+<div class="study-settings-card-top">
+<div class="study-icon-chip"><span class="material-symbols-outlined text-primary">auto_stories</span></div>
+<button class="study-toggle" id="ankiToggleButton" type="button">Enabled</button>
+</div>
+<h4 class="font-headline font-bold mb-1">AnkiConnect</h4>
+<p class="study-muted-copy">Sync flashcards and study statistics with your local Anki session.</p>
+</div>
+<div class="study-settings-card">
+<div class="study-settings-card-top">
+<div class="study-icon-chip"><span class="material-symbols-outlined text-primary">calendar_today</span></div>
+<button class="study-chip-button" id="openCaldavSettingsButton" type="button">Open Hanauta Settings</button>
+</div>
+<h4 class="font-headline font-bold mb-1">CalDAV Sync</h4>
+<p class="study-muted-copy">Reuse Hanauta's existing CalDAV settings flow instead of a second duplicate screen.</p>
+</div>
+<div class="study-settings-card">
+<div class="study-settings-card-top">
+<div class="study-icon-chip"><span class="material-symbols-outlined text-primary">timer</span></div>
+<button class="study-toggle" id="pomodoroToggleButton" type="button">Enabled</button>
+</div>
+<h4 class="font-headline font-bold mb-1">Pomodoro Bridge</h4>
+<p class="study-muted-copy">Let completed focus sessions contribute to study goals and progress automatically.</p>
+</div>
+</div>
+</section>
+
+<section class="glass-panel rounded-lg p-8 border border-outline-variant/5">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary">palette</span>
+<h3 class="font-headline text-xl font-bold">Appearance</h3>
+</div>
+<div class="space-y-6">
+<div>
+<p class="study-section-label">Theme Mode</p>
+<div class="study-pill-row">
+<button class="study-pill-button" id="themeSystemButton" type="button">System</button>
+<button class="study-pill-button" id="themeDarkButton" type="button">Dark</button>
+<button class="study-pill-button" id="themeLightButton" type="button">Light</button>
+<button class="study-pill-button" id="themeCustomButton" type="button">Custom</button>
+</div>
+<p class="study-muted-copy" id="themeModeExplanation">System follows your current desktop palette. If Matugen is active, the tracker follows it too.</p>
+</div>
+<div id="customThemeSection">
+<p class="study-section-label">Custom Theme Style</p>
+<div class="study-pill-row">
+<button class="study-pill-button" id="customThemeRetrowaveButton" type="button">Retrowave</button>
+<button class="study-pill-button" id="customThemeDraculaButton" type="button">Dracula</button>
+</div>
+<p class="study-muted-copy">Custom mode uses a dedicated study tracker palette instead of the live system palette.</p>
+</div>
+</div>
+</section>
+
+<section class="glass-panel rounded-lg p-8 border border-outline-variant/5">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary">database</span>
+<h3 class="font-headline text-xl font-bold">Data Management</h3>
+</div>
+<div class="space-y-4">
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Local JSON Backup</p>
+<p class="study-muted-copy">Write a timestamped copy of the full study tracker state to your Downloads folder.</p>
+</div>
+<button class="study-chip-button" id="backupButton" type="button">Create Backup</button>
+</div>
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Export Current Data</p>
+<p class="study-muted-copy">Export your current task list, streak history, and preferences as JSON.</p>
+</div>
+<button class="study-chip-button" id="exportButton" type="button">Export Now</button>
+</div>
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Reset Session Cache</p>
+<p class="study-muted-copy">Clear only the live focus timer and temporary session cache without deleting progress.</p>
+</div>
+<button class="study-danger-button" id="flushCacheButton" type="button">Flush Cache</button>
+</div>
+<div class="study-sync-panel">
+<div class="study-settings-row-copy">
+<p class="font-headline font-bold text-sm">Online Sync</p>
+<p class="study-muted-copy">Choose a remote target to sync your study data with Nextcloud, generic WebDAV, or PostgreSQL.</p>
+</div>
+<div class="study-form-grid">
+<label class="study-form-field">
+<span class="study-field-label">Provider</span>
+<select class="study-input" id="syncProviderSelect">
+<option value="none">Local only</option>
+<option value="nextcloud">Nextcloud</option>
+<option value="webdav">WebDAV</option>
+<option value="postgres">PostgreSQL</option>
+</select>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">Remote Path</span>
+<input class="study-input" id="syncRemotePathInput" placeholder="study-tracker/state.json" type="text"/>
+</label>
+<label class="study-form-field study-field-span-2" id="syncUrlField">
+<span class="study-field-label">WebDAV / Nextcloud URL</span>
+<input class="study-input" id="syncUrlInput" placeholder="https://cloud.example.com/remote.php/dav/files/you/study/" type="text"/>
+</label>
+<label class="study-form-field" id="syncUsernameField">
+<span class="study-field-label">Username</span>
+<input class="study-input" id="syncUsernameInput" placeholder="username" type="text"/>
+</label>
+<label class="study-form-field" id="syncPasswordField">
+<span class="study-field-label">Password / App Token</span>
+<input class="study-input" id="syncPasswordInput" placeholder="app password" type="password"/>
+</label>
+<label class="study-form-field study-field-span-2" id="syncDsnField">
+<span class="study-field-label">PostgreSQL DSN</span>
+<input class="study-input" id="syncPostgresDsnInput" placeholder="postgresql://user:pass@host:5432/dbname" type="text"/>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">PostgreSQL Table</span>
+<input class="study-input" id="syncPostgresTableInput" placeholder="hanauta_study_tracker" type="text"/>
+</label>
+<label class="study-form-field">
+<span class="study-field-label">Auto Sync</span>
+<button class="study-toggle study-toggle-wide" id="syncAutoButton" type="button">Disabled</button>
+</label>
+</div>
+<div class="study-settings-row">
+<div class="study-settings-row-copy">
+<p class="study-status-line" id="syncStatusText">Local only. No remote sync target configured yet.</p>
+</div>
+<div class="flex items-center gap-2">
+<button class="study-chip-button" id="saveSyncSettingsButton" type="button">Save Sync Settings</button>
+<button class="study-chip-button" id="syncNowButton" type="button">Sync Now</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<div class="h-12"></div>
+</div>
+</div>
+<footer class="study-footer">
+<span>Study Tracker Runtime</span>
+<span class="flex items-center gap-1"><span class="study-footer-dot"></span><span id="settingsFooterStatus">Encrypted local state</span></span>
+</footer>
+</main>
+</body>
+</html>
