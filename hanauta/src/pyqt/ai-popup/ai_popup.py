@@ -5,12 +5,18 @@ from __future__ import annotations
 
 import html
 import json
+import os
+import sqlite3
+import subprocess
 import sys
+import time
+from base64 import b64decode
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib import request
+from urllib import request, error
 
-from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer, pyqtProperty, pyqtSignal
+from cryptography.fernet import Fernet, InvalidToken
+from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QThread, Qt, QTimer, QUrl, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -34,6 +40,14 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+try:
+    from PyQt6.QtWebEngineCore import QWebEngineSettings
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    WEBENGINE_AVAILABLE = True
+except Exception:
+    QWebEngineSettings = object  # type: ignore[assignment]
+    QWebEngineView = object  # type: ignore[assignment]
+    WEBENGINE_AVAILABLE = False
 
 APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
@@ -47,6 +61,9 @@ AI_ASSETS_DIR = APP_DIR / "pyqt" / "ai-popup" / "assets"
 BACKEND_ICONS_DIR = AI_ASSETS_DIR / "backend-icons"
 AI_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "ai-popup"
 BACKEND_SETTINGS_FILE = AI_STATE_DIR / "backend_settings.json"
+SECURE_DB_FILE = AI_STATE_DIR / "secure_store.sqlite3"
+SECURE_KEY_FILE = AI_STATE_DIR / "secure_store.key"
+IMAGE_OUTPUT_DIR = AI_STATE_DIR / "generated-images"
 
 
 def rgba(color: str, alpha: float) -> str:
@@ -63,6 +80,20 @@ def mix(color_a: str, color_b: str, amount: float) -> str:
     g = round(a.green() + (b.green() - a.green()) * t)
     b_ = round(a.blue() + (b.blue() - a.blue()) * t)
     return QColor(r, g, b_).name()
+
+
+def focused_workspace() -> dict[str, object] | None:
+    try:
+        output = subprocess.check_output(["i3-msg", "-t", "get_workspaces"], text=True)
+        workspaces = json.loads(output)
+    except Exception:
+        return None
+    if not isinstance(workspaces, list):
+        return None
+    for workspace in workspaces:
+        if isinstance(workspace, dict) and workspace.get("focused"):
+            return workspace
+    return None
 
 
 def apply_theme_globals() -> None:
@@ -288,10 +319,176 @@ def save_backend_settings(settings: dict[str, dict[str, object]]) -> None:
     BACKEND_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
 
 
+def _chmod_private(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
+def _cipher() -> Fernet:
+    AI_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if not SECURE_KEY_FILE.exists():
+        SECURE_KEY_FILE.write_bytes(Fernet.generate_key())
+        _chmod_private(SECURE_KEY_FILE)
+    key = SECURE_KEY_FILE.read_bytes()
+    _chmod_private(SECURE_KEY_FILE)
+    return Fernet(key)
+
+
+def _secure_db() -> sqlite3.Connection:
+    AI_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(SECURE_DB_FILE)
+    connection.execute("CREATE TABLE IF NOT EXISTS secrets (name TEXT PRIMARY KEY, payload BLOB NOT NULL)")
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS chat_history (id INTEGER PRIMARY KEY AUTOINCREMENT, payload BLOB NOT NULL, created_at REAL NOT NULL)"
+    )
+    connection.commit()
+    _chmod_private(SECURE_DB_FILE)
+    return connection
+
+
+def _encrypt_payload(payload: dict[str, object]) -> bytes:
+    return _cipher().encrypt(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+
+
+def _decrypt_payload(blob: bytes) -> dict[str, object]:
+    data = _cipher().decrypt(blob)
+    value = json.loads(data.decode("utf-8"))
+    return value if isinstance(value, dict) else {}
+
+
+def secure_store_secret(name: str, value: str) -> None:
+    connection = _secure_db()
+    try:
+        if value.strip():
+            connection.execute(
+                "INSERT INTO secrets(name, payload) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET payload=excluded.payload",
+                (name, _encrypt_payload({"value": value})),
+            )
+        else:
+            connection.execute("DELETE FROM secrets WHERE name = ?", (name,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def secure_load_secret(name: str) -> str:
+    connection = _secure_db()
+    try:
+        row = connection.execute("SELECT payload FROM secrets WHERE name = ?", (name,)).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        return ""
+    try:
+        payload = _decrypt_payload(row[0])
+        return str(payload.get("value", ""))
+    except (InvalidToken, json.JSONDecodeError, TypeError, ValueError):
+        return ""
+
+
+def secure_append_chat(item: ChatItemData) -> None:
+    connection = _secure_db()
+    try:
+        connection.execute(
+            "INSERT INTO chat_history(payload, created_at) VALUES(?, ?)",
+            (
+                _encrypt_payload(
+                    {
+                        "role": item.role,
+                        "title": item.title,
+                        "body": item.body,
+                        "meta": item.meta,
+                        "chips": [chip.text for chip in item.chips],
+                    }
+                ),
+                time.time(),
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def secure_load_chat_history() -> list[ChatItemData]:
+    connection = _secure_db()
+    try:
+        rows = connection.execute("SELECT payload FROM chat_history ORDER BY id ASC").fetchall()
+    finally:
+        connection.close()
+    history: list[ChatItemData] = []
+    for row in rows:
+        try:
+            payload = _decrypt_payload(row[0])
+        except (InvalidToken, json.JSONDecodeError, TypeError, ValueError):
+            continue
+        chips_raw = payload.get("chips", [])
+        chips = [SourceChipData(str(chip)) for chip in chips_raw if str(chip).strip()] if isinstance(chips_raw, list) else []
+        history.append(
+            ChatItemData(
+                role=str(payload.get("role", "assistant")),
+                title=str(payload.get("title", "")),
+                body=str(payload.get("body", "")),
+                meta=str(payload.get("meta", "")),
+                chips=chips,
+            )
+        )
+    return history
+
+
+def secure_clear_chat_history() -> None:
+    connection = _secure_db()
+    try:
+        connection.execute("DELETE FROM chat_history")
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def send_desktop_notification(title: str, body: str) -> None:
+    try:
+        import subprocess
+
+        subprocess.Popen(
+            ["notify-send", "-a", "Hanauta AI", title, body],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
+def _normalize_host_url(host: str) -> str:
+    value = host.strip().rstrip("/")
+    if not value.startswith(("http://", "https://")):
+        value = f"http://{value}"
+    return value
+
+
+def _http_json(url: str, timeout: float = 10.0) -> dict[str, object] | list[object]:
+    req = request.Request(url, headers={"User-Agent": "Hanauta AI/1.0"})
+    with request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _http_post_json(url: str, payload: dict[str, object], timeout: float = 180.0) -> dict[str, object]:
+    body = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        url,
+        data=body,
+        headers={"User-Agent": "Hanauta AI/1.0", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def validate_backend(profile: BackendProfile, payload: dict[str, object]) -> tuple[bool, str]:
     host = str(payload.get("host", "")).strip()
     model = str(payload.get("model", "")).strip()
-    api_key = str(payload.get("api_key", "")).strip()
+    api_key = secure_load_secret(f"{profile.key}:api_key")
     if not model:
         return False, "Model is required."
     if profile.needs_api_key and not api_key:
@@ -299,10 +496,18 @@ def validate_backend(profile: BackendProfile, payload: dict[str, object]) -> tup
     if not profile.needs_api_key and not host:
         return False, "Host is required."
 
+    if profile.provider == "sdwebui":
+        url = _normalize_host_url(host)
+        try:
+            response = _http_json(f"{url}/sdapi/v1/samplers", timeout=3.0)
+            if not isinstance(response, list):
+                return False, "SD WebUI did not return samplers."
+        except Exception:
+            return False, "SD WebUI host did not respond."
+        return True, "SD WebUI connection looks valid."
+
     if profile.provider == "openai_compat":
-        url = host.rstrip("/")
-        if not url.startswith(("http://", "https://")):
-            url = f"http://{url}"
+        url = _normalize_host_url(host)
         try:
             with request.urlopen(f"{url}/v1/models", timeout=2.5) as response:
                 if response.status >= 400:
@@ -310,9 +515,7 @@ def validate_backend(profile: BackendProfile, payload: dict[str, object]) -> tup
         except Exception:
             return False, "Host did not respond."
     elif profile.key == "ollama":
-        url = host.rstrip("/")
-        if not url.startswith(("http://", "https://")):
-            url = f"http://{url}"
+        url = _normalize_host_url(host)
         try:
             with request.urlopen(f"{url}/api/tags", timeout=2.5) as response:
                 if response.status >= 400:
@@ -435,6 +638,37 @@ class BackendSettingsDialog(QDialog):
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         shell_layout.addWidget(self.api_key_input)
 
+        self.negative_prompt_input = QLineEdit()
+        self.negative_prompt_input.setPlaceholderText("Default negative prompt")
+        shell_layout.addWidget(self.negative_prompt_input)
+
+        self.sampler_input = QLineEdit()
+        self.sampler_input.setPlaceholderText("Sampler")
+        shell_layout.addWidget(self.sampler_input)
+
+        self.steps_input = QLineEdit()
+        self.steps_input.setPlaceholderText("Steps")
+        shell_layout.addWidget(self.steps_input)
+
+        self.cfg_scale_input = QLineEdit()
+        self.cfg_scale_input.setPlaceholderText("CFG scale")
+        shell_layout.addWidget(self.cfg_scale_input)
+
+        self.width_input = QLineEdit()
+        self.width_input.setPlaceholderText("Width")
+        shell_layout.addWidget(self.width_input)
+
+        self.height_input = QLineEdit()
+        self.height_input.setPlaceholderText("Height")
+        shell_layout.addWidget(self.height_input)
+
+        self.output_dir_input = QLineEdit()
+        self.output_dir_input.setPlaceholderText("SD output folder for monitor notifications")
+        shell_layout.addWidget(self.output_dir_input)
+
+        self.monitor_check = QCheckBox("Notify when new SD images appear in the output folder")
+        shell_layout.addWidget(self.monitor_check)
+
         self.status_label = QLabel("Configure um backend e clique em Test.")
         self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(f"color: {TEXT_MID};")
@@ -491,7 +725,14 @@ class BackendSettingsDialog(QDialog):
                 "enabled": bool(self.enabled_check.isChecked()),
                 "host": self.host_input.text().strip(),
                 "model": self.model_input.text().strip(),
-                "api_key": self.api_key_input.text().strip(),
+                "negative_prompt": self.negative_prompt_input.text().strip(),
+                "sampler_name": self.sampler_input.text().strip(),
+                "steps": self.steps_input.text().strip(),
+                "cfg_scale": self.cfg_scale_input.text().strip(),
+                "width": self.width_input.text().strip(),
+                "height": self.height_input.text().strip(),
+                "output_dir": self.output_dir_input.text().strip(),
+                "monitor_enabled": bool(self.monitor_check.isChecked()),
             }
         )
         return existing
@@ -502,9 +743,27 @@ class BackendSettingsDialog(QDialog):
         self.enabled_check.setChecked(bool(payload.get("enabled", True)))
         self.host_input.setText(str(payload.get("host", profile.host)))
         self.model_input.setText(str(payload.get("model", profile.model)))
-        self.api_key_input.setText(str(payload.get("api_key", "")))
+        self.api_key_input.setText(secure_load_secret(f"{profile.key}:api_key"))
+        self.negative_prompt_input.setText(str(payload.get("negative_prompt", "")))
+        self.sampler_input.setText(str(payload.get("sampler_name", "Euler a")))
+        self.steps_input.setText(str(payload.get("steps", "28")))
+        self.cfg_scale_input.setText(str(payload.get("cfg_scale", "7.0")))
+        self.width_input.setText(str(payload.get("width", "1024")))
+        self.height_input.setText(str(payload.get("height", "1024")))
+        self.output_dir_input.setText(str(payload.get("output_dir", "")))
+        self.monitor_check.setChecked(bool(payload.get("monitor_enabled", False)))
         self.api_key_input.setVisible(profile.needs_api_key)
-        self.host_input.setVisible(not profile.needs_api_key)
+        self.host_input.setVisible(not profile.needs_api_key or profile.provider == "sdwebui")
+        is_sd = profile.provider == "sdwebui"
+        self.negative_prompt_input.setVisible(is_sd)
+        self.sampler_input.setVisible(is_sd)
+        self.steps_input.setVisible(is_sd)
+        self.cfg_scale_input.setVisible(is_sd)
+        self.width_input.setVisible(is_sd)
+        self.height_input.setVisible(is_sd)
+        self.output_dir_input.setVisible(is_sd)
+        self.monitor_check.setVisible(is_sd)
+        self.model_input.setPlaceholderText("Checkpoint / model" if is_sd else "Model")
         tested = bool(payload.get("tested", False))
         last_status = str(payload.get("last_status", "Configure um backend e clique em Test."))
         self.status_label.setText(last_status if last_status else "Configure um backend e clique em Test.")
@@ -524,6 +783,7 @@ class BackendSettingsDialog(QDialog):
         profile = self._selected_profile()
         payload = self._current_payload()
         existing = self.settings.get(profile.key, {})
+        secure_store_secret(f"{profile.key}:api_key", self.api_key_input.text().strip())
         payload["tested"] = bool(existing.get("tested", False))
         payload["last_status"] = existing.get("last_status", "Saved.")
         self.settings[profile.key] = payload
@@ -632,6 +892,254 @@ class AvatarBadge(QLabel):
             }}
             """
         )
+
+
+def render_chat_html(history: list[ChatItemData]) -> str:
+    blocks: list[str] = []
+    for item in history:
+        is_user = item.role == "user"
+        bubble_bg = USER_BG if is_user else ASSISTANT_BG
+        bubble_border = BORDER_ACCENT if is_user else rgba(BORDER_SOFT, 0.95)
+        title_color = ACCENT_ALT if is_user else ACCENT
+        chips = "".join(
+            f'<span class="chip">{html.escape(chip.text)}</span>'
+            for chip in item.chips
+        )
+        chips_html = f'<div class="chips">{chips}</div>' if chips else ""
+        blocks.append(
+            f"""
+            <article class="message {'user' if is_user else 'assistant'}">
+              <div class="avatar">{'Y' if is_user else 'AI'}</div>
+              <div class="bubble" style="background:{bubble_bg}; border:1px solid {bubble_border};">
+                <div class="header">
+                  <span class="dot" style="color:{title_color};">●</span>
+                  <span class="title" style="color:{title_color};">{html.escape(item.title)}</span>
+                  <span class="meta">{html.escape(item.meta)}</span>
+                </div>
+                <div class="body">{item.body}</div>
+                {chips_html}
+              </div>
+            </article>
+            """
+        )
+
+    if not blocks:
+        blocks.append(
+            f"""
+            <section class="empty-state">
+              <div class="empty-title">No conversation yet</div>
+              <div class="empty-copy">Pick a backend and start typing. Use <code>/image your prompt</code> with an SD backend to generate images.</div>
+            </section>
+            """
+        )
+
+    return f"""
+    <html>
+      <head>
+        <style>
+        html, body {{
+            margin: 0;
+            padding: 0;
+            background: {rgba(CARD_BG, 0.72)};
+            color: {TEXT};
+            font-family: system-ui, sans-serif;
+        }}
+          body {{
+            padding: 8px 6px 14px 6px;
+          }}
+          ::-webkit-scrollbar {{
+            width: 12px;
+          }}
+          ::-webkit-scrollbar-track {{
+            background: {rgba(CARD_BG_SOFT, 0.44)};
+            border-radius: 6px;
+          }}
+          ::-webkit-scrollbar-thumb {{
+            background: linear-gradient({rgba(ACCENT, 0.78)}, {rgba(THEME.app_running_border, 0.98)});
+            border: 1px solid {rgba(BORDER_ACCENT, 0.72)};
+            border-radius: 6px;
+          }}
+          .message {{
+            display: flex;
+            gap: 10px;
+            margin: 0 0 12px 0;
+            align-items: flex-start;
+          }}
+          .message.user {{
+            flex-direction: row-reverse;
+          }}
+          .avatar {{
+            width: 30px;
+            min-width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 15px;
+            font-size: 11px;
+            font-weight: 700;
+            background: {rgba(CARD_BG_SOFT, 0.96)};
+            color: {ACCENT};
+            border: 1px solid {rgba(ACCENT, 0.18)};
+          }}
+          .message.user .avatar {{
+            background: {ACCENT_SOFT};
+            color: {ACCENT_ALT};
+            border-color: {rgba(ACCENT_ALT, 0.18)};
+          }}
+          .bubble {{
+            flex: 1;
+            max-width: calc(100% - 48px);
+            border-radius: 24px;
+            padding: 14px 16px 16px 16px;
+            box-sizing: border-box;
+          }}
+          .header {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+          }}
+          .title {{
+            font-weight: 700;
+            font-size: 13px;
+          }}
+          .meta {{
+            color: {TEXT_DIM};
+            font-size: 11px;
+          }}
+          .body {{
+            color: {TEXT};
+            font-size: 13px;
+            line-height: 1.55;
+          }}
+          .body p {{
+            margin: 0 0 8px 0;
+          }}
+          .body code {{
+            background: {rgba(CARD_BG_SOFT, 0.94)};
+            padding: 2px 6px;
+            border-radius: 10px;
+          }}
+          .body pre {{
+            background: {rgba(CARD_BG_SOFT, 0.96)};
+            border: 1px solid {rgba(BORDER_SOFT, 0.95)};
+            padding: 10px 12px;
+            border-radius: 16px;
+            white-space: pre-wrap;
+          }}
+          .body img {{
+            margin-top: 10px;
+            max-width: 100%;
+            border-radius: 18px;
+            border: 1px solid {rgba(BORDER_SOFT, 0.95)};
+          }}
+          .chips {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+          }}
+          .chip {{
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: {rgba(CARD_BG_SOFT, 0.92)};
+            border: 1px solid {BORDER_SOFT};
+            color: {TEXT};
+            font-size: 11px;
+          }}
+          .empty-state {{
+            padding: 28px 18px;
+            border-radius: 24px;
+            border: 1px dashed {rgba(BORDER_SOFT, 0.9)};
+            background: {rgba(CARD_BG_SOFT, 0.18)};
+          }}
+          .empty-title {{
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: {TEXT};
+          }}
+          .empty-copy {{
+            font-size: 13px;
+            line-height: 1.55;
+            color: {TEXT_DIM};
+          }}
+          a {{
+            color: {ACCENT};
+            text-decoration: none;
+          }}
+        </style>
+      </head>
+      <body>{''.join(blocks)}</body>
+    </html>
+    """
+
+
+class ChatWebView(QWebEngineView):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        settings = self.settings()
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.setStyleSheet(f"background: {rgba(CARD_BG, 0.72)}; border: none;")
+        self.page().setBackgroundColor(QColor(CARD_BG))
+
+    def set_history(self, history: list[ChatItemData]) -> None:
+        self.setHtml(render_chat_html(history), QUrl.fromLocalFile(str(AI_STATE_DIR) + "/"))
+        self.loadFinished.connect(self._scroll_bottom_once)
+
+    def _scroll_bottom_once(self, _ok: bool) -> None:
+        try:
+            self.loadFinished.disconnect(self._scroll_bottom_once)
+        except Exception:
+            pass
+        self.page().runJavaScript("window.scrollTo(0, document.body.scrollHeight);")
+
+
+class SdImageWorker(QThread):
+    finished_ok = pyqtSignal(str, str, str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, profile: BackendProfile, settings: dict[str, object], prompt: str) -> None:
+        super().__init__()
+        self.profile = profile
+        self.settings = settings
+        self.prompt = prompt
+
+    def run(self) -> None:
+        try:
+            path = self._generate()
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.finished_ok.emit(str(path), self.prompt, self.profile.label)
+
+    def _generate(self) -> Path:
+        url = _normalize_host_url(str(self.settings.get("host", self.profile.host)))
+        IMAGE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        request_payload: dict[str, object] = {
+            "prompt": self.prompt,
+            "negative_prompt": str(self.settings.get("negative_prompt", "")),
+            "sampler_name": str(self.settings.get("sampler_name", "Euler a")),
+            "steps": int(float(str(self.settings.get("steps", "28")) or 28)),
+            "cfg_scale": float(str(self.settings.get("cfg_scale", "7.0")) or 7.0),
+            "width": int(float(str(self.settings.get("width", "1024")) or 1024)),
+            "height": int(float(str(self.settings.get("height", "1024")) or 1024)),
+        }
+        checkpoint = str(self.settings.get("model", self.profile.model)).strip()
+        if checkpoint:
+            request_payload["override_settings"] = {"sd_model_checkpoint": checkpoint}
+        response = _http_post_json(f"{url}/sdapi/v1/txt2img", request_payload, timeout=300.0)
+        images = response.get("images", [])
+        if not isinstance(images, list) or not images:
+            raise RuntimeError("SD WebUI returned no images.")
+        raw = str(images[0]).split(",", 1)[-1]
+        file_path = IMAGE_OUTPUT_DIR / f"hanauta-ai-{int(time.time())}.png"
+        file_path.write_bytes(b64decode(raw))
+        return file_path
 
 
 class MessageCard(FadeCard):
@@ -907,6 +1415,8 @@ class ComposerBar(QFrame):
 class SidebarPanel(QFrame):
     def __init__(self, ui_font: str) -> None:
         super().__init__()
+        if not WEBENGINE_AVAILABLE:
+            raise RuntimeError("QtWebEngine is required for Hanauta AI.")
         self.ui_font = ui_font
         self.icon_font = load_material_icon_font()
         self.profiles = [
@@ -916,11 +1426,16 @@ class SidebarPanel(QFrame):
             BackendProfile("ollama", "Ollama", "ollama", "llama3.2", "127.0.0.1:11434", "ollama"),
             BackendProfile("openai", "OpenAI", "openai", "gpt-4.1-mini", "api.openai.com", "openai", True),
             BackendProfile("mistral", "Mistral", "openai", "mistral-small", "api.mistral.ai", "mistral", True),
+            BackendProfile("sdwebui", "SD WebUI", "sdwebui", "sdxl", "127.0.0.1:7860", "openai"),
+            BackendProfile("sdreforge", "SD ReForge", "sdwebui", "sdxl", "127.0.0.1:7861", "mistral"),
         ]
         self.profile_by_key = {profile.key: profile for profile in self.profiles}
         self.backend_settings = load_backend_settings()
         self.current_profile: BackendProfile | None = None
         self._card_animations: list[QPropertyAnimation] = []
+        self.chat_history = secure_load_chat_history()
+        self._sd_seen_outputs: dict[str, tuple[str, float]] = {}
+        self._image_worker: SdImageWorker | None = None
 
         self.setObjectName("sidebarPanel")
         self.setFixedWidth(452)
@@ -961,49 +1476,8 @@ class SidebarPanel(QFrame):
         convo_label.setStyleSheet(f"color: {TEXT}; padding-left: 4px;")
         convo_layout.addWidget(convo_label)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.setStyleSheet(
-            f"""
-            QScrollArea {{
-                background: transparent;
-                border: none;
-            }}
-            QScrollBar:vertical {{
-                background: {rgba(CARD_BG_SOFT, 0.44)};
-                width: 12px;
-                margin: 6px 0 6px 10px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {rgba(ACCENT, 0.78)},
-                    stop:1 {rgba(THEME.app_running_border, 0.98)}
-                );
-                border: 1px solid {rgba(BORDER_ACCENT, 0.72)};
-                border-radius: 6px;
-                min-height: 36px;
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-                background: transparent;
-                border: none;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: transparent;
-            }}
-            """
-        )
-
-        self.content = QWidget()
-        self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(4, 4, 4, 8)
-        self.content_layout.setSpacing(12)
-        self.scroll.setWidget(self.content)
-        convo_layout.addWidget(self.scroll, 1)
+        self.chat_view = ChatWebView()
+        convo_layout.addWidget(self.chat_view, 1)
 
         root.addWidget(convo_shell, 1)
 
@@ -1011,8 +1485,11 @@ class SidebarPanel(QFrame):
         self.composer.send_requested.connect(self.add_user_message)
         root.addWidget(self.composer)
 
-        self._clear_cards()
+        self._render_chat_history()
         self._refresh_available_backends()
+        self.monitor_timer = QTimer(self)
+        self.monitor_timer.timeout.connect(self._poll_sd_output_monitors)
+        self.monitor_timer.start(8000)
 
     def _build_hero(self) -> QFrame:
         frame = QFrame()
@@ -1178,89 +1655,148 @@ class SidebarPanel(QFrame):
         self.backend_settings = load_backend_settings()
         self._refresh_available_backends()
 
+    def _render_chat_history(self) -> None:
+        self.chat_view.set_history(self.chat_history)
+
     def _clear_cards(self) -> None:
-        while self.content_layout.count():
-            item = self.content_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self.content_layout.addStretch(1)
+        self.chat_history = []
+        secure_clear_chat_history()
+        self._render_chat_history()
 
     def add_card(self, data: ChatItemData, animate: bool = True) -> None:
-        card = MessageCard(data, self.ui_font)
-        insert_at = max(0, self.content_layout.count() - 1)
-        self.content_layout.insertWidget(insert_at, card)
-        if animate:
-            self._animate_card_in(card)
+        del animate
+        self.chat_history.append(data)
+        secure_append_chat(data)
+        self._render_chat_history()
 
-    def _animate_card_in(self, card: MessageCard) -> None:
-        opacity_effect = QGraphicsOpacityEffect(card)
-        opacity_effect.setOpacity(0.0)
-        card.setGraphicsEffect(opacity_effect)
+    def _build_image_response(self, image_path: Path, prompt: str) -> str:
+        image_url = image_path.resolve().as_uri()
+        return (
+            f"<p><b>Image generated.</b> Prompt: {html.escape(prompt)}</p>"
+            f'<p><img src="{image_url}" alt="Generated image"/></p>'
+            f"<p><a href=\"{image_url}\">Open image</a></p>"
+        )
 
-        fade = QPropertyAnimation(opacity_effect, b"opacity", self)
-        fade.setDuration(220)
-        fade.setStartValue(0.0)
-        fade.setEndValue(1.0)
-        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+    def _poll_sd_output_monitors(self) -> None:
+        for profile in self.profiles:
+            if profile.provider != "sdwebui":
+                continue
+            payload = self.backend_settings.get(profile.key, {})
+            if not bool(payload.get("monitor_enabled", False)):
+                continue
+            output_dir = Path(str(payload.get("output_dir", "")).strip()).expanduser()
+            if not output_dir.exists() or not output_dir.is_dir():
+                continue
+            candidates = [
+                path for path in output_dir.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+            ]
+            if not candidates:
+                continue
+            latest = max(candidates, key=lambda item: item.stat().st_mtime)
+            latest_state = (str(latest), latest.stat().st_mtime)
+            previous = self._sd_seen_outputs.get(profile.key)
+            self._sd_seen_outputs[profile.key] = latest_state
+            if previous is None:
+                continue
+            if latest_state != previous:
+                send_desktop_notification("SD image detected", f"New image found for {profile.label}: {latest.name}")
 
-        slide = QPropertyAnimation(card, b"yOffset", self)
-        slide.setDuration(240)
-        slide.setStartValue(12)
-        slide.setEndValue(0)
-        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+    def _start_image_generation(self, profile: BackendProfile, prompt: str) -> None:
+        if self._image_worker is not None and self._image_worker.isRunning():
+            self.add_card(
+                ChatItemData(
+                    role="assistant",
+                    title="Hanauta AI",
+                    meta="image generation busy",
+                    body="<p>An image is already being generated. Please wait for it to finish.</p>",
+                )
+            )
+            return
+        self.add_card(
+            ChatItemData(
+                role="assistant",
+                title=profile.label,
+                meta="image generation",
+                body=f"<p>Generating image for: <b>{html.escape(prompt)}</b></p>",
+            )
+        )
+        self._image_worker = SdImageWorker(profile, dict(self.backend_settings.get(profile.key, {})), prompt)
+        self._image_worker.finished_ok.connect(self._handle_image_generated)
+        self._image_worker.failed.connect(self._handle_image_failed)
+        self._image_worker.finished.connect(self._finish_image_worker)
+        self._image_worker.start()
 
-        self._card_animations.extend([fade, slide])
-        fade.finished.connect(lambda eff=opacity_effect, anim=fade: self._drop_animation(anim, eff))
-        slide.finished.connect(lambda anim=slide: self._drop_animation(anim))
-        fade.start()
-        slide.start()
+    def _handle_image_generated(self, image_path_text: str, prompt: str, profile_label: str) -> None:
+        image_path = Path(image_path_text)
+        self.add_card(
+            ChatItemData(
+                role="assistant",
+                title=profile_label,
+                meta="image generated",
+                body=self._build_image_response(image_path, prompt),
+                chips=[SourceChipData("sd image"), SourceChipData(image_path.name)],
+            )
+        )
+        send_desktop_notification("Image generated", f"{profile_label} finished a new image.")
 
-    def _drop_animation(self, animation: QPropertyAnimation, effect: QGraphicsOpacityEffect | None = None) -> None:
-        if animation in self._card_animations:
-            self._card_animations.remove(animation)
-        if effect is not None and animation.state() == QPropertyAnimation.State.Stopped:
-            parent = effect.parent()
-            if isinstance(parent, QWidget):
-                parent.setGraphicsEffect(None)
-            effect.deleteLater()
+    def _handle_image_failed(self, message: str) -> None:
+        self.add_card(
+            ChatItemData(
+                role="assistant",
+                title="Hanauta AI",
+                meta="image generation failed",
+                body=f"<p>Unable to generate image: {html.escape(message)}</p>",
+            )
+        )
+
+    def _finish_image_worker(self) -> None:
+        self._image_worker = None
 
     def add_user_message(self, text: str) -> None:
+        command = text.strip()
+        if command == "/clear":
+            self._clear_cards()
+            return
         if self.current_profile is None:
             return
 
-        spacer = None
-        if self.content_layout.count() and self.content_layout.itemAt(self.content_layout.count() - 1).spacerItem():
-            spacer = self.content_layout.takeAt(self.content_layout.count() - 1)
-
         safe = html.escape(text).replace("\n", "<br>")
         self.add_card(ChatItemData(role="user", title="You", body=f"<p>{safe}</p>", meta="prompt"))
+
+        if command.startswith("/image "):
+            prompt = command[len("/image "):].strip()
+            if self.current_profile.provider != "sdwebui":
+                self.add_card(
+                    ChatItemData(
+                        role="assistant",
+                        title="Hanauta AI",
+                        body="<p>Select an SD WebUI or SD ReForge backend before using <code>/image</code>.</p>",
+                        meta="image command",
+                    )
+                )
+                return
+            if not prompt:
+                self.add_card(
+                    ChatItemData(role="assistant", title="Hanauta AI", body="<p>Usage: <code>/image your prompt</code></p>", meta="image command")
+                )
+                return
+            self._start_image_generation(self.current_profile, prompt)
+            return
+
         self.add_card(
             ChatItemData(
                 role="assistant",
                 title=self.current_profile.label,
                 meta=self.current_profile.model,
                 body=(
-                    "<p><b>Mock response:</b> a nova popup agora está mais densa, mais arredondada e com camadas visuais mais próximas de uma shell sidebar.</p>"
-                    f"<p>Backend atual: <b>{html.escape(self.current_profile.label)}</b> em <b>{html.escape(self.current_profile.host)}</b>.</p>"
-                    "<p>Próximo passo real: ligar este composer ao request layer e fazer streaming/token-by-token na mesma bubble.</p>"
+                    "<p><b>Mock response:</b> text backends are still using the current placeholder response layer.</p>"
+                    f"<p>Active backend: <b>{html.escape(self.current_profile.label)}</b> at <b>{html.escape(self.current_profile.host)}</b>.</p>"
+                    "<p>The chat history and secure backend secrets are now stored outside the project in Hanauta state.</p>"
                 ),
-                chips=[
-                    SourceChipData(self.current_profile.provider),
-                    SourceChipData(self.current_profile.model),
-                ],
+                chips=[SourceChipData(self.current_profile.provider), SourceChipData(self.current_profile.model)],
             )
         )
-
-        if spacer is not None:
-            self.content_layout.addItem(spacer)
-
-        QTimer.singleShot(0, self._scroll_to_bottom)
-
-    def _scroll_to_bottom(self) -> None:
-        QGuiApplication.processEvents()
-        bar = self.scroll.verticalScrollBar()
-        bar.setValue(bar.maximum())
 
 
 class DemoWindow(QMainWindow):
@@ -1271,13 +1807,14 @@ class DemoWindow(QMainWindow):
         self._slide_animation: QPropertyAnimation | None = None
         self._fade_animation: QPropertyAnimation | None = None
         self._drag_offset: QPoint | None = None
+        self._screen_fix_applied = False
 
         self.setWindowTitle("Hanauta AI")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
         )
 
         root = QWidget()
@@ -1313,28 +1850,55 @@ class DemoWindow(QMainWindow):
         self._build_panel()
 
     def _place_window(self) -> None:
-        screen = QGuiApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        workspace = focused_workspace()
+        if isinstance(workspace, dict):
+            rect = workspace.get("rect")
+            if isinstance(rect, dict):
+                try:
+                    self.move(int(rect.get("x", 0)) + 16, int(rect.get("y", 0)) + 40)
+                    return
+                except Exception:
+                    pass
+        screen = QApplication.primaryScreen()
         if screen is None:
             self.move(16, 44)
             return
         geo = screen.availableGeometry()
-        self.move(16, geo.y() + 40)
+        self.move(geo.x() + 16, geo.y() + 40)
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        if self._screen_fix_applied:
+            return
+        self._screen_fix_applied = True
+        QTimer.singleShot(0, self._force_primary_screen)
+
+    def _force_primary_screen(self) -> None:
+        workspace = focused_workspace()
+        screen = None
+        if isinstance(workspace, dict):
+            rect = workspace.get("rect")
+            if isinstance(rect, dict):
+                try:
+                    screen = QGuiApplication.screenAt(
+                        QPoint(int(rect.get("x", 0)) + 48, int(rect.get("y", 0)) + 48)
+                    )
+                except Exception:
+                    screen = None
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        if screen is not None:
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.setScreen(screen)
+        self._place_window()
 
     def _animate_in(self) -> None:
-        start = self.pos() + QPoint(-28, 0)
-        end = self.pos()
-        self.move(start)
         self.setWindowOpacity(0.0)
-
-        self._slide_animation = QPropertyAnimation(self, b"pos", self)
-        self._slide_animation.setDuration(240)
-        self._slide_animation.setStartValue(start)
-        self._slide_animation.setEndValue(end)
-        self._slide_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._slide_animation.start()
+        self._slide_animation = None
 
         self._fade_animation = QPropertyAnimation(self, b"windowOpacity", self)
-        self._fade_animation.setDuration(220)
+        self._fade_animation.setDuration(260)
         self._fade_animation.setStartValue(0.0)
         self._fade_animation.setEndValue(1.0)
         self._fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
