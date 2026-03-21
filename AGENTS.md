@@ -97,6 +97,14 @@
 - Keep the current compact Material 3 expressive direction unless the user asks for a new visual direction.
 - Quick settings and media controls should remain wired to the shared helper scripts instead of duplicating shell logic in Python.
 
+## Notification Toast Notes
+
+- The active desktop notification toast renderer currently comes from the native GTK daemon at `hanauta/bin/hanauta-notifyd`, launched by `startup.sh`, not the PyQt file at `hanauta/src/pyqt/notification-daemon/notification_daemon.py`.
+- Toast styling should be changed first in `hanauta/src/service/hanauta-notifyd.css`.
+- The daemon also has a built-in fallback CSS template in `hanauta/src/service/hanauta-notifyd.c`; keep it aligned with `hanauta-notifyd.css` so styling still works if the CSS file is unavailable.
+- The actual content inset from the toast border is controlled by the `#content` padding in CSS and the matching `gtk_container_set_border_width(...)` on the inner `content` box in `hanauta/src/service/hanauta-notifyd.c`.
+- After notification daemon styling or layout changes, rebuild with `bash hanauta/src/service/build.sh` and restart `hanauta/bin/hanauta-notifyd` or rerun `startup.sh`, otherwise the old binary/process will keep rendering the previous toast layout.
+
 ## i3 Integration
 
 - i3 should start the PyQt bar, not Eww.

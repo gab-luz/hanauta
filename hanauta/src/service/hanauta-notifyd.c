@@ -411,7 +411,8 @@ static gchar *replace_all(const gchar *source, const gchar *needle, const gchar 
 static gchar *load_toast_css(const ThemePalette *theme) {
     static const gchar *fallback_template =
         "#hanauta-toast-window { background: transparent; }\n"
-        "#card { background: {{CARD_BG}}; border: none; border-radius: 24px; box-shadow: 0 0 24px {{CARD_SHADOW}}; }\n"
+        "#card { background: {{CARD_BG}}; border: 1px solid {{CARD_BORDER}}; border-radius: 24px; box-shadow: 0 0 24px {{CARD_SHADOW}}; }\n"
+        "#content { padding: 14px; }\n"
         "#toastIcon { padding: 0; }\n"
         "#appLabel { color: {{APP_LABEL}}; font-weight: 800; letter-spacing: 0.4px; }\n"
         "#summaryLabel { color: {{SUMMARY_COLOR}}; font-weight: 800; font-size: 15px; }\n"
@@ -872,13 +873,17 @@ static void show_toast(const NotificationPayload *payload) {
     gtk_container_set_border_width(GTK_CONTAINER(outer), 18);
     gtk_container_add(GTK_CONTAINER(window), outer);
 
-    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_name(card, "card");
-    gtk_container_set_border_width(GTK_CONTAINER(card), 16);
     gtk_box_pack_start(GTK_BOX(outer), card, TRUE, TRUE, 0);
 
+    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_name(content, "content");
+    gtk_container_set_border_width(GTK_CONTAINER(content), 14);
+    gtk_box_pack_start(GTK_BOX(card), content, TRUE, TRUE, 0);
+
     GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_box_pack_start(GTK_BOX(card), top, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), top, FALSE, FALSE, 0);
 
     GtkWidget *icon = make_notification_icon(payload->app_icon);
     if (icon != NULL) {
@@ -894,16 +899,16 @@ static void show_toast(const NotificationPayload *payload) {
     gtk_box_pack_end(GTK_BOX(top), close_button, FALSE, FALSE, 0);
 
     GtkWidget *summary = make_label("summaryLabel", payload->summary, 0.0);
-    gtk_box_pack_start(GTK_BOX(card), summary, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), summary, FALSE, FALSE, 0);
 
     if (payload->body != NULL && payload->body[0] != '\0') {
         GtkWidget *body = make_label("bodyLabel", payload->body, 0.0);
-        gtk_box_pack_start(GTK_BOX(card), body, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(content), body, FALSE, FALSE, 0);
     }
 
     if (payload->actions != NULL && payload->actions->len > 0) {
         GtkWidget *actions_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_box_pack_start(GTK_BOX(card), actions_box, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(content), actions_box, FALSE, FALSE, 0);
         for (guint i = 0; i < payload->actions->len; ++i) {
             ActionEntry *action = g_ptr_array_index(payload->actions, i);
             GtkWidget *button = gtk_button_new_with_label(action->label != NULL ? action->label : "Action");

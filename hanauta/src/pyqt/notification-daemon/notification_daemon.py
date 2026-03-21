@@ -207,8 +207,16 @@ class NotificationToast(QWidget):
         self.card.setObjectName("card")
         root.addWidget(self.card)
 
-        layout = QVBoxLayout(self.card)
-        layout.setContentsMargins(20, 18, 20, 18)
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(20)
+
+        self.content = QWidget()
+        self.content.setObjectName("content")
+        card_layout.addWidget(self.content)
+
+        layout = QVBoxLayout(self.content)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
         top = QHBoxLayout()
@@ -277,6 +285,9 @@ class NotificationToast(QWidget):
                 border: 1px solid {theme.panel_border};
                 border-radius: 22px;
             }}
+            QWidget#content {{
+                background: transparent;
+            }}
             QLabel#appLabel {{
                 color: {theme.primary};
                 letter-spacing: 0.5px;
@@ -289,11 +300,11 @@ class NotificationToast(QWidget):
             }}
             QLabel#summaryLabel {{
                 color: {theme.text};
-                padding-left: 2px;
+                padding: 0 2px;
             }}
             QLabel#bodyLabel {{
                 color: {theme.text_muted};
-                padding-left: 2px;
+                padding: 0 2px;
             }}
             QPushButton#closeButton {{
                 background: {theme.app_running_bg};
