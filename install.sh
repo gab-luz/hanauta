@@ -395,6 +395,7 @@ install_packages_debian() {
     bluez
     cava
     python3 python3-pip python3-venv
+    python3-pyqt6.qtwebengine
     build-essential pkg-config
     libglib2.0-dev libgtk-3-dev
     qt6-base-dev
@@ -434,6 +435,7 @@ install_packages_arch() {
     bluez bluez-utils
     cava
     python python-pip
+    python-pyqt6-webengine
     gcc pkgconf glib2
     qt6-base
     qt6-declarative

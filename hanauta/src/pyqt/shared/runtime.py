@@ -14,6 +14,7 @@ ENTRYPOINT_BINARIES = {
     "pyqt/notification-daemon/notification_daemon.py": "hanauta-notification-daemon",
     "pyqt/powermenu/powermenu.py": "hanauta-powermenu",
     "pyqt/shared/action_notification.py": "hanauta-action-notification",
+    "pyqt/study-tracker/study_tracker.py": "hanauta-study-tracker",
     "pyqt/widget-calendar/calendar_popup.py": "hanauta-calendar-popup",
     "pyqt/widget-cap-alerts/cap_alert_overlay.py": "hanauta-cap-alerts-overlay",
     "pyqt/widget-cap-alerts/cap_alerts_popup.py": "hanauta-cap-alerts-popup",
