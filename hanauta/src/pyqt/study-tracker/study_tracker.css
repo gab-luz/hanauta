@@ -595,6 +595,20 @@ button {
   gap: 1.5rem;
 }
 
+.study-page-content {
+  width: 100%;
+}
+
+.study-page-content.is-centered-page {
+  display: flex;
+  justify-content: center;
+}
+
+.study-overview-page,
+.study-settings-page {
+  width: 100%;
+}
+
 .study-resources-toolbar {
   display: flex;
   justify-content: space-between;
