@@ -3110,6 +3110,7 @@ class CyberBar(QWidget):
         script_path: Path,
         *,
         python_bin: Optional[str] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> bool:
         if not script_path.exists() and entry_target(script_path) == script_path.resolve():
             setattr(self, attr_name, None)
@@ -3127,10 +3128,13 @@ class CyberBar(QWidget):
                 command = [str(script_path)]
             if not command:
                 raise RuntimeError(f"No launch command available for {script_path}")
+            env = self._widget_launch_env()
+            if extra_env:
+                env.update(extra_env)
             subprocess.Popen(
                 command,
                 cwd=str(PROJECT_ROOT.parents[1]),
-                env=self._widget_launch_env(),
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -3147,11 +3151,12 @@ class CyberBar(QWidget):
         script_path: Path,
         *,
         python_bin: Optional[str] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> bool:
         if self._singleton_active(getattr(self, attr_name, None), script_path):
             self._terminate_singleton_process(attr_name, script_path)
             return False
-        return self._launch_singleton_process(attr_name, script_path, python_bin=python_bin)
+        return self._launch_singleton_process(attr_name, script_path, python_bin=python_bin, extra_env=extra_env)
 
     def _toggle_weather_popup(self) -> None:
         self._toggle_singleton_process("_weather_popup_process", WEATHER_POPUP, python_bin=self._python_bin())
@@ -3283,7 +3288,17 @@ class CyberBar(QWidget):
         run_bg([str(SCRIPTS_DIR / "openapps"), "--clip"])
 
     def _check_updates(self) -> None:
-        self._toggle_singleton_process("_updates_widget_process", UPDATES_WIDGET, python_bin=self._python_bin())
+        anchor = self.datetime_chip.mapToGlobal(self.datetime_chip.rect().bottomLeft())
+        extra_env = {
+            "HANAUTA_UPDATES_ANCHOR_X": str(anchor.x() + (self.datetime_chip.width() // 2)),
+            "HANAUTA_UPDATES_ANCHOR_Y": str(anchor.y() + 10),
+        }
+        self._toggle_singleton_process(
+            "_updates_widget_process",
+            UPDATES_WIDGET,
+            python_bin=self._python_bin(),
+            extra_env=extra_env,
+        )
 
     def _sync_ai_button(self) -> None:
         active = self._singleton_active(self._ai_popup_process, AI_POPUP)
