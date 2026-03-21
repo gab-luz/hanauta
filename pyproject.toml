@@ -8,5 +8,6 @@ dependencies = [
     "cryptography>=46.0.5",
     "dbus-next>=0.2.3",
     "pyqt6>=6.10.2",
+    "pyqt6-webengine>=6.10.0",
     "requests>=2.32.5",
 ]
