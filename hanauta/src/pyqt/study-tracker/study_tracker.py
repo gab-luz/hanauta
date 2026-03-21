@@ -938,10 +938,17 @@ def extract_youtube_playlist_id(value: str) -> str:
 
 def build_runtime_script(page_name: str) -> str:
     return f"""
+<script src="htmx.min.js"></script>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script>
 (function () {{
-  const CURRENT_PAGE = {json.dumps(page_name)};
+  const INITIAL_PAGE = {json.dumps(page_name)};
+  const PAGE_FRAGMENT_MAP = {{
+    dashboard: "code.html",
+    resources: "resources.html",
+    schedule: "schedules.html",
+    settings: "settingspage.html",
+  }};
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -956,6 +963,7 @@ def build_runtime_script(page_name: str) -> str:
   let insightIndex = 0;
   let selectedResourceId = "";
   let resourceFilter = "all";
+  let currentPage = INITIAL_PAGE;
   let bridge = null;
 
   function setNavActive(page) {{
@@ -971,6 +979,26 @@ def build_runtime_script(page_name: str) -> str:
     if (active) {{
       active.classList.add("is-active");
     }}
+  }}
+
+  function updatePageLayout(page) {{
+    const content = $("studyPageContent");
+    if (!content) return;
+    content.dataset.page = page;
+    content.classList.toggle("is-centered-page", page === "dashboard" || page === "settings");
+  }}
+
+  function showPage(page) {{
+    const normalized = PAGE_FRAGMENT_MAP[page] ? page : "dashboard";
+    currentPage = normalized;
+    setNavActive(normalized);
+    updatePageLayout(normalized);
+    document.title = `${{normalized.charAt(0).toUpperCase() + normalized.slice(1)}} | Hanauta Study Track`;
+    if (!window.htmx) return;
+    window.htmx.ajax("GET", PAGE_FRAGMENT_MAP[normalized], {{
+      target: "#studyPageContent",
+      swap: "innerHTML"
+    }});
   }}
 
   function formatMinutes(minutes) {{
@@ -1371,16 +1399,16 @@ def build_runtime_script(page_name: str) -> str:
     if (studyState) {{
       renderChips();
     }}
-    if (CURRENT_PAGE === "dashboard" && studyState) {{
+    if (currentPage === "dashboard" && studyState) {{
       renderObjective();
       renderInsights();
       renderAgenda();
       renderFab();
     }}
-    if (CURRENT_PAGE === "settings" && settingsState) {{
+    if (currentPage === "settings" && settingsState) {{
       renderSettings();
     }}
-    if (CURRENT_PAGE === "resources" && resourcesState) {{
+    if (currentPage === "resources" && resourcesState) {{
       renderResources();
     }}
   }}
@@ -1399,10 +1427,10 @@ def build_runtime_script(page_name: str) -> str:
   }}
 
   function wireNavigation() {{
-    $("navDashboardButton")?.addEventListener("click", () => bridge?.navigateTo("dashboard"));
-    $("navResourcesButton")?.addEventListener("click", () => bridge?.navigateTo("resources"));
-    $("navScheduleButton")?.addEventListener("click", () => bridge?.navigateTo("schedule"));
-    $("navSettingsButton")?.addEventListener("click", () => bridge?.navigateTo("settings"));
+    $("navDashboardButton")?.addEventListener("click", () => showPage("dashboard"));
+    $("navResourcesButton")?.addEventListener("click", () => showPage("resources"));
+    $("navScheduleButton")?.addEventListener("click", () => showPage("schedule"));
+    $("navSettingsButton")?.addEventListener("click", () => showPage("settings"));
   }}
 
   function wireDashboardActions() {{
@@ -1514,6 +1542,13 @@ def build_runtime_script(page_name: str) -> str:
     }});
   }}
 
+  function bindCurrentPageActions() {{
+    if (currentPage === "dashboard") wireDashboardActions();
+    if (currentPage === "resources") wireResourceActions();
+    if (currentPage === "schedule") wireScheduleActions();
+    if (currentPage === "settings") wireSettingsActions();
+  }}
+
   window.setStudyState = function (payloadJson) {{
     studyState = JSON.parse(payloadJson);
     render();
@@ -1615,16 +1650,21 @@ def build_runtime_script(page_name: str) -> str:
       .text-on-primary {{ color: var(--study-onPrimary, #3d1b72) !important; }}
     `;
     document.head.appendChild(extraStyle);
-    setNavActive(CURRENT_PAGE);
+    setNavActive(currentPage);
+    updatePageLayout(currentPage);
     wireNavigation();
-    if (CURRENT_PAGE === "dashboard") wireDashboardActions();
-    if (CURRENT_PAGE === "resources") wireResourceActions();
-    if (CURRENT_PAGE === "schedule") wireScheduleActions();
-    if (CURRENT_PAGE === "settings") wireSettingsActions();
+    bindCurrentPageActions();
+    document.body.addEventListener("htmx:afterSwap", (event) => {{
+      const target = event.detail && event.detail.target;
+      if (!target || target.id !== "studyPageContent") return;
+      bindCurrentPageActions();
+      render();
+    }});
     new QWebChannel(qt.webChannelTransport, function (channel) {{
       bridge = channel.objects.studyBridge;
       if (bridge) bridge.requestBootstrap();
     }});
+    window.showStudyPage = showPage;
   }});
 }})();
 </script>
@@ -1710,7 +1750,7 @@ def build_html(page_name: str) -> str:
 </header>
 <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 blur-[120px] rounded-full pointer-events-none"></div>
 <div class="absolute bottom-0 right-0 w-[400px] h-[400px] bg-secondary/5 blur-[100px] rounded-full pointer-events-none"></div>
-<div class="flex-1 overflow-y-auto no-scrollbar relative z-10 pb-32">
+<div class="study-page-content flex-1 overflow-y-auto no-scrollbar relative z-10 pb-32" id="studyPageContent">
 {page_body}
 </div>
 </main>
@@ -2498,7 +2538,7 @@ class StudyTrackerWindow(QWidget):
         if target == self.current_page:
             return
         self.current_page = target
-        self._load_page()
+        self._run_js(f"window.showStudyPage({json.dumps(target)});")
 
     def set_integration_enabled(self, key: str, enabled: bool) -> None:
         preferences = self.state.setdefault("preferences", {})
