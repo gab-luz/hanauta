@@ -341,6 +341,16 @@ def _openai_compat_alive(host: str) -> bool:
         return False
 
 
+def _apply_antialias_font(widget: QWidget) -> None:
+    font = widget.font()
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    widget.setFont(font)
+    for child in widget.findChildren(QWidget):
+        child_font = child.font()
+        child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        child.setFont(child_font)
+
+
 def load_backend_settings() -> dict[str, dict[str, object]]:
     try:
         return json.loads(BACKEND_SETTINGS_FILE.read_text(encoding="utf-8"))
@@ -593,12 +603,13 @@ class BackendSettingsDialog(QDialog):
         self.ui_font = ui_font
 
         self.setWindowTitle("AI Backend Settings")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.resize(620, 760)
         self.setModal(True)
         self.setStyleSheet(
             f"""
             QDialog {{
-                background: {PANEL_BG};
+                background: transparent;
                 color: {TEXT};
             }}
             QLabel {{
@@ -650,7 +661,7 @@ class BackendSettingsDialog(QDialog):
         )
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 18)
+        root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(12)
 
         shell = SurfaceFrame(bg=rgba(CARD_BG, 0.92), border=BORDER_SOFT, radius=28)
@@ -785,7 +796,17 @@ class BackendSettingsDialog(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Close).clicked.connect(self.accept)
         shell_layout.addWidget(buttons)
 
+        _apply_antialias_font(self)
         self._load_selected_backend()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        painter.setPen(QPen(QColor(rgba(BORDER_HARD, 0.92)), 1))
+        painter.setBrush(QColor(rgba(PANEL_BG, 0.96)))
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 30, 30)
 
     def _selected_profile(self) -> BackendProfile:
         key = str(self.backend_combo.currentData())
