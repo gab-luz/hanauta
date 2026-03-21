@@ -69,6 +69,7 @@ hanauta/walls/catholic-wallpapers-for-hyprland/
 hanauta/walls/Konachan-cache/
 hanauta/walls/community/
 hanauta/vendor/wallpaper-sources/
+hanauta/src/pyqt/email-client
 # Local app state / secrets
 *.env
 *.sqlite
