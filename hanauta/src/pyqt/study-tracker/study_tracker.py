@@ -273,6 +273,8 @@ def make_resource_item(
         "kind": str(kind or "lesson").strip().lower() or "lesson",
         "external_url": str(external_url or "").strip(),
         "notes": str(notes or "").strip(),
+        "tracked_minutes": 0,
+        "tracked_sessions": 0,
         "done": False,
         "completed_at": "",
     }
@@ -361,6 +363,8 @@ def default_state() -> dict[str, Any]:
                 ],
             ),
         ],
+        "selected_focus_resource_id": "",
+        "selected_focus_item_id": "",
         "active_session": None,
         "preferences": {
             "anki_enabled": True,
@@ -428,6 +432,8 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
                 item.update(raw_item)
                 item["done"] = bool(item.get("done", False))
                 item["completed_at"] = str(item.get("completed_at", "") or "")
+                item["tracked_minutes"] = max(0, int(item.get("tracked_minutes", 0) or 0))
+                item["tracked_sessions"] = max(0, int(item.get("tracked_sessions", 0) or 0))
                 normalized_items.append(item)
         resource = make_resource(
             str(raw_resource.get("title", "Untitled resource")),
@@ -459,6 +465,8 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     else:
         state["active_session"] = {
             "task_id": str(active_session.get("task_id", "")),
+            "resource_id": str(active_session.get("resource_id", "") or ""),
+            "item_id": str(active_session.get("item_id", "") or ""),
             "elapsed_seconds": max(0, int(active_session.get("elapsed_seconds", 0) or 0)),
             "target_seconds": max(60, int(active_session.get("target_seconds", 25 * 60) or 25 * 60)),
             "running": bool(active_session.get("running", False)),
@@ -501,6 +509,8 @@ def normalize_state(payload: dict[str, Any] | None) -> dict[str, Any]:
     custom_theme_id = str(merged_preferences.get("custom_theme_id", "retrowave") or "retrowave").strip().lower()
     merged_preferences["custom_theme_id"] = custom_theme_id if custom_theme_id in {"retrowave", "dracula"} else "retrowave"
     state["preferences"] = merged_preferences
+    state["selected_focus_resource_id"] = str(state.get("selected_focus_resource_id", "") or "")
+    state["selected_focus_item_id"] = str(state.get("selected_focus_item_id", "") or "")
     last_reset = str(state.get("last_reset_date", today_iso()) or today_iso())
     state["last_reset_date"] = last_reset
     activity_dates = state.get("activity_dates", [])
@@ -658,13 +668,51 @@ def resource_by_id(state: dict[str, Any], resource_id: str) -> dict[str, Any] | 
     return None
 
 
+def resource_item_by_id(state: dict[str, Any], resource_id: str, item_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    resource = resource_by_id(state, resource_id)
+    if not isinstance(resource, dict):
+        return None, None
+    for item in resource.get("items", []):
+        if isinstance(item, dict) and str(item.get("id", "")) == item_id:
+            return resource, item
+    return resource, None
+
+
+def build_focus_class_options(state: dict[str, Any]) -> list[dict[str, Any]]:
+    options: list[dict[str, Any]] = []
+    for resource in state.get("resources", []):
+        if not isinstance(resource, dict):
+            continue
+        for item in resource.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            options.append(
+                {
+                    "resource_id": str(resource.get("id", "")),
+                    "item_id": str(item.get("id", "")),
+                    "value": f"{resource.get('id', '')}::{item.get('id', '')}",
+                    "title": str(item.get("title", "Untitled class") or "Untitled class"),
+                    "resource_title": str(resource.get("title", "Resource") or "Resource"),
+                    "tracked_minutes": int(item.get("tracked_minutes", 0) or 0),
+                    "tracked_sessions": int(item.get("tracked_sessions", 0) or 0),
+                }
+            )
+    return options
+
+
 def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
     current_task = active_task(state)
     session = state.get("active_session")
     session_payload: dict[str, Any] | None = None
+    focus_options = build_focus_class_options(state)
+    selected_focus_resource_id = str(state.get("selected_focus_resource_id", "") or "")
+    selected_focus_item_id = str(state.get("selected_focus_item_id", "") or "")
+    selected_focus_option = next((option for option in focus_options if option["resource_id"] == selected_focus_resource_id and option["item_id"] == selected_focus_item_id), None)
     if isinstance(session, dict):
         session_payload = {
             "task_id": str(session.get("task_id", "")),
+            "resource_id": str(session.get("resource_id", "") or ""),
+            "item_id": str(session.get("item_id", "") or ""),
             "elapsed_seconds": max(0, int(session.get("elapsed_seconds", 0) or 0)),
             "target_seconds": max(60, int(session.get("target_seconds", 25 * 60) or 25 * 60)),
             "running": bool(session.get("running", False)),
@@ -677,6 +725,8 @@ def build_summary_payload(state: dict[str, Any]) -> dict[str, Any]:
         "insights": state.get("insights", []),
         "tasks": state.get("tasks", []),
         "current_task": current_task,
+        "focus_class_options": focus_options,
+        "selected_focus_class": selected_focus_option,
         "active_session": session_payload,
     }
 
@@ -965,6 +1015,9 @@ def build_runtime_script(page_name: str) -> str:
   let resourceFilter = "all";
   let currentPage = INITIAL_PAGE;
   let bridge = null;
+  let focusClassQuery = "";
+  let focusClassOpen = false;
+  let focusClassActiveIndex = -1;
 
   function setNavActive(page) {{
     const dashboard = $("navDashboardButton");
@@ -985,7 +1038,7 @@ def build_runtime_script(page_name: str) -> str:
     const content = $("studyPageContent");
     if (!content) return;
     content.dataset.page = page;
-    content.classList.toggle("is-centered-page", page === "dashboard" || page === "settings");
+    content.classList.toggle("is-centered-page", page === "dashboard");
   }}
 
   function showPage(page) {{
@@ -1175,6 +1228,7 @@ def build_runtime_script(page_name: str) -> str:
     const icon = $("studyFabIcon");
     const session = studyState?.active_session || null;
     const task = currentTask();
+    const selectedClass = studyState?.selected_focus_class || null;
     if (!label || !hint || !icon) return;
     if (session && session.running) {{
       label.textContent = "Pause Session";
@@ -1186,13 +1240,123 @@ def build_runtime_script(page_name: str) -> str:
       icon.textContent = "play_arrow";
     }} else if (task) {{
       label.textContent = "Start Study Session";
-      hint.textContent = `Focused on ${{task.title}}`;
+      hint.textContent = selectedClass ? `Counts toward ${{selectedClass.title}}` : `Focused on ${{task.title}}`;
       icon.textContent = "play_arrow";
     }} else {{
       label.textContent = "Add a Study Task";
       hint.textContent = "Build a small plan first";
       icon.textContent = "add";
     }}
+  }}
+
+  function focusClassLabel(option) {{
+    if (!option) return "";
+    return `${{option.title || "Untitled class"}} — ${{option.resource_title || "Resource"}}`;
+  }}
+
+  function focusClassOptions() {{
+    return Array.isArray(studyState?.focus_class_options) ? studyState.focus_class_options : [];
+  }}
+
+  function filteredFocusClassOptions(query = focusClassQuery) {{
+    const needle = String(query || "").trim().toLowerCase();
+    const options = focusClassOptions();
+    if (!needle) return options;
+    return options.filter((option) => {{
+      const title = String(option.title || "").toLowerCase();
+      const resourceTitle = String(option.resource_title || "").toLowerCase();
+      return title.includes(needle) || resourceTitle.includes(needle);
+    }});
+  }}
+
+  function closeFocusClassMenu() {{
+    focusClassOpen = false;
+    focusClassActiveIndex = -1;
+    $("sessionClassOptions")?.classList.add("hidden");
+  }}
+
+  function commitFocusClassSelection(option) {{
+    if (!option) return;
+    focusClassQuery = focusClassLabel(option);
+    const input = $("sessionClassInput");
+    const hidden = $("sessionClassValue");
+    if (input) input.value = focusClassQuery;
+    if (hidden) hidden.value = option.value || "";
+    closeFocusClassMenu();
+    bridge?.setSessionClass(String(option.resource_id || ""), String(option.item_id || ""));
+  }}
+
+  function renderFocusClassOptionsList(query = focusClassQuery) {{
+    const menu = $("sessionClassOptions");
+    if (!menu) return;
+    const options = filteredFocusClassOptions(query);
+    if (!focusClassOpen || !options.length) {{
+      if (!options.length && focusClassOpen) {{
+        menu.innerHTML = `<div class="study-combobox-empty">No classes matched that search yet.</div>`;
+        menu.classList.remove("hidden");
+      }} else {{
+        menu.classList.add("hidden");
+      }}
+      return;
+    }}
+    if (focusClassActiveIndex >= options.length) focusClassActiveIndex = options.length - 1;
+    menu.innerHTML = options.map((option, index) => {{
+      const trackedMinutes = Number(option.tracked_minutes || 0);
+      const trackedSessions = Number(option.tracked_sessions || 0);
+      const trackedLabel = trackedMinutes > 0
+        ? `${{trackedMinutes}} tracked min • ${{trackedSessions}} sessions`
+        : "Ready to track";
+      return `
+        <button class="study-combobox-option${{index === focusClassActiveIndex ? " is-active" : ""}}" data-focus-class-value="${{escapeHtml(option.value)}}" type="button">
+          <span class="study-combobox-option-title">${{escapeHtml(option.title || "Untitled class")}}</span>
+          <span class="study-combobox-option-meta">${{escapeHtml(option.resource_title || "Resource")}} • ${{escapeHtml(trackedLabel)}}</span>
+        </button>
+      `;
+    }}).join("");
+    menu.classList.remove("hidden");
+    menu.querySelectorAll("[data-focus-class-value]").forEach((node) => {{
+      node.addEventListener("mousedown", (event) => {{
+        event.preventDefault();
+        const option = options.find((entry) => entry.value === (node.getAttribute("data-focus-class-value") || ""));
+        if (option) commitFocusClassSelection(option);
+      }});
+    }});
+  }}
+
+  function renderFocusClassSelector() {{
+    const input = $("sessionClassInput");
+    const hidden = $("sessionClassValue");
+    const meta = $("sessionClassMeta");
+    const combobox = $("sessionClassCombobox");
+    if (!input || !hidden || !meta || !combobox) return;
+    const options = focusClassOptions();
+    const selected = studyState?.selected_focus_class || null;
+    if (!options.length) {{
+      input.value = "";
+      hidden.value = "";
+      input.disabled = true;
+      input.placeholder = "Add study resources first";
+      combobox.classList.add("is-disabled");
+      meta.textContent = "Import a resource with classes or chapters so Pomodoro time can be counted toward it.";
+      closeFocusClassMenu();
+      return;
+    }}
+    input.disabled = false;
+    input.placeholder = "Search classes or courses";
+    combobox.classList.remove("is-disabled");
+    if (selected) {{
+      hidden.value = selected.value || `${{selected.resource_id}}::${{selected.item_id}}`;
+    }}
+    if (document.activeElement !== input) {{
+      input.value = selected ? focusClassLabel(selected) : "";
+      focusClassQuery = input.value;
+    }}
+    if (selected) {{
+      meta.textContent = `${{selected.tracked_minutes || 0}} tracked minutes across ${{selected.tracked_sessions || 0}} focus session${{selected.tracked_sessions === 1 ? "" : "s"}}.`;
+    }} else {{
+      meta.textContent = "Choose the class that should receive this focus time.";
+    }}
+    renderFocusClassOptionsList(input.value);
   }}
 
   function renderSettings() {{
@@ -1286,13 +1450,14 @@ def build_runtime_script(page_name: str) -> str:
     itemsNode.innerHTML = items.map((item) => {{
       const done = !!item.done;
       const itemType = item.kind || "item";
-      const duration = Number(item.duration_seconds || 0) > 0 ? formatMinutes(Math.max(1, Math.round(Number(item.duration_seconds || 0) / 60))).replace(" Today", "") : itemType;
+      const estimated = Number(item.duration_seconds || 0) > 0 ? formatMinutes(Math.max(1, Math.round(Number(item.duration_seconds || 0) / 60))).replace(" Today", "") : itemType;
+      const tracked = Number(item.tracked_minutes || 0) > 0 ? `${{item.tracked_minutes}} tracked min • ${{item.tracked_sessions || 0}} sessions` : estimated;
       return `
         <button class="study-resource-item${{done ? " is-done" : ""}}" data-resource-id="${{escapeHtml(resource.id)}}" data-resource-item-id="${{escapeHtml(item.id || "")}}" type="button">
           <span class="study-resource-item-check">${{done ? "done" : "radio_button_unchecked"}}</span>
           <span class="study-resource-item-copy">
             <strong>${{escapeHtml(item.title || "Untitled item")}}</strong>
-            <span>${{escapeHtml(duration)}}</span>
+            <span>${{escapeHtml(tracked)}}</span>
           </span>
         </button>
       `;
@@ -1403,6 +1568,7 @@ def build_runtime_script(page_name: str) -> str:
       renderObjective();
       renderInsights();
       renderAgenda();
+      renderFocusClassSelector();
       renderFab();
     }}
     if (currentPage === "settings" && settingsState) {{
@@ -1453,6 +1619,55 @@ def build_runtime_script(page_name: str) -> str:
       if (!items.length) return;
       insightIndex = (insightIndex + 1) % items.length;
       renderInsights();
+    }});
+    const input = $("sessionClassInput");
+    input?.addEventListener("focus", () => {{
+      focusClassOpen = true;
+      focusClassQuery = input.value || "";
+      focusClassActiveIndex = -1;
+      renderFocusClassOptionsList(focusClassQuery);
+    }});
+    input?.addEventListener("input", () => {{
+      focusClassOpen = true;
+      focusClassQuery = input.value || "";
+      focusClassActiveIndex = 0;
+      renderFocusClassOptionsList(focusClassQuery);
+    }});
+    input?.addEventListener("keydown", (event) => {{
+      const options = filteredFocusClassOptions(input.value || "");
+      if (event.key === "ArrowDown") {{
+        event.preventDefault();
+        focusClassOpen = true;
+        focusClassActiveIndex = Math.min(options.length - 1, focusClassActiveIndex + 1);
+        if (focusClassActiveIndex < 0 && options.length) focusClassActiveIndex = 0;
+        renderFocusClassOptionsList(input.value || "");
+      }} else if (event.key === "ArrowUp") {{
+        event.preventDefault();
+        focusClassOpen = true;
+        focusClassActiveIndex = Math.max(0, focusClassActiveIndex - 1);
+        renderFocusClassOptionsList(input.value || "");
+      }} else if (event.key === "Enter") {{
+        if (!focusClassOpen) return;
+        event.preventDefault();
+        const option = options[Math.max(0, focusClassActiveIndex)];
+        if (option) commitFocusClassSelection(option);
+      }} else if (event.key === "Escape") {{
+        closeFocusClassMenu();
+        if (studyState?.selected_focus_class) {{
+          input.value = focusClassLabel(studyState.selected_focus_class);
+          focusClassQuery = input.value;
+        }}
+      }}
+    }});
+    input?.addEventListener("blur", () => {{
+      window.setTimeout(() => {{
+        if (!document.activeElement || !($("sessionClassCombobox")?.contains(document.activeElement))) {{
+          closeFocusClassMenu();
+          if (!studyState?.selected_focus_class && !(input.value || "").trim()) {{
+            focusClassQuery = "";
+          }}
+        }}
+      }}, 120);
     }});
   }}
 
@@ -1654,6 +1869,12 @@ def build_runtime_script(page_name: str) -> str:
     updatePageLayout(currentPage);
     wireNavigation();
     bindCurrentPageActions();
+    document.addEventListener("mousedown", (event) => {{
+      const combobox = $("sessionClassCombobox");
+      if (!combobox) return;
+      if (combobox.contains(event.target)) return;
+      closeFocusClassMenu();
+    }});
     document.body.addEventListener("htmx:afterSwap", (event) => {{
       const target = event.detail && event.detail.target;
       if (!target || target.id !== "studyPageContent") return;
@@ -1772,6 +1993,7 @@ class StudyBridge(QObject):
     focusTaskRequested = pyqtSignal(str)
     reopenTaskRequested = pyqtSignal(str)
     sessionToggleRequested = pyqtSignal()
+    sessionClassRequested = pyqtSignal(str, str)
     navigateRequested = pyqtSignal(str)
     integrationToggleRequested = pyqtSignal(str, bool)
     openHanautaSettingsRequested = pyqtSignal(str)
@@ -1811,6 +2033,10 @@ class StudyBridge(QObject):
     @pyqtSlot()
     def startOrPauseSession(self) -> None:
         self.sessionToggleRequested.emit()
+
+    @pyqtSlot(str, str)
+    def setSessionClass(self, resource_id: str, item_id: str) -> None:
+        self.sessionClassRequested.emit(resource_id, item_id)
 
     @pyqtSlot(str)
     def navigateTo(self, page: str) -> None:
@@ -1916,6 +2142,7 @@ class StudyTrackerWindow(QWidget):
         self.bridge.focusTaskRequested.connect(self.focus_task)
         self.bridge.reopenTaskRequested.connect(self.reopen_task)
         self.bridge.sessionToggleRequested.connect(self.start_or_pause_session)
+        self.bridge.sessionClassRequested.connect(self.set_session_class)
         self.bridge.navigateRequested.connect(self.navigate_to)
         self.bridge.integrationToggleRequested.connect(self.set_integration_enabled)
         self.bridge.openHanautaSettingsRequested.connect(self.open_hanauta_settings)
@@ -2046,9 +2273,23 @@ class StudyTrackerWindow(QWidget):
         self._save()
         self.push_state()
 
+    def set_session_class(self, resource_id: str, item_id: str) -> None:
+        resource, item = resource_item_by_id(self.state, resource_id, item_id)
+        if not isinstance(resource, dict) or not isinstance(item, dict):
+            return
+        self.state["selected_focus_resource_id"] = str(resource_id)
+        self.state["selected_focus_item_id"] = str(item_id)
+        session = self.state.get("active_session")
+        if isinstance(session, dict):
+            session["resource_id"] = str(resource_id)
+            session["item_id"] = str(item_id)
+        self._save()
+        self.push_state()
+
     def _commit_resources(self, notification: str | None = None) -> None:
         self._save()
         self.push_resources()
+        self.push_state()
         if notification:
             notify("Study Resources", notification)
         if bool(self.state.get("preferences", {}).get("sync", {}).get("auto_sync", False)):
@@ -2729,22 +2970,32 @@ class StudyTrackerWindow(QWidget):
         task = active_task(self.state)
         if task is None:
             return
+        selected_resource_id = str(self.state.get("selected_focus_resource_id", "") or "")
+        selected_item_id = str(self.state.get("selected_focus_item_id", "") or "")
+        selected_resource, selected_item = resource_item_by_id(self.state, selected_resource_id, selected_item_id)
+        if not isinstance(selected_resource, dict) or not isinstance(selected_item, dict):
+            notify("Study session", "Choose a class from your resources before starting a focus block.")
+            return
         session = self.state.get("active_session")
         target_seconds = max(60, int(self.state.get("session_length_minutes", 25) or 25) * 60)
         if not isinstance(session, dict):
             self.state["active_session"] = {
                 "task_id": str(task.get("id", "")),
+                "resource_id": selected_resource_id,
+                "item_id": selected_item_id,
                 "elapsed_seconds": 0,
                 "target_seconds": target_seconds,
                 "running": True,
                 "started_at": now_iso(),
             }
-            notify("Study session started", f"Focus on {task.get('title', 'your task')}.")
+            notify("Study session started", f"Focus on {selected_item.get('title', task.get('title', 'your task'))}.")
         else:
             if str(session.get("task_id", "")) != str(task.get("id", "")):
                 session["task_id"] = str(task.get("id", ""))
                 session["elapsed_seconds"] = 0
                 session["target_seconds"] = target_seconds
+            session["resource_id"] = selected_resource_id
+            session["item_id"] = selected_item_id
             session["running"] = not bool(session.get("running", False))
             if session["running"]:
                 session["started_at"] = now_iso()
@@ -2768,6 +3019,7 @@ class StudyTrackerWindow(QWidget):
         if not isinstance(session, dict):
             return
         task = task_by_id(self.state, str(session.get("task_id", "")))
+        resource, resource_item = resource_item_by_id(self.state, str(session.get("resource_id", "") or ""), str(session.get("item_id", "") or ""))
         added_minutes = max(1, int(session.get("target_seconds", 0) or 0) // 60)
         self.state["today_minutes"] = max(0, int(self.state.get("today_minutes", 0) or 0) + added_minutes)
         self.state.setdefault("activity_dates", [])
@@ -2778,14 +3030,21 @@ class StudyTrackerWindow(QWidget):
                 task["done"] = True
                 task["active"] = False
                 task["completed_at"] = datetime.now().strftime("%I:%M %p").lstrip("0")
+        if isinstance(resource_item, dict):
+            resource_item["tracked_minutes"] = max(0, int(resource_item.get("tracked_minutes", 0) or 0) + added_minutes)
+            resource_item["tracked_sessions"] = max(0, int(resource_item.get("tracked_sessions", 0) or 0) + 1)
+            if isinstance(resource, dict):
+                resource["updated_at"] = now_iso()
         self.state["active_session"] = None
         _ensure_single_active_task(self.state)
         self._save()
         if task is not None:
-            notify("Study session complete", f"You finished a focus block for {task.get('title', 'your task')}.")
+            target_label = resource_item.get("title", task.get("title", "your task")) if isinstance(resource_item, dict) else task.get("title", "your task")
+            notify("Study session complete", f"You finished a focus block for {target_label}.")
         else:
             notify("Study session complete", "A focus block has been completed.")
         self.push_state()
+        self.push_resources()
         if bool(self.state.get("preferences", {}).get("sync", {}).get("auto_sync", False)):
             self.sync_now()
 
