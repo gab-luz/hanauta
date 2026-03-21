@@ -14,6 +14,7 @@ from base64 import b64decode
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib import request, error
+from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QThread, Qt, QTimer, QUrl, pyqtProperty, pyqtSignal
@@ -33,6 +34,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QTextBrowser,
@@ -182,6 +184,7 @@ class BackendProfile:
     host: str
     icon_name: str
     needs_api_key: bool = False
+    launchable: bool = False
 
 
 @dataclass
@@ -196,6 +199,7 @@ class ChatItemData:
     body: str
     meta: str = ""
     chips: list[SourceChipData] = field(default_factory=list)
+    pending: bool = False
 
 
 class SurfaceFrame(QFrame):
@@ -302,9 +306,39 @@ def _backend_icon(icon_name: str) -> QIcon:
     path = _backend_icon_path(icon_name)
     if path is not None:
         return QIcon(str(path))
-    placeholder = QPixmap(18, 18)
+    placeholder = QPixmap(22, 22)
     placeholder.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(placeholder)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    rect = placeholder.rect().adjusted(1, 1, -1, -1)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(rgba(ACCENT_SOFT, 0.92)))
+    painter.drawRoundedRect(rect, 7, 7)
+    painter.setPen(QColor(ACCENT))
+    painter.setFont(QFont(load_ui_font(), 9, QFont.Weight.Black))
+    painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, icon_name[:2].upper())
+    painter.end()
     return QIcon(placeholder)
+
+
+def _path_text(value: object) -> str:
+    return str(value).strip()
+
+
+def _existing_path(value: object) -> Path | None:
+    text = _path_text(value)
+    if not text:
+        return None
+    path = Path(text).expanduser()
+    return path if path.exists() else None
+
+
+def _openai_compat_alive(host: str) -> bool:
+    try:
+        with request.urlopen(f"{_normalize_host_url(host)}/v1/models", timeout=1.2) as response:
+            return response.status < 400
+    except Exception:
+        return False
 
 
 def load_backend_settings() -> dict[str, dict[str, object]]:
@@ -489,12 +523,30 @@ def validate_backend(profile: BackendProfile, payload: dict[str, object]) -> tup
     host = str(payload.get("host", "")).strip()
     model = str(payload.get("model", "")).strip()
     api_key = secure_load_secret(f"{profile.key}:api_key")
+    binary_path = _existing_path(payload.get("binary_path"))
+    gguf_path = _existing_path(payload.get("gguf_path"))
     if not model:
         return False, "Model is required."
     if profile.needs_api_key and not api_key:
         return False, "API key is required."
-    if not profile.needs_api_key and not host:
+    if not profile.needs_api_key and not host and not profile.launchable:
         return False, "Host is required."
+
+    if profile.key == "koboldcpp":
+        if binary_path is None:
+            return False, "KoboldCpp binary path is required."
+        if gguf_path is None:
+            return False, "Select a GGUF model for KoboldCpp."
+        if host and _openai_compat_alive(host):
+            return True, "KoboldCpp is reachable."
+        return True, "Launch config saved. Click the KoboldCpp icon to start it."
+
+    if profile.provider == "tts_local":
+        if binary_path is not None:
+            return True, "Local TTS launch config looks valid."
+        if host:
+            return True, "Remote TTS endpoint saved."
+        return False, "Set a host or a local binary path."
 
     if profile.provider == "sdwebui":
         url = _normalize_host_url(host)
@@ -541,7 +593,7 @@ class BackendSettingsDialog(QDialog):
         self.ui_font = ui_font
 
         self.setWindowTitle("AI Backend Settings")
-        self.resize(560, 430)
+        self.resize(620, 760)
         self.setModal(True)
         self.setStyleSheet(
             f"""
@@ -638,6 +690,28 @@ class BackendSettingsDialog(QDialog):
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         shell_layout.addWidget(self.api_key_input)
 
+        self.binary_path_input = QLineEdit()
+        self.binary_path_input.setPlaceholderText("Local binary path")
+        shell_layout.addWidget(self.binary_path_input)
+
+        self.gguf_path_input = QLineEdit()
+        self.gguf_path_input.setPlaceholderText("GGUF model path")
+        shell_layout.addWidget(self.gguf_path_input)
+
+        self.text_model_path_input = QLineEdit()
+        self.text_model_path_input.setPlaceholderText("Optional text model path for JoyCaption-style setups")
+        shell_layout.addWidget(self.text_model_path_input)
+
+        self.mmproj_path_input = QLineEdit()
+        self.mmproj_path_input.setPlaceholderText("Optional mmproj path")
+        shell_layout.addWidget(self.mmproj_path_input)
+
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("CPU", "cpu")
+        self.device_combo.addItem("GPU", "gpu")
+        self.device_combo.setToolTip("Execution device")
+        shell_layout.addWidget(self.device_combo)
+
         self.negative_prompt_input = QLineEdit()
         self.negative_prompt_input.setPlaceholderText("Default negative prompt")
         shell_layout.addWidget(self.negative_prompt_input)
@@ -725,6 +799,11 @@ class BackendSettingsDialog(QDialog):
                 "enabled": bool(self.enabled_check.isChecked()),
                 "host": self.host_input.text().strip(),
                 "model": self.model_input.text().strip(),
+                "binary_path": self.binary_path_input.text().strip(),
+                "gguf_path": self.gguf_path_input.text().strip(),
+                "text_model_path": self.text_model_path_input.text().strip(),
+                "mmproj_path": self.mmproj_path_input.text().strip(),
+                "device": str(self.device_combo.currentData()),
                 "negative_prompt": self.negative_prompt_input.text().strip(),
                 "sampler_name": self.sampler_input.text().strip(),
                 "steps": self.steps_input.text().strip(),
@@ -744,6 +823,12 @@ class BackendSettingsDialog(QDialog):
         self.host_input.setText(str(payload.get("host", profile.host)))
         self.model_input.setText(str(payload.get("model", profile.model)))
         self.api_key_input.setText(secure_load_secret(f"{profile.key}:api_key"))
+        self.binary_path_input.setText(str(payload.get("binary_path", "")))
+        self.gguf_path_input.setText(str(payload.get("gguf_path", "")))
+        self.text_model_path_input.setText(str(payload.get("text_model_path", "")))
+        self.mmproj_path_input.setText(str(payload.get("mmproj_path", "")))
+        device = str(payload.get("device", "cpu")).lower()
+        self.device_combo.setCurrentIndex(1 if device == "gpu" else 0)
         self.negative_prompt_input.setText(str(payload.get("negative_prompt", "")))
         self.sampler_input.setText(str(payload.get("sampler_name", "Euler a")))
         self.steps_input.setText(str(payload.get("steps", "28")))
@@ -753,8 +838,17 @@ class BackendSettingsDialog(QDialog):
         self.output_dir_input.setText(str(payload.get("output_dir", "")))
         self.monitor_check.setChecked(bool(payload.get("monitor_enabled", False)))
         self.api_key_input.setVisible(profile.needs_api_key)
-        self.host_input.setVisible(not profile.needs_api_key or profile.provider == "sdwebui")
+        show_host = (not profile.needs_api_key) or profile.provider in {"sdwebui", "tts_local"}
+        self.host_input.setVisible(show_host)
         is_sd = profile.provider == "sdwebui"
+        is_kobold = profile.key == "koboldcpp"
+        is_tts = profile.provider == "tts_local"
+        device_enabled = is_kobold or is_tts
+        self.binary_path_input.setVisible(is_kobold or is_tts)
+        self.gguf_path_input.setVisible(is_kobold)
+        self.text_model_path_input.setVisible(is_kobold)
+        self.mmproj_path_input.setVisible(is_kobold)
+        self.device_combo.setVisible(device_enabled)
         self.negative_prompt_input.setVisible(is_sd)
         self.sampler_input.setVisible(is_sd)
         self.steps_input.setVisible(is_sd)
@@ -763,7 +857,12 @@ class BackendSettingsDialog(QDialog):
         self.height_input.setVisible(is_sd)
         self.output_dir_input.setVisible(is_sd)
         self.monitor_check.setVisible(is_sd)
-        self.model_input.setPlaceholderText("Checkpoint / model" if is_sd else "Model")
+        if is_sd:
+            self.model_input.setPlaceholderText("Checkpoint / model")
+        elif is_tts:
+            self.model_input.setPlaceholderText("Voice / model")
+        else:
+            self.model_input.setPlaceholderText("Model")
         tested = bool(payload.get("tested", False))
         last_status = str(payload.get("last_status", "Configure um backend e clique em Test."))
         self.status_label.setText(last_status if last_status else "Configure um backend e clique em Test.")
@@ -901,6 +1000,7 @@ def render_chat_html(history: list[ChatItemData]) -> str:
         bubble_bg = USER_BG if is_user else ASSISTANT_BG
         bubble_border = BORDER_ACCENT if is_user else rgba(BORDER_SOFT, 0.95)
         title_color = ACCENT_ALT if is_user else ACCENT
+        pending_class = " pending" if item.pending else ""
         chips = "".join(
             f'<span class="chip">{html.escape(chip.text)}</span>'
             for chip in item.chips
@@ -908,7 +1008,7 @@ def render_chat_html(history: list[ChatItemData]) -> str:
         chips_html = f'<div class="chips">{chips}</div>' if chips else ""
         blocks.append(
             f"""
-            <article class="message {'user' if is_user else 'assistant'}">
+            <article class="message {'user' if is_user else 'assistant'}{pending_class}">
               <div class="avatar">{'Y' if is_user else 'AI'}</div>
               <div class="bubble" style="background:{bubble_bg}; border:1px solid {bubble_border};">
                 <div class="header">
@@ -994,6 +1094,9 @@ def render_chat_html(history: list[ChatItemData]) -> str:
             padding: 14px 16px 16px 16px;
             box-sizing: border-box;
           }}
+          .message.pending .bubble {{
+            box-shadow: 0 0 0 1px {rgba(ACCENT, 0.08)} inset;
+          }}
           .header {{
             display: flex;
             align-items: center;
@@ -1033,6 +1136,26 @@ def render_chat_html(history: list[ChatItemData]) -> str:
             max-width: 100%;
             border-radius: 18px;
             border: 1px solid {rgba(BORDER_SOFT, 0.95)};
+          }}
+          .loading-row {{
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            color: {TEXT};
+          }}
+          .loading-ring {{
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid {rgba(ACCENT, 0.22)};
+            border-top-color: {ACCENT};
+            animation: spin 0.9s linear infinite;
+            box-sizing: border-box;
+          }}
+          @keyframes spin {{
+            from {{ transform: rotate(0deg); }}
+            to {{ transform: rotate(360deg); }}
           }}
           .chips {{
             display: flex;
@@ -1421,13 +1544,15 @@ class SidebarPanel(QFrame):
         self.icon_font = load_material_icon_font()
         self.profiles = [
             BackendProfile("gemini", "Gemini", "gemini", "gemini-2.0-flash", "Google", "gemini", True),
-            BackendProfile("koboldcpp", "KoboldCpp", "openai_compat", "koboldcpp", "127.0.0.1:5001", "koboldcpp"),
+            BackendProfile("koboldcpp", "KoboldCpp", "openai_compat", "koboldcpp", "127.0.0.1:5001", "koboldcpp", False, True),
             BackendProfile("lmstudio", "LM Studio", "openai_compat", "local-model", "127.0.0.1:1234", "lmstudio"),
             BackendProfile("ollama", "Ollama", "ollama", "llama3.2", "127.0.0.1:11434", "ollama"),
             BackendProfile("openai", "OpenAI", "openai", "gpt-4.1-mini", "api.openai.com", "openai", True),
             BackendProfile("mistral", "Mistral", "openai", "mistral-small", "api.mistral.ai", "mistral", True),
-            BackendProfile("sdwebui", "SD WebUI", "sdwebui", "sdxl", "127.0.0.1:7860", "openai"),
-            BackendProfile("sdreforge", "SD ReForge", "sdwebui", "sdxl", "127.0.0.1:7861", "mistral"),
+            BackendProfile("sdwebui", "SD WebUI", "sdwebui", "sdxl", "127.0.0.1:7860", "sdwebui"),
+            BackendProfile("sdreforge", "SD ReForge", "sdwebui", "sdxl", "127.0.0.1:7861", "sdreforge"),
+            BackendProfile("kokorotts", "KokoroTTS", "tts_local", "kokoro", "127.0.0.1:8880", "kokorotts", False, True),
+            BackendProfile("pockettts", "PocketTTS", "tts_local", "pocket", "127.0.0.1:8890", "pockettts", False, True),
         ]
         self.profile_by_key = {profile.key: profile for profile in self.profiles}
         self.backend_settings = load_backend_settings()
@@ -1436,6 +1561,11 @@ class SidebarPanel(QFrame):
         self.chat_history = secure_load_chat_history()
         self._sd_seen_outputs: dict[str, tuple[str, float]] = {}
         self._image_worker: SdImageWorker | None = None
+        self._local_backend_processes: dict[str, subprocess.Popen[str]] = {}
+        self._pending_item: ChatItemData | None = None
+        self._text_response_timer = QTimer(self)
+        self._text_response_timer.setSingleShot(True)
+        self._text_response_timer.timeout.connect(self._finish_mock_text_response)
 
         self.setObjectName("sidebarPanel")
         self.setFixedWidth(452)
@@ -1448,6 +1578,13 @@ class SidebarPanel(QFrame):
                     stop:1 {rgba(PANEL_BG_DEEP, 0.99)});
                 border: 1px solid {BORDER_HARD};
                 border-radius: 34px;
+            }}
+            QToolTip {{
+                background: {rgba(CARD_BG, 0.98)};
+                color: {TEXT};
+                border: 1px solid {rgba(BORDER_ACCENT, 0.92)};
+                border-radius: 10px;
+                padding: 7px 10px;
             }}
             """
         )
@@ -1613,7 +1750,11 @@ class SidebarPanel(QFrame):
     def _select_backend(self, profile: BackendProfile, active_button: BackendPill) -> None:
         settings = self.backend_settings.get(profile.key, {})
         if not settings.get("tested") or not settings.get("enabled", True):
-            return
+            if profile.key != "koboldcpp" or not self._maybe_launch_koboldcpp(profile):
+                return
+            settings = self.backend_settings.get(profile.key, {})
+        elif profile.key == "koboldcpp":
+            self._maybe_launch_koboldcpp(profile)
         self.current_profile = profile
         for button in self.backend_buttons.values():
             if button is not active_button:
@@ -1656,10 +1797,76 @@ class SidebarPanel(QFrame):
         self._refresh_available_backends()
 
     def _render_chat_history(self) -> None:
-        self.chat_view.set_history(self.chat_history)
+        history = list(self.chat_history)
+        if self._pending_item is not None:
+            history.append(self._pending_item)
+        self.chat_view.set_history(history)
+
+    def _maybe_launch_koboldcpp(self, profile: BackendProfile) -> bool:
+        payload = dict(self.backend_settings.get(profile.key, {}))
+        host = str(payload.get("host", profile.host)).strip()
+        if host and _openai_compat_alive(host):
+            return True
+        process = self._local_backend_processes.get(profile.key)
+        if process is not None and process.poll() is None:
+            return True
+        binary_path = _existing_path(payload.get("binary_path"))
+        gguf_path = _existing_path(payload.get("gguf_path"))
+        if binary_path is None or gguf_path is None:
+            return False
+        answer = QMessageBox.question(
+            self,
+            "Start KoboldCpp",
+            "KoboldCpp is not responding. Start it now with the configured GGUF model?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+        ok, message = self._launch_koboldcpp_process(profile, payload)
+        self.add_card(
+            ChatItemData(
+                role="assistant",
+                title="Hanauta AI",
+                meta="runtime launch" if ok else "runtime launch failed",
+                body=f"<p>{html.escape(message)}</p>",
+            )
+        )
+        return ok
+
+    def _launch_koboldcpp_process(self, profile: BackendProfile, payload: dict[str, object]) -> tuple[bool, str]:
+        binary_path = _existing_path(payload.get("binary_path"))
+        gguf_path = _existing_path(payload.get("gguf_path"))
+        if binary_path is None or gguf_path is None:
+            return False, "Configure both the KoboldCpp binary path and GGUF model first."
+        command = [str(binary_path), "--model", str(gguf_path)]
+        mmproj_path = _existing_path(payload.get("mmproj_path"))
+        if mmproj_path is not None:
+            command.extend(["--mmproj", str(mmproj_path)])
+        host = str(payload.get("host", profile.host)).strip()
+        if host:
+            parsed = urlparse(_normalize_host_url(host))
+            if parsed.port:
+                command.extend(["--port", str(parsed.port)])
+        if str(payload.get("device", "cpu")).lower() == "gpu":
+            command.append("--usecublas")
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as exc:
+            return False, f"Unable to start KoboldCpp: {exc}"
+        self._local_backend_processes[profile.key] = process
+        send_desktop_notification("KoboldCpp starting", f"{profile.label} is starting with {gguf_path.name}.")
+        return True, f"Starting KoboldCpp with {gguf_path.name}."
 
     def _clear_cards(self) -> None:
         self.chat_history = []
+        self._pending_item = None
+        self._text_response_timer.stop()
         secure_clear_chat_history()
         self._render_chat_history()
 
@@ -1667,6 +1874,25 @@ class SidebarPanel(QFrame):
         del animate
         self.chat_history.append(data)
         secure_append_chat(data)
+        self._render_chat_history()
+
+    def _set_pending_state(self, profile_label: str, message: str, meta: str) -> None:
+        self._pending_item = ChatItemData(
+            role="assistant",
+            title=profile_label,
+            meta=meta,
+            body=(
+                f'<div class="loading-row"><span class="loading-ring"></span>'
+                f"<span>{html.escape(message)}</span></div>"
+            ),
+            pending=True,
+        )
+        self.composer.entry.setEnabled(False)
+        self._render_chat_history()
+
+    def _clear_pending_state(self) -> None:
+        self._pending_item = None
+        self.composer.entry.setEnabled(self.current_profile is not None)
         self._render_chat_history()
 
     def _build_image_response(self, image_path: Path, prompt: str) -> str:
@@ -1713,14 +1939,7 @@ class SidebarPanel(QFrame):
                 )
             )
             return
-        self.add_card(
-            ChatItemData(
-                role="assistant",
-                title=profile.label,
-                meta="image generation",
-                body=f"<p>Generating image for: <b>{html.escape(prompt)}</b></p>",
-            )
-        )
+        self._set_pending_state(profile.label, "Response is being generated", "image generation")
         self._image_worker = SdImageWorker(profile, dict(self.backend_settings.get(profile.key, {})), prompt)
         self._image_worker.finished_ok.connect(self._handle_image_generated)
         self._image_worker.failed.connect(self._handle_image_failed)
@@ -1729,6 +1948,7 @@ class SidebarPanel(QFrame):
 
     def _handle_image_generated(self, image_path_text: str, prompt: str, profile_label: str) -> None:
         image_path = Path(image_path_text)
+        self._clear_pending_state()
         self.add_card(
             ChatItemData(
                 role="assistant",
@@ -1741,6 +1961,7 @@ class SidebarPanel(QFrame):
         send_desktop_notification("Image generated", f"{profile_label} finished a new image.")
 
     def _handle_image_failed(self, message: str) -> None:
+        self._clear_pending_state()
         self.add_card(
             ChatItemData(
                 role="assistant",
@@ -1752,6 +1973,24 @@ class SidebarPanel(QFrame):
 
     def _finish_image_worker(self) -> None:
         self._image_worker = None
+
+    def _finish_mock_text_response(self) -> None:
+        self._clear_pending_state()
+        if self.current_profile is None:
+            return
+        self.add_card(
+            ChatItemData(
+                role="assistant",
+                title=self.current_profile.label,
+                meta=self.current_profile.model,
+                body=(
+                    "<p><b>Mock response:</b> text backends are still using the current placeholder response layer.</p>"
+                    f"<p>Active backend: <b>{html.escape(self.current_profile.label)}</b> at <b>{html.escape(self.current_profile.host)}</b>.</p>"
+                    "<p>The chat history and secure backend secrets are now stored outside the project in Hanauta state.</p>"
+                ),
+                chips=[SourceChipData(self.current_profile.provider), SourceChipData(self.current_profile.model)],
+            )
+        )
 
     def add_user_message(self, text: str) -> None:
         command = text.strip()
@@ -1784,19 +2023,8 @@ class SidebarPanel(QFrame):
             self._start_image_generation(self.current_profile, prompt)
             return
 
-        self.add_card(
-            ChatItemData(
-                role="assistant",
-                title=self.current_profile.label,
-                meta=self.current_profile.model,
-                body=(
-                    "<p><b>Mock response:</b> text backends are still using the current placeholder response layer.</p>"
-                    f"<p>Active backend: <b>{html.escape(self.current_profile.label)}</b> at <b>{html.escape(self.current_profile.host)}</b>.</p>"
-                    "<p>The chat history and secure backend secrets are now stored outside the project in Hanauta state.</p>"
-                ),
-                chips=[SourceChipData(self.current_profile.provider), SourceChipData(self.current_profile.model)],
-            )
-        )
+        self._set_pending_state(self.current_profile.label, "Response is being generated", "text generation")
+        self._text_response_timer.start(1350)
 
 
 class DemoWindow(QMainWindow):
