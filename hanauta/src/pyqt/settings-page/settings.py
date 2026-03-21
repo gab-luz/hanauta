@@ -200,6 +200,7 @@ opacity 100: window_name: Hanauta Settings
     PICOM_FADE_EXCLUDE_FILE: """# Hanauta picom fade exceptions
 # Same shortcuts as shadow-exclude.rules.
 
+window_name: Hanauta Launcher
 window_name: Hanauta Settings
 """,
 }
