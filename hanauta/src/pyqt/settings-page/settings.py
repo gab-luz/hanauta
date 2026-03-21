@@ -257,6 +257,8 @@ MATERIAL_ICONS = {
     "notifications": "\ue7f4",
     "notifications_active": "\ue7f7",
     "person": "\ue7fd",
+    "favorite": "\ue87d",
+    "monitor_heart": "\ueaa2",
     "partly_cloudy_day": "\uf172",
     "warning": "\ue002",
     "science": "\ue39b",
@@ -357,6 +359,14 @@ DEFAULT_SERVICE_SETTINGS = {
         "next_devotion_notifications": False,
         "hourly_verse_notifications": False,
     },
+    "health_widget": {
+        "enabled": False,
+        "show_in_notification_center": False,
+        "show_in_bar": True,
+        "water_reminder_notifications": False,
+        "stand_up_reminder_notifications": False,
+        "movement_reminder_notifications": False,
+    },
     "calendar_widget": {
         "enabled": True,
         "show_in_notification_center": False,
@@ -456,6 +466,28 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                 current.get(
                     "hourly_verse_notifications",
                     defaults.get("hourly_verse_notifications", False),
+                )
+            )
+        elif key == "health_widget":
+            merged[key]["show_in_bar"] = bool(
+                current.get("show_in_bar", defaults.get("show_in_bar", True))
+            )
+            merged[key]["water_reminder_notifications"] = bool(
+                current.get(
+                    "water_reminder_notifications",
+                    defaults.get("water_reminder_notifications", False),
+                )
+            )
+            merged[key]["stand_up_reminder_notifications"] = bool(
+                current.get(
+                    "stand_up_reminder_notifications",
+                    defaults.get("stand_up_reminder_notifications", False),
+                )
+            )
+            merged[key]["movement_reminder_notifications"] = bool(
+                current.get(
+                    "movement_reminder_notifications",
+                    defaults.get("movement_reminder_notifications", False),
                 )
             )
         elif key == "vpn_control":
@@ -805,6 +837,16 @@ def load_settings_state() -> dict:
             "position_x": -1,
             "position_y": -1,
         },
+        "health": {
+            "provider": "manual",
+            "step_goal": 10000,
+            "water_goal_ml": 2000,
+            "sync_interval_minutes": 30,
+            "fitbit_client_id": "",
+            "fitbit_client_secret": "",
+            "fitbit_access_token": "",
+            "fitbit_refresh_token": "",
+        },
         "display": {
             "layout_mode": "extend",
             "primary": "",
@@ -1057,6 +1099,26 @@ def load_settings_state() -> dict:
         clock["position_y"] = int(clock.get("position_y", -1))
     except Exception:
         clock["position_y"] = -1
+    health = dict(payload.get("health", {}))
+    health["provider"] = str(health.get("provider", "manual")).strip().lower()
+    if health["provider"] not in {"manual", "fitbit"}:
+        health["provider"] = "manual"
+    try:
+        health["step_goal"] = max(1000, min(50000, int(health.get("step_goal", 10000))))
+    except Exception:
+        health["step_goal"] = 10000
+    try:
+        health["water_goal_ml"] = max(250, min(6000, int(health.get("water_goal_ml", 2000))))
+    except Exception:
+        health["water_goal_ml"] = 2000
+    try:
+        health["sync_interval_minutes"] = max(5, min(360, int(health.get("sync_interval_minutes", 30))))
+    except Exception:
+        health["sync_interval_minutes"] = 30
+    health["fitbit_client_id"] = str(health.get("fitbit_client_id", "")).strip()
+    health["fitbit_client_secret"] = str(health.get("fitbit_client_secret", "")).strip()
+    health["fitbit_access_token"] = str(health.get("fitbit_access_token", "")).strip()
+    health["fitbit_refresh_token"] = str(health.get("fitbit_refresh_token", "")).strip()
     display = dict(payload.get("display", {}))
     display.setdefault("layout_mode", "extend")
     display.setdefault("primary", "")
@@ -1086,6 +1148,7 @@ def load_settings_state() -> dict:
         "crypto": crypto,
         "vps": vps,
         "clock": clock,
+        "health": health,
         "display": display,
         "region": region,
         "bar": bar,
@@ -2765,7 +2828,7 @@ class SettingsWindow(QWidget):
         self.setWindowTitle("Hanauta Settings")
         self.setObjectName("settingsWindow")
         self.setWindowFlags(
-            Qt.WindowType.Window
+            Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
@@ -4239,6 +4302,7 @@ class SettingsWindow(QWidget):
             ("home_assistant", self._build_home_assistant_section()),
             ("vpn_control", self._build_vpn_service_section()),
             ("christian_widget", self._build_christian_service_section()),
+            ("health_widget", self._build_health_service_section()),
             ("calendar_widget", self._build_calendar_service_section()),
             ("reminders_widget", self._build_reminders_service_section()),
             ("pomodoro_widget", self._build_pomodoro_service_section()),
@@ -4603,6 +4667,242 @@ class SettingsWindow(QWidget):
             lambda enabled: self._set_service_enabled("christian_widget", enabled),
         )
         self.service_sections["christian_widget"] = section
+        return section
+
+    def _build_health_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        bar_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["health_widget"].get(
+                    "show_in_bar",
+                    True,
+                )
+            )
+        )
+        bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("health_widget", enabled)
+        )
+        self.service_display_switches["health_widget"] = bar_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show on bar",
+                "Displays a compact health launcher next to the updates indicator.",
+                self.icon_font,
+                self.ui_font,
+                bar_switch,
+            )
+        )
+
+        self.health_provider_combo = QComboBox()
+        self.health_provider_combo.addItems(["Manual", "Fitbit"])
+        provider_index = 1 if self.settings_state["health"].get("provider", "manual") == "fitbit" else 0
+        self.health_provider_combo.setCurrentIndex(provider_index)
+        self.health_provider_combo.currentIndexChanged.connect(self._set_health_provider)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("favorite"),
+                "Provider",
+                "Manual mode works immediately. Fitbit is the easiest sync path for a desktop widget right now.",
+                self.icon_font,
+                self.ui_font,
+                self.health_provider_combo,
+            )
+        )
+
+        self.health_step_goal_input = QLineEdit(str(self.settings_state["health"].get("step_goal", 10000)))
+        self.health_step_goal_input.setPlaceholderText("10000")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("favorite"),
+                "Daily step goal",
+                "Used by the widget progress ring and bar tooltip.",
+                self.icon_font,
+                self.ui_font,
+                self.health_step_goal_input,
+            )
+        )
+
+        self.health_water_goal_input = QLineEdit(str(self.settings_state["health"].get("water_goal_ml", 2000)))
+        self.health_water_goal_input.setPlaceholderText("2000")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("water_drop"),
+                "Hydration goal (ml)",
+                "Manual mode tracks this in the widget.",
+                self.icon_font,
+                self.ui_font,
+                self.health_water_goal_input,
+            )
+        )
+
+        self.health_sync_interval_input = QLineEdit(str(self.settings_state["health"].get("sync_interval_minutes", 30)))
+        self.health_sync_interval_input.setPlaceholderText("30")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sync"),
+                "Sync interval (minutes)",
+                "Used by the bar and widget when Fitbit sync is enabled.",
+                self.icon_font,
+                self.ui_font,
+                self.health_sync_interval_input,
+            )
+        )
+
+        water_reminder_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["health_widget"].get(
+                    "water_reminder_notifications",
+                    False,
+                )
+            )
+        )
+        water_reminder_switch.toggledValue.connect(
+            lambda enabled: self._set_health_service_flag("water_reminder_notifications", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("water_drop"),
+                "Remember to take water",
+                "Disabled by default. Sends realistic hydration nudges during the day.",
+                self.icon_font,
+                self.ui_font,
+                water_reminder_switch,
+            )
+        )
+
+        stand_reminder_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["health_widget"].get(
+                    "stand_up_reminder_notifications",
+                    False,
+                )
+            )
+        )
+        stand_reminder_switch.toggledValue.connect(
+            lambda enabled: self._set_health_service_flag("stand_up_reminder_notifications", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Remember to stand up",
+                "Disabled by default. Sends posture and stretch reminders while you are working.",
+                self.icon_font,
+                self.ui_font,
+                stand_reminder_switch,
+            )
+        )
+
+        movement_reminder_switch = SwitchButton(
+            bool(
+                self.settings_state["services"]["health_widget"].get(
+                    "movement_reminder_notifications",
+                    False,
+                )
+            )
+        )
+        movement_reminder_switch.toggledValue.connect(
+            lambda enabled: self._set_health_service_flag("movement_reminder_notifications", enabled)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("favorite"),
+                "Remember to move",
+                "Disabled by default. Sends an empowering reminder to walk, work out, or do something active.",
+                self.icon_font,
+                self.ui_font,
+                movement_reminder_switch,
+            )
+        )
+        self.health_water_reminder_switch = water_reminder_switch
+        self.health_stand_reminder_switch = stand_reminder_switch
+        self.health_movement_reminder_switch = movement_reminder_switch
+
+        self.health_fitbit_client_id_input = QLineEdit(self.settings_state["health"].get("fitbit_client_id", ""))
+        self.health_fitbit_client_id_input.setPlaceholderText("Fitbit client id")
+        self.health_fitbit_client_secret_input = QLineEdit(self.settings_state["health"].get("fitbit_client_secret", ""))
+        self.health_fitbit_client_secret_input.setPlaceholderText("Fitbit client secret")
+        self.health_fitbit_client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.health_fitbit_access_token_input = QLineEdit(self.settings_state["health"].get("fitbit_access_token", ""))
+        self.health_fitbit_access_token_input.setPlaceholderText("Fitbit access token")
+        self.health_fitbit_access_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.health_fitbit_refresh_token_input = QLineEdit(self.settings_state["health"].get("fitbit_refresh_token", ""))
+        self.health_fitbit_refresh_token_input.setPlaceholderText("Fitbit refresh token")
+        self.health_fitbit_refresh_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "Fitbit client id",
+                "Needed only if you want Hanauta to refresh Fitbit tokens automatically.",
+                self.icon_font,
+                self.ui_font,
+                self.health_fitbit_client_id_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Fitbit client secret",
+                "Stored locally and used only for Fitbit token refresh.",
+                self.icon_font,
+                self.ui_font,
+                self.health_fitbit_client_secret_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("bolt"),
+                "Fitbit access token",
+                "Paste a current read token if you want a simple manual setup.",
+                self.icon_font,
+                self.ui_font,
+                self.health_fitbit_access_token_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Fitbit refresh token",
+                "Optional, but recommended if you want Hanauta to keep syncing after the access token expires.",
+                self.icon_font,
+                self.ui_font,
+                self.health_fitbit_refresh_token_input,
+            )
+        )
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        self.health_save_button = QPushButton("Save Health Settings")
+        self.health_save_button.setObjectName("primaryButton")
+        self.health_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.health_save_button.setMinimumHeight(42)
+        self.health_save_button.clicked.connect(self._save_health_settings)
+        button_row.addWidget(self.health_save_button)
+        layout.addLayout(button_row)
+
+        self.health_status_label = QLabel("Manual mode works immediately. Switch to Fitbit when you have tokens ready.")
+        self.health_status_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.health_status_label.setWordWrap(True)
+        layout.addWidget(self.health_status_label)
+
+        self._sync_health_inputs()
+        section = ExpandableServiceSection(
+            "health_widget",
+            "Health Widget",
+            "A compact health dashboard with manual tracking today and Fitbit sync when configured.",
+            material_icon("favorite"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("health_widget"),
+            lambda enabled: self._set_service_enabled("health_widget", enabled),
+        )
+        self.service_sections["health_widget"] = section
         return section
 
     def _build_weather_section(self) -> QWidget:
@@ -5753,6 +6053,11 @@ class SettingsWindow(QWidget):
                 service["show_in_bar"] = False
                 service["next_devotion_notifications"] = False
                 service["hourly_verse_notifications"] = False
+            if key == "health_widget":
+                service["show_in_bar"] = False
+                service["water_reminder_notifications"] = False
+                service["stand_up_reminder_notifications"] = False
+                service["movement_reminder_notifications"] = False
             if key in {"home_assistant", "reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
@@ -5775,6 +6080,20 @@ class SettingsWindow(QWidget):
                 if switch is not None:
                     switch.setChecked(bool(service.get(setting_key, False)))
                     switch._apply_state()
+        if key == "health_widget":
+            switch = getattr(self, "service_display_switches", {}).get(key)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", True)))
+                switch._apply_state()
+            for attr_name, setting_key in (
+                ("health_water_reminder_switch", "water_reminder_notifications"),
+                ("health_stand_reminder_switch", "stand_up_reminder_notifications"),
+                ("health_movement_reminder_switch", "movement_reminder_notifications"),
+            ):
+                reminder_switch = getattr(self, attr_name, None)
+                if reminder_switch is not None:
+                    reminder_switch.setChecked(bool(service.get(setting_key, False)))
+                    reminder_switch._apply_state()
         if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget", "game_mode", "cap_alerts"}:
             display_switch = getattr(self, "service_display_switches", {}).get(key)
             if display_switch is not None:
@@ -5880,6 +6199,71 @@ class SettingsWindow(QWidget):
 
     def _set_christian_service_flag(self, flag: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault("christian_widget", {})
+        if not service.get("enabled", True):
+            return
+        service[flag] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_health_provider(self, index: int) -> None:
+        provider = "fitbit" if index == 1 else "manual"
+        self.settings_state.setdefault("health", {})["provider"] = provider
+        self._sync_health_inputs()
+        save_settings_state(self.settings_state)
+
+    def _sync_health_inputs(self) -> None:
+        provider = str(self.settings_state.get("health", {}).get("provider", "manual")).strip().lower()
+        fitbit_mode = provider == "fitbit"
+        for widget in (
+            getattr(self, "health_fitbit_client_id_input", None),
+            getattr(self, "health_fitbit_client_secret_input", None),
+            getattr(self, "health_fitbit_access_token_input", None),
+            getattr(self, "health_fitbit_refresh_token_input", None),
+            getattr(self, "health_sync_interval_input", None),
+        ):
+            if widget is not None:
+                widget.setEnabled(fitbit_mode)
+        if hasattr(self, "health_status_label"):
+            self.health_status_label.setText(
+                "Fitbit mode is active. Save your tokens here and the widget will reuse cached data between syncs."
+                if fitbit_mode
+                else "Manual mode is active. Use the widget buttons to track steps, water, active minutes, and calories yourself."
+            )
+
+    def _save_health_settings(self) -> None:
+        health = self.settings_state.setdefault("health", {})
+        health["provider"] = "fitbit" if self.health_provider_combo.currentIndex() == 1 else "manual"
+        try:
+            health["step_goal"] = max(1000, min(50000, int(self.health_step_goal_input.text().strip() or "10000")))
+        except Exception:
+            health["step_goal"] = 10000
+            self.health_step_goal_input.setText("10000")
+        try:
+            health["water_goal_ml"] = max(250, min(6000, int(self.health_water_goal_input.text().strip() or "2000")))
+        except Exception:
+            health["water_goal_ml"] = 2000
+            self.health_water_goal_input.setText("2000")
+        try:
+            health["sync_interval_minutes"] = max(5, min(360, int(self.health_sync_interval_input.text().strip() or "30")))
+        except Exception:
+            health["sync_interval_minutes"] = 30
+            self.health_sync_interval_input.setText("30")
+        health["fitbit_client_id"] = self.health_fitbit_client_id_input.text().strip()
+        health["fitbit_client_secret"] = self.health_fitbit_client_secret_input.text().strip()
+        health["fitbit_access_token"] = self.health_fitbit_access_token_input.text().strip()
+        health["fitbit_refresh_token"] = self.health_fitbit_refresh_token_input.text().strip()
+        save_settings_state(self.settings_state)
+        self._sync_health_inputs()
+        if health["provider"] == "fitbit":
+            self.health_status_label.setText(
+                "Fitbit settings saved. If your access token expires, Hanauta can refresh it when client id, client secret, and refresh token are present."
+            )
+        else:
+            self.health_status_label.setText(
+                "Manual health settings saved. Open the bar widget to log progress."
+            )
+
+    def _set_health_service_flag(self, flag: str, enabled: bool) -> None:
+        service = self.settings_state["services"].setdefault("health_widget", {})
         if not service.get("enabled", True):
             return
         service[flag] = bool(enabled)
@@ -6897,6 +7281,7 @@ class SettingsWindow(QWidget):
 
     def _set_slideshow_interval(self, value: int) -> None:
         self.settings_state["appearance"]["slideshow_interval"] = int(value)
+        self.settings_state["appearance"]["local_randomizer_interval_seconds"] = int(value)
         save_settings_state(self.settings_state)
         self._slideshow_timer.setInterval(int(value) * 1000)
         if hasattr(self, "slideshow_interval_label"):
