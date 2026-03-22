@@ -458,6 +458,29 @@ def _restore_game_mode_visuals() -> None:
     _write_runtime_state(runtime_state)
 
 
+def ensure_visuals_restored_if_inactive() -> None:
+    current = summary()
+    if bool(current.get("active", False)) or bool(current.get("visuals_suppressed", False)):
+        return
+
+    runtime_state = _load_runtime_state()
+    picom_text = _read_picom_text()
+    if picom_text:
+        picom_current = _parse_picom_settings(picom_text)
+        if _looks_like_game_mode_profile(picom_current):
+            PICOM_CONFIG_FILE.write_text(
+                _update_picom_config(picom_text, dict(GAME_MODE_PICOM_RESTORE_FALLBACK)),
+                encoding="utf-8",
+            )
+
+    _resume_matugen()
+    if not _picom_running():
+        _restart_picom()
+
+    runtime_state["visuals_suppressed"] = False
+    _write_runtime_state(runtime_state)
+
+
 def _mark_runtime_flag(key: str, value: object) -> None:
     runtime_state = _load_runtime_state()
     runtime_state[key] = value

@@ -1,307 +1,1557 @@
 <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hanauta Mail</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1119;
+      --bg-elevated: rgba(26, 27, 38, 0.92);
+      --panel: rgba(29, 31, 45, 0.84);
+      --panel-strong: rgba(39, 41, 59, 0.94);
+      --panel-soft: rgba(45, 47, 68, 0.72);
+      --text: #edf1ff;
+      --text-soft: #aeb5d6;
+      --text-dim: #7981a7;
+      --accent: #d3bcff;
+      --accent-strong: #bb9af7;
+      --accent-ink: #28164d;
+      --danger: #ff9b9b;
+      --success: #98d7b0;
+      --line: rgba(255, 255, 255, 0.06);
+      --line-strong: rgba(255, 255, 255, 0.1);
+      --shadow: 0 36px 80px rgba(0, 0, 0, 0.35);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --sidebar-width: 260px;
+      --list-width: 370px;
+    }
 
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              "error-container": "#93000a",
-              "outline": "#958e9c",
-              "tertiary-container": "#81a9ff",
-              "tertiary-fixed-dim": "#aec6ff",
-              "tertiary-fixed": "#d8e2ff",
-              "primary-fixed": "#ebdcff",
-              "inverse-surface": "#e2e1f1",
-              "on-secondary-container": "#ff97a7",
-              "surface-container": "#1e1f2a",
-              "background": "#12131d",
-              "secondary-container": "#851e39",
-              "secondary-fixed-dim": "#ffb2bc",
-              "on-error": "#690005",
-              "surface-bright": "#383844",
-              "surface": "#12131d",
-              "on-error-container": "#ffdad6",
-              "on-secondary-fixed-variant": "#851e39",
-              "surface-variant": "#333440",
-              "primary-fixed-dim": "#d4bbff",
-              "on-secondary": "#660224",
-              "on-primary": "#3d1b72",
-              "error": "#ffb4ab",
-              "tertiary": "#aec6ff",
-              "primary": "#d4bbff",
-              "outline-variant": "#4a4550",
-              "on-secondary-fixed": "#400013",
-              "on-tertiary-fixed-variant": "#0c4393",
-              "on-surface-variant": "#ccc3d2",
-              "surface-container-highest": "#333440",
-              "on-tertiary-container": "#003b87",
-              "surface-dim": "#12131d",
-              "on-tertiary": "#002e6b",
-              "secondary-fixed": "#ffd9dd",
-              "on-background": "#e2e1f1",
-              "on-surface": "#e2e1f1",
-              "surface-container-high": "#282935",
-              "on-primary-fixed": "#260058",
-              "on-primary-fixed-variant": "#54358a",
-              "on-primary-container": "#4c2c82",
-              "surface-container-lowest": "#0c0d18",
-              "surface-tint": "#d4bbff",
-              "inverse-on-surface": "#2f303b",
-              "inverse-primary": "#6c4da4",
-              "surface-container-low": "#1a1b26",
-              "secondary": "#ffb2bc",
-              "primary-container": "#bb9af7",
-              "on-tertiary-fixed": "#001a43"
-            },
-            fontFamily: {
-              "headline": ["Lexend"],
-              "body": ["Inter"],
-              "label": ["Inter"]
-            },
-            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
-          },
-        },
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(211, 188, 255, 0.17), transparent 30%),
+        radial-gradient(circle at top right, rgba(123, 206, 189, 0.12), transparent 24%),
+        radial-gradient(circle at bottom left, rgba(94, 108, 189, 0.16), transparent 22%),
+        linear-gradient(180deg, #12131d 0%, #0d1018 100%);
+      color: var(--text);
+      font-family: "Lexend", "Inter", "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+
+    body {
+      padding: 24px;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+      color: inherit;
+    }
+
+    button {
+      border: 0;
+      background: none;
+      cursor: pointer;
+    }
+
+    input,
+    textarea,
+    select {
+      border: 1px solid transparent;
+      outline: 0;
+    }
+
+    .shell {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 48px);
+      border-radius: 32px;
+      overflow: hidden;
+      background: rgba(14, 17, 26, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(20px);
+      display: grid;
+      grid-template-rows: 76px 1fr;
+    }
+
+    .shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(140deg, rgba(211, 188, 255, 0.08), transparent 30%),
+        radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.05), transparent 35%);
+      pointer-events: none;
+    }
+
+    .topbar {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) 1fr minmax(240px, 320px);
+      gap: 20px;
+      align-items: center;
+      padding: 20px 24px;
+      background: rgba(17, 19, 29, 0.64);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: var(--accent-ink);
+      font-size: 20px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), #99e9d8);
+      box-shadow: 0 18px 36px rgba(211, 188, 255, 0.18);
+    }
+
+    .brand-copy {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .brand-copy h1 {
+      margin: 4px 0 0;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .searchbar {
+      position: relative;
+      min-width: 0;
+    }
+
+    .searchbar input {
+      width: 100%;
+      height: 50px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.05);
+      padding: 0 18px 0 52px;
+      color: var(--text);
+      transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    .searchbar input:focus {
+      border-color: rgba(211, 188, 255, 0.4);
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 0 4px rgba(211, 188, 255, 0.1);
+    }
+
+    .searchbar .icon {
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 18px;
+    }
+
+    .topbar-right {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(211, 188, 255, 0.32), rgba(110, 209, 183, 0.3));
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .workspace {
+      position: relative;
+      z-index: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: var(--sidebar-width) var(--list-width) 1fr;
+      gap: 0;
+    }
+
+    .sidebar,
+    .message-list,
+    .detail {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar {
+      padding: 20px;
+      background: rgba(18, 20, 31, 0.76);
+      border-right: 1px solid var(--line);
+      gap: 18px;
+    }
+
+    .compose-button,
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 0 20px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(211, 188, 255, 0.95), rgba(153, 233, 216, 0.95));
+      color: var(--accent-ink);
+      font-weight: 700;
+      box-shadow: 0 20px 36px rgba(211, 188, 255, 0.18);
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 18px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .section-head h2,
+    .section-head h3 {
+      margin: 0;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .ghost-button {
+      color: var(--text-soft);
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .folder-list,
+    .account-list,
+    .stat-list,
+    .message-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .folder-button,
+    .account-card,
+    .message-card,
+    .action-icon {
+      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+
+    .folder-button,
+    .account-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: transparent;
+      color: var(--text-soft);
+      border: 1px solid transparent;
+      text-align: left;
+      width: 100%;
+    }
+
+    .folder-button.active,
+    .account-card.active {
+      background: rgba(211, 188, 255, 0.12);
+      color: var(--text);
+      border-color: rgba(211, 188, 255, 0.22);
+    }
+
+    .folder-button:hover,
+    .account-card:hover,
+    .message-card:hover,
+    .action-icon:hover,
+    .ghost-button:hover {
+      transform: translateY(-1px);
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+
+    .badge {
+      min-width: 26px;
+      height: 26px;
+      padding: 0 8px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(211, 188, 255, 0.18);
+      color: var(--accent);
+    }
+
+    .stat-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+
+    .message-list {
+      border-right: 1px solid var(--line);
+      background: rgba(22, 25, 37, 0.74);
+    }
+
+    .list-head,
+    .detail-head {
+      padding: 22px 22px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .headline {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .headline h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .headline p {
+      margin: 0;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .list-toolbar,
+    .detail-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .action-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-soft);
+    }
+
+    .message-items {
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .message-card {
+      width: 100%;
+      text-align: left;
+      border-radius: 22px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid transparent;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      color: var(--text-soft);
+    }
+
+    .message-card.active {
+      background: rgba(211, 188, 255, 0.12);
+      border-color: rgba(211, 188, 255, 0.18);
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .message-card.unread .sender,
+    .message-card.unread .subject {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .message-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .sender,
+    .subject {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time {
+      font-size: 12px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .subject {
+      font-size: 14px;
+    }
+
+    .snippet {
+      color: var(--text-dim);
+      font-size: 13px;
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .detail {
+      background: linear-gradient(180deg, rgba(18, 20, 31, 0.82) 0%, rgba(15, 17, 25, 0.88) 100%);
+    }
+
+    .detail-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .detail-hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .pill-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .detail-title {
+      margin: 0;
+      font-size: clamp(28px, 3vw, 42px);
+      line-height: 1.06;
+      max-width: 820px;
+    }
+
+    .detail-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 18px 20px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .sender-block {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .sender-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(211, 188, 255, 0.24), rgba(153, 233, 216, 0.2));
+      font-weight: 800;
+    }
+
+    .sender-copy {
+      min-width: 0;
+    }
+
+    .sender-copy h3,
+    .sender-copy p {
+      margin: 0;
+    }
+
+    .sender-copy h3 {
+      font-size: 16px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sender-copy p {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .message-content {
+      padding: 26px 28px;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-soft);
+      line-height: 1.75;
+      font-size: 15px;
+      overflow-wrap: anywhere;
+    }
+
+    .message-content p:first-child {
+      margin-top: 0;
+    }
+
+    .message-content p:last-child {
+      margin-bottom: 0;
+    }
+
+    .message-content pre {
+      white-space: pre-wrap;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.18);
+      color: var(--text);
+    }
+
+    .empty-state {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--text-soft);
+      padding: 32px;
+    }
+
+    .empty-card {
+      max-width: 420px;
+      padding: 28px;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .empty-card h3 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      color: var(--text);
+    }
+
+    .empty-card p {
+      margin: 0;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 8, 12, 0.58);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      z-index: 20;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal {
+      width: min(860px, 100%);
+      max-height: min(760px, calc(100vh - 56px));
+      overflow: auto;
+      border-radius: 28px;
+      background: rgba(18, 20, 31, 0.96);
+      border: 1px solid var(--line-strong);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .modal-head,
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .modal-head h2 {
+      margin: 0;
+      font-size: 26px;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .field label {
+      color: var(--text-soft);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      padding: 14px 16px;
+      resize: vertical;
+      min-height: 52px;
+    }
+
+    .field textarea {
+      min-height: 220px;
+    }
+
+    .field input:focus,
+    .field textarea:focus,
+    .field select:focus {
+      border-color: rgba(211, 188, 255, 0.42);
+      box-shadow: 0 0 0 4px rgba(211, 188, 255, 0.1);
+    }
+
+    .secondary-button {
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .toast-stack {
+      position: fixed;
+      right: 28px;
+      bottom: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 30;
+    }
+
+    .toast {
+      min-width: 280px;
+      max-width: 360px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(18, 20, 31, 0.94);
+      border: 1px solid rgba(211, 188, 255, 0.22);
+      box-shadow: var(--shadow);
+    }
+
+    .toast strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .toast p {
+      margin: 0;
+      color: var(--text-soft);
+      line-height: 1.5;
+      font-size: 13px;
+    }
+
+    @media (max-width: 1320px) {
+      body {
+        padding: 18px;
       }
-    </script>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .glass-panel {
-            background: rgba(187, 154, 247, 0.08);
-            backdrop-filter: blur(24px);
-            border: 1px solid rgba(212, 187, 255, 0.1);
-        }
-        .kbd-hint {
-            font-family: monospace;
-            font-size: 0.7rem;
-            opacity: 0.5;
-            padding: 2px 4px;
-            border-radius: 4px;
-            background: rgba(255,255,255,0.05);
-        }
-        body {
-            background: radial-gradient(circle at 50% 50%, #1a1b26 0%, #12131d 100%);
-        }
-    </style>
+
+      .shell {
+        height: calc(100vh - 36px);
+      }
+
+      .workspace {
+        grid-template-columns: 220px 320px 1fr;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .workspace {
+        grid-template-columns: 240px 1fr;
+      }
+
+      .detail {
+        display: none;
+      }
+
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 0;
+      }
+
+      .shell {
+        height: 100vh;
+        border-radius: 0;
+      }
+
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .message-list {
+        border-right: 0;
+      }
+    }
+  </style>
 </head>
-<body class="text-on-surface font-body selection:bg-primary/30 selection:text-primary min-h-screen flex">
-<!-- Sidebar / SideNavBar -->
-<aside class="h-screen w-72 bg-[#1a1b26] sticky left-0 top-0 flex flex-col p-6 gap-2 rounded-r-[2rem] z-50">
-<div class="mb-8 px-4">
-<h1 class="font-headline font-bold text-xl text-primary tracking-tighter">Obsidian Mail</h1>
-<p class="text-[10px] text-outline tracking-widest uppercase mt-1">Focus Version 2.0</p>
-</div>
-<button class="mb-6 w-full flex items-center justify-center gap-2 bg-primary text-on-primary font-headline font-semibold py-4 rounded-full active:scale-95 transition-transform">
-<span class="material-symbols-outlined">edit</span>
-            Compose
-            <span class="kbd-hint bg-on-primary/10 text-on-primary">[C]</span>
-</button>
-<nav class="flex-1 flex flex-col gap-1">
-<a class="flex items-center gap-3 bg-[#d4bbff]/10 text-[#d4bbff] rounded-full px-4 py-3 font-semibold transition-all hover:translate-x-1 duration-300" href="#">
-<span class="material-symbols-outlined" data-icon="inbox">inbox</span>
-<span class="font-headline text-sm tracking-wide">Inbox</span>
-<span class="ml-auto kbd-hint">[G] [I]</span>
-</a>
-<a class="flex items-center gap-3 text-[#a9b1d6] px-4 py-3 hover:text-[#d4bbff] hover:bg-[#282935] rounded-full transition-all hover:translate-x-1 duration-300" href="#">
-<span class="material-symbols-outlined" data-icon="send">send</span>
-<span class="font-headline text-sm tracking-wide">Sent</span>
-<span class="ml-auto kbd-hint">[G] [S]</span>
-</a>
-<a class="flex items-center gap-3 text-[#a9b1d6] px-4 py-3 hover:text-[#d4bbff] hover:bg-[#282935] rounded-full transition-all hover:translate-x-1 duration-300" href="#">
-<span class="material-symbols-outlined" data-icon="description">description</span>
-<span class="font-headline text-sm tracking-wide">Drafts</span>
-</a>
-<a class="flex items-center gap-3 text-[#a9b1d6] px-4 py-3 hover:text-[#d4bbff] hover:bg-[#282935] rounded-full transition-all hover:translate-x-1 duration-300" href="#">
-<span class="material-symbols-outlined" data-icon="archive">archive</span>
-<span class="font-headline text-sm tracking-wide">Archive</span>
-</a>
-<a class="flex items-center gap-3 text-[#a9b1d6] px-4 py-3 hover:text-[#d4bbff] hover:bg-[#282935] rounded-full transition-all hover:translate-x-1 duration-300" href="#">
-<span class="material-symbols-outlined" data-icon="report">report</span>
-<span class="font-headline text-sm tracking-wide">Spam</span>
-</a>
-</nav>
-<div class="mt-auto pt-6 border-t border-outline-variant/10 flex flex-col gap-2">
-<div class="flex items-center gap-3 px-4 py-2">
-<img class="w-10 h-10 rounded-full object-cover ring-2 ring-primary/20" data-alt="User profile photo avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZVgnmNif7GnILfpZ2mHjXFNAKTR_WtLuVVXLOiQnQR0E1gaTVTpU92dRNsEe4c1Gwfazff21wZTq_rNGGnr3yCxcvLuAIpIjxdQvUwt_3PCLt7vK0ryGsiX4eoPJofpwg8Wpt0p6Iey6yLID7nUmZuNJ0ArBVcHgR_AwUIHC0g39t1Q6SvfAwFc1y7jQYZxZpHGKcX3Ik_BBz8UW6tHo4D-cWVwZgSz0Ib9RihianAjmdMFzMAiXXSN_fd5CwnUv8Np9mvbMttrE"/>
-<div class="overflow-hidden">
-<p class="text-sm font-semibold truncate">Hanauta Workspace</p>
-<p class="text-[10px] text-outline truncate">premium@obsidian.nexus</p>
-</div>
-</div>
-<a class="flex items-center gap-3 text-[#a9b1d6] px-4 py-2 hover:text-[#d4bbff] transition-colors" href="#">
-<span class="material-symbols-outlined text-lg" data-icon="manage_accounts">manage_accounts</span>
-<span class="text-xs">Accounts</span>
-</a>
-<a class="flex items-center gap-3 text-[#a9b1d6] px-4 py-2 hover:text-[#d4bbff] transition-colors" href="#">
-<span class="material-symbols-outlined text-lg" data-icon="cloud_queue">cloud_queue</span>
-<span class="text-xs">Storage (82%)</span>
-</a>
-</div>
-</aside>
-<!-- Main Content Area -->
-<main class="flex-1 flex flex-col relative overflow-hidden">
-<!-- TopAppBar -->
-<header class="w-full sticky top-0 z-50 bg-[#12131d]/80 backdrop-blur-xl flex items-center justify-between px-8 py-4 shadow-[0_0_40px_rgba(212,187,255,0.05)]">
-<div class="flex items-center gap-6">
-<div class="flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full">
-<span class="material-symbols-outlined text-primary text-sm" data-icon="search">search</span>
-<input class="bg-transparent border-none focus:ring-0 text-sm w-64 placeholder:text-outline/50" placeholder="Search commands or mail..." type="text"/>
-<span class="kbd-hint">[/]</span>
-</div>
-</div>
-<div class="flex items-center gap-4">
-<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded-full text-xs text-outline">
-<span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_#d4bbff]"></span>
-                    Connected to Nexus Core
-                </div>
-<button class="p-2 text-outline hover:text-primary transition-colors hover:bg-[#333440] rounded-full">
-<span class="material-symbols-outlined" data-icon="settings">settings</span>
-</button>
-<button class="p-2 text-outline hover:text-primary transition-colors hover:bg-[#333440] rounded-full">
-<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
-</button>
-</div>
-</header>
-<!-- Focus Content -->
-<section class="flex-1 p-8 flex flex-col items-center justify-center max-w-6xl mx-auto w-full relative">
-<!-- Background Glow Decor -->
-<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
-<!-- Focused Email Card (Inbox Zero Minimalist) -->
-<div class="glass-panel w-full rounded-xl overflow-hidden shadow-2xl relative z-10">
-<!-- Card Header -->
-<div class="px-10 py-8 border-b border-outline-variant/10 flex justify-between items-start">
-<div class="space-y-2">
-<div class="flex items-center gap-3">
-<span class="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold tracking-widest uppercase">Internal Project</span>
-<span class="text-outline text-xs">14:32 PM</span>
-</div>
-<h2 class="text-3xl font-headline font-bold text-white tracking-tight leading-tight">
-                            Synthesizing the Nexus: Next Steps for Hyprland Integration
-                        </h2>
-<div class="flex items-center gap-3 mt-4">
-<img class="w-8 h-8 rounded-full object-cover" data-alt="Avatar of sender Alexander Chen" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAF8rEjtcbVygSsN-72A-8JKGeEByL57vY3J-aa6gE8vOyaUEvcMcOQstDoNu7CKNHJcD1k4WDF2jy8XOEZF3BQW2EVK-AjwH-gPiAR1MIga3-J4CYnxoMsS0pUk4pdvousHG-J_aoyo0UhWrLXG7Uth77wselZU8hxJMqVravA5tu0738VZz-6okuzS1KTfad8DrdJOHRF1pkqc9neL55YubFO-6vw774qipgaZCvlIP8Gul0TC8BEsMkwxeDcsnHK1uHVDqWYg0g"/>
-<div>
-<span class="text-sm font-medium text-on-surface">Alexander Chen</span>
-<span class="text-xs text-outline ml-2">&lt;a.chen@nexus.labs&gt;</span>
-</div>
-</div>
-</div>
-<div class="flex flex-col gap-2">
-<div class="flex items-center gap-1 justify-end">
-<button class="p-2 text-outline hover:text-primary transition-colors bg-surface-container-high rounded-full hover:scale-110 active:scale-95">
-<span class="material-symbols-outlined" data-icon="star">star</span>
-</button>
-<button class="p-2 text-outline hover:text-primary transition-colors bg-surface-container-high rounded-full hover:scale-110 active:scale-95">
-<span class="material-symbols-outlined" data-icon="reply">reply</span>
-</button>
-<button class="p-2 text-outline hover:text-error transition-colors bg-surface-container-high rounded-full hover:scale-110 active:scale-95">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-<div class="flex justify-end gap-2 text-[10px] text-outline/40 font-mono">
-<span>[R] Reply</span>
-<span>[E] Archive</span>
-<span>[#] Delete</span>
-</div>
-</div>
-</div>
-<!-- Card Body -->
-<div class="px-10 py-12 text-on-surface-variant leading-relaxed max-w-4xl mx-auto space-y-6">
-<p class="text-lg text-white/90">Hello Team,</p>
-<p>
-                        I've been reviewing the latest obsidian-depth shaders for the upcoming client update. The way we handle 
-                        <span class="text-primary font-medium">tonal stacking</span> in the V2 layout is impressive, but I believe we can push the 
-                        glassmorphism further in the sidebar implementation.
-                    </p>
-<p>
-                        Specifically, the blur radius should react to the focused window's state—much like the Hyprland tiling manager logic. 
-                        I've attached the preliminary specs for the "Hanauta Glow" effect that we discussed during the last sprint.
-                    </p>
-<div class="p-6 bg-surface-container-low rounded-lg border border-outline-variant/5 flex items-center gap-4">
-<div class="w-12 h-12 bg-primary/20 rounded flex items-center justify-center text-primary">
-<span class="material-symbols-outlined text-3xl" data-icon="picture_as_pdf">picture_as_pdf</span>
-</div>
-<div class="flex-1">
-<p class="text-sm font-medium text-white">Shaders_v2_Draft.pdf</p>
-<p class="text-xs text-outline">12.4 MB • PDF Document</p>
-</div>
-<button class="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest rounded-full text-xs font-semibold transition-colors">
-                            Download
-                        </button>
-</div>
-<p>
-                        Let's sync up tomorrow at 10:00 AM to finalize the navigation clusters.
-                    </p>
-<p class="pt-8 border-t border-outline-variant/5 text-sm text-outline italic">
-                        Sent from the Obsidian Nexus Mobile Environment
-                    </p>
-</div>
-<!-- Quick Action Bar -->
-<div class="px-10 py-6 bg-surface-container-low/50 border-t border-outline-variant/10 flex items-center justify-between">
-<div class="flex gap-4">
-<button class="flex items-center gap-2 px-6 py-3 rounded-full bg-surface-container-high hover:bg-surface-container-highest transition-colors text-sm font-medium">
-<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
-                            Add Tag
-                            <span class="kbd-hint text-[8px]">[T]</span>
-</button>
-<button class="flex items-center gap-2 px-6 py-3 rounded-full bg-surface-container-high hover:bg-surface-container-highest transition-colors text-sm font-medium">
-<span class="material-symbols-outlined text-sm" data-icon="schedule">schedule</span>
-                            Snooze
-                            <span class="kbd-hint text-[8px]">[S]</span>
-</button>
-</div>
-<div class="flex items-center gap-6">
-<div class="flex -space-x-3">
-<img class="w-8 h-8 rounded-full border-2 border-[#12131d] object-cover" data-alt="Recipient avatar 1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDauWX9O_DNhoRPybDPu38A9oeVTDs2BzRDA8Hanv4efKbdUfOZqhCC6JFu8M1xRXd2nuXW-nbWrbY_R5anf5AbuBwv-q-Lo7ZTVBZSyNtZHANOQ3ZIxJuSIVvq_Q6Y0RAgkFDj0XP62xfDXneAIEjkUk10zl-PYbC6dbx-bVsvrLUBXG5gOyTcZi-9CGMmQ9EA8C0LSn3IlHF_GeplzRpimcalOkdQfdFSGvMs0zs0nXrWrIrC2B_TrCAVXesPnIyfF2riHqF_bFA"/>
-<img class="w-8 h-8 rounded-full border-2 border-[#12131d] object-cover" data-alt="Recipient avatar 2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBiipSzIyvMAz5-hjU1ig7lqQM1S7ycHpAEBx3XSXtzLnAqY_SkqNe33zDp1X6FgOgAYEARFFq_Xg20LVNHwTagO7fu2ByOwvNEqLdG1XkbEiF2KKM_IfH7SqbZybDi4xnbRTA_aYaLWhIVXtOp54IceQ1TyLT3wYpym4wnIT-RqEN5J30TJYTYWpFiv26LhdWJjXHlq9zGGckwloQJwSd0zhevd353Ch7EiDGRmPMxdKqiLKPn88NR3GpZmbjbzhcVPapTwZP_aJg"/>
-<div class="w-8 h-8 rounded-full border-2 border-[#12131d] bg-surface-container-high flex items-center justify-center text-[10px] font-bold text-outline">+3</div>
-</div>
-<button class="px-8 py-3 rounded-full bg-primary text-on-primary font-headline font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20">
-                            Reply Now
-                            <span class="kbd-hint ml-2 bg-on-primary/10 text-on-primary">[Enter]</span>
-</button>
-</div>
-</div>
-</div>
-<!-- Inbox Navigation Hints -->
-<div class="mt-8 flex gap-8">
-<div class="flex items-center gap-2 text-outline/60 text-xs">
-<span class="kbd-hint text-primary/80">[K]</span>
-<span>Previous Message</span>
-</div>
-<div class="flex items-center gap-2 text-outline/60 text-xs">
-<span class="kbd-hint text-primary/80">[J]</span>
-<span>Next Message</span>
-</div>
-<div class="flex items-center gap-2 text-outline/60 text-xs">
-<span class="kbd-hint text-primary/80">[U]</span>
-<span>Back to List</span>
-</div>
-</div>
-</section>
-<!-- Bento Status Chip Cluster -->
-<div class="absolute bottom-6 right-8 flex items-center gap-3">
-<div class="flex items-center gap-2 px-4 py-2 bg-surface-container-low rounded-full border border-outline-variant/10 shadow-lg">
-<span class="material-symbols-outlined text-primary text-xs" data-icon="wifi">wifi</span>
-<span class="text-[10px] font-mono text-outline uppercase tracking-wider">Latency: 14ms</span>
-</div>
-<div class="flex items-center gap-2 px-4 py-2 bg-surface-container-low rounded-full border border-outline-variant/10 shadow-lg">
-<span class="material-symbols-outlined text-primary text-xs" data-icon="cpu" style="font-variation-settings: 'FILL' 1;">memory</span>
-<span class="text-[10px] font-mono text-outline uppercase tracking-wider">CPU: 4%</span>
-</div>
-<div class="flex items-center gap-2 px-4 py-2 bg-surface-container-low rounded-full border border-outline-variant/10 shadow-lg">
-<span class="material-symbols-outlined text-primary text-xs" data-icon="battery_full">battery_full</span>
-<span class="text-[10px] font-mono text-outline uppercase tracking-wider">98%</span>
-</div>
-</div>
-</main>
-</body></html>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge">H</div>
+        <div class="brand-copy">
+          <div class="eyebrow">Rendered Html / Js / Css</div>
+          <h1>Hanauta Mail</h1>
+        </div>
+      </div>
+
+      <label class="searchbar" for="searchInput">
+        <span class="icon">⌕</span>
+        <input id="searchInput" type="search" placeholder="Search conversations, senders, or subjects" />
+      </label>
+
+      <div class="topbar-right">
+        <div class="chip" id="mailStatus">Live preview</div>
+        <div class="avatar" id="profileAvatar">HM</div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <button class="compose-button" id="composeButton" type="button">Compose Message</button>
+
+        <section class="section">
+          <div class="section-head">
+            <h2>Accounts</h2>
+            <button class="ghost-button" id="refreshButton" type="button">Refresh</button>
+          </div>
+          <div class="account-list" id="accountList"></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h2>Folders</h2>
+            <button class="ghost-button" id="clearSearchButton" type="button">Clear</button>
+          </div>
+          <div class="folder-list" id="folderList"></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>Signals</h3>
+          </div>
+          <div class="stat-list">
+            <div class="stat-card">
+              <span>Unread Total</span>
+              <strong id="unreadStat">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Mailbox</span>
+              <strong id="accountStat">Preview</strong>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="message-list">
+        <div class="list-head">
+          <div class="headline">
+            <h2 id="folderTitle">Inbox</h2>
+            <p id="folderSubtitle">Rendered inside QtWebEngine</p>
+          </div>
+          <div class="list-toolbar">
+            <button class="action-icon" id="replyButton" type="button" title="Reply">↩</button>
+            <button class="action-icon" id="archiveButton" type="button" title="Archive">⌁</button>
+            <button class="action-icon" id="deleteButton" type="button" title="Delete">✕</button>
+          </div>
+        </div>
+        <div class="message-items" id="messageList"></div>
+      </section>
+
+      <section class="detail">
+        <div class="detail-head">
+          <div class="headline">
+            <h2>Conversation</h2>
+            <p id="detailSubtitle">Select a message to inspect the full thread</p>
+          </div>
+          <div class="detail-toolbar">
+            <button class="ghost-button" id="markSeenButton" type="button">Mark Read</button>
+            <button class="ghost-button" id="markUnreadButton" type="button">Mark Unread</button>
+          </div>
+        </div>
+        <div class="detail-body" id="detailView"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="composeModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Hanauta Mail</div>
+          <h2>Compose</h2>
+        </div>
+        <button class="secondary-button" id="closeComposeButton" type="button">Close</button>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="composeAccount">From</label>
+          <select id="composeAccount"></select>
+        </div>
+        <div class="field">
+          <label for="composeTo">To</label>
+          <input id="composeTo" type="text" placeholder="name@example.com, team@example.com" />
+        </div>
+        <div class="field full">
+          <label for="composeCc">Cc</label>
+          <input id="composeCc" type="text" placeholder="Optional carbon copy recipients" />
+        </div>
+        <div class="field full">
+          <label for="composeSubject">Subject</label>
+          <input id="composeSubject" type="text" placeholder="What is this message about?" />
+        </div>
+        <div class="field full">
+          <label for="composeBody">Message</label>
+          <textarea id="composeBody" placeholder="Write something clear, warm, and useful."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="secondary-button" id="discardComposeButton" type="button">Discard</button>
+        <button class="primary-button" id="sendComposeButton" type="button">Send Message</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack"></div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script>
+    const mockState = {
+      accounts: [
+        {
+          id: 1,
+          label: "Primary",
+          email_address: "alex@hanauta.dev",
+          display_name: "Alex Chen",
+          selected: true,
+          folders: ["INBOX", "Sent", "Drafts", "Archive", "Trash"],
+          unread_total: 4,
+          unread_by_folder: { INBOX: 4, Drafts: 2 }
+        }
+      ],
+      selected_account_id: 1,
+      selected_folder: "INBOX",
+      selected_message_key: "mock-1",
+      search_query: "",
+      reply_draft: null,
+      selected_message: {
+        key: "mock-1",
+        subject: "Security alert for your linked repository",
+        sender: "GitHub",
+        from_name: "GitHub",
+        from_email: "noreply@github.com",
+        to_line: "Alex Chen <alex@hanauta.dev>",
+        date_iso: new Date().toISOString(),
+        display_time: "10:42",
+        snippet: "We found a potential security vulnerability in one of your dependencies. Please review the advisory and patch the package.",
+        body_html: "<p>Hello Alex,</p><p>We found a potential security vulnerability in one of your dependencies. The advisory suggests updating <strong>lodash</strong> to <strong>4.17.21</strong> or newer.</p><p>Please review the report, patch your lockfile, and trigger a fresh deployment afterwards.</p><p>Best regards,<br>The GitHub Team</p>",
+        seen: false,
+        flagged: true,
+        has_attachments: true
+      },
+      messages: [
+        {
+          key: "mock-1",
+          sender: "GitHub",
+          from_name: "GitHub",
+          from_email: "noreply@github.com",
+          subject: "Security alert for your linked repository",
+          snippet: "We found a potential security vulnerability in one of your dependencies. Please review the advisory and patch the package.",
+          display_time: "10:42",
+          seen: false,
+          flagged: true,
+          has_attachments: true,
+          date_iso: new Date().toISOString(),
+          to_line: "Alex Chen <alex@hanauta.dev>",
+          body_html: "<p>Hello Alex,</p><p>We found a potential security vulnerability in one of your dependencies. The advisory suggests updating <strong>lodash</strong> to <strong>4.17.21</strong> or newer.</p><p>Please review the report, patch your lockfile, and trigger a fresh deployment afterwards.</p><p>Best regards,<br>The GitHub Team</p>"
+        },
+        {
+          key: "mock-2",
+          sender: "Linear",
+          from_name: "Linear",
+          from_email: "updates@linear.app",
+          subject: "Design system updates are ready for review",
+          snippet: "The refreshed design system ships with updated tokens, denser tables, and a calmer dark theme for desktop-first work.",
+          display_time: "09:15",
+          seen: true,
+          flagged: true,
+          has_attachments: false,
+          date_iso: new Date(Date.now() - 3600 * 1000).toISOString(),
+          to_line: "Alex Chen <alex@hanauta.dev>",
+          body_html: "<p>The new component library is ready for review. It includes denser navigation patterns, clearer semantic colors, and a streamlined token system.</p>"
+        },
+        {
+          key: "mock-3",
+          sender: "Vercel",
+          from_name: "Vercel",
+          from_email: "noreply@vercel.com",
+          subject: "Deployment successful: hanauta-mail",
+          snippet: "Production is healthy. The latest deployment is live and edge cache propagation has completed across all active regions.",
+          display_time: "Yesterday",
+          seen: true,
+          flagged: false,
+          has_attachments: false,
+          date_iso: new Date(Date.now() - 86400 * 1000).toISOString(),
+          to_line: "Alex Chen <alex@hanauta.dev>",
+          body_html: "<p>Your latest commit was deployed successfully and all health checks passed.</p>"
+        }
+      ]
+    };
+
+    const state = structuredClone(mockState);
+    let mailBridge = null;
+
+    const elements = {
+      searchInput: document.getElementById("searchInput"),
+      mailStatus: document.getElementById("mailStatus"),
+      profileAvatar: document.getElementById("profileAvatar"),
+      accountList: document.getElementById("accountList"),
+      folderList: document.getElementById("folderList"),
+      unreadStat: document.getElementById("unreadStat"),
+      accountStat: document.getElementById("accountStat"),
+      folderTitle: document.getElementById("folderTitle"),
+      folderSubtitle: document.getElementById("folderSubtitle"),
+      messageList: document.getElementById("messageList"),
+      detailView: document.getElementById("detailView"),
+      detailSubtitle: document.getElementById("detailSubtitle"),
+      composeModal: document.getElementById("composeModal"),
+      composeButton: document.getElementById("composeButton"),
+      closeComposeButton: document.getElementById("closeComposeButton"),
+      discardComposeButton: document.getElementById("discardComposeButton"),
+      sendComposeButton: document.getElementById("sendComposeButton"),
+      composeAccount: document.getElementById("composeAccount"),
+      composeTo: document.getElementById("composeTo"),
+      composeCc: document.getElementById("composeCc"),
+      composeSubject: document.getElementById("composeSubject"),
+      composeBody: document.getElementById("composeBody"),
+      refreshButton: document.getElementById("refreshButton"),
+      clearSearchButton: document.getElementById("clearSearchButton"),
+      replyButton: document.getElementById("replyButton"),
+      archiveButton: document.getElementById("archiveButton"),
+      deleteButton: document.getElementById("deleteButton"),
+      markSeenButton: document.getElementById("markSeenButton"),
+      markUnreadButton: document.getElementById("markUnreadButton"),
+      toastStack: document.getElementById("toastStack")
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function getSelectedAccount() {
+      return state.accounts.find((account) => account.id === state.selected_account_id) || state.accounts[0] || null;
+    }
+
+    function getVisibleMessages() {
+      const account = getSelectedAccount();
+      const query = (state.search_query || "").trim().toLowerCase();
+      let messages = Array.isArray(state.messages) ? [...state.messages] : [];
+
+      if (state.selected_folder === "Sent") {
+        messages = messages.filter((message) => /re:|deployment|updates/i.test(message.subject || ""));
+      } else if (state.selected_folder === "Drafts") {
+        messages = messages.filter((message) => !message.seen);
+      } else if (state.selected_folder === "Archive") {
+        messages = messages.filter((message) => Boolean(message.seen));
+      } else if (state.selected_folder === "Trash") {
+        messages = [];
+      }
+
+      if (query) {
+        messages = messages.filter((message) =>
+          [message.sender, message.subject, message.snippet, message.from_email]
+            .filter(Boolean)
+            .some((part) => String(part).toLowerCase().includes(query))
+        );
+      }
+
+      if (!state.selected_message_key && messages[0]) {
+        state.selected_message_key = messages[0].key;
+      }
+
+      if (!messages.some((message) => message.key === state.selected_message_key)) {
+        state.selected_message_key = messages[0]?.key || "";
+      }
+
+      state.selected_message = messages.find((message) => message.key === state.selected_message_key) || null;
+
+      if (account) {
+        const unreadByFolder = account.unread_by_folder || {};
+        const total = Object.values(unreadByFolder).reduce((sum, value) => sum + Number(value || 0), 0);
+        account.unread_total = total;
+      }
+
+      return messages;
+    }
+
+    function renderAccounts() {
+      const accounts = state.accounts || [];
+      const selected = getSelectedAccount();
+      elements.accountList.innerHTML = accounts.length
+        ? accounts.map((account) => `
+            <button class="account-card ${account.id === state.selected_account_id ? "active" : ""}" type="button" data-account-id="${account.id}">
+              <div>
+                <div>${escapeHtml(account.label || "Mailbox")}</div>
+                <div style="font-size:12px; color: var(--text-dim); margin-top:4px;">${escapeHtml(account.email_address || "")}</div>
+              </div>
+              <span class="badge">${Number(account.unread_total || 0)}</span>
+            </button>
+          `).join("")
+        : `<div class="empty-card"><h3>No accounts</h3><p>Add an account in Python when you are ready to wire up live sync.</p></div>`;
+
+      elements.accountStat.textContent = selected?.label || "Preview";
+      const initials = (selected?.display_name || selected?.label || "HM")
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() || "")
+        .join("") || "HM";
+      elements.profileAvatar.textContent = initials;
+    }
+
+    function renderFolders() {
+      const account = getSelectedAccount();
+      const folders = account?.folders || ["INBOX", "Sent", "Drafts", "Archive", "Trash"];
+      const unreadByFolder = account?.unread_by_folder || {};
+      elements.folderList.innerHTML = folders.map((folder) => `
+        <button class="folder-button ${folder === state.selected_folder ? "active" : ""}" type="button" data-folder="${escapeHtml(folder)}">
+          <span>${escapeHtml(folder)}</span>
+          ${Number(unreadByFolder[folder] || 0) ? `<span class="badge">${Number(unreadByFolder[folder])}</span>` : ""}
+        </button>
+      `).join("");
+      elements.folderTitle.textContent = state.selected_folder || "Inbox";
+    }
+
+    function renderMessages() {
+      const messages = getVisibleMessages();
+      elements.folderSubtitle.textContent = `${messages.length} conversation${messages.length === 1 ? "" : "s"} in view`;
+      elements.unreadStat.textContent = String(
+        (getSelectedAccount()?.unread_total) || messages.filter((message) => !message.seen).length
+      );
+
+      if (!messages.length) {
+        elements.messageList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-card">
+              <h3>Nothing to show</h3>
+              <p>This folder is empty for the current preview, or your search filtered everything out.</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      elements.messageList.innerHTML = messages.map((message) => `
+        <button class="message-card ${message.key === state.selected_message_key ? "active" : ""} ${message.seen ? "" : "unread"}"
+                type="button"
+                data-message-key="${escapeHtml(message.key)}">
+          <div class="message-row">
+            <span class="sender">${escapeHtml(message.sender || message.from_name || "Unknown Sender")}</span>
+            <span class="time">${escapeHtml(message.display_time || "")}</span>
+          </div>
+          <div class="subject">${escapeHtml(message.subject || "(No subject)")}</div>
+          <div class="snippet">${escapeHtml(message.snippet || "")}</div>
+          <div class="tags">
+            ${message.has_attachments ? `<span class="tag">Attachment</span>` : ""}
+            ${message.flagged ? `<span class="tag">Starred</span>` : ""}
+            ${!message.seen ? `<span class="tag">Unread</span>` : ""}
+          </div>
+        </button>
+      `).join("");
+    }
+
+    function renderDetail() {
+      const message = state.selected_message;
+
+      if (!message) {
+        elements.detailSubtitle.textContent = "Select a message to inspect the full thread";
+        elements.detailView.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-card">
+              <h3>Conversation detail</h3>
+              <p>The selected message will open here with sender context, quick actions, and the full body.</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      const displayName = message.from_name || message.sender || "Unknown Sender";
+      const avatar = (displayName[0] || "H").toUpperCase();
+      const sentAt = message.display_time || new Date(message.date_iso || Date.now()).toLocaleString();
+      const bodyHtml = message.body_html && String(message.body_html).trim()
+        ? message.body_html
+        : `<pre>${escapeHtml(message.body_text || message.snippet || "")}</pre>`;
+
+      elements.detailSubtitle.textContent = `${displayName} · ${sentAt}`;
+      elements.detailView.innerHTML = `
+        <div class="detail-hero">
+          <div>
+            <div class="pill-row">
+              <span class="pill">${escapeHtml(state.selected_folder || "Inbox")}</span>
+              ${message.flagged ? `<span class="pill">Starred</span>` : ""}
+              ${message.has_attachments ? `<span class="pill">Has attachments</span>` : ""}
+            </div>
+            <h1 class="detail-title">${escapeHtml(message.subject || "(No subject)")}</h1>
+          </div>
+        </div>
+
+        <div class="detail-meta">
+          <div class="sender-block">
+            <div class="sender-avatar">${escapeHtml(avatar)}</div>
+            <div class="sender-copy">
+              <h3>${escapeHtml(displayName)}</h3>
+              <p>${escapeHtml(message.from_email || "")}</p>
+              <p>To: ${escapeHtml(message.to_line || "You")}</p>
+            </div>
+          </div>
+          <div class="pill-row">
+            <span class="pill">${escapeHtml(sentAt)}</span>
+            <span class="pill">${message.seen ? "Read" : "Unread"}</span>
+          </div>
+        </div>
+
+        <article class="message-content">${bodyHtml}</article>
+      `;
+    }
+
+    function renderComposeAccounts() {
+      const selected = getSelectedAccount();
+      elements.composeAccount.innerHTML = (state.accounts || []).map((account) => `
+        <option value="${account.id}" ${account.id === selected?.id ? "selected" : ""}>${escapeHtml(account.label)} · ${escapeHtml(account.email_address)}</option>
+      `).join("");
+    }
+
+    function renderAll() {
+      elements.searchInput.value = state.search_query || "";
+      renderAccounts();
+      renderFolders();
+      renderMessages();
+      renderDetail();
+      renderComposeAccounts();
+      elements.mailStatus.textContent = mailBridge ? "Connected to Qt bridge" : "Live preview";
+    }
+
+    function openCompose(prefill = {}) {
+      renderComposeAccounts();
+      elements.composeTo.value = prefill.to || "";
+      elements.composeCc.value = prefill.cc || "";
+      elements.composeSubject.value = prefill.subject || "";
+      elements.composeBody.value = prefill.body || "";
+      elements.composeModal.classList.add("open");
+    }
+
+    function closeCompose() {
+      elements.composeModal.classList.remove("open");
+    }
+
+    function showToast(title, body = "") {
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>`;
+      elements.toastStack.appendChild(toast);
+      window.setTimeout(() => {
+        toast.remove();
+      }, 3600);
+    }
+
+    function emitBridge(name, ...args) {
+      const fn = mailBridge && typeof mailBridge[name] === "function" ? mailBridge[name] : null;
+      if (fn) {
+        fn(...args);
+      }
+    }
+
+    function selectAccount(accountId) {
+      state.selected_account_id = Number(accountId);
+      const account = getSelectedAccount();
+      state.selected_folder = account?.folders?.[0] || "INBOX";
+      state.selected_message_key = "";
+      emitBridge("selectionRequested", JSON.stringify({
+        account_id: state.selected_account_id,
+        folder: state.selected_folder,
+        message_key: ""
+      }));
+      renderAll();
+    }
+
+    function selectFolder(folder) {
+      state.selected_folder = folder;
+      state.selected_message_key = "";
+      emitBridge("selectionRequested", JSON.stringify({
+        account_id: state.selected_account_id,
+        folder: state.selected_folder,
+        message_key: ""
+      }));
+      renderAll();
+    }
+
+    function selectMessage(messageKey) {
+      state.selected_message_key = messageKey;
+      renderAll();
+      emitBridge("selectionRequested", JSON.stringify({
+        account_id: state.selected_account_id,
+        folder: state.selected_folder,
+        message_key: state.selected_message_key
+      }));
+    }
+
+    function sendCompose() {
+      const payload = {
+        account_id: Number(elements.composeAccount.value || state.selected_account_id || 0),
+        to: elements.composeTo.value.split(",").map((item) => item.trim()).filter(Boolean),
+        cc: elements.composeCc.value.split(",").map((item) => item.trim()).filter(Boolean),
+        bcc: [],
+        subject: elements.composeSubject.value.trim(),
+        body: elements.composeBody.value,
+        in_reply_to: "",
+        references: []
+      };
+
+      if (!payload.to.length) {
+        showToast("Missing recipient", "Add at least one email address before sending.");
+        return;
+      }
+
+      emitBridge("sendRequested", JSON.stringify(payload));
+      showToast("Message queued", "The compose action was sent to the Qt backend.");
+      closeCompose();
+    }
+
+    function mergeIncomingState(payload) {
+      const incomingAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+      const incomingMessages = Array.isArray(payload.messages)
+        ? payload.messages
+        : Array.isArray(payload.selected_account_messages)
+          ? payload.selected_account_messages
+          : [];
+
+      state.accounts = incomingAccounts.length ? incomingAccounts : state.accounts;
+      state.selected_account_id = Number(payload.selected_account_id || state.selected_account_id || state.accounts[0]?.id || 0);
+      state.selected_folder = payload.selected_folder || state.selected_folder || "INBOX";
+      state.search_query = payload.search_query || "";
+      state.selected_message_key = payload.selected_message_key || state.selected_message_key || "";
+      state.reply_draft = payload.reply_draft || null;
+
+      if (incomingMessages.length) {
+        state.messages = incomingMessages;
+      } else if (payload.selected_message) {
+        const existing = state.messages.filter((message) => message.key !== payload.selected_message.key);
+        state.messages = [payload.selected_message, ...existing];
+      }
+
+      if (payload.selected_message) {
+        state.selected_message = payload.selected_message;
+      }
+
+      renderAll();
+    }
+
+    function bindEvents() {
+      elements.searchInput.addEventListener("input", (event) => {
+        state.search_query = event.target.value;
+        renderAll();
+        emitBridge("searchRequested", state.search_query);
+      });
+
+      elements.accountList.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-account-id]");
+        if (button) {
+          selectAccount(button.dataset.accountId);
+        }
+      });
+
+      elements.folderList.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-folder]");
+        if (button) {
+          selectFolder(button.dataset.folder);
+        }
+      });
+
+      elements.messageList.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-message-key]");
+        if (button) {
+          selectMessage(button.dataset.messageKey);
+        }
+      });
+
+      elements.composeButton.addEventListener("click", () => openCompose());
+      elements.closeComposeButton.addEventListener("click", closeCompose);
+      elements.discardComposeButton.addEventListener("click", closeCompose);
+      elements.sendComposeButton.addEventListener("click", sendCompose);
+      elements.refreshButton.addEventListener("click", () => {
+        emitBridge("refreshRequested");
+        showToast("Refreshing", "Requested a sync from the Qt backend.");
+      });
+      elements.clearSearchButton.addEventListener("click", () => {
+        state.search_query = "";
+        renderAll();
+        emitBridge("searchRequested", "");
+      });
+      elements.replyButton.addEventListener("click", () => {
+        const selected = state.selected_message;
+        if (!selected) {
+          return;
+        }
+        const prefill = {
+          to: selected.from_email || "",
+          subject: selected.subject && /^re:/i.test(selected.subject) ? selected.subject : `Re: ${selected.subject || ""}`,
+          body: `\n\nOn ${selected.display_time || "earlier"}, ${selected.sender || selected.from_name || "someone"} wrote:\n> ${(selected.snippet || "").replace(/\n/g, "\n> ")}`
+        };
+        emitBridge("replyRequested", selected.key);
+        openCompose(prefill);
+      });
+      elements.archiveButton.addEventListener("click", () => {
+        const selected = state.selected_message;
+        if (!selected) {
+          return;
+        }
+        emitBridge("archiveRequested", selected.key);
+        showToast("Archiving", "Requested archive action from the backend.");
+      });
+      elements.deleteButton.addEventListener("click", () => {
+        const selected = state.selected_message;
+        if (!selected) {
+          return;
+        }
+        emitBridge("deleteRequested", selected.key);
+        showToast("Deleting", "Requested delete action from the backend.");
+      });
+      elements.markSeenButton.addEventListener("click", () => {
+        const selected = state.selected_message;
+        if (!selected) {
+          return;
+        }
+        selected.seen = true;
+        emitBridge("seenRequested", selected.key, true);
+        renderAll();
+      });
+      elements.markUnreadButton.addEventListener("click", () => {
+        const selected = state.selected_message;
+        if (!selected) {
+          return;
+        }
+        selected.seen = false;
+        emitBridge("seenRequested", selected.key, false);
+        renderAll();
+      });
+      elements.composeModal.addEventListener("click", (event) => {
+        if (event.target === elements.composeModal) {
+          closeCompose();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          elements.searchInput.focus();
+          elements.searchInput.select();
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "n") {
+          event.preventDefault();
+          openCompose();
+        }
+        if (event.key === "Escape") {
+          closeCompose();
+        }
+      });
+    }
+
+    function initWebChannel() {
+      if (!window.qt || !window.QWebChannel) {
+        renderAll();
+        return;
+      }
+
+      new QWebChannel(window.qt.webChannelTransport, (channel) => {
+        mailBridge = channel.objects.mailBridge || null;
+
+        if (mailBridge && mailBridge.stateChanged && typeof mailBridge.stateChanged.connect === "function") {
+          mailBridge.stateChanged.connect((payloadJson) => {
+            try {
+              mergeIncomingState(JSON.parse(payloadJson));
+            } catch (error) {
+              console.error("Failed to parse bridge state", error);
+            }
+          });
+        }
+
+        if (mailBridge && typeof mailBridge.bootstrapRequested === "function") {
+          mailBridge.bootstrapRequested();
+        }
+
+        renderAll();
+      });
+    }
+
+    window.setMailState = function setMailState(payloadJson) {
+      try {
+        const payload = JSON.parse(payloadJson);
+        mergeIncomingState(JSON.parse(payload));
+      } catch (error) {
+        console.error("Failed to apply mail state", error);
+      }
+    };
+
+    window.showToast = showToast;
+    window.openComposeFromReply = function openComposeFromReply() {
+      const draft = state.reply_draft || {};
+      openCompose({
+        to: Array.isArray(draft.to) ? draft.to.join(", ") : "",
+        cc: Array.isArray(draft.cc) ? draft.cc.join(", ") : "",
+        subject: draft.subject || "",
+        body: draft.body || ""
+      });
+    };
+
+    bindEvents();
+    renderAll();
+    initWebChannel();
+  </script>
+</body>
+</html>
