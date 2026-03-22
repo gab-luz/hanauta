@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -101,6 +101,16 @@ def load_app_fonts() -> dict[str, str]:
         if families:
             loaded[key] = families[0]
     return loaded
+
+
+def apply_antialias_font(widget: QWidget) -> None:
+    font = widget.font()
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    widget.setFont(font)
+    for child in widget.findChildren(QWidget):
+        child_font = child.font()
+        child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        child.setFont(child_font)
 
 
 def material_icon(name: str) -> str:
@@ -443,6 +453,7 @@ class WifiControlPopup(QWidget):
         self.setWindowTitle("Wi-Fi Control")
 
         self._build_ui()
+        apply_antialias_font(self)
         self._apply_window_effects()
         self._place_window()
         self._animate_in()
@@ -813,6 +824,16 @@ class WifiControlPopup(QWidget):
         self._panel_animation.setEndValue(1.0)
         self._panel_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._panel_animation.start()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(QColor(rgba(self.theme.outline, 0.22)), 1))
+        painter.setBrush(QColor(rgba(self.theme.surface_container, 0.96)))
+        painter.drawRoundedRect(rect, 26, 26)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self.scan_worker is not None and self.scan_worker.isRunning():

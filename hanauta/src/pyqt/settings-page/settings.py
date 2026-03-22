@@ -26,7 +26,7 @@ import locale as pylocale
 import zipfile
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets import (
     QApplication,
@@ -78,6 +78,16 @@ COMMUNITY_WALLPAPER_DIR = ROOT / "hanauta" / "walls" / "community"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
+
+
+def apply_antialias_font(widget: QWidget) -> None:
+    font = widget.font()
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    widget.setFont(font)
+    for child in widget.findChildren(QWidget):
+        child_font = child.font()
+        child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        child.setFont(child_font)
 PICOM_SHADOW_EXCLUDE_FILE = PICOM_RULES_DIR / "shadow-exclude.rules"
 PICOM_ROUNDED_EXCLUDE_FILE = PICOM_RULES_DIR / "rounded-corners-exclude.rules"
 PICOM_OPACITY_RULE_FILE = PICOM_RULES_DIR / "opacity.rules"
@@ -2873,6 +2883,7 @@ class SettingsWindow(QWidget):
         shell_layout.addLayout(body, 1)
 
         self._apply_styles()
+        apply_antialias_font(self)
         self._theme_font_signature = self._current_theme_font_signature()
         self._sync_wallpaper_controls()
         self._sync_accent_controls()
@@ -7618,6 +7629,16 @@ class SettingsWindow(QWidget):
         self._window_animation.addAnimation(opacity)
         self._window_animation.addAnimation(geometry)
         self._window_animation.start()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(QColor(rgba(self.theme_palette.outline, 0.22)), 1))
+        painter.setBrush(QColor(rgba(self.theme_palette.surface, 0.96)))
+        painter.drawRoundedRect(rect, 20, 20)
 
     def _apply_i3_window_rules(self) -> None:
         target = self._center_rect()
