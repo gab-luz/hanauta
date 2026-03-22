@@ -28,16 +28,27 @@ async def send_action_notification(args: argparse.Namespace) -> int:
     def on_action(notification_id: int, action_key: str) -> None:
         if int(notification_id) != int(state["id"]):
             return
-        if action_key == args.action_key and args.open_url:
-            try:
-                subprocess.Popen(
-                    ["xdg-open", args.open_url],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-            except Exception:
-                pass
+        if action_key == args.action_key:
+            if args.command:
+                try:
+                    subprocess.Popen(
+                        [args.command, *args.command_arg],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                except Exception:
+                    pass
+            elif args.open_url:
+                try:
+                    subprocess.Popen(
+                        ["xdg-open", args.open_url],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                except Exception:
+                    pass
         done.set()
 
     def on_closed(notification_id: int, _reason: int) -> None:
@@ -74,6 +85,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-key", default="open")
     parser.add_argument("--action-label", default="Open")
     parser.add_argument("--open-url", default="")
+    parser.add_argument("--command", default="")
+    parser.add_argument("--command-arg", action="append", default=[])
     parser.add_argument("--expire-ms", type=int, default=15000)
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--replace-id", type=int, default=0)

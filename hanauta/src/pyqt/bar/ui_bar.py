@@ -7,16 +7,25 @@ CyberBar - compact PyQt6 top bar aligned with the bar idea mock.
 from __future__ import annotations
 
 import argparse
+import html
+import imaplib
 import json
 import math
 import os
 import re
 import shutil
+import sqlite3
+import ssl
 import subprocess
 import sys
 from datetime import datetime
+from email import message_from_bytes
+from email.header import decode_header
+from email.message import Message
+from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
+from urllib.parse import quote, unquote
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -100,6 +109,8 @@ ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
 STATUS_NOTIFIER_WATCHER = APP_DIR / "pyqt" / "bar" / "status_notifier_watcher.py"
+EMAIL_CLIENT = APP_DIR / "pyqt" / "email-client" / "email_client.py"
+OPEN_MAIL_MESSAGE = APP_DIR / "pyqt" / "shared" / "open_mail_message.py"
 SCRIPTS_DIR = scripts_root()
 LAUNCHER_SCRIPT = SCRIPTS_DIR / "open_launcher.sh"
 FONTS_DIR = fonts_root()
@@ -120,6 +131,8 @@ SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-cen
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
 BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
+MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
+MAIL_STORAGE_CONFIG_PATH = MAIL_STATE_DIR / "storage.json"
 LOCKSTATUS_SCRIPT = SCRIPTS_DIR / "lockstatus.sh"
 TRAY_SLOT_WIDTH = 24
 TRAY_SLOT_HEIGHT = 32
@@ -141,6 +154,7 @@ MATERIAL_ICONS = {
     "currency_bitcoin": "\uebc5",
     "dashboard": "\ue871",
     "home": "\ue88a",
+    "mail": "\ue158",
     "music_note": "\ue405",
     "notifications": "\ue7f4",
     "notifications_active": "\ue7f7",
@@ -549,6 +563,167 @@ def load_region_settings() -> dict[str, object]:
 
 def load_bar_settings() -> dict[str, int | bool]:
     return load_bar_settings_from_payload(load_runtime_settings())
+
+
+def mail_now_iso() -> str:
+    return datetime.now().astimezone().isoformat()
+
+
+def mail_storage_config() -> dict[str, str]:
+    default = {"db_path": str(MAIL_STATE_DIR / "mail.sqlite3")}
+    try:
+        payload = json.loads(MAIL_STORAGE_CONFIG_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("invalid mail storage config")
+    except Exception:
+        payload = {}
+    return {
+        "db_path": str(payload.get("db_path", default["db_path"])).strip() or default["db_path"],
+    }
+
+
+def mail_db_path() -> Path:
+    return Path(mail_storage_config()["db_path"]).expanduser()
+
+
+def mail_settings_from_payload(settings: object) -> dict[str, bool]:
+    current = settings.get("mail", {}) if isinstance(settings, dict) else {}
+    current = current if isinstance(current, dict) else {}
+    return {
+        "notify_new_messages": bool(current.get("notify_new_messages", True)),
+        "play_notification_sound": bool(current.get("play_notification_sound", False)),
+        "hide_notification_content": bool(current.get("hide_notification_content", False)),
+    }
+
+
+def mail_re_sub(pattern: str, replacement: str, value: str) -> str:
+    return re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+
+
+def decode_mail_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                return value.decode(encoding)
+            except Exception:
+                continue
+        return value.decode("utf-8", errors="ignore")
+    if not isinstance(value, str):
+        value = str(value)
+    parts: list[str] = []
+    for chunk, encoding in decode_header(value):
+        if isinstance(chunk, bytes):
+            for codec in (encoding, "utf-8", "latin-1"):
+                if not codec:
+                    continue
+                try:
+                    parts.append(chunk.decode(codec))
+                    break
+                except Exception:
+                    continue
+            else:
+                parts.append(chunk.decode("utf-8", errors="ignore"))
+        else:
+            parts.append(chunk)
+    return "".join(parts).strip()
+
+
+def mail_html_to_text(value: str) -> str:
+    text = value.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    text = text.replace("</p>", "\n\n").replace("</div>", "\n")
+    text = text.replace("&nbsp;", " ")
+    text = mail_re_sub(r"<style[\s\S]*?</style>", "", text)
+    text = mail_re_sub(r"<script[\s\S]*?</script>", "", text)
+    text = mail_re_sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = mail_re_sub(r"\r\n?", "\n", text)
+    text = mail_re_sub(r"[ \t]+", " ", text)
+    text = mail_re_sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def mail_message_parts(msg: Message) -> tuple[str, str]:
+    html_body = ""
+    text_body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_maintype() == "multipart":
+                continue
+            disposition = (part.get("Content-Disposition") or "").lower()
+            if "attachment" in disposition:
+                continue
+            payload = part.get_payload(decode=True) or b""
+            charset = part.get_content_charset() or "utf-8"
+            try:
+                decoded = payload.decode(charset, errors="ignore")
+            except Exception:
+                decoded = payload.decode("utf-8", errors="ignore")
+            content_type = (part.get_content_type() or "").lower()
+            if content_type == "text/html" and not html_body:
+                html_body = decoded
+            elif content_type == "text/plain" and not text_body:
+                text_body = decoded
+    else:
+        payload = msg.get_payload(decode=True) or b""
+        charset = msg.get_content_charset() or "utf-8"
+        try:
+            decoded = payload.decode(charset, errors="ignore")
+        except Exception:
+            decoded = payload.decode("utf-8", errors="ignore")
+        if (msg.get_content_type() or "").lower() == "text/html":
+            html_body = decoded
+        else:
+            text_body = decoded
+    if not text_body and html_body:
+        text_body = mail_html_to_text(html_body)
+    return html_body.strip(), text_body.strip()
+
+
+def mail_snippet(text_body: str, html_body: str, limit: int = 180) -> str:
+    source = text_body or mail_html_to_text(html_body)
+    source = " ".join(source.split())
+    if len(source) <= limit:
+        return source
+    return source[: limit - 1].rstrip() + "..."
+
+
+def parse_mail_date(value: str) -> str:
+    raw = decode_mail_text(value)
+    if not raw:
+        return mail_now_iso()
+    try:
+        parsed = parsedate_to_datetime(raw)
+        if parsed.tzinfo is None:
+            return parsed.isoformat()
+        return parsed.astimezone().isoformat()
+    except Exception:
+        return mail_now_iso()
+
+
+def build_mail_message_key(account_id: int, folder: str, uid: str) -> str:
+    return f"{account_id}|{quote(folder, safe='')}|{uid}"
+
+
+def preferred_mail_sound_path() -> Path | None:
+    for candidate in (
+        Path("/usr/share/sounds/freedesktop/stereo/message-new-email.oga"),
+        Path("/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"),
+        Path("/usr/share/sounds/freedesktop/stereo/message.oga"),
+        Path("/usr/share/sounds/freedesktop/stereo/complete.oga"),
+        Path("/usr/share/sounds/freedesktop/stereo/complete.ogg"),
+    ):
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def truncate_mail_text(value: str, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
 
 
 class WorkspaceDot(QPushButton):
@@ -1228,6 +1403,288 @@ class HealthSnapshotWorker(QThread):
         self.loaded.emit(payload)
 
 
+class MailPollWorker(QThread):
+    loaded = pyqtSignal(object)
+
+    def __init__(
+        self,
+        due_account_ids: set[int],
+        mail_settings: dict[str, bool],
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._due_account_ids = {int(item) for item in due_account_ids if int(item) > 0}
+        self._mail_settings = dict(mail_settings)
+
+    def run(self) -> None:
+        payload = {
+            "available": False,
+            "total_unread": 0,
+            "accounts": [],
+            "notifications": [],
+            "synced_account_ids": [],
+        }
+        db_path = mail_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            self._ensure_schema(conn)
+            accounts = [dict(row) for row in conn.execute("SELECT * FROM accounts ORDER BY lower(label), lower(email_address)").fetchall()]
+            payload["available"] = bool(accounts)
+            if not accounts:
+                self.loaded.emit(payload)
+                return
+            notifications: list[dict[str, str | int]] = []
+            synced_account_ids: list[int] = []
+            for account in accounts:
+                account_id = int(account.get("id", 0) or 0)
+                if account_id <= 0 or account_id not in self._due_account_ids:
+                    continue
+                try:
+                    folder_state = json.loads(str(account.get("folder_state_json", "{}")) or "{}")
+                except Exception:
+                    folder_state = {}
+                if not isinstance(folder_state, dict):
+                    folder_state = {}
+                inbox_name = "INBOX"
+                notifications.extend(self._sync_account(conn, account, inbox_name, folder_state))
+                conn.execute(
+                    "UPDATE accounts SET folders_json = ?, folder_state_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps([inbox_name]), json.dumps(folder_state), mail_now_iso(), account_id),
+                )
+                conn.commit()
+                synced_account_ids.append(account_id)
+
+            account_rows = [dict(row) for row in conn.execute("SELECT id, label, display_name, email_address FROM accounts ORDER BY lower(label), lower(email_address)").fetchall()]
+            counts = {
+                int(row["account_id"]): int(row["unread_count"])
+                for row in conn.execute(
+                    "SELECT account_id, COUNT(*) AS unread_count FROM messages WHERE seen = 0 GROUP BY account_id"
+                ).fetchall()
+            }
+            payload["accounts"] = [
+                {
+                    "id": int(account["id"]),
+                    "label": str(account.get("label", "")).strip() or str(account.get("email_address", "")).strip() or "Mailbox",
+                    "display_name": str(account.get("display_name", "")).strip(),
+                    "email_address": str(account.get("email_address", "")).strip(),
+                    "unread_count": counts.get(int(account["id"]), 0),
+                }
+                for account in account_rows
+            ]
+            payload["total_unread"] = sum(int(item["unread_count"]) for item in payload["accounts"])
+            payload["notifications"] = notifications
+            payload["synced_account_ids"] = synced_account_ids
+        except Exception:
+            pass
+        finally:
+            conn.close()
+        self.loaded.emit(payload)
+
+    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT NOT NULL,
+                email_address TEXT NOT NULL,
+                display_name TEXT NOT NULL DEFAULT '',
+                avatar_path TEXT NOT NULL DEFAULT '',
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                imap_host TEXT NOT NULL,
+                imap_port INTEGER NOT NULL DEFAULT 993,
+                imap_ssl INTEGER NOT NULL DEFAULT 1,
+                smtp_host TEXT NOT NULL,
+                smtp_port INTEGER NOT NULL DEFAULT 587,
+                smtp_starttls INTEGER NOT NULL DEFAULT 1,
+                smtp_ssl INTEGER NOT NULL DEFAULT 0,
+                folders_json TEXT NOT NULL DEFAULT '[]',
+                folder_state_json TEXT NOT NULL DEFAULT '{}',
+                signature TEXT NOT NULL DEFAULT '',
+                notify_enabled INTEGER NOT NULL DEFAULT 1,
+                poll_interval_seconds INTEGER NOT NULL DEFAULT 90,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                account_id INTEGER NOT NULL,
+                folder TEXT NOT NULL,
+                uid TEXT NOT NULL,
+                message_id TEXT NOT NULL DEFAULT '',
+                in_reply_to TEXT NOT NULL DEFAULT '',
+                references_json TEXT NOT NULL DEFAULT '[]',
+                subject TEXT NOT NULL DEFAULT '',
+                from_name TEXT NOT NULL DEFAULT '',
+                from_email TEXT NOT NULL DEFAULT '',
+                to_line TEXT NOT NULL DEFAULT '',
+                cc_line TEXT NOT NULL DEFAULT '',
+                date_iso TEXT NOT NULL DEFAULT '',
+                snippet TEXT NOT NULL DEFAULT '',
+                body_html TEXT NOT NULL DEFAULT '',
+                body_text TEXT NOT NULL DEFAULT '',
+                raw_source BLOB,
+                seen INTEGER NOT NULL DEFAULT 0,
+                flagged INTEGER NOT NULL DEFAULT 0,
+                has_attachments INTEGER NOT NULL DEFAULT 0,
+                spam_score REAL NOT NULL DEFAULT 0.0,
+                is_spam INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (account_id, folder, uid)
+            );
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """
+        )
+        conn.commit()
+
+    def _sync_account(
+        self,
+        conn: sqlite3.Connection,
+        account: dict[str, object],
+        folder: str,
+        folder_state: dict[str, object],
+    ) -> list[dict[str, str | int]]:
+        host = str(account.get("imap_host", "")).strip()
+        username = str(account.get("username", "")).strip()
+        password = str(account.get("password", ""))
+        if not host or not username or not password:
+            return []
+        account_id = int(account.get("id", 0) or 0)
+        notifications: list[dict[str, str | int]] = []
+        port = int(account.get("imap_port", 993) or 993)
+        use_ssl = bool(account.get("imap_ssl", True))
+        client: imaplib.IMAP4 | None = None
+        try:
+            if use_ssl:
+                client = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
+            else:
+                client = imaplib.IMAP4(host, port)
+            client.login(username, password)
+            status, _ = client.select(f'"{folder}"', readonly=True)
+            if status != "OK":
+                return []
+            status, data = client.uid("search", None, "ALL")
+            if status != "OK" or not data or not data[0]:
+                return []
+            uids = [item for item in decode_mail_text(data[0]).split() if item.strip()]
+            if not uids:
+                return []
+
+            latest_uids = uids[-40:]
+            status, fetch_data = client.uid("fetch", ",".join(latest_uids), "(RFC822 FLAGS)")
+            if status == "OK":
+                for i in range(0, len(fetch_data or []), 2):
+                    item = fetch_data[i]
+                    if not item or not isinstance(item, tuple):
+                        continue
+                    header_blob = decode_mail_text(item[0])
+                    raw_bytes = item[1]
+                    uid = next((token for token in header_blob.split() if token.isdigit()), "")
+                    if not uid:
+                        continue
+                    msg = message_from_bytes(raw_bytes)
+                    from_name, from_email = parseaddr(decode_mail_text(msg.get("From", "")))
+                    body_html, body_text = mail_message_parts(msg)
+                    flags_seen = "\\Seen" in header_blob
+                    flags_flagged = "\\Flagged" in header_blob
+                    has_attachments = any("attachment" in (part.get("Content-Disposition") or "").lower() for part in msg.walk())
+                    conn.execute(
+                        """
+                        INSERT INTO messages(
+                            account_id, folder, uid, message_id, in_reply_to, references_json,
+                            subject, from_name, from_email, to_line, cc_line, date_iso, snippet,
+                            body_html, body_text, raw_source, seen, flagged, has_attachments, spam_score, is_spam
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(account_id, folder, uid) DO UPDATE SET
+                            message_id=excluded.message_id,
+                            in_reply_to=excluded.in_reply_to,
+                            references_json=excluded.references_json,
+                            subject=excluded.subject,
+                            from_name=excluded.from_name,
+                            from_email=excluded.from_email,
+                            to_line=excluded.to_line,
+                            cc_line=excluded.cc_line,
+                            date_iso=excluded.date_iso,
+                            snippet=excluded.snippet,
+                            body_html=excluded.body_html,
+                            body_text=excluded.body_text,
+                            raw_source=excluded.raw_source,
+                            seen=excluded.seen,
+                            flagged=excluded.flagged,
+                            has_attachments=excluded.has_attachments
+                        """,
+                        (
+                            account_id,
+                            folder,
+                            uid,
+                            decode_mail_text(msg.get("Message-ID", "")),
+                            decode_mail_text(msg.get("In-Reply-To", "")),
+                            json.dumps([decode_mail_text(item) for item in decode_mail_text(msg.get("References", "")).split() if item]),
+                            decode_mail_text(msg.get("Subject", "")) or "(No subject)",
+                            from_name,
+                            from_email,
+                            decode_mail_text(msg.get("To", "")),
+                            decode_mail_text(msg.get("Cc", "")),
+                            parse_mail_date(decode_mail_text(msg.get("Date", ""))),
+                            mail_snippet(body_text, body_html),
+                            body_html,
+                            body_text,
+                            raw_bytes,
+                            1 if flags_seen else 0,
+                            1 if flags_flagged else 0,
+                            1 if has_attachments else 0,
+                            0.0,
+                            0,
+                        ),
+                    )
+                conn.commit()
+
+            latest_uid = uids[-1]
+            last_uid = str(folder_state.get(folder, "")).strip()
+            folder_state[folder] = latest_uid
+            notify_enabled = bool(self._mail_settings.get("notify_new_messages", True)) and bool(account.get("notify_enabled", True))
+            if last_uid and notify_enabled:
+                new_uids = [uid for uid in uids if uid.isdigit() and int(uid) > int(last_uid)][-3:]
+                for uid in new_uids:
+                    row = conn.execute(
+                        """
+                        SELECT subject, snippet, from_name, from_email
+                        FROM messages
+                        WHERE account_id = ? AND folder = ? AND uid = ?
+                        """,
+                        (account_id, folder, uid),
+                    ).fetchone()
+                    if not row:
+                        continue
+                    notifications.append(
+                        {
+                            "account_id": account_id,
+                            "folder": folder,
+                            "message_key": build_mail_message_key(account_id, folder, uid),
+                            "account_label": str(account.get("display_name", "")).strip()
+                            or str(account.get("label", "")).strip()
+                            or str(account.get("email_address", "")).strip()
+                            or "Mailbox",
+                            "subject": str(row["subject"] or "(No subject)"),
+                            "snippet": str(row["snippet"] or ""),
+                            "from_name": str(row["from_name"] or ""),
+                            "from_email": str(row["from_email"] or ""),
+                        }
+                    )
+        except Exception:
+            return []
+        finally:
+            if client is not None:
+                try:
+                    client.logout()
+                except Exception:
+                    pass
+        return notifications
+
+
 class CyberBar(QWidget):
     def __init__(self, ui_path: Optional[Path] = None):
         super().__init__()
@@ -1308,6 +1765,7 @@ class CyberBar(QWidget):
         self._cap_alert_worker: Optional[CapAlertWorker] = None
         self._updates_worker: Optional[UpdateCountWorker] = None
         self._health_worker: Optional[HealthSnapshotWorker] = None
+        self._mail_worker: Optional[MailPollWorker] = None
         self._workspace_worker: Optional[WorkspaceStateWorker] = None
         self._media_worker: Optional[MediaStateWorker] = None
         self._system_state_worker: Optional[SystemStateWorker] = None
@@ -1328,6 +1786,9 @@ class CyberBar(QWidget):
         self._caps_lock_on: Optional[bool] = None
         self._num_lock_on: Optional[bool] = None
         self._rss_last_interval_ms = 0
+        self._mail_last_sync_at: dict[int, float] = {}
+        self._mail_account_summary: list[dict[str, object]] = []
+        self._mail_unread_total = 0
         self._obs_streaming = False
         self._obs_recording = False
         self._obs_flash_visible = True
@@ -1638,6 +2099,22 @@ class CyberBar(QWidget):
         self.crypto_button.setObjectName("statusIconButton")
         self.crypto_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.crypto_button.clicked.connect(self._open_crypto_widget)
+        self.mail_wrap = ClickableFrame()
+        self.mail_wrap.setObjectName("mailStatusWrap")
+        self.mail_wrap.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_wrap.clicked.connect(self._open_mail_client)
+        self.mail_layout = QHBoxLayout(self.mail_wrap)
+        self.mail_layout.setContentsMargins(0, 0, 0, 0)
+        self.mail_layout.setSpacing(4)
+        self.mail_button = QPushButton(self._icon_text("mail"))
+        self.mail_button.setObjectName("statusIconButton")
+        self.mail_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_button.clicked.connect(self._open_mail_client)
+        self.mail_count = QLabel("0")
+        self.mail_count.setObjectName("mailUnreadCount")
+        self.mail_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.mail_layout.addWidget(self.mail_button)
+        self.mail_layout.addWidget(self.mail_count)
         self.ntfy_button = QPushButton(self._icon_text("notifications"))
         self.ntfy_button.setObjectName("statusIconButton")
         self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -1654,7 +2131,7 @@ class CyberBar(QWidget):
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.home_assistant_button, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.home_assistant_button, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.mail_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.caps_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
@@ -1670,6 +2147,7 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.rss_button)
         self.status_layout.addWidget(self.obs_button)
         self.status_layout.addWidget(self.crypto_button)
+        self.status_layout.addWidget(self.mail_wrap)
         self.status_layout.addWidget(self.ntfy_button)
         self.status_layout.addWidget(self.game_mode_button)
         self.status_layout.addWidget(self.caffeine_icon)
@@ -1710,6 +2188,7 @@ class CyberBar(QWidget):
         self._sync_rss_button_visibility()
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
+        self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
         self._sync_cap_alert_chip()
@@ -1876,6 +2355,9 @@ class CyberBar(QWidget):
         self.christian_button.setToolTip("Christian widget button")
         self.home_assistant_button.setToolTip("Home Assistant widget button")
         self.reminders_button.setToolTip("Reminders widget button")
+        self.mail_wrap.setToolTip("Mail")
+        self.mail_button.setToolTip("Mail")
+        self.mail_count.setToolTip("Unread mail count")
         self.ntfy_button.setToolTip("ntfy publisher button")
         self.caffeine_icon.setToolTip("Caffeine icon")
         self.battery_icon.setToolTip("Battery icon")
@@ -2107,6 +2589,23 @@ class CyberBar(QWidget):
             #statusIconButton[nerdIcon="true"] {{
                 font-family: "{self.reminders_font}";
             }}
+            #mailStatusWrap {{
+                background: transparent;
+                border: none;
+                border-radius: {max(0, chip_radius - 5)}px;
+            }}
+            #mailStatusWrap:hover {{
+                background: {theme.hover_bg};
+            }}
+            #mailUnreadCount {{
+                background: {theme.accent_soft};
+                color: {theme.text};
+                border-radius: 8px;
+                min-width: 18px;
+                padding: 1px 5px;
+                font-size: 10px;
+                font-weight: 700;
+            }}
             #capAlertWarning {{
                 color: #ffd95a;
                 font-family: "{self.material_font}";
@@ -2287,6 +2786,7 @@ class CyberBar(QWidget):
         self._sync_rss_button_visibility()
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
+        self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_desktop_clock_process()
         self._update_locale_button()
@@ -2395,6 +2895,7 @@ class CyberBar(QWidget):
         self._sync_rss_button_visibility()
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
+        self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
         self._sync_cap_alert_chip()
@@ -2411,6 +2912,7 @@ class CyberBar(QWidget):
         self._set_rss_button_icon()
         self._set_obs_button_icon()
         self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 20)
+        self._apply_icon_to_widget(self.mail_button, "mail", material_icon("mail"), 16)
         self._apply_icon_to_widget(self.ntfy_button, "notifications", material_icon("notifications"), 16)
         self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 20)
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
@@ -2520,6 +3022,10 @@ class CyberBar(QWidget):
         self.crypto_timer.timeout.connect(self._poll_crypto_notifications)
         self.crypto_timer.start(60000)
 
+        self.mail_timer = QTimer(self)
+        self.mail_timer.timeout.connect(self._poll_mail_state)
+        self.mail_timer.start(30000)
+
         self.powermenu_timer = QTimer(self)
         self.powermenu_timer.timeout.connect(self._sync_powermenu_button)
         self.powermenu_timer.start(2000)
@@ -2539,6 +3045,7 @@ class CyberBar(QWidget):
         self._poll_cap_alerts()
         self._poll_rss_notifications()
         self._poll_crypto_notifications()
+        self._poll_mail_state()
         self._poll_obs_state()
         self._sync_game_mode_button()
 
@@ -2743,6 +3250,7 @@ class CyberBar(QWidget):
         self._sync_rss_button_visibility()
         self._sync_obs_button_visibility()
         self._sync_crypto_button_visibility()
+        self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
         self._sync_health_pill_visibility()
@@ -3125,6 +3633,150 @@ class CyberBar(QWidget):
         # Crypto alerts now come from the dedicated notifier daemon so they still
         # fire when the widget is closed and without depending on the bar process.
         return
+
+    def _poll_mail_state(self) -> None:
+        service = self.service_settings.get("mail", {})
+        if not isinstance(service, dict) or not bool(service.get("enabled", True)):
+            self._mail_account_summary = []
+            self._mail_unread_total = 0
+            self._sync_mail_button_visibility()
+            return
+        if self._mail_worker is not None and self._mail_worker.isRunning():
+            return
+        due_account_ids: set[int] = set()
+        try:
+            conn = sqlite3.connect(mail_db_path())
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT id, poll_interval_seconds FROM accounts").fetchall()
+        except Exception:
+            rows = []
+        finally:
+            try:
+                conn.close()  # type: ignore[name-defined]
+            except Exception:
+                pass
+        now_ts = datetime.now().timestamp()
+        for row in rows:
+            account_id = int(row["id"])
+            interval = max(30, int(row["poll_interval_seconds"] or 90))
+            last_sync = float(self._mail_last_sync_at.get(account_id, 0.0))
+            if last_sync <= 0 or (now_ts - last_sync) >= interval:
+                due_account_ids.add(account_id)
+        self._mail_worker = MailPollWorker(due_account_ids, mail_settings_from_payload(self.runtime_settings), self)
+        self._mail_worker.loaded.connect(self._apply_mail_state)
+        self._mail_worker.finished.connect(self._finish_mail_worker)
+        self._mail_worker.start()
+
+    def _apply_mail_state(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        self._mail_account_summary = list(payload.get("accounts", [])) if isinstance(payload.get("accounts", []), list) else []
+        self._mail_unread_total = max(0, int(payload.get("total_unread", 0) or 0))
+        for account_id in payload.get("synced_account_ids", []) if isinstance(payload.get("synced_account_ids", []), list) else []:
+            self._mail_last_sync_at[int(account_id)] = datetime.now().timestamp()
+        notifications = payload.get("notifications", [])
+        if isinstance(notifications, list):
+            for item in notifications:
+                if isinstance(item, dict):
+                    self._send_mail_notification(item)
+            if notifications and mail_settings_from_payload(self.runtime_settings).get("play_notification_sound", False):
+                self._play_mail_notification_sound()
+        self._sync_mail_button_visibility()
+
+    def _finish_mail_worker(self) -> None:
+        self._mail_worker = None
+
+    def _mail_button_tooltip(self) -> str:
+        if not self._mail_account_summary:
+            return "Mail"
+        lines = [f"Unread mail: {self._mail_unread_total}"]
+        for account in self._mail_account_summary:
+            if not isinstance(account, dict):
+                continue
+            label = str(account.get("display_name", "")).strip() or str(account.get("label", "")).strip() or str(account.get("email_address", "")).strip() or "Mailbox"
+            lines.append(f"{label}: {int(account.get('unread_count', 0) or 0)}")
+        return "\n".join(lines)
+
+    def _sync_mail_button_visibility(self) -> None:
+        service = load_service_settings().get("mail", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        has_accounts = bool(self._mail_account_summary)
+        visible = enabled and has_accounts
+        self.mail_wrap.setVisible(visible)
+        self.mail_count.setText("99+" if self._mail_unread_total > 99 else str(self._mail_unread_total))
+        tooltip = self._mail_button_tooltip()
+        self.mail_wrap.setToolTip(tooltip)
+        self.mail_button.setToolTip(tooltip)
+        self.mail_count.setToolTip(tooltip)
+
+    def _open_mail_client(self) -> None:
+        if not EMAIL_CLIENT.exists():
+            return
+        command = entry_command(EMAIL_CLIENT)
+        if not command:
+            return
+        run_bg_detached(command)
+
+    def _send_mail_notification(self, item: dict[str, object]) -> None:
+        mail_settings = mail_settings_from_payload(self.runtime_settings)
+        account_label = str(item.get("account_label", "")).strip() or "Mailbox"
+        message_key = str(item.get("message_key", "")).strip()
+        if not message_key:
+            return
+        if mail_settings.get("hide_notification_content", False):
+            summary = f"{account_label}: New email message received"
+            body = ""
+        else:
+            subject = truncate_mail_text(str(item.get("subject", "")).strip() or "(No subject)", 56)
+            detail = truncate_mail_text(str(item.get("snippet", "")).strip(), 120)
+            summary = f"{account_label}: {subject}"
+            body = detail
+        command = entry_command(OPEN_MAIL_MESSAGE, "--message-key", message_key)
+        if ACTION_NOTIFICATION_SCRIPT.exists() and command:
+            args = entry_command(
+                ACTION_NOTIFICATION_SCRIPT,
+                "--app-name",
+                "Hanauta Mail",
+                "--summary",
+                summary,
+                "--body",
+                body,
+                "--action-label",
+                "Read",
+                "--replace-id",
+                str(26000 + abs(hash(message_key)) % 1000),
+                "--command",
+                command[0],
+            )
+            if args:
+                for extra in command[1:]:
+                    args.extend(["--command-arg", extra])
+                run_bg(args)
+                return
+        try:
+            subprocess.Popen(
+                ["notify-send", "-a", "Hanauta Mail", summary, body],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
+
+    def _play_mail_notification_sound(self) -> None:
+        sound_path = preferred_mail_sound_path()
+        if sound_path is None or not shutil.which("paplay"):
+            return
+        try:
+            subprocess.Popen(
+                ["paplay", "--volume=15000", str(sound_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
 
     def _sync_weather_visibility(self) -> None:
         settings = load_runtime_settings()
@@ -3828,6 +4480,8 @@ class CyberBar(QWidget):
         if self._cava_worker is not None:
             self._cava_worker.stop()
             self._cava_worker.wait(500)
+        if self._mail_worker is not None and self._mail_worker.isRunning():
+            self._mail_worker.wait(500)
         if self._ai_popup_process is not None and self._ai_popup_process.poll() is None:
             self._ai_popup_process.terminate()
         if self._control_center_process is not None and self._control_center_process.poll() is None:
