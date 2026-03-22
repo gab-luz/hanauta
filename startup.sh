@@ -16,6 +16,7 @@ fi
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-service" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-kdeconnect/kdeconnect_battery_daemon.py" 2>/dev/null || true
+  pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-game-mode/lutris_gamemode_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-crypto/crypto_notifier.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-updates/updates_notifier.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" 2>/dev/null || true
@@ -30,6 +31,7 @@ fi
   fi
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" >/tmp/hanauta-reminder-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-kdeconnect/kdeconnect_battery_daemon.py" >/tmp/hanauta-kdeconnect-battery-daemon.log 2>&1 &
+  "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-game-mode/lutris_gamemode_daemon.py" >/tmp/hanauta-lutris-gamemode-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-crypto/crypto_notifier.py" >/tmp/hanauta-crypto-notifier.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-updates/updates_notifier.py" >/tmp/hanauta-updates-notifier.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" >/tmp/hanauta-wallpaper-provider.log 2>&1 &
