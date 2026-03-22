@@ -101,6 +101,7 @@ LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
 STATUS_NOTIFIER_WATCHER = APP_DIR / "pyqt" / "bar" / "status_notifier_watcher.py"
 SCRIPTS_DIR = scripts_root()
+LAUNCHER_SCRIPT = SCRIPTS_DIR / "open_launcher.sh"
 FONTS_DIR = fonts_root()
 ASSETS_DIR = source_root() / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
@@ -3512,7 +3513,7 @@ class CyberBar(QWidget):
 
     def _widget_launch_env(self) -> dict[str, str]:
         env = dict(os.environ)
-        source_path = str(PROJECT_ROOT)
+        source_path = str(APP_DIR)
         existing = str(env.get("PYTHONPATH", "")).strip()
         if existing:
             parts = [part for part in existing.split(":") if part]
@@ -3719,6 +3720,9 @@ class CyberBar(QWidget):
         QTimer.singleShot(150, self._sync_game_mode_button)
 
     def _open_launcher(self) -> None:
+        if LAUNCHER_SCRIPT.exists():
+            run_bg_detached([str(LAUNCHER_SCRIPT)])
+            return
         if not LAUNCHER_APP.exists():
             return
         self._toggle_singleton_process("_launcher_process", LAUNCHER_APP, python_bin=self._python_bin())

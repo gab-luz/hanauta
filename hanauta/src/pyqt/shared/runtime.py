@@ -10,6 +10,7 @@ ENTRYPOINT_BINARIES = {
     "pyqt/bar/ui_bar.py": "hanauta-bar",
     "pyqt/control-center/control_center.py": "hanauta-control-center",
     "pyqt/dock/dock.py": "hanauta-dock",
+    "pyqt/email-client/email_client.py": "hanauta-email-client",
     "pyqt/launcher/launcher.py": "hanauta-launcher",
     "pyqt/notification-daemon/notification_daemon.py": "hanauta-notification-daemon",
     "pyqt/powermenu/powermenu.py": "hanauta-powermenu",

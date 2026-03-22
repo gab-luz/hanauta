@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Hanauta Mail
+Comment=Open the Hanauta Mail QtWebEngine desktop client
+Exec=sh -c 'export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/email-client/email_client.py"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/email-client/email_client.py"; fi'
+Icon=internet-mail
+Terminal=false
+Type=Application
+Categories=Network;Email;Office;
+StartupNotify=true
