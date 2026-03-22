@@ -47,7 +47,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.runtime import entry_command, entry_patterns
+from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 ROOT = APP_DIR.parents[1]
@@ -1256,6 +1256,15 @@ class NotificationCenter(QWidget):
         self._ha_last_error = ""
         self._avatar_source: Path | None = None
         self._avatar_mtime_ns = -1
+        self.system_overview_labels: dict[str, QLabel] = {}
+        self.settings_nav_buttons: dict[str, SidebarItemButton] = {}
+        self.appearance_buttons: dict[str, QPushButton] = {}
+        self.appearance_status: QLabel | None = None
+        self.ha_url_input: QLineEdit | None = None
+        self.ha_token_input: QLineEdit | None = None
+        self.ha_settings_status: QLabel | None = None
+        self.ha_summary_label: QLabel | None = None
+        self.ha_status_label: QLabel | None = None
 
         self._brightness_commit_timer = QTimer(self)
         self._brightness_commit_timer.setSingleShot(True)
@@ -1913,61 +1922,33 @@ class NotificationCenter(QWidget):
 
     def _build_settings_page(self) -> QWidget:
         page = QWidget()
-        layout = QHBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
 
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(14, 14, 14, 14)
-        sidebar_layout.setSpacing(10)
+        card = QFrame()
+        card.setObjectName("settingsContentWrap")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 18, 18, 18)
+        card_layout.setSpacing(10)
 
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(8)
-        back_button = self._circle_icon_button("arrow_back")
-        back_button.clicked.connect(self._show_overview_page)
-        top.addWidget(back_button)
-        title = QLabel("Settings")
-        title.setObjectName("settingsTitle")
-        top.addWidget(title)
-        top.addStretch(1)
-        sidebar_layout.addLayout(top)
+        title = QLabel("Settings moved")
+        title.setObjectName("settingsSectionTitle")
+        card_layout.addWidget(title)
 
-        self.settings_nav_group = QButtonGroup(self)
-        self.settings_nav_group.setExclusive(True)
-        self.settings_nav_buttons: dict[str, SidebarItemButton] = {}
-        for key, title_text, icon in (
-            ("overview", "Overview", "hub"),
-            ("appearance", "Appearance", "invert_colors"),
-            ("homeassistant", "Home Assistant", "home"),
-        ):
-            button = SidebarItemButton(self.material_font, key, title_text, icon)
-            button.clicked.connect(lambda checked=False, current=key: self._show_settings_section(current))
-            self.settings_nav_group.addButton(button)
-            self.settings_nav_buttons[key] = button
-            sidebar_layout.addWidget(button)
-        sidebar_layout.addStretch(1)
+        subtitle = QLabel("The notification center now opens the standalone Hanauta Settings window so there is only one active settings UI.")
+        subtitle.setObjectName("settingsSectionSubtitle")
+        subtitle.setWordWrap(True)
+        card_layout.addWidget(subtitle)
 
-        content_wrap = QFrame()
-        content_wrap.setObjectName("settingsContentWrap")
-        content_layout = QVBoxLayout(content_wrap)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        self.settings_stack = QStackedWidget()
-        self.settings_pages: dict[str, QWidget] = {
-            "overview": self._build_settings_overview_page(),
-            "appearance": self._build_settings_appearance_page(),
-            "homeassistant": self._build_settings_homeassistant_page(),
-        }
-        for key in ("overview", "appearance", "homeassistant"):
-            self.settings_stack.addWidget(self.settings_pages[key])
-        content_layout.addWidget(self.settings_stack)
+        open_button = QPushButton("Open Hanauta Settings")
+        open_button.setObjectName("softButton")
+        open_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        open_button.clicked.connect(self._open_settings)
+        card_layout.addWidget(open_button, 0, Qt.AlignmentFlag.AlignLeft)
+        card_layout.addStretch(1)
 
-        layout.addWidget(sidebar, 0)
-        layout.addWidget(content_wrap, 1)
-        self._show_settings_section("overview")
+        layout.addWidget(card)
         return page
 
     def _build_settings_overview_page(self) -> QWidget:
@@ -2848,6 +2829,8 @@ class NotificationCenter(QWidget):
         self.phone_switch_btn.setEnabled(has_device)
 
     def _refresh_system_overview(self) -> None:
+        if not self.system_overview_labels:
+            return
         metrics = {
             "Host": run_cmd(["hostname"]) or "Unknown",
             "Kernel": run_cmd(["uname", "-r"]) or "Unknown",
@@ -3508,6 +3491,9 @@ class NotificationCenter(QWidget):
         self.page_stack.setCurrentWidget(self.overview_page)
 
     def _show_settings_section(self, key: str) -> None:
+        if not hasattr(self, "settings_stack") or not self.settings_nav_buttons:
+            self._launch_settings_page(key if key in {"overview", "appearance"} else "services")
+            return
         order = {"overview": 0, "appearance": 1, "homeassistant": 2}
         self.settings_stack.setCurrentIndex(order.get(key, 0))
         for button_key, button in self.settings_nav_buttons.items():
@@ -3533,23 +3519,39 @@ class NotificationCenter(QWidget):
         args = ["--page", page]
         if service_section:
             args.extend(["--service-section", service_section])
-        run_bg_singleton(SETTINGS_PAGE_SCRIPT, *args)
+        for pattern in entry_patterns(SETTINGS_PAGE_SCRIPT):
+            terminate_background_matches(pattern)
+        try:
+            subprocess.Popen(
+                [python_executable(), str(SETTINGS_PAGE_SCRIPT), *args],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            return
         self.hide()
 
     def _set_accent(self, key: str) -> None:
         self.settings_state["appearance"]["accent"] = key
         self.current_accent = accent_palette(key)
         save_notification_settings(self.settings_state)
-        self.appearance_status.setText(f"Accent updated to {key.title()}.")
+        if self.appearance_status is not None:
+            self.appearance_status.setText(f"Accent updated to {key.title()}.")
         self._apply_styles()
         self._apply_media_palette()
-        self._show_settings_section("appearance")
+        if hasattr(self, "settings_stack"):
+            self._show_settings_section("appearance")
 
     def _save_home_assistant_settings(self) -> None:
+        if self.ha_url_input is None or self.ha_token_input is None:
+            self._launch_settings_page("services")
+            return
         self.settings_state["home_assistant"]["url"] = normalize_ha_url(self.ha_url_input.text())
         self.settings_state["home_assistant"]["token"] = self.ha_token_input.text().strip()
         save_notification_settings(self.settings_state)
-        self.ha_settings_status.setText("Home Assistant settings saved.")
+        if self.ha_settings_status is not None:
+            self.ha_settings_status.setText("Home Assistant settings saved.")
         self._refresh_home_assistant_entities()
 
     def _refresh_home_assistant_entities(self) -> None:
@@ -3563,9 +3565,12 @@ class NotificationCenter(QWidget):
         payload, error_text = fetch_home_assistant_json(base_url, token, "/api/states")
         self._ha_last_error = error_text
         if error_text or not isinstance(payload, list):
-            self.ha_summary_label.setText("")
-            self.ha_status_label.setText(error_text or "No entities available.")
-            self.ha_settings_status.setText(error_text or "Unable to fetch entities.")
+            if self.ha_summary_label is not None:
+                self.ha_summary_label.setText("")
+            if self.ha_status_label is not None:
+                self.ha_status_label.setText(error_text or "No entities available.")
+            if self.ha_settings_status is not None:
+                self.ha_settings_status.setText(error_text or "Unable to fetch entities.")
             self._ha_entities = []
             self._ha_entity_map = {}
             self._rebuild_ha_entity_list()
@@ -3576,13 +3581,18 @@ class NotificationCenter(QWidget):
             key=lambda item: str(item.get("entity_id", "")),
         )
         self._ha_entity_map = {str(item.get("entity_id", "")): item for item in self._ha_entities}
-        self.ha_summary_label.setText("")
-        self.ha_status_label.setText("Pinned entity controls are live.")
-        self.ha_settings_status.setText("Entities loaded successfully.")
+        if self.ha_summary_label is not None:
+            self.ha_summary_label.setText("")
+        if self.ha_status_label is not None:
+            self.ha_status_label.setText("Pinned entity controls are live.")
+        if self.ha_settings_status is not None:
+            self.ha_settings_status.setText("Entities loaded successfully.")
         self._rebuild_ha_entity_list()
         self._render_home_assistant_tiles()
 
     def _rebuild_ha_entity_list(self) -> None:
+        if not hasattr(self, "ha_entity_layout"):
+            return
         while self.ha_entity_layout.count():
             item = self.ha_entity_layout.takeAt(0)
             widget = item.widget()
