@@ -17,6 +17,7 @@ CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
 WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "hanauta" / "scripts" / "run_matugen.sh"
 MATUGEN_BINARY = ROOT / "bin" / "matugen"
+MATUGEN_PAUSE_FILE = Path.home() / ".local" / "state" / "hanauta" / "matugen" / "paused-by-gamemode"
 KONACHAN_CACHE_DIR = ROOT / "walls" / "Konachan-cache"
 MAX_KONACHAN_CACHE_ITEMS = 20
 
@@ -137,6 +138,8 @@ def maybe_refresh_matugen(settings: dict, state: dict[str, object]) -> None:
     if not wallpaper_aware_enabled(settings) or not matugen_available():
         state["last_matugen_wallpaper"] = ""
         state["last_matugen_mtime"] = 0.0
+        return
+    if MATUGEN_PAUSE_FILE.exists():
         return
     wallpaper = preferred_wallpaper_path(settings)
     if wallpaper is None:
