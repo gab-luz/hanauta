@@ -411,6 +411,7 @@ MATERIAL_ICONS = {
     "lock": "\ue897",
     "notifications": "\ue7f4",
     "notifications_active": "\ue7f7",
+    "mail": "\ue158",
     "person": "\ue7fd",
     "favorite": "\ue87d",
     "monitor_heart": "\ueaa2",
@@ -1034,6 +1035,11 @@ def load_settings_state() -> dict:
             "primary": "",
             "outputs": [],
         },
+        "mail": {
+            "notify_new_messages": True,
+            "play_notification_sound": False,
+            "hide_notification_content": False,
+        },
     "region": {
         "locale_code": "",
         "use_24_hour": False,
@@ -1109,6 +1115,10 @@ def load_settings_state() -> dict:
     ntfy.setdefault("token", "")
     ntfy.setdefault("username", "")
     ntfy.setdefault("password", "")
+    mail = dict(payload.get("mail", {}))
+    mail["notify_new_messages"] = bool(mail.get("notify_new_messages", True))
+    mail["play_notification_sound"] = bool(mail.get("play_notification_sound", False))
+    mail["hide_notification_content"] = bool(mail.get("hide_notification_content", False))
     weather = dict(payload.get("weather", {}))
     weather.setdefault("enabled", False)
     weather.setdefault("name", "")
@@ -1332,6 +1342,7 @@ def load_settings_state() -> dict:
         "clock": clock,
         "health": health,
         "display": display,
+        "mail": mail,
         "region": region,
         "bar": bar,
         "services": services,
@@ -4625,10 +4636,20 @@ class SettingsWindow(QWidget):
         self.mail_smtp_starttls_switch = SwitchButton(True)
         self.mail_smtp_ssl_switch = SwitchButton(False)
         self.mail_notify_switch = SwitchButton(True)
+        mail_settings = self.settings_state.setdefault("mail", {})
+        self.mail_global_notify_switch = SwitchButton(bool(mail_settings.get("notify_new_messages", True)))
+        self.mail_sound_notify_switch = SwitchButton(bool(mail_settings.get("play_notification_sound", False)))
+        self.mail_hide_content_switch = SwitchButton(bool(mail_settings.get("hide_notification_content", False)))
+        self.mail_global_notify_switch.toggledValue.connect(self._set_mail_notifications_enabled)
+        self.mail_sound_notify_switch.toggledValue.connect(self._set_mail_notification_sound_enabled)
+        self.mail_hide_content_switch.toggledValue.connect(self._set_mail_hide_notification_content)
         layout.addWidget(SettingsRow(material_icon("shield"), "IMAP SSL", "Keep this enabled for almost every modern provider.", self.icon_font, self.ui_font, self.mail_imap_ssl_switch))
         layout.addWidget(SettingsRow(material_icon("mail"), "SMTP STARTTLS", "Use STARTTLS when your SMTP port is 587.", self.icon_font, self.ui_font, self.mail_smtp_starttls_switch))
         layout.addWidget(SettingsRow(material_icon("shield"), "SMTP SSL", "Use this instead of STARTTLS when your provider wants port 465.", self.icon_font, self.ui_font, self.mail_smtp_ssl_switch))
         layout.addWidget(SettingsRow(material_icon("notifications_active"), "Desktop notifications", "Allow this mailbox to send new mail notifications.", self.icon_font, self.ui_font, self.mail_notify_switch))
+        layout.addWidget(SettingsRow(material_icon("notifications_active"), "Notify on new mail", "Show desktop notifications when new messages arrive.", self.icon_font, self.ui_font, self.mail_global_notify_switch))
+        layout.addWidget(SettingsRow(material_icon("notifications"), "Notification sound", "Play a sound when a new mail toast is shown.", self.icon_font, self.ui_font, self.mail_sound_notify_switch))
+        layout.addWidget(SettingsRow(material_icon("shield"), "Hide notification content", "Use a privacy-friendly notification message without subject or preview text.", self.icon_font, self.ui_font, self.mail_hide_content_switch))
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
@@ -4841,6 +4862,18 @@ class SettingsWindow(QWidget):
             self.mail_status.setText(f"Failed to open Hanauta Mail: {exc}")
             return
         self.mail_status.setText("Opened Hanauta Mail.")
+
+    def _set_mail_notifications_enabled(self, enabled: bool) -> None:
+        self.settings_state.setdefault("mail", {})["notify_new_messages"] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_mail_notification_sound_enabled(self, enabled: bool) -> None:
+        self.settings_state.setdefault("mail", {})["play_notification_sound"] = bool(enabled)
+        save_settings_state(self.settings_state)
+
+    def _set_mail_hide_notification_content(self, enabled: bool) -> None:
+        self.settings_state.setdefault("mail", {})["hide_notification_content"] = bool(enabled)
+        save_settings_state(self.settings_state)
 
     def _choose_mail_avatar(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Choose mail avatar", str(Path.home() / "Pictures"), "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
