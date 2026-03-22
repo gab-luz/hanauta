@@ -33,10 +33,12 @@ DEVICE_ID="${CONNECTED[$INDEX]}"
 DEVICE_CONFIG_DIR="$HOME/.config/kdeconnect/$DEVICE_ID"
 DEVICE_NAME=$(kdeconnect-cli -a --name-only 2>/dev/null | sed -n "$((INDEX + 1))p")
 
-BATTERY=$(qdbus org.kde.kdeconnect /modules/kdeconnect/devices/"$DEVICE_ID"/battery org.kde.kdeconnect.device.battery.charge 2>/dev/null)
+BATTERY=$(busctl --user get-property org.kde.kdeconnect /modules/kdeconnect/devices/"$DEVICE_ID"/battery org.kde.kdeconnect.device.battery charge 2>/dev/null | awk '{print $2}')
+[ -z "$BATTERY" ] && BATTERY=$(qdbus org.kde.kdeconnect /modules/kdeconnect/devices/"$DEVICE_ID"/battery org.kde.kdeconnect.device.battery.charge 2>/dev/null)
 [ -z "$BATTERY" ] && BATTERY="?"
 
-IS_CHARGING=$(qdbus org.kde.kdeconnect /modules/kdeconnect/devices/"$DEVICE_ID"/battery org.kde.kdeconnect.device.battery.isCharging 2>/dev/null)
+IS_CHARGING=$(busctl --user get-property org.kde.kdeconnect /modules/kdeconnect/devices/"$DEVICE_ID"/battery org.kde.kdeconnect.device.battery isCharging 2>/dev/null | awk '{print $2}')
+[ -z "$IS_CHARGING" ] && IS_CHARGING=$(qdbus org.kde.kdeconnect /modules/kdeconnect/devices/"$DEVICE_ID"/battery org.kde.kdeconnect.device.battery.isCharging 2>/dev/null)
 if [ "$IS_CHARGING" == "true" ]; then
     STATUS="Charging"
 else
