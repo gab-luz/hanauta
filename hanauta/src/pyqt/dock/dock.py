@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     tomllib = None
 
-from PyQt6.QtCore import QEasingCurve, QProcess, QPropertyAnimation, QRect, Qt, QTimer
+from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QTimer
 from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -67,6 +67,7 @@ VOLUME_SCRIPT = scripts_root() / "volume.sh"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "hanauta-dock"
 ICON_CACHE_PATH = CACHE_DIR / "icon_cache.json"
 STATE_PATH = CACHE_DIR / "state.json"
+LOCK_PATH = CACHE_DIR / "dock.lock"
 DESKTOP_DIRS = [
     Path.home() / ".local/share/applications",
     Path("/usr/local/share/applications"),
@@ -171,6 +172,21 @@ def load_json(path: Path, default):
 def save_json(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def acquire_runtime_lock() -> QLockFile | None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    lock = QLockFile(str(LOCK_PATH))
+    lock.setStaleLockTime(0)
+    if lock.tryLock(4000):
+        return lock
+    try:
+        lock.removeStaleLockFile()
+    except Exception:
+        pass
+    if lock.tryLock(1000):
+        return lock
+    return None
 
 
 def multiply_alpha(color: str, factor: float) -> str:
@@ -1750,12 +1766,17 @@ def main() -> int:
         return cmd_activate_wm(args.target)
 
     app = QApplication(sys.argv)
+    runtime_lock = acquire_runtime_lock()
+    if runtime_lock is None:
+        return 0
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
     app.setPalette(palette)
     dock = CyberDock()
     dock.show()
-    return app.exec()
+    exit_code = app.exec()
+    runtime_lock.unlock()
+    return exit_code
 
 
 if __name__ == "__main__":
