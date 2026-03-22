@@ -148,14 +148,14 @@
     .eyebrow {
       color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: 11px;
+      letter-spacing: 0.14em;
+      font-size: 9px;
       font-weight: 700;
     }
 
     .brand-copy h1 {
-      margin: 4px 0 0;
-      font-size: 20px;
+      margin: 2px 0 0;
+      font-size: 17px;
       line-height: 1;
     }
 
@@ -676,6 +676,60 @@
       border-radius: 16px;
     }
 
+    .message-content img[data-blocked-image="1"] {
+      min-height: 72px;
+      background:
+        linear-gradient(135deg, rgba(156, 231, 255, 0.12), rgba(227, 156, 255, 0.08)),
+        rgba(255, 255, 255, 0.03);
+      border: 1px dashed rgba(156, 231, 255, 0.24);
+      padding: 14px;
+      object-fit: contain;
+    }
+
+    .message-frame {
+      width: 100%;
+      min-height: 560px;
+      border: 0;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .detail-security {
+      padding: 16px 18px;
+      border-radius: 22px;
+      background:
+        linear-gradient(135deg, rgba(156, 231, 255, 0.08), rgba(227, 156, 255, 0.08)),
+        rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(156, 231, 255, 0.14);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .trust-note {
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .trust-note p {
+      margin: 0 0 8px;
+    }
+
+    .trust-note p:last-child {
+      margin-bottom: 0;
+    }
+
+    .trust-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .trust-button {
+      border: 1px solid rgba(156, 231, 255, 0.16);
+      box-shadow: 0 10px 24px rgba(5, 8, 15, 0.22);
+    }
+
     .message-content a {
       color: var(--accent);
       text-decoration: none;
@@ -1010,8 +1064,8 @@
       <div class="brand">
         <div class="brand-badge">H</div>
         <div class="brand-copy">
-          <div class="eyebrow">Hanauta Mail v0.1</div>
-          <h1>Hanauta Mail</h1>
+          <div class="eyebrow">Mail</div>
+          <h1>Hanauta</h1>
         </div>
       </div>
 
@@ -1069,7 +1123,7 @@
         <div class="list-head">
           <div class="headline">
             <h2 id="folderTitle">Inbox</h2>
-            <p id="folderSubtitle">Rendered inside QtWebEngine</p>
+            <p id="folderSubtitle">0 conversations in view</p>
           </div>
           <div class="list-toolbar">
             <button class="action-icon" id="replyButton" type="button" title="Reply">↩</button>
@@ -1195,7 +1249,17 @@
         date_iso: new Date().toISOString(),
         display_time: "10:42",
         snippet: "We found a potential security vulnerability in one of your dependencies. Please review the advisory and patch the package.",
-        body_html: "<p>Hello Alex,</p><p>We found a potential security vulnerability in one of your dependencies. The advisory suggests updating <strong>lodash</strong> to <strong>4.17.21</strong> or newer.</p><p>Please review the report, patch your lockfile, and trigger a fresh deployment afterwards.</p><p>Best regards,<br>The GitHub Team</p>",
+        body_html: "<p style='font-size:15px;'>Hello Alex,</p><p>We found a potential security vulnerability in one of your dependencies. The advisory suggests updating <strong>lodash</strong> to <strong>4.17.21</strong> or newer.</p><p><img src='https://placehold.co/600x240/png' alt='Remote preview' /></p><p>Please review the report, patch your lockfile, and trigger a fresh deployment afterwards.</p><p>Best regards,<br>The GitHub Team</p>",
+        content_policy: {
+          images_allowed: false,
+          images_scope: "none",
+          scripts_allowed: false,
+          scripts_scope: "none",
+          sender: "noreply@github.com",
+          domain: "github.com",
+          has_remote_images: true,
+          has_active_content: false
+        },
         seen: false,
         flagged: true,
         has_attachments: true
@@ -1214,7 +1278,17 @@
           has_attachments: true,
           date_iso: new Date().toISOString(),
           to_line: "Alex Chen <alex@hanauta.dev>",
-          body_html: "<p>Hello Alex,</p><p>We found a potential security vulnerability in one of your dependencies. The advisory suggests updating <strong>lodash</strong> to <strong>4.17.21</strong> or newer.</p><p>Please review the report, patch your lockfile, and trigger a fresh deployment afterwards.</p><p>Best regards,<br>The GitHub Team</p>"
+          body_html: "<p style='font-size:15px;'>Hello Alex,</p><p>We found a potential security vulnerability in one of your dependencies. The advisory suggests updating <strong>lodash</strong> to <strong>4.17.21</strong> or newer.</p><p><img src='https://placehold.co/600x240/png' alt='Remote preview' /></p><p>Please review the report, patch your lockfile, and trigger a fresh deployment afterwards.</p><p>Best regards,<br>The GitHub Team</p>",
+          content_policy: {
+            images_allowed: false,
+            images_scope: "none",
+            scripts_allowed: false,
+            scripts_scope: "none",
+            sender: "noreply@github.com",
+            domain: "github.com",
+            has_remote_images: true,
+            has_active_content: false
+          }
         },
         {
           key: "mock-2",
@@ -1578,6 +1652,114 @@
       applyMessageSearchFilter();
     }
 
+    function describePolicyScope(scope, fallback = "this message") {
+      if (scope === "sender") {
+        return "this sender";
+      }
+      if (scope === "domain") {
+        return "this domain";
+      }
+      if (scope === "message") {
+        return "this message";
+      }
+      return fallback;
+    }
+
+    function buildTrustControls(message) {
+      const policy = message.content_policy || {};
+      const actions = [];
+      const notes = [];
+      const sender = escapeHtml(policy.sender || message.from_email || "this sender");
+      const domain = escapeHtml(policy.domain || ((message.from_email || "").split("@")[1] || "this domain"));
+
+      if (policy.has_remote_images) {
+        if (policy.images_allowed) {
+          notes.push(`<p>Remote images are currently allowed for ${escapeHtml(describePolicyScope(policy.images_scope))}.</p>`);
+        } else {
+          notes.push("<p>Remote images are blocked until you trust this message, sender, or sender domain.</p>");
+          actions.push(`
+            <button class="ghost-button trust-button" type="button" data-policy-kind="images" data-policy-scope="message" data-message-key="${escapeHtml(message.key)}">
+              Show images for this message
+            </button>
+          `);
+          actions.push(`
+            <button class="ghost-button trust-button" type="button" data-policy-kind="images" data-policy-scope="sender" data-message-key="${escapeHtml(message.key)}">
+              Always show images from ${sender}
+            </button>
+          `);
+          actions.push(`
+            <button class="ghost-button trust-button" type="button" data-policy-kind="images" data-policy-scope="domain" data-message-key="${escapeHtml(message.key)}">
+              Always show images from ${domain}
+            </button>
+          `);
+        }
+      }
+
+      if (policy.has_active_content) {
+        if (policy.scripts_allowed) {
+          notes.push(`<p>Active content is currently allowed for ${escapeHtml(describePolicyScope(policy.scripts_scope))}.</p>`);
+        } else {
+          notes.push("<p>Scripts and other active content stay disabled by default, similar to a NoScript-style allow list.</p>");
+          actions.push(`
+            <button class="ghost-button trust-button" type="button" data-policy-kind="scripts" data-policy-scope="message" data-message-key="${escapeHtml(message.key)}">
+              Allow active content for this message
+            </button>
+          `);
+          actions.push(`
+            <button class="ghost-button trust-button" type="button" data-policy-kind="scripts" data-policy-scope="sender" data-message-key="${escapeHtml(message.key)}">
+              Always allow active content from ${sender}
+            </button>
+          `);
+          actions.push(`
+            <button class="ghost-button trust-button" type="button" data-policy-kind="scripts" data-policy-scope="domain" data-message-key="${escapeHtml(message.key)}">
+              Always allow active content from ${domain}
+            </button>
+          `);
+        }
+      }
+
+      if (!actions.length && !notes.length) {
+        return "";
+      }
+
+      return `
+        <section class="detail-security">
+          <div class="section-head">
+            <h3>Content Controls</h3>
+          </div>
+          <div class="trust-note">${notes.join("")}</div>
+          <div class="trust-actions">${actions.join("")}</div>
+        </section>
+      `;
+    }
+
+    function attachMessageFrameBehavior(frame) {
+      if (!frame) {
+        return;
+      }
+      frame.addEventListener("load", () => {
+        try {
+          const doc = frame.contentDocument;
+          if (!doc) {
+            return;
+          }
+          const body = doc.body;
+          const scrollHeight = Math.max(body?.scrollHeight || 0, doc.documentElement?.scrollHeight || 0, 560);
+          frame.style.height = `${scrollHeight + 8}px`;
+          doc.addEventListener("click", (event) => {
+            const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+            if (!link) {
+              return;
+            }
+            event.preventDefault();
+            openLinkModal(link.getAttribute("data-original-href") || link.href, link.getAttribute("data-clean-href") || link.href);
+          });
+        } catch (error) {
+          console.warn("Failed to attach frame handlers", error);
+        }
+      }, { once: true });
+    }
+
     function renderDetail() {
       const message = state.selected_message;
 
@@ -1597,9 +1779,12 @@
       const displayName = message.from_name || message.sender || "Unknown Sender";
       const avatar = (displayName[0] || "H").toUpperCase();
       const sentAt = message.display_time || new Date(message.date_iso || Date.now()).toLocaleString();
-      const bodyHtml = message.body_html && String(message.body_html).trim()
+      const contentPolicy = message.content_policy || {};
+      const hasHtmlBody = Boolean(message.body_html && String(message.body_html).trim());
+      const bodyHtml = hasHtmlBody
         ? message.body_html
         : `<pre>${escapeHtml(message.body_text || message.snippet || "")}</pre>`;
+      const trustMarkup = buildTrustControls(message);
 
       elements.detailSubtitle.textContent = `${displayName} · ${sentAt}`;
       elements.detailView.innerHTML = `
@@ -1628,9 +1813,21 @@
             <span class="pill">${message.seen ? "Read" : "Unread"}</span>
           </div>
         </div>
-
-        <article class="message-content">${bodyHtml}</article>
+        ${trustMarkup}
+        ${
+          hasHtmlBody
+            ? `<iframe class="message-frame" id="messageFrame" sandbox="${contentPolicy.scripts_allowed ? "allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" : "allow-popups allow-popups-to-escape-sandbox"}"></iframe>`
+            : `<article class="message-content">${bodyHtml}</article>`
+        }
       `;
+
+      if (hasHtmlBody) {
+        const frame = document.getElementById("messageFrame");
+        if (frame) {
+          attachMessageFrameBehavior(frame);
+          frame.srcdoc = bodyHtml;
+        }
+      }
     }
 
     function renderComposeAccounts() {
@@ -1855,7 +2052,19 @@
         }
       });
       elements.detailView.addEventListener("click", (event) => {
-        const link = event.target.closest("a[href]");
+        const eventTarget = event.target instanceof Element ? event.target : null;
+        const policyButton = eventTarget ? eventTarget.closest("[data-policy-kind][data-policy-scope][data-message-key]") : null;
+        if (policyButton) {
+          event.preventDefault();
+          emitBridge(
+            "setContentPolicy",
+            policyButton.dataset.policyKind || "images",
+            policyButton.dataset.policyScope || "message",
+            policyButton.dataset.messageKey || ""
+          );
+          return;
+        }
+        const link = eventTarget ? eventTarget.closest("a[href]") : null;
         if (!link) {
           return;
         }

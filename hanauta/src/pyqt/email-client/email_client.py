@@ -129,6 +129,7 @@ TRACKING_QUERY_KEYS = {
     "igshid",
     "si",
 }
+TRANSPARENT_PIXEL_DATA_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
 
 
 def now_iso() -> str:
@@ -327,6 +328,13 @@ def clean_tracking_url(url_text: str) -> str:
     )
 
 
+def email_domain(address: str) -> str:
+    value = normalize_email(address)
+    if "@" not in value:
+        return ""
+    return value.rsplit("@", 1)[-1].strip().lower()
+
+
 def inline_asset_map(msg: Message) -> dict[str, str]:
     assets: dict[str, str] = {}
     for part in msg.walk():
@@ -340,14 +348,26 @@ def inline_asset_map(msg: Message) -> dict[str, str]:
     return assets
 
 
-def prepare_message_html(html_body: str, msg: Message) -> str:
+def prepare_message_html(
+    html_body: str,
+    msg: Message | None,
+    *,
+    allow_remote_images: bool = False,
+    allow_scripts: bool = False,
+) -> tuple[str, dict[str, bool]]:
     if not html_body.strip():
-        return ""
+        return "", {"has_remote_images": False, "has_active_content": False}
 
-    cid_assets = inline_asset_map(msg)
-    content = re_sub(r"<script[\s\S]*?</script>", "", html_body)
-    content = re_sub(r"\son[a-z-]+\s*=\s*(['\"]).*?\1", "", content)
-    content = re_sub(r"\sstyle\s*=\s*(['\"]).*?\1", "", content)
+    import re
+
+    cid_assets = inline_asset_map(msg) if msg is not None else {}
+    flags = {
+        "has_remote_images": False,
+        "has_active_content": bool(
+            re.search(r"<script[\s\S]*?</script>|<iframe\b|<object\b|<embed\b|\son[a-z-]+\s*=", html_body, flags=re.IGNORECASE)
+        ),
+    }
+    content = html_body
 
     def replace_cid(match) -> str:
         quote = match.group(1)
@@ -357,7 +377,17 @@ def prepare_message_html(html_body: str, msg: Message) -> str:
             replacement = cid_assets.get(token, "")
             if replacement:
                 return f'src={quote}{replacement}{quote}'
-        return f'src={quote}{src}{quote}'
+        lowered = src.lower()
+        if lowered.startswith(("http://", "https://")):
+            flags["has_remote_images"] = True
+            if not allow_remote_images:
+                safe = html.escape(src, quote=True)
+                return (
+                    f'src={quote}{TRANSPARENT_PIXEL_DATA_URL}{quote} '
+                    f'data-remote-src={quote}{safe}{quote} '
+                    f'data-blocked-image={quote}1{quote}'
+                )
+        return f'src={quote}{html.escape(src, quote=True)}{quote}'
 
     def replace_href(match) -> str:
         quote = match.group(1)
@@ -371,10 +401,15 @@ def prepare_message_html(html_body: str, msg: Message) -> str:
             f'data-clean-href={quote}{html.escape(cleaned, quote=True)}{quote}'
         )
 
+    if not allow_scripts:
+        content = re_sub(r"<script[\s\S]*?</script>", "", content)
+        content = re_sub(r"\son[a-z-]+\s*=\s*(['\"]).*?\1", "", content)
+        content = re_sub(r"</?(iframe|object|embed|meta|base)\b[^>]*>", "", content)
+
     content = re_sub(r'src=(["\'])(.*?)\1', lambda match: replace_cid(match), content)
     content = re_sub(r'href=(["\'])(.*?)\1', lambda match: replace_href(match), content)
-    content = re_sub(r"<img\b", '<img loading="lazy" referrerpolicy="no-referrer" ', content)
-    return content.strip()
+    content = re_sub(r"<img\b", '<img loading="lazy" decoding="async" referrerpolicy="no-referrer" ', content)
+    return content.strip(), flags
 
 
 def message_parts(msg: Message) -> tuple[str, str]:
@@ -410,7 +445,7 @@ def message_parts(msg: Message) -> tuple[str, str]:
         else:
             text_body = decoded
     if html_body:
-        html_body = prepare_message_html(html_body, msg)
+        html_body = html_body.strip()
     if not html_body and text_body:
         html_body = "<pre>" + html.escape(text_body) + "</pre>"
     if not text_body and html_body:
@@ -681,6 +716,8 @@ class MailStore:
         self.ensure_setting("search_query", "")
         self.ensure_setting("sound_enabled", "1")
         self.ensure_setting("sound_path", "")
+        self.ensure_setting("image_policy_rules", json.dumps({"messages": [], "senders": [], "domains": []}))
+        self.ensure_setting("script_policy_rules", json.dumps({"messages": [], "senders": [], "domains": []}))
 
     def _ensure_message_column(self, column_name: str, definition: str) -> None:
         try:
@@ -727,6 +764,19 @@ class MailStore:
                 (key, value),
             )
             self.conn.commit()
+
+    def get_json_setting(self, key: str, default: dict[str, Any]) -> dict[str, Any]:
+        raw = self.get_setting(key, "")
+        try:
+            payload = json.loads(raw) if raw else default
+        except Exception:
+            payload = default
+        if not isinstance(payload, dict):
+            return dict(default)
+        return payload
+
+    def set_json_setting(self, key: str, value: dict[str, Any]) -> None:
+        self.set_setting(key, json.dumps(value, sort_keys=True))
 
     def list_accounts(self) -> list[dict[str, Any]]:
         with self.lock:
@@ -1079,6 +1129,7 @@ class MailBridge(QObject):
     exportSelectedRequested = pyqtSignal(str)
     exportVisibleRequested = pyqtSignal()
     externalLinkRequested = pyqtSignal(str)
+    contentPolicyRequested = pyqtSignal(str, str, str)
     stateChanged = pyqtSignal(str)
     toastRequested = pyqtSignal(str, str)
 
@@ -1141,6 +1192,10 @@ class MailBridge(QObject):
     @pyqtSlot(str)
     def openExternalLink(self, url: str) -> None:
         self.externalLinkRequested.emit(url)
+
+    @pyqtSlot(str, str, str)
+    def setContentPolicy(self, kind: str, scope: str, message_key: str) -> None:
+        self.contentPolicyRequested.emit(kind, scope, message_key)
 
 
 class FragmentServer:
@@ -1247,6 +1302,7 @@ class EmailClientWindow(QWidget):
         self.bridge.exportSelectedRequested.connect(self.export_selected_message)
         self.bridge.exportVisibleRequested.connect(self.export_visible_messages_zip)
         self.bridge.externalLinkRequested.connect(self.open_external_link)
+        self.bridge.contentPolicyRequested.connect(self.set_content_policy)
         self.bridge.toastRequested.connect(self.push_toast)
         self.syncCompleted.connect(self._finish_sync)
 
@@ -1288,6 +1344,80 @@ class EmailClientWindow(QWidget):
         safe_title = json.dumps(title)
         safe_body = json.dumps(body)
         self._run_js(f"window.showToast({safe_title}, {safe_body});")
+
+    def _policy_setting_key(self, kind: str) -> str:
+        return "script_policy_rules" if kind == "scripts" else "image_policy_rules"
+
+    def _policy_rules(self, kind: str) -> dict[str, list[str]]:
+        payload = self.store.get_json_setting(self._policy_setting_key(kind), {"messages": [], "senders": [], "domains": []})
+        return {
+            "messages": [str(item) for item in payload.get("messages", []) if str(item).strip()],
+            "senders": [normalize_email(str(item)) for item in payload.get("senders", []) if normalize_email(str(item))],
+            "domains": [str(item).strip().lower() for item in payload.get("domains", []) if str(item).strip()],
+        }
+
+    def _effective_policy_scope(self, kind: str, message: dict[str, Any]) -> str:
+        rules = self._policy_rules(kind)
+        message_key = str(message.get("key", ""))
+        sender = normalize_email(str(message.get("from_email", "")))
+        domain = email_domain(sender)
+        if message_key and message_key in rules["messages"]:
+            return "message"
+        if sender and sender in rules["senders"]:
+            return "sender"
+        if domain and domain in rules["domains"]:
+            return "domain"
+        return "none"
+
+    def _permission_state(self, kind: str, message: dict[str, Any]) -> dict[str, Any]:
+        scope = self._effective_policy_scope(kind, message)
+        sender = normalize_email(str(message.get("from_email", "")))
+        domain = email_domain(sender)
+        return {
+            "effective": scope != "none",
+            "scope": scope,
+            "sender": sender,
+            "domain": domain,
+        }
+
+    def _message_render_data(self, message: dict[str, Any]) -> tuple[str, dict[str, bool], dict[str, Any], dict[str, Any]]:
+        raw_html = str(message.get("body_html", "") or "")
+        raw_source = self.store.raw_source_for_key(str(message.get("key", "")))
+        parsed_msg = message_from_bytes(raw_source) if raw_source else None
+        if parsed_msg:
+            extracted_html, extracted_text = message_parts(parsed_msg)
+            if extracted_html.strip():
+                raw_html = extracted_html
+            if extracted_text.strip():
+                message["body_text"] = extracted_text
+        image_policy = self._permission_state("images", message)
+        script_policy = self._permission_state("scripts", message)
+        rendered_html, detected = prepare_message_html(
+            raw_html,
+            parsed_msg,
+            allow_remote_images=bool(image_policy["effective"]),
+            allow_scripts=bool(script_policy["effective"]),
+        )
+        return rendered_html, detected, image_policy, script_policy
+
+    def _decorate_message_for_display(self, message: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not message:
+            return None
+        payload = dict(message)
+        rendered_html, detected, image_policy, script_policy = self._message_render_data(payload)
+        payload["body_html_raw"] = str(payload.get("body_html", "") or "")
+        payload["body_html"] = rendered_html
+        payload["content_policy"] = {
+            "images_allowed": bool(image_policy["effective"]),
+            "images_scope": str(image_policy["scope"]),
+            "scripts_allowed": bool(script_policy["effective"]),
+            "scripts_scope": str(script_policy["scope"]),
+            "sender": str(image_policy["sender"]),
+            "domain": str(image_policy["domain"]),
+            "has_remote_images": bool(detected["has_remote_images"]),
+            "has_active_content": bool(detected["has_active_content"]),
+        }
+        return payload
 
     def _build_state_payload(self) -> dict[str, Any]:
         with self.state_lock:
@@ -1356,6 +1486,7 @@ class EmailClientWindow(QWidget):
                 self.selected_message_key = messages[0]["key"] if messages else ""
                 self.store.set_setting("selected_message_key", self.selected_message_key)
             selected_message = self.store.get_message(self.selected_message_key) if self.selected_message_key else None
+            selected_message = self._decorate_message_for_display(selected_message)
             contacts = self.store.list_contacts()
             theme = load_theme_palette()
             status = self.account_status.get(selected_account, {})
@@ -1474,6 +1605,41 @@ class EmailClientWindow(QWidget):
             self.push_toast("Export failed", str(exc))
             return
         self.push_toast("Messages exported", target.name)
+
+    def set_content_policy(self, kind: str, scope: str, message_key: str) -> None:
+        normalized_kind = "scripts" if str(kind).strip().lower() == "scripts" else "images"
+        normalized_scope = str(scope).strip().lower()
+        message = self.store.get_message(message_key)
+        if not message:
+            self.push_toast("Preference not saved", "The selected message could not be found.")
+            return
+        sender = normalize_email(str(message.get("from_email", "")))
+        domain = email_domain(sender)
+        if normalized_scope == "message":
+            value = str(message.get("key", ""))
+            scope_label = "this message"
+        elif normalized_scope == "sender":
+            value = sender
+            scope_label = sender or "this sender"
+        elif normalized_scope == "domain":
+            value = domain
+            scope_label = domain or "this domain"
+        else:
+            self.push_toast("Preference not saved", "That trust scope is not supported.")
+            return
+        if not value:
+            self.push_toast("Preference not saved", "That message does not expose a sender or domain for this trust rule.")
+            return
+        rules = self._policy_rules(normalized_kind)
+        bucket = "messages" if normalized_scope == "message" else f"{normalized_scope}s"
+        if value not in rules[bucket]:
+            rules[bucket].append(value)
+        for key in ("messages", "senders", "domains"):
+            rules[key] = sorted(set(rules[key]))
+        self.store.set_json_setting(self._policy_setting_key(normalized_kind), rules)
+        label = "Active content" if normalized_kind == "scripts" else "Remote images"
+        self.push_toast("Trust preference saved", f"{label} will now load for {scope_label}.")
+        self.push_state()
 
     def open_external_link(self, url: str) -> None:
         cleaned = clean_tracking_url(url)
@@ -1715,6 +1881,7 @@ class EmailClientWindow(QWidget):
         avatar = html.escape(display_name[:1].upper() or "H")
         sent_at = html.escape(str(message.get("display_time") or ""))
         body_html = str(message.get("body_html", "")).strip() or "<pre>" + html.escape(str(message.get("body_text", "") or str(message.get("snippet", "")))) + "</pre>"
+        content_policy = message.get("content_policy") or {}
         pills = [f'<span class="pill">{html.escape(str(state.get("selected_folder", "Inbox")))}</span>']
         if bool(message.get("flagged")):
             pills.append('<span class="pill">Starred</span>')
@@ -1722,6 +1889,45 @@ class EmailClientWindow(QWidget):
             pills.append('<span class="pill">Has attachments</span>')
         if bool(message.get("is_spam")):
             pills.append('<span class="pill">Spam risk</span>')
+        trust_actions: list[str] = []
+        trust_notes: list[str] = []
+        sender_email = html.escape(str(content_policy.get("sender") or message.get("from_email") or "this sender"))
+        sender_domain = html.escape(str(content_policy.get("domain") or email_domain(str(message.get("from_email", ""))) or "this domain"))
+        if bool(content_policy.get("has_remote_images")):
+            if bool(content_policy.get("images_allowed")):
+                trust_notes.append(f'<p>Remote images are allowed for {html.escape(str(content_policy.get("images_scope") or "this message"))}.</p>')
+            else:
+                trust_actions.extend(
+                    [
+                        f'<button class="ghost-button trust-button" type="button" data-policy-kind="images" data-policy-scope="message" data-message-key="{html.escape(str(message.get("key", "")))}">Show images for this message</button>',
+                        f'<button class="ghost-button trust-button" type="button" data-policy-kind="images" data-policy-scope="sender" data-message-key="{html.escape(str(message.get("key", "")))}">Always show images from {sender_email}</button>',
+                        f'<button class="ghost-button trust-button" type="button" data-policy-kind="images" data-policy-scope="domain" data-message-key="{html.escape(str(message.get("key", "")))}">Always show images from {sender_domain}</button>',
+                    ]
+                )
+                trust_notes.append("<p>Remote images are blocked until you trust this message, sender, or domain.</p>")
+        if bool(content_policy.get("has_active_content")):
+            if bool(content_policy.get("scripts_allowed")):
+                trust_notes.append(f'<p>Active content is allowed for {html.escape(str(content_policy.get("scripts_scope") or "this message"))}.</p>')
+            else:
+                trust_actions.extend(
+                    [
+                        f'<button class="ghost-button trust-button" type="button" data-policy-kind="scripts" data-policy-scope="message" data-message-key="{html.escape(str(message.get("key", "")))}">Allow active content for this message</button>',
+                        f'<button class="ghost-button trust-button" type="button" data-policy-kind="scripts" data-policy-scope="sender" data-message-key="{html.escape(str(message.get("key", "")))}">Always allow active content from {sender_email}</button>',
+                        f'<button class="ghost-button trust-button" type="button" data-policy-kind="scripts" data-policy-scope="domain" data-message-key="{html.escape(str(message.get("key", "")))}">Always allow active content from {sender_domain}</button>',
+                    ]
+                )
+                trust_notes.append("<p>Active content is disabled by default, similar to a NoScript-style allow list.</p>")
+        trust_markup = ""
+        if trust_actions or trust_notes:
+            trust_markup = f"""
+            <section class="detail-security">
+              <div class="section-head">
+                <h3>Content Controls</h3>
+              </div>
+              <div class="trust-note">{''.join(trust_notes)}</div>
+              <div class="trust-actions">{''.join(trust_actions)}</div>
+            </section>
+            """
         return f"""
         <div class="detail-hero">
           <div>
@@ -1743,6 +1949,7 @@ class EmailClientWindow(QWidget):
             <span class="pill">{'Read' if bool(message.get('seen')) else 'Unread'}</span>
           </div>
         </div>
+        {trust_markup}
         <article class="message-content">{body_html}</article>
         """
 
