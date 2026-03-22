@@ -132,6 +132,8 @@ DEFAULT_SERVICE_SETTINGS = {
     "kdeconnect": {
         "enabled": True,
         "show_in_notification_center": True,
+        "low_battery_fullscreen_notification": False,
+        "low_battery_threshold": 20,
     },
     "home_assistant": {
         "enabled": True,
@@ -343,7 +345,21 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                 )
             ),
         }
-        if key == "christian_widget":
+        if key == "kdeconnect":
+            merged[key]["low_battery_fullscreen_notification"] = bool(
+                current.get(
+                    "low_battery_fullscreen_notification",
+                    defaults.get("low_battery_fullscreen_notification", False),
+                )
+            )
+            try:
+                merged[key]["low_battery_threshold"] = max(
+                    1,
+                    min(100, int(current.get("low_battery_threshold", defaults.get("low_battery_threshold", 20)))),
+                )
+            except Exception:
+                merged[key]["low_battery_threshold"] = int(defaults.get("low_battery_threshold", 20))
+        elif key == "christian_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
