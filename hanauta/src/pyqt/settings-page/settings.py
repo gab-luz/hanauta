@@ -17,6 +17,7 @@ import random
 import re
 import shutil
 import signal
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QCompleter,
     QFrame,
+    QFileDialog,
     QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
@@ -88,6 +90,146 @@ def apply_antialias_font(widget: QWidget) -> None:
         child_font = child.font()
         child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         child.setFont(child_font)
+
+
+def mail_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def load_mail_storage_config() -> dict[str, str]:
+    default = {
+        "db_path": str(MAIL_DB_PATH),
+        "attachments_dir": str(MAIL_STATE_DIR / "cache"),
+    }
+    try:
+        payload = json.loads((MAIL_STATE_DIR / "storage.json").read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("invalid storage config")
+    except Exception:
+        return default
+    return {
+        "db_path": str(payload.get("db_path", default["db_path"])).strip() or default["db_path"],
+        "attachments_dir": str(payload.get("attachments_dir", default["attachments_dir"])).strip() or default["attachments_dir"],
+    }
+
+
+def save_mail_storage_config(config: dict[str, str]) -> None:
+    MAIL_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (MAIL_STATE_DIR / "storage.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
+class MailAccountStore:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(self.path)
+        self.conn.row_factory = sqlite3.Row
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT NOT NULL,
+                email_address TEXT NOT NULL,
+                display_name TEXT NOT NULL DEFAULT '',
+                avatar_path TEXT NOT NULL DEFAULT '',
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                imap_host TEXT NOT NULL,
+                imap_port INTEGER NOT NULL DEFAULT 993,
+                imap_ssl INTEGER NOT NULL DEFAULT 1,
+                smtp_host TEXT NOT NULL,
+                smtp_port INTEGER NOT NULL DEFAULT 587,
+                smtp_starttls INTEGER NOT NULL DEFAULT 1,
+                smtp_ssl INTEGER NOT NULL DEFAULT 0,
+                folders_json TEXT NOT NULL DEFAULT '[]',
+                folder_state_json TEXT NOT NULL DEFAULT '{}',
+                signature TEXT NOT NULL DEFAULT '',
+                notify_enabled INTEGER NOT NULL DEFAULT 1,
+                poll_interval_seconds INTEGER NOT NULL DEFAULT 90,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        columns = {str(row["name"]) for row in self.conn.execute("PRAGMA table_info(accounts)").fetchall()}
+        if "avatar_path" not in columns:
+            self.conn.execute("ALTER TABLE accounts ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
+        self.conn.commit()
+
+    def list_accounts(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM accounts ORDER BY lower(label), lower(email_address)").fetchall()
+        return [dict(row) for row in rows]
+
+    def get_account(self, account_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        return dict(row) if row else None
+
+    def save_account(self, payload: dict) -> int:
+        now = mail_now_iso()
+        values = (
+            str(payload.get("label", "")).strip() or str(payload.get("email_address", "")).strip(),
+            str(payload.get("email_address", "")).strip(),
+            str(payload.get("display_name", "")).strip(),
+            str(payload.get("avatar_path", "")).strip(),
+            str(payload.get("username", "")).strip(),
+            str(payload.get("password", "")),
+            str(payload.get("imap_host", "")).strip(),
+            int(payload.get("imap_port", 993) or 993),
+            1 if bool(payload.get("imap_ssl", True)) else 0,
+            str(payload.get("smtp_host", "")).strip(),
+            int(payload.get("smtp_port", 587) or 587),
+            1 if bool(payload.get("smtp_starttls", True)) else 0,
+            1 if bool(payload.get("smtp_ssl", False)) else 0,
+            str(payload.get("folders_json", "[]")),
+            str(payload.get("folder_state_json", "{}")),
+            str(payload.get("signature", "")),
+            1 if bool(payload.get("notify_enabled", True)) else 0,
+            max(30, int(payload.get("poll_interval_seconds", 90) or 90)),
+            now,
+        )
+        account_id = int(payload.get("id", 0) or 0)
+        if account_id > 0:
+            self.conn.execute(
+                """
+                UPDATE accounts
+                SET label=?, email_address=?, display_name=?, avatar_path=?, username=?, password=?,
+                    imap_host=?, imap_port=?, imap_ssl=?, smtp_host=?, smtp_port=?,
+                    smtp_starttls=?, smtp_ssl=?, folders_json=?, folder_state_json=?,
+                    signature=?, notify_enabled=?, poll_interval_seconds=?, updated_at=?
+                WHERE id=?
+                """,
+                (*values, account_id),
+            )
+        else:
+            self.conn.execute(
+                """
+                INSERT INTO accounts(
+                    label, email_address, display_name, avatar_path, username, password,
+                    imap_host, imap_port, imap_ssl, smtp_host, smtp_port,
+                    smtp_starttls, smtp_ssl, folders_json, folder_state_json,
+                    signature, notify_enabled, poll_interval_seconds, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (*values, now),
+            )
+            account_id = int(self.conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        self.conn.commit()
+        return account_id
+
+    def delete_account(self, account_id: int) -> None:
+        self.conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+        try:
+            self.conn.execute("DELETE FROM messages WHERE account_id = ?", (account_id,))
+        except Exception:
+            pass
+        self.conn.commit()
+
+
 PICOM_SHADOW_EXCLUDE_FILE = PICOM_RULES_DIR / "shadow-exclude.rules"
 PICOM_ROUNDED_EXCLUDE_FILE = PICOM_RULES_DIR / "rounded-corners-exclude.rules"
 PICOM_OPACITY_RULE_FILE = PICOM_RULES_DIR / "opacity.rules"
@@ -100,6 +242,8 @@ BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark.svg"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
+MAIL_DB_PATH = MAIL_STATE_DIR / "mail.sqlite3"
 PICOM_DEFAULT_TEMPLATE = """backend = "glx";
 vsync = true;
 use-damage = true;
@@ -432,6 +576,10 @@ DEFAULT_SERVICE_SETTINGS = {
         "enabled": False,
         "show_in_notification_center": True,
         "show_in_bar": False,
+    },
+    "mail": {
+        "enabled": True,
+        "show_in_notification_center": False,
     },
 }
 
@@ -2829,6 +2977,7 @@ class SettingsWindow(QWidget):
         )
 
         self.settings_state = load_settings_state()
+        self.mail_account_store = MailAccountStore(Path(load_mail_storage_config()["db_path"]).expanduser())
         self.notification_rules_state = load_notification_rules_state()
         self._weather_city_map: dict[str, WeatherCity] = {}
         self._selected_weather_city: WeatherCity | None = configured_city()
@@ -4362,6 +4511,7 @@ class SettingsWindow(QWidget):
         self.service_sections: dict[str, ExpandableServiceSection] = {}
         self.service_display_switches: dict[str, SwitchButton] = {}
         for key, widget in (
+            ("mail", self._build_mail_service_section()),
             ("kdeconnect", self._build_kdeconnect_service_section()),
             ("home_assistant", self._build_home_assistant_section()),
             ("vpn_control", self._build_vpn_service_section()),
@@ -4391,6 +4541,316 @@ class SettingsWindow(QWidget):
             section.set_expanded(True)
             section.header_button.setFocus()
         self.initial_service_section = ""
+
+    def _build_mail_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.mail_account_picker = QComboBox()
+        self.mail_account_picker.setObjectName("settingsCombo")
+        self.mail_account_picker.currentIndexChanged.connect(self._load_selected_mail_account)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("mail"),
+                "Saved account",
+                "Pick an existing IMAP/SMTP account or start a fresh one.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_account_picker,
+            )
+        )
+
+        self.mail_label_input = QLineEdit()
+        self.mail_label_input.setPlaceholderText("Personal")
+        self.mail_display_name_input = QLineEdit()
+        self.mail_display_name_input.setPlaceholderText("Your name")
+        self.mail_email_input = QLineEdit()
+        self.mail_email_input.setPlaceholderText("you@example.com")
+        self.mail_username_input = QLineEdit()
+        self.mail_username_input.setPlaceholderText("IMAP/SMTP login")
+        self.mail_password_input = QLineEdit()
+        self.mail_password_input.setPlaceholderText("App password")
+        self.mail_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mail_imap_host_input = QLineEdit()
+        self.mail_imap_host_input.setPlaceholderText("imap.example.com")
+        self.mail_imap_port_input = QLineEdit("993")
+        self.mail_smtp_host_input = QLineEdit()
+        self.mail_smtp_host_input.setPlaceholderText("smtp.example.com")
+        self.mail_smtp_port_input = QLineEdit("587")
+        self.mail_signature_input = QLineEdit()
+        self.mail_signature_input.setPlaceholderText("Sent from Hanauta Mail")
+        self.mail_poll_interval_input = QLineEdit("90")
+        self.mail_avatar_path_input = QLineEdit()
+        self.mail_avatar_path_input.setPlaceholderText("Optional profile image for this account")
+        self.mail_storage_path_input = QLineEdit(load_mail_storage_config()["db_path"])
+        self.mail_storage_path_input.setPlaceholderText(str(MAIL_DB_PATH))
+
+        layout.addWidget(SettingsRow(material_icon("settings"), "Label", "Friendly account label shown in Hanauta Mail.", self.icon_font, self.ui_font, self.mail_label_input))
+        layout.addWidget(SettingsRow(material_icon("person"), "Display name", "Used for outgoing mail sender formatting.", self.icon_font, self.ui_font, self.mail_display_name_input))
+        layout.addWidget(SettingsRow(material_icon("mail"), "Email address", "Primary mailbox address.", self.icon_font, self.ui_font, self.mail_email_input))
+        layout.addWidget(SettingsRow(material_icon("person"), "Username", "Login used by both IMAP and SMTP on most providers.", self.icon_font, self.ui_font, self.mail_username_input))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Password", "Use an app password when your provider requires one.", self.icon_font, self.ui_font, self.mail_password_input))
+        layout.addWidget(SettingsRow(material_icon("settings"), "IMAP host", "Incoming mail server, such as imap.gmail.com.", self.icon_font, self.ui_font, self.mail_imap_host_input))
+        layout.addWidget(SettingsRow(material_icon("schedule"), "IMAP port", "Usually 993 with SSL enabled.", self.icon_font, self.ui_font, self.mail_imap_port_input))
+        layout.addWidget(SettingsRow(material_icon("settings"), "SMTP host", "Outgoing mail server, such as smtp.gmail.com.", self.icon_font, self.ui_font, self.mail_smtp_host_input))
+        layout.addWidget(SettingsRow(material_icon("schedule"), "SMTP port", "Usually 587 with STARTTLS or 465 with SSL.", self.icon_font, self.ui_font, self.mail_smtp_port_input))
+        layout.addWidget(SettingsRow(material_icon("mail"), "Signature", "Appended to new messages and replies.", self.icon_font, self.ui_font, self.mail_signature_input))
+        avatar_row = QWidget()
+        avatar_layout = QHBoxLayout(avatar_row)
+        avatar_layout.setContentsMargins(0, 0, 0, 0)
+        avatar_layout.setSpacing(8)
+        avatar_layout.addWidget(self.mail_avatar_path_input, 1)
+        self.mail_choose_avatar_button = QPushButton("Choose")
+        self.mail_choose_avatar_button.setObjectName("secondaryButton")
+        self.mail_choose_avatar_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_choose_avatar_button.clicked.connect(self._choose_mail_avatar)
+        avatar_layout.addWidget(self.mail_choose_avatar_button)
+        layout.addWidget(SettingsRow(material_icon("mail"), "Account avatar", "Shown in Hanauta Mail next to the server status chip.", self.icon_font, self.ui_font, avatar_row))
+        layout.addWidget(SettingsRow(material_icon("schedule"), "Sync interval (sec)", "Background refresh cadence for this account.", self.icon_font, self.ui_font, self.mail_poll_interval_input))
+        storage_row = QWidget()
+        storage_layout = QHBoxLayout(storage_row)
+        storage_layout.setContentsMargins(0, 0, 0, 0)
+        storage_layout.setSpacing(8)
+        storage_layout.addWidget(self.mail_storage_path_input, 1)
+        self.mail_choose_storage_button = QPushButton("Choose")
+        self.mail_choose_storage_button.setObjectName("secondaryButton")
+        self.mail_choose_storage_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_choose_storage_button.clicked.connect(self._choose_mail_storage_path)
+        storage_layout.addWidget(self.mail_choose_storage_button)
+        layout.addWidget(SettingsRow(material_icon("storage"), "Encrypted mail store", "Choose where Hanauta Mail keeps its encrypted local database under local state.", self.icon_font, self.ui_font, storage_row))
+
+        self.mail_imap_ssl_switch = SwitchButton(True)
+        self.mail_smtp_starttls_switch = SwitchButton(True)
+        self.mail_smtp_ssl_switch = SwitchButton(False)
+        self.mail_notify_switch = SwitchButton(True)
+        layout.addWidget(SettingsRow(material_icon("shield"), "IMAP SSL", "Keep this enabled for almost every modern provider.", self.icon_font, self.ui_font, self.mail_imap_ssl_switch))
+        layout.addWidget(SettingsRow(material_icon("mail"), "SMTP STARTTLS", "Use STARTTLS when your SMTP port is 587.", self.icon_font, self.ui_font, self.mail_smtp_starttls_switch))
+        layout.addWidget(SettingsRow(material_icon("shield"), "SMTP SSL", "Use this instead of STARTTLS when your provider wants port 465.", self.icon_font, self.ui_font, self.mail_smtp_ssl_switch))
+        layout.addWidget(SettingsRow(material_icon("notifications_active"), "Desktop notifications", "Allow this mailbox to send new mail notifications.", self.icon_font, self.ui_font, self.mail_notify_switch))
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.mail_new_button = QPushButton("New account")
+        self.mail_new_button.setObjectName("secondaryButton")
+        self.mail_save_button = QPushButton("Save account")
+        self.mail_save_button.setObjectName("primaryButton")
+        self.mail_delete_button = QPushButton("Delete account")
+        self.mail_delete_button.setObjectName("secondaryButton")
+        self.mail_open_button = QPushButton("Open Hanauta Mail")
+        self.mail_open_button.setObjectName("secondaryButton")
+        for button in (self.mail_new_button, self.mail_save_button, self.mail_delete_button, self.mail_open_button):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_new_button.clicked.connect(self._clear_mail_account_form)
+        self.mail_save_button.clicked.connect(self._save_mail_account_settings)
+        self.mail_delete_button.clicked.connect(self._delete_mail_account_settings)
+        self.mail_open_button.clicked.connect(self._launch_mail_client)
+        actions.addWidget(self.mail_new_button)
+        actions.addWidget(self.mail_save_button)
+        actions.addWidget(self.mail_delete_button)
+        actions.addWidget(self.mail_open_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        self.mail_status = QLabel("Mail accounts are stored in Hanauta Mail's shared database.")
+        self.mail_status.setWordWrap(True)
+        self.mail_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.mail_status)
+
+        section = ExpandableServiceSection(
+            "mail",
+            "Mail",
+            "Configure multiple IMAP/SMTP accounts for Hanauta Mail and jump straight into the client.",
+            material_icon("mail"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("mail"),
+            lambda enabled: self._set_service_enabled("mail", enabled),
+        )
+        self.service_sections["mail"] = section
+        self._reload_mail_accounts()
+        return section
+
+    def _reload_mail_accounts(self, selected_account_id: int = 0) -> None:
+        accounts = self.mail_account_store.list_accounts()
+        self.mail_accounts = accounts
+        self.mail_account_picker.blockSignals(True)
+        self.mail_account_picker.clear()
+        self.mail_account_picker.addItem("New account", 0)
+        target_index = 0
+        for index, account in enumerate(accounts, start=1):
+            self.mail_account_picker.addItem(
+                f"{account.get('label') or account.get('email_address')} · {account.get('email_address', '')}",
+                int(account.get("id", 0)),
+            )
+            if int(account.get("id", 0)) == int(selected_account_id):
+                target_index = index
+        self.mail_account_picker.setCurrentIndex(target_index)
+        self.mail_account_picker.blockSignals(False)
+        self._load_selected_mail_account(target_index)
+
+    def _load_selected_mail_account(self, index: int) -> None:
+        account_id = int(self.mail_account_picker.itemData(index) or 0) if hasattr(self, "mail_account_picker") else 0
+        account = self.mail_account_store.get_account(account_id) if account_id > 0 else None
+        if not account:
+            self._clear_mail_account_form(update_picker=False)
+            self.mail_delete_button.setEnabled(False)
+            return
+        self.mail_label_input.setText(str(account.get("label", "")))
+        self.mail_display_name_input.setText(str(account.get("display_name", "")))
+        self.mail_email_input.setText(str(account.get("email_address", "")))
+        self.mail_username_input.setText(str(account.get("username", "")))
+        self.mail_password_input.setText(str(account.get("password", "")))
+        self.mail_imap_host_input.setText(str(account.get("imap_host", "")))
+        self.mail_imap_port_input.setText(str(account.get("imap_port", 993)))
+        self.mail_smtp_host_input.setText(str(account.get("smtp_host", "")))
+        self.mail_smtp_port_input.setText(str(account.get("smtp_port", 587)))
+        self.mail_signature_input.setText(str(account.get("signature", "")))
+        self.mail_avatar_path_input.setText(str(account.get("avatar_path", "")))
+        self.mail_poll_interval_input.setText(str(account.get("poll_interval_seconds", 90)))
+        self.mail_imap_ssl_switch.setChecked(bool(account.get("imap_ssl", True)))
+        self.mail_imap_ssl_switch._apply_state()
+        self.mail_smtp_starttls_switch.setChecked(bool(account.get("smtp_starttls", True)))
+        self.mail_smtp_starttls_switch._apply_state()
+        self.mail_smtp_ssl_switch.setChecked(bool(account.get("smtp_ssl", False)))
+        self.mail_smtp_ssl_switch._apply_state()
+        self.mail_notify_switch.setChecked(bool(account.get("notify_enabled", True)))
+        self.mail_notify_switch._apply_state()
+        self.mail_delete_button.setEnabled(True)
+        self.mail_status.setText(f"Editing {account.get('email_address', 'mail account')}.")
+
+    def _clear_mail_account_form(self, checked: bool = False, *, update_picker: bool = True) -> None:
+        del checked
+        if update_picker and hasattr(self, "mail_account_picker"):
+            self.mail_account_picker.blockSignals(True)
+            self.mail_account_picker.setCurrentIndex(0)
+            self.mail_account_picker.blockSignals(False)
+        for widget in (
+            self.mail_label_input,
+            self.mail_display_name_input,
+            self.mail_email_input,
+            self.mail_username_input,
+            self.mail_password_input,
+            self.mail_imap_host_input,
+            self.mail_smtp_host_input,
+            self.mail_signature_input,
+            self.mail_avatar_path_input,
+        ):
+            widget.clear()
+        self.mail_imap_port_input.setText("993")
+        self.mail_smtp_port_input.setText("587")
+        self.mail_poll_interval_input.setText("90")
+        self.mail_imap_ssl_switch.setChecked(True)
+        self.mail_imap_ssl_switch._apply_state()
+        self.mail_smtp_starttls_switch.setChecked(True)
+        self.mail_smtp_starttls_switch._apply_state()
+        self.mail_smtp_ssl_switch.setChecked(False)
+        self.mail_smtp_ssl_switch._apply_state()
+        self.mail_notify_switch.setChecked(True)
+        self.mail_notify_switch._apply_state()
+        self.mail_delete_button.setEnabled(False)
+        self.mail_status.setText("Create a new IMAP/SMTP account for Hanauta Mail.")
+
+    def _save_mail_account_settings(self) -> None:
+        current_index = self.mail_account_picker.currentIndex() if hasattr(self, "mail_account_picker") else 0
+        account_id = int(self.mail_account_picker.itemData(current_index) or 0) if hasattr(self, "mail_account_picker") else 0
+        required = {
+            "email address": self.mail_email_input.text().strip(),
+            "username": self.mail_username_input.text().strip(),
+            "password": self.mail_password_input.text(),
+            "IMAP host": self.mail_imap_host_input.text().strip(),
+            "SMTP host": self.mail_smtp_host_input.text().strip(),
+        }
+        missing = [label for label, value in required.items() if not value]
+        if missing:
+            self.mail_status.setText(f"Missing mail fields: {', '.join(missing)}.")
+            return
+        try:
+            imap_port = int(self.mail_imap_port_input.text().strip() or "993")
+            smtp_port = int(self.mail_smtp_port_input.text().strip() or "587")
+            poll_interval = int(self.mail_poll_interval_input.text().strip() or "90")
+        except Exception:
+            self.mail_status.setText("Mail ports and sync interval must be valid numbers.")
+            return
+        payload = {
+            "id": account_id,
+            "label": self.mail_label_input.text().strip(),
+            "display_name": self.mail_display_name_input.text().strip(),
+            "email_address": self.mail_email_input.text().strip(),
+            "username": self.mail_username_input.text().strip(),
+            "password": self.mail_password_input.text(),
+            "imap_host": self.mail_imap_host_input.text().strip(),
+            "imap_port": imap_port,
+            "imap_ssl": bool(self.mail_imap_ssl_switch.isChecked()),
+            "smtp_host": self.mail_smtp_host_input.text().strip(),
+            "smtp_port": smtp_port,
+            "smtp_starttls": bool(self.mail_smtp_starttls_switch.isChecked()),
+            "smtp_ssl": bool(self.mail_smtp_ssl_switch.isChecked()),
+            "signature": self.mail_signature_input.text().strip(),
+            "avatar_path": self.mail_avatar_path_input.text().strip(),
+            "notify_enabled": bool(self.mail_notify_switch.isChecked()),
+            "poll_interval_seconds": poll_interval,
+            "folders_json": "[]",
+            "folder_state_json": "{}",
+        }
+        desired_path = Path(self.mail_storage_path_input.text().strip() or str(MAIL_DB_PATH)).expanduser()
+        current_path = self.mail_account_store.path.expanduser()
+        if desired_path != current_path:
+            desired_path.parent.mkdir(parents=True, exist_ok=True)
+            if current_path.exists() and not desired_path.exists():
+                shutil.copy2(current_path, desired_path)
+            self.mail_account_store = MailAccountStore(desired_path)
+        save_mail_storage_config(
+            {
+                "db_path": str(desired_path),
+                "attachments_dir": str(MAIL_STATE_DIR / "cache"),
+            }
+        )
+        try:
+            saved_account_id = self.mail_account_store.save_account(payload)
+        except Exception as exc:
+            self.mail_status.setText(f"Failed to save mail account: {exc}")
+            return
+        self._reload_mail_accounts(saved_account_id)
+        self.mail_status.setText(f"Mail account saved for {payload['email_address']}.")
+
+    def _delete_mail_account_settings(self) -> None:
+        current_index = self.mail_account_picker.currentIndex() if hasattr(self, "mail_account_picker") else 0
+        account_id = int(self.mail_account_picker.itemData(current_index) or 0) if hasattr(self, "mail_account_picker") else 0
+        if account_id <= 0:
+            self.mail_status.setText("Select a saved account before deleting it.")
+            return
+        try:
+            self.mail_account_store.delete_account(account_id)
+        except Exception as exc:
+            self.mail_status.setText(f"Failed to delete mail account: {exc}")
+            return
+        self._reload_mail_accounts(0)
+        self.mail_status.setText("Mail account deleted.")
+
+    def _launch_mail_client(self) -> None:
+        command = entry_command(APP_DIR / "pyqt" / "email-client" / "email_client.py")
+        if not command:
+            self.mail_status.setText("Hanauta Mail launch script is unavailable.")
+            return
+        try:
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception as exc:
+            self.mail_status.setText(f"Failed to open Hanauta Mail: {exc}")
+            return
+        self.mail_status.setText("Opened Hanauta Mail.")
+
+    def _choose_mail_avatar(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choose mail avatar", str(Path.home() / "Pictures"), "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
+        if path:
+            self.mail_avatar_path_input.setText(path)
+
+    def _choose_mail_storage_path(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Choose Hanauta Mail database", self.mail_storage_path_input.text().strip() or str(MAIL_DB_PATH), "SQLite database (*.sqlite3 *.db)")
+        if path:
+            self.mail_storage_path_input.setText(path)
 
     def _build_home_assistant_section(self) -> QWidget:
         content = QWidget()

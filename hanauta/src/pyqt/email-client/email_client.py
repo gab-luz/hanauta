@@ -5,6 +5,7 @@ import html
 import imaplib
 import json
 import os
+import base64
 import shutil
 import signal
 import smtplib
@@ -15,6 +16,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email import message_from_bytes
@@ -26,7 +28,30 @@ from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import QObject, Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QApplication, QFileDialog, QVBoxLayout, QWidget
+from pyqt.shared.runtime import entry_command
+from pyqt.shared.theme import ThemePalette, load_theme_palette, palette_mtime
+
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+    CRYPTO_AVAILABLE = True
+except Exception:
+    Fernet = Any  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment]
+    CRYPTO_AVAILABLE = False
+
+_chromium_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
+for _flag in ("--disable-logging", "--log-level=3"):
+    if _flag not in _chromium_flags:
+        _chromium_flags = f"{_chromium_flags} {_flag}".strip()
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = _chromium_flags
+_logging_rules = os.environ.get("QT_LOGGING_RULES", "").strip()
+if "qt.qpa.gl=false" not in _logging_rules:
+    _logging_rules = f"{_logging_rules};qt.qpa.gl=false".strip(";")
+if "qt.rhi.*=false" not in _logging_rules:
+    _logging_rules = f"{_logging_rules};qt.rhi.*=false".strip(";")
+os.environ["QT_LOGGING_RULES"] = _logging_rules
 
 try:
     from PyQt6.QtWebChannel import QWebChannel
@@ -47,7 +72,8 @@ HERE = Path(__file__).resolve().parent
 APP_DIR = HERE.parents[1]
 ROOT = APP_DIR.parents[1]
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
-DB_PATH = STATE_DIR / "mail.sqlite3"
+STORAGE_CONFIG_PATH = STATE_DIR / "storage.json"
+KEY_PATH = STATE_DIR / "storage.key"
 HTML_PATH = HERE / "code.html"
 APP_NAME = "Hanauta Mail"
 DEFAULT_SOUND_PATHS = (
@@ -57,10 +83,153 @@ DEFAULT_SOUND_PATHS = (
 )
 FOLDER_PREFERENCES = ("INBOX", "Sent", "Drafts", "Archive", "Spam", "Trash")
 POLL_FALLBACK_SECONDS = 90
+SPAM_FOLDERS = {"spam", "junk", "bulk mail", "bulk", "quarantine"}
+SPAM_KEYWORDS = (
+    "winner",
+    "won",
+    "claim now",
+    "act now",
+    "urgent response",
+    "crypto giveaway",
+    "double your",
+    "guaranteed income",
+    "make money fast",
+    "loan approved",
+    "no credit check",
+    "casino",
+    "bet now",
+    "free gift",
+    "gift card",
+    "viagra",
+    "bitcoin",
+    "wallet suspended",
+    "password expires",
+    "confirm account immediately",
+)
+REAL_SPAM_THRESHOLD = 5.0
+TRACKING_QUERY_KEYS = {
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_id",
+    "utm_name",
+    "utm_reader",
+    "gclid",
+    "gclsrc",
+    "fbclid",
+    "mc_cid",
+    "mc_eid",
+    "mkt_tok",
+    "vero_conv",
+    "vero_id",
+    "rb_clickid",
+    "s_cid",
+    "igshid",
+    "si",
+}
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def default_storage_config() -> dict[str, Any]:
+    return {
+        "db_path": str(STATE_DIR / "mail.sqlite3"),
+        "attachments_dir": str(STATE_DIR / "cache"),
+    }
+
+
+def load_storage_config() -> dict[str, Any]:
+    try:
+        payload = json.loads(STORAGE_CONFIG_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("invalid storage config")
+    except Exception:
+        payload = {}
+    config = default_storage_config()
+    config["db_path"] = str(payload.get("db_path", config["db_path"])).strip() or config["db_path"]
+    config["attachments_dir"] = str(payload.get("attachments_dir", config["attachments_dir"])).strip() or config["attachments_dir"]
+    return config
+
+
+def save_storage_config(config: dict[str, Any]) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STORAGE_CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
+def resolved_db_path() -> Path:
+    return Path(load_storage_config()["db_path"]).expanduser()
+
+
+DB_PATH = resolved_db_path()
+
+
+class MailCipher:
+    def __init__(self, key_path: Path) -> None:
+        self.key_path = key_path
+        self.key_path.parent.mkdir(parents=True, exist_ok=True)
+        self.enabled = CRYPTO_AVAILABLE
+        self._fernet = Fernet(self._load_key()) if self.enabled else None
+
+    def _load_key(self) -> bytes:
+        if self.key_path.exists():
+            return self.key_path.read_bytes().strip()
+        key = Fernet.generate_key()
+        self.key_path.write_bytes(key + b"\n")
+        try:
+            os.chmod(self.key_path, 0o600)
+        except Exception:
+            pass
+        return key
+
+    def encrypt_text(self, value: str) -> str:
+        if not self._fernet:
+            return value
+        if not value:
+            return ""
+        return self._fernet.encrypt(value.encode("utf-8")).decode("ascii")
+
+    def decrypt_text(self, value: str) -> str:
+        if not value or not self._fernet:
+            return value
+        try:
+            return self._fernet.decrypt(value.encode("ascii")).decode("utf-8", errors="ignore")
+        except (InvalidToken, ValueError):
+            return value
+
+    def encrypt_bytes(self, value: bytes) -> bytes:
+        if not self._fernet:
+            return value
+        if not value:
+            return b""
+        return self._fernet.encrypt(value)
+
+    def decrypt_bytes(self, value: bytes | str | None) -> bytes:
+        if value is None:
+            return b""
+        if isinstance(value, str):
+            value = value.encode("utf-8", errors="ignore")
+        if not value or not self._fernet:
+            return value
+        try:
+            return self._fernet.decrypt(value)
+        except (InvalidToken, ValueError):
+            return value
+
+
+def json_ready(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return ""
+    if isinstance(value, dict):
+        return {str(key): json_ready(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_ready(item) for item in value]
+    if isinstance(value, tuple):
+        return [json_ready(item) for item in value]
+    return value
 
 
 def decode_text(value: Any) -> str:
@@ -113,6 +282,101 @@ def re_sub(pattern: str, replacement: str, value: str) -> str:
     return re.sub(pattern, replacement, value, flags=re.IGNORECASE)
 
 
+def clean_tracking_url(url_text: str) -> str:
+    raw = str(url_text or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(raw)
+    except Exception:
+        return raw
+
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    lowered_host = parsed.netloc.lower()
+
+    for wrapped_key in ("url", "u", "target", "dest", "destination", "redir", "redirect"):
+        wrapped_values = query.get(wrapped_key, [])
+        if wrapped_values and lowered_host:
+            candidate = urllib.parse.unquote(wrapped_values[0])
+            if candidate.startswith(("http://", "https://")):
+                raw = candidate
+                try:
+                    parsed = urllib.parse.urlparse(raw)
+                    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+                    lowered_host = parsed.netloc.lower()
+                except Exception:
+                    return raw
+                break
+
+    clean_query = [
+        (key, value)
+        for key, values in query.items()
+        for value in values
+        if key.lower() not in TRACKING_QUERY_KEYS
+    ]
+    clean_fragment = "" if parsed.fragment.lower().startswith(("msdynmkt_tracking",)) else parsed.fragment
+    return urllib.parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            urllib.parse.urlencode(clean_query, doseq=True),
+            clean_fragment,
+        )
+    )
+
+
+def inline_asset_map(msg: Message) -> dict[str, str]:
+    assets: dict[str, str] = {}
+    for part in msg.walk():
+        content_id = str(part.get("Content-ID", "")).strip()
+        payload = part.get_payload(decode=True) or b""
+        if not content_id or not payload:
+            continue
+        content_type = (part.get_content_type() or "application/octet-stream").lower()
+        token = content_id.strip("<>").strip()
+        assets[token] = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
+    return assets
+
+
+def prepare_message_html(html_body: str, msg: Message) -> str:
+    if not html_body.strip():
+        return ""
+
+    cid_assets = inline_asset_map(msg)
+    content = re_sub(r"<script[\s\S]*?</script>", "", html_body)
+    content = re_sub(r"\son[a-z-]+\s*=\s*(['\"]).*?\1", "", content)
+    content = re_sub(r"\sstyle\s*=\s*(['\"]).*?\1", "", content)
+
+    def replace_cid(match) -> str:
+        quote = match.group(1)
+        src = match.group(2).strip()
+        if src.lower().startswith("cid:"):
+            token = src[4:].strip("<>").strip()
+            replacement = cid_assets.get(token, "")
+            if replacement:
+                return f'src={quote}{replacement}{quote}'
+        return f'src={quote}{src}{quote}'
+
+    def replace_href(match) -> str:
+        quote = match.group(1)
+        href = html.unescape(match.group(2).strip())
+        if not href or href.startswith(("#", "mailto:", "tel:")):
+            return f'href={quote}{html.escape(href, quote=True)}{quote}'
+        cleaned = clean_tracking_url(href)
+        return (
+            f'href={quote}{html.escape(cleaned, quote=True)}{quote} '
+            f'data-original-href={quote}{html.escape(href, quote=True)}{quote} '
+            f'data-clean-href={quote}{html.escape(cleaned, quote=True)}{quote}'
+        )
+
+    content = re_sub(r'src=(["\'])(.*?)\1', lambda match: replace_cid(match), content)
+    content = re_sub(r'href=(["\'])(.*?)\1', lambda match: replace_href(match), content)
+    content = re_sub(r"<img\b", '<img loading="lazy" referrerpolicy="no-referrer" ', content)
+    return content.strip()
+
+
 def message_parts(msg: Message) -> tuple[str, str]:
     html_body = ""
     text_body = ""
@@ -145,6 +409,8 @@ def message_parts(msg: Message) -> tuple[str, str]:
             html_body = decoded
         else:
             text_body = decoded
+    if html_body:
+        html_body = prepare_message_html(html_body, msg)
     if not html_body and text_body:
         html_body = "<pre>" + html.escape(text_body) + "</pre>"
     if not text_body and html_body:
@@ -214,6 +480,117 @@ def preferred_sound_path(path_text: str) -> Path | None:
     return None
 
 
+def spam_assessment(
+    *,
+    folder: str,
+    subject: str,
+    from_email: str,
+    body_text: str,
+    body_html: str,
+) -> tuple[float, bool]:
+    lowered_folder = folder.strip().lower()
+    if lowered_folder in SPAM_FOLDERS:
+        return 1.0, True
+
+    score = 0.0
+    haystack = " ".join(
+        [
+            subject.lower(),
+            from_email.lower(),
+            body_text.lower(),
+            html_to_text(body_html).lower(),
+        ]
+    )
+    for keyword in SPAM_KEYWORDS:
+        if keyword in haystack:
+            score += 0.12
+    if "http://" in haystack:
+        score += 0.08
+    if len(re_sub(r"[^A-Z]", "", subject)) >= 8 and subject:
+        score += 0.14
+    if "$" in haystack or "usd" in haystack:
+        score += 0.08
+    if from_email and any(from_email.lower().endswith(suffix) for suffix in (".ru", ".top", ".xyz", ".click")):
+        score += 0.18
+    text_len = len((body_text or "").strip())
+    html_len = len((body_html or "").strip())
+    if html_len > max(400, text_len * 3):
+        score += 0.12
+    score = max(0.0, min(1.0, score))
+    return score, score >= 0.46
+
+
+def _parse_spamc_score(output: bytes | str) -> tuple[float, bool] | None:
+    text = decode_text(output).strip()
+    if "/" not in text:
+        return None
+    left, right = text.split("/", 1)
+    try:
+        score = float(left.strip())
+        threshold = max(0.1, float(right.strip().split()[0]))
+    except Exception:
+        return None
+    return max(0.0, min(1.0, score / threshold)), score >= threshold
+
+
+def _parse_spamassassin_score(output: bytes | str) -> tuple[float, bool] | None:
+    import re
+
+    text = decode_text(output)
+    match = re.search(
+        r"X-Spam-Status:\s*(Yes|No).*?score=([-\d.]+).*?required=([-\d.]+)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    try:
+        score = float(match.group(2))
+        threshold = max(0.1, float(match.group(3)))
+    except Exception:
+        return None
+    return max(0.0, min(1.0, score / threshold)), match.group(1).lower() == "yes"
+
+
+def real_spam_assessment(raw_message: bytes) -> tuple[float, bool] | None:
+    if not raw_message:
+        return None
+
+    spamc = shutil.which("spamc")
+    if spamc:
+        try:
+            result = subprocess.run(
+                [spamc, "-c"],
+                input=raw_message,
+                capture_output=True,
+                timeout=8,
+                check=False,
+            )
+            parsed = _parse_spamc_score(result.stdout or result.stderr)
+            if parsed is not None:
+                return parsed
+        except Exception:
+            pass
+
+    spamassassin = shutil.which("spamassassin")
+    if spamassassin:
+        try:
+            result = subprocess.run(
+                [spamassassin, "-t"],
+                input=raw_message,
+                capture_output=True,
+                timeout=12,
+                check=False,
+            )
+            parsed = _parse_spamassassin_score(result.stdout or result.stderr)
+            if parsed is not None:
+                return parsed
+        except Exception:
+            pass
+
+    return None
+
+
 @dataclass
 class SyncSummary:
     had_new_mail: bool = False
@@ -227,6 +604,7 @@ class MailStore:
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.lock = threading.RLock()
+        self.cipher = MailCipher(KEY_PATH)
         self._init_db()
 
     def _init_db(self) -> None:
@@ -238,6 +616,7 @@ class MailStore:
                     label TEXT NOT NULL,
                     email_address TEXT NOT NULL,
                     display_name TEXT NOT NULL DEFAULT '',
+                    avatar_path TEXT NOT NULL DEFAULT '',
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
                     imap_host TEXT NOT NULL,
@@ -271,9 +650,12 @@ class MailStore:
                     snippet TEXT NOT NULL DEFAULT '',
                     body_html TEXT NOT NULL DEFAULT '',
                     body_text TEXT NOT NULL DEFAULT '',
+                    raw_source BLOB,
                     seen INTEGER NOT NULL DEFAULT 0,
                     flagged INTEGER NOT NULL DEFAULT 0,
                     has_attachments INTEGER NOT NULL DEFAULT 0,
+                    spam_score REAL NOT NULL DEFAULT 0.0,
+                    is_spam INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (account_id, folder, uid)
                 );
                 CREATE TABLE IF NOT EXISTS contacts (
@@ -289,12 +671,40 @@ class MailStore:
                 """
             )
             self.conn.commit()
+            self._ensure_account_column("avatar_path", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_message_column("raw_source", "BLOB")
+            self._ensure_message_column("spam_score", "REAL NOT NULL DEFAULT 0.0")
+            self._ensure_message_column("is_spam", "INTEGER NOT NULL DEFAULT 0")
         self.ensure_setting("selected_account_id", "")
         self.ensure_setting("selected_folder", "INBOX")
         self.ensure_setting("selected_message_key", "")
         self.ensure_setting("search_query", "")
         self.ensure_setting("sound_enabled", "1")
         self.ensure_setting("sound_path", "")
+
+    def _ensure_message_column(self, column_name: str, definition: str) -> None:
+        try:
+            columns = {
+                str(row["name"])
+                for row in self.conn.execute("PRAGMA table_info(messages)").fetchall()
+            }
+            if column_name not in columns:
+                self.conn.execute(f"ALTER TABLE messages ADD COLUMN {column_name} {definition}")
+                self.conn.commit()
+        except Exception:
+            return
+
+    def _ensure_account_column(self, column_name: str, definition: str) -> None:
+        try:
+            columns = {
+                str(row["name"])
+                for row in self.conn.execute("PRAGMA table_info(accounts)").fetchall()
+            }
+            if column_name not in columns:
+                self.conn.execute(f"ALTER TABLE accounts ADD COLUMN {column_name} {definition}")
+                self.conn.commit()
+        except Exception:
+            return
 
     def ensure_setting(self, key: str, value: str) -> None:
         with self.lock:
@@ -328,7 +738,11 @@ class MailStore:
     def get_account(self, account_id: int) -> dict[str, Any] | None:
         with self.lock:
             row = self.conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        account = dict(row)
+        account["password"] = self.cipher.decrypt_text(str(account.get("password", "")))
+        return account
 
     def save_account(self, payload: dict[str, Any]) -> int:
         now = now_iso()
@@ -336,8 +750,9 @@ class MailStore:
             str(payload.get("label", "")).strip() or str(payload.get("email_address", "")).strip(),
             str(payload.get("email_address", "")).strip(),
             str(payload.get("display_name", "")).strip(),
+            str(payload.get("avatar_path", "")).strip(),
             str(payload.get("username", "")).strip(),
-            str(payload.get("password", "")),
+            self.cipher.encrypt_text(str(payload.get("password", ""))),
             str(payload.get("imap_host", "")).strip(),
             int(payload.get("imap_port", 993) or 993),
             1 if bool(payload.get("imap_ssl", True)) else 0,
@@ -358,7 +773,7 @@ class MailStore:
                 self.conn.execute(
                     """
                     UPDATE accounts
-                    SET label=?, email_address=?, display_name=?, username=?, password=?,
+                    SET label=?, email_address=?, display_name=?, avatar_path=?, username=?, password=?,
                         imap_host=?, imap_port=?, imap_ssl=?, smtp_host=?, smtp_port=?,
                         smtp_starttls=?, smtp_ssl=?, folders_json=?, folder_state_json=?,
                         signature=?, notify_enabled=?, poll_interval_seconds=?, updated_at=?
@@ -370,11 +785,11 @@ class MailStore:
                 self.conn.execute(
                     """
                     INSERT INTO accounts(
-                        label, email_address, display_name, username, password,
+                        label, email_address, display_name, avatar_path, username, password,
                         imap_host, imap_port, imap_ssl, smtp_host, smtp_port,
                         smtp_starttls, smtp_ssl, folders_json, folder_state_json,
                         signature, notify_enabled, poll_interval_seconds, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (*values, now),
                 )
@@ -403,8 +818,8 @@ class MailStore:
                 INSERT INTO messages(
                     account_id, folder, uid, message_id, in_reply_to, references_json,
                     subject, from_name, from_email, to_line, cc_line, date_iso, snippet,
-                    body_html, body_text, seen, flagged, has_attachments
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    body_html, body_text, raw_source, seen, flagged, has_attachments, spam_score, is_spam
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_id, folder, uid) DO UPDATE SET
                     message_id=excluded.message_id,
                     in_reply_to=excluded.in_reply_to,
@@ -418,9 +833,12 @@ class MailStore:
                     snippet=excluded.snippet,
                     body_html=excluded.body_html,
                     body_text=excluded.body_text,
+                    raw_source=excluded.raw_source,
                     seen=excluded.seen,
                     flagged=excluded.flagged,
-                    has_attachments=excluded.has_attachments
+                    has_attachments=excluded.has_attachments,
+                    spam_score=excluded.spam_score,
+                    is_spam=excluded.is_spam
                 """,
                 (
                     account_id,
@@ -436,39 +854,61 @@ class MailStore:
                     str(payload.get("cc_line", "")),
                     str(payload.get("date_iso", now_iso())),
                     str(payload.get("snippet", "")),
-                    str(payload.get("body_html", "")),
-                    str(payload.get("body_text", "")),
+                    self.cipher.encrypt_text(str(payload.get("body_html", ""))),
+                    self.cipher.encrypt_text(str(payload.get("body_text", ""))),
+                    self.cipher.encrypt_bytes(payload.get("raw_source") or b""),
                     1 if bool(payload.get("seen", False)) else 0,
                     1 if bool(payload.get("flagged", False)) else 0,
                     1 if bool(payload.get("has_attachments", False)) else 0,
+                    float(payload.get("spam_score", 0.0) or 0.0),
+                    1 if bool(payload.get("is_spam", False)) else 0,
                 ),
             )
             self.conn.commit()
 
-    def list_messages(self, account_id: int, folder: str, search: str) -> list[dict[str, Any]]:
+    def list_messages(self, account_id: int, folder: str, search: str, limit: int | None = 60) -> list[dict[str, Any]]:
         query = """
             SELECT account_id, folder, uid, subject, from_name, from_email, date_iso, snippet,
-                   seen, flagged, has_attachments
+                   seen, flagged, has_attachments, is_spam, spam_score
             FROM messages
-            WHERE account_id = ? AND folder = ?
+            WHERE 1 = 1
         """
-        params: list[Any] = [account_id, folder]
+        params: list[Any] = []
+        normalized_folder = folder.strip().lower()
+        if account_id > 0:
+            query += " AND account_id = ?"
+            params.append(account_id)
+        if normalized_folder == "spam":
+            query += " AND (lower(folder) IN (?, ?, ?, ?, ?) OR is_spam = 1)"
+            params.extend(sorted(SPAM_FOLDERS))
+        else:
+            query += " AND lower(folder) = ?"
+            params.append(normalized_folder)
+            if normalized_folder == "inbox":
+                query += " AND is_spam = 0"
         if search.strip():
             like = f"%{search.strip().lower()}%"
             query += (
                 " AND (lower(subject) LIKE ? OR lower(from_name) LIKE ? OR lower(from_email) LIKE ? "
-                " OR lower(snippet) LIKE ? OR lower(body_text) LIKE ?)"
+                " OR lower(snippet) LIKE ?)"
             )
-            params.extend([like, like, like, like, like])
-        query += " ORDER BY datetime(date_iso) DESC LIMIT 60"
+            params.extend([like, like, like, like])
+        query += " ORDER BY datetime(date_iso) DESC"
+        if limit is not None:
+            query += f" LIMIT {max(1, int(limit))}"
         with self.lock:
             rows = self.conn.execute(query, params).fetchall()
+            account_map = {
+                int(row["id"]): str(row["label"])
+                for row in self.conn.execute("SELECT id, label FROM accounts").fetchall()
+            }
         messages: list[dict[str, Any]] = []
         for row in rows:
             item = dict(row)
             item["key"] = build_message_key(int(item["account_id"]), str(item["folder"]), str(item["uid"]))
             item["display_time"] = display_time(str(item.get("date_iso", "")))
             item["sender"] = sender_display(str(item.get("from_name", "")), str(item.get("from_email", "")))
+            item["account_label"] = account_map.get(int(item["account_id"]), "Mailbox")
             messages.append(item)
         return messages
 
@@ -482,6 +922,9 @@ class MailStore:
         if not row:
             return None
         message = dict(row)
+        message.pop("raw_source", None)
+        message["body_html"] = self.cipher.decrypt_text(str(message.get("body_html", "")))
+        message["body_text"] = self.cipher.decrypt_text(str(message.get("body_text", "")))
         message["key"] = key
         message["display_time"] = display_time(str(message.get("date_iso", "")))
         message["sender"] = sender_display(str(message.get("from_name", "")), str(message.get("from_email", "")))
@@ -490,6 +933,32 @@ class MailStore:
         except Exception:
             message["references"] = []
         return message
+
+    def raw_source_for_key(self, key: str) -> bytes:
+        account_id, folder, uid = parse_message_key(key)
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT raw_source, subject, from_name, from_email, to_line, cc_line, date_iso, body_text FROM messages WHERE account_id = ? AND folder = ? AND uid = ?",
+                (account_id, folder, uid),
+            ).fetchone()
+        if not row:
+            return b""
+        raw_source = row["raw_source"]
+        if raw_source:
+            decrypted = self.cipher.decrypt_bytes(raw_source)
+            if decrypted:
+                return decrypted
+        eml = EmailMessage()
+        eml["Subject"] = str(row["subject"] or "")
+        if str(row["from_email"] or "").strip():
+            eml["From"] = formataddr((str(row["from_name"] or ""), str(row["from_email"] or "")))
+        if str(row["to_line"] or "").strip():
+            eml["To"] = str(row["to_line"])
+        if str(row["cc_line"] or "").strip():
+            eml["Cc"] = str(row["cc_line"])
+        eml["Date"] = str(row["date_iso"] or "")
+        eml.set_content(self.cipher.decrypt_text(str(row["body_text"] or "")))
+        return eml.as_bytes()
 
     def mark_local_seen(self, key: str, seen: bool) -> None:
         account_id, folder, uid = parse_message_key(key)
@@ -528,8 +997,8 @@ class MailStore:
                 """
                 INSERT INTO messages(account_id, folder, uid, message_id, in_reply_to, references_json,
                                      subject, from_name, from_email, to_line, cc_line, date_iso, snippet,
-                                     body_html, body_text, seen, flagged, has_attachments)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     body_html, body_text, raw_source, seen, flagged, has_attachments, spam_score, is_spam)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     account_id,
@@ -547,9 +1016,12 @@ class MailStore:
                     payload["snippet"],
                     payload["body_html"],
                     payload["body_text"],
+                    payload["raw_source"],
                     payload["seen"],
                     payload["flagged"],
                     payload["has_attachments"],
+                    payload["spam_score"],
+                    payload["is_spam"],
                 ),
             )
             self.conn.commit()
@@ -603,6 +1075,10 @@ class MailBridge(QObject):
     archiveRequested = pyqtSignal(str)
     deleteRequested = pyqtSignal(str)
     seenRequested = pyqtSignal(str, bool)
+    settingsRequested = pyqtSignal()
+    exportSelectedRequested = pyqtSignal(str)
+    exportVisibleRequested = pyqtSignal()
+    externalLinkRequested = pyqtSignal(str)
     stateChanged = pyqtSignal(str)
     toastRequested = pyqtSignal(str, str)
 
@@ -649,6 +1125,22 @@ class MailBridge(QObject):
     @pyqtSlot(str, bool)
     def setSeen(self, message_key: str, seen: bool) -> None:
         self.seenRequested.emit(message_key, seen)
+
+    @pyqtSlot()
+    def openSettings(self) -> None:
+        self.settingsRequested.emit()
+
+    @pyqtSlot(str)
+    def exportSelected(self, message_key: str) -> None:
+        self.exportSelectedRequested.emit(message_key)
+
+    @pyqtSlot()
+    def exportVisible(self) -> None:
+        self.exportVisibleRequested.emit()
+
+    @pyqtSlot(str)
+    def openExternalLink(self, url: str) -> None:
+        self.externalLinkRequested.emit(url)
 
 
 class FragmentServer:
@@ -711,9 +1203,12 @@ class EmailClientWindow(QWidget):
         self.selected_folder = self.store.get_setting("selected_folder", "INBOX") or "INBOX"
         self.selected_message_key = self.store.get_setting("selected_message_key", "")
         self.search_query = self.store.get_setting("search_query", "")
+        self._theme_mtime = palette_mtime()
         self._page_ready = False
         self._sync_busy = False
         self._reply_draft: dict[str, Any] | None = None
+        self.account_status: dict[int, dict[str, Any]] = {}
+        self._pending_status_toasts: list[tuple[str, str]] = []
         self.fragment_server = FragmentServer(self)
 
         self.setWindowTitle(APP_NAME)
@@ -724,6 +1219,7 @@ class EmailClientWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.view = QWebEngineView(self)
+        self.view.page().setBackgroundColor(QColor("#12131d"))
         settings = self.view.settings()
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
@@ -747,12 +1243,19 @@ class EmailClientWindow(QWidget):
         self.bridge.archiveRequested.connect(self.archive_message)
         self.bridge.deleteRequested.connect(self.delete_message)
         self.bridge.seenRequested.connect(self.set_seen)
+        self.bridge.settingsRequested.connect(self.open_settings_app)
+        self.bridge.exportSelectedRequested.connect(self.export_selected_message)
+        self.bridge.exportVisibleRequested.connect(self.export_visible_messages_zip)
+        self.bridge.externalLinkRequested.connect(self.open_external_link)
         self.bridge.toastRequested.connect(self.push_toast)
         self.syncCompleted.connect(self._finish_sync)
 
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(lambda: self.schedule_sync("Background sync completed.", send_notifications=True))
         self.poll_timer.start(15000)
+        self.theme_timer = QTimer(self)
+        self.theme_timer.timeout.connect(self._reload_theme_if_needed)
+        self.theme_timer.start(3000)
 
         self._load_page()
         QTimer.singleShot(1000, lambda: self.schedule_sync("Initial sync completed.", send_notifications=False))
@@ -776,9 +1279,10 @@ class EmailClientWindow(QWidget):
         self.view.page().runJavaScript(script)
 
     def push_state(self) -> None:
-        payload = self._build_state_payload()
-        self.bridge.stateChanged.emit(json.dumps(payload))
-        self._run_js(f"window.setMailState({json.dumps(json.dumps(payload))});")
+        payload = json_ready(self._build_state_payload())
+        payload_json = json.dumps(payload)
+        self.bridge.stateChanged.emit(payload_json)
+        self._run_js(f"window.setMailState({payload_json});")
 
     def push_toast(self, title: str, body: str) -> None:
         safe_title = json.dumps(title)
@@ -787,18 +1291,20 @@ class EmailClientWindow(QWidget):
 
     def _build_state_payload(self) -> dict[str, Any]:
         with self.state_lock:
-            accounts = self.store.list_accounts()
+            stored_accounts = self.store.list_accounts()
             unread_map = self.store.unread_counts()
             selected_account = self.selected_account_id
-            if not accounts:
+            if not stored_accounts:
                 selected_account = 0
-            elif selected_account not in {int(item["id"]) for item in accounts}:
-                selected_account = int(accounts[0]["id"])
+            elif selected_account not in {0, *{int(item["id"]) for item in stored_accounts}}:
+                selected_account = 0
                 self.selected_account_id = selected_account
                 self.store.set_setting("selected_account_id", str(selected_account))
             folders: list[str] = []
-            selected_account_payload: dict[str, Any] | None = None
-            for account in accounts:
+            accounts: list[dict[str, Any]] = []
+            all_unread_total = 0
+            all_folder_unread: dict[str, int] = {}
+            for account in stored_accounts:
                 account_id = int(account["id"])
                 try:
                     folder_list = json.loads(str(account.get("folders_json", "[]")))
@@ -809,20 +1315,59 @@ class EmailClientWindow(QWidget):
                 account["folders"] = folder_list
                 account["unread_by_folder"] = unread_map.get(account_id, {})
                 account["unread_total"] = sum(account["unread_by_folder"].values())
+                all_unread_total += int(account["unread_total"])
+                for folder_name, unread_count in account["unread_by_folder"].items():
+                    all_folder_unread[str(folder_name)] = all_folder_unread.get(str(folder_name), 0) + int(unread_count)
                 account["selected"] = account_id == selected_account
-                if account_id == selected_account:
-                    selected_account_payload = account
+                if account_id == selected_account and selected_account > 0:
                     folders = folder_list
-            if selected_account and self.selected_folder not in folders and folders:
+                accounts.append(account)
+            all_account = {
+                "id": 0,
+                "label": "All Accounts",
+                "email_address": "Mixed inbox",
+                "display_name": "All Accounts",
+                "avatar_path": "",
+                "username": "",
+                "imap_host": "",
+                "imap_port": 0,
+                "imap_ssl": True,
+                "smtp_host": "",
+                "smtp_port": 0,
+                "smtp_starttls": True,
+                "smtp_ssl": False,
+                "notify_enabled": False,
+                "poll_interval_seconds": POLL_FALLBACK_SECONDS,
+                "signature": "",
+                "folders": list(FOLDER_PREFERENCES),
+                "selected": selected_account == 0,
+                "unread_total": all_unread_total,
+                "unread_by_folder": all_folder_unread,
+            }
+            accounts.insert(0, all_account)
+            if selected_account == 0:
+                folders = list(FOLDER_PREFERENCES)
+            if self.selected_folder not in folders and folders:
                 self.selected_folder = folders[0]
                 self.store.set_setting("selected_folder", self.selected_folder)
-            messages = self.store.list_messages(selected_account, self.selected_folder, self.search_query) if selected_account else []
+            messages = self.store.list_messages(selected_account, self.selected_folder, self.search_query)
             valid_keys = {item["key"] for item in messages}
             if self.selected_message_key not in valid_keys:
                 self.selected_message_key = messages[0]["key"] if messages else ""
                 self.store.set_setting("selected_message_key", self.selected_message_key)
             selected_message = self.store.get_message(self.selected_message_key) if self.selected_message_key else None
             contacts = self.store.list_contacts()
+            theme = load_theme_palette()
+            status = self.account_status.get(selected_account, {})
+            if selected_account == 0:
+                online_accounts = [item for key, item in self.account_status.items() if bool(item.get("online"))]
+                offline_accounts = [item for key, item in self.account_status.items() if not bool(item.get("online"))]
+                status = {
+                    "online": bool(online_accounts) and not bool(offline_accounts),
+                    "detail": "All mail servers reachable." if online_accounts and not offline_accounts else (
+                        "Some mail servers are unreachable." if offline_accounts else "Waiting for the first sync."
+                    ),
+                }
             state = {
                 "server_base": self.fragment_server.base_url,
                 "accounts": [
@@ -831,6 +1376,7 @@ class EmailClientWindow(QWidget):
                         "label": str(item["label"]),
                         "email_address": str(item["email_address"]),
                         "display_name": str(item["display_name"]),
+                        "avatar_path": str(item.get("avatar_path", "")),
                         "username": str(item["username"]),
                         "imap_host": str(item["imap_host"]),
                         "imap_port": int(item["imap_port"]),
@@ -849,6 +1395,24 @@ class EmailClientWindow(QWidget):
                     }
                     for item in accounts
                 ],
+                "theme": {
+                    "use_matugen": bool(theme.use_matugen),
+                    "primary": theme.primary,
+                    "primary_container": theme.primary_container,
+                    "secondary": theme.secondary,
+                    "background": theme.background,
+                    "surface": theme.surface,
+                    "surface_container": theme.surface_container,
+                    "surface_container_high": theme.surface_container_high,
+                    "surface_variant": theme.surface_variant,
+                    "outline": theme.outline,
+                    "on_surface": theme.on_surface,
+                    "on_surface_variant": theme.on_surface_variant,
+                    "error": theme.error,
+                    "ui_font_family": theme.ui_font_family,
+                    "display_font_family": theme.display_font_family,
+                    "mono_font_family": theme.mono_font_family,
+                },
                 "selected_account_id": selected_account,
                 "selected_folder": self.selected_folder,
                 "selected_message_key": self.selected_message_key,
@@ -860,141 +1424,330 @@ class EmailClientWindow(QWidget):
                 "sound_enabled": self.store.get_setting("sound_enabled", "1") == "1",
                 "sound_path": self.store.get_setting("sound_path", ""),
                 "reply_draft": self._reply_draft,
+                "mail_online": bool(status.get("online", False)),
+                "mail_status_text": str(status.get("detail", "Waiting for the first sync.")),
             }
             return state
 
+    def _reload_theme_if_needed(self) -> None:
+        current = palette_mtime()
+        if current == self._theme_mtime:
+            return
+        self._theme_mtime = current
+        self.push_state()
+
+    def open_settings_app(self) -> None:
+        command = entry_command(APP_DIR / "pyqt" / "settings-page" / "settings.py")
+        if not command:
+            self.push_toast("Settings unavailable", "Could not find Hanauta Settings.")
+            return
+        command = [*command, "--page", "services", "--service-section", "mail"]
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def export_selected_message(self, message_key: str) -> None:
+        if not message_key:
+            self.push_toast("Export failed", "No message is selected.")
+            return
+        path_text, _ = QFileDialog.getSaveFileName(self, "Export message", str(Path.home() / "Downloads" / "message.eml"), "Email files (*.eml)")
+        if not path_text:
+            return
+        target = Path(path_text)
+        try:
+            target.write_bytes(self.store.raw_source_for_key(message_key))
+        except Exception as exc:
+            self.push_toast("Export failed", str(exc))
+            return
+        self.push_toast("Message exported", target.name)
+
+    def export_visible_messages_zip(self) -> None:
+        path_text, _ = QFileDialog.getSaveFileName(self, "Export visible messages", str(Path.home() / "Downloads" / "hanauta-mail-export.zip"), "Zip archives (*.zip)")
+        if not path_text:
+            return
+        messages = self.store.list_messages(self.selected_account_id, self.selected_folder, self.search_query, limit=None)
+        target = Path(path_text)
+        try:
+            with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for index, message in enumerate(messages, start=1):
+                    safe_subject = re_sub(r"[^A-Za-z0-9._-]+", "_", str(message.get("subject") or "message")).strip("_") or "message"
+                    archive.writestr(f"{index:03d}-{safe_subject}.eml", self.store.raw_source_for_key(str(message["key"])))
+        except Exception as exc:
+            self.push_toast("Export failed", str(exc))
+            return
+        self.push_toast("Messages exported", target.name)
+
+    def open_external_link(self, url: str) -> None:
+        cleaned = clean_tracking_url(url)
+        target = cleaned or str(url or "").strip()
+        if not target:
+            return
+        subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def _record_account_status(self, account: dict[str, Any], online: bool, detail: str = "") -> None:
+        account_id = int(account["id"])
+        label = str(account.get("label") or account.get("email_address") or "Mail")
+        previous = self.account_status.get(account_id, {})
+        changed = previous.get("online") is not None and bool(previous.get("online")) != bool(online)
+        self.account_status[account_id] = {"online": bool(online), "detail": detail, "label": label}
+        if changed:
+            title = f"{label} is {'online' if online else 'offline'}"
+            body = "Mail sync reached the server again." if online else (detail or "The mail server is unreachable right now.")
+            self._pending_status_toasts.append((title, body))
+
     def render_fragment(self, path: str, query: dict[str, list[str]]) -> str | None:
+        self._apply_fragment_query_state(query)
         state = self._build_state_payload()
-        if path == "/fragment/sidebar":
-            return self._render_sidebar_fragment(state)
         if path == "/fragment/messages":
             return self._render_messages_fragment(state)
         if path == "/fragment/detail":
             return self._render_detail_fragment(state)
+        if path == "/fragment/sidebar":
+            return self._render_sidebar_fragment(state)
         return None
 
-    def _render_sidebar_fragment(self, state: dict[str, Any]) -> str:
+    def _query_value(self, query: dict[str, list[str]], key: str) -> str:
+        values = query.get(key, [])
+        if not values:
+            return ""
+        return str(values[0]).strip()
+
+    def _apply_fragment_query_state(self, query: dict[str, list[str]]) -> None:
+        search_query = self._query_value(query, "q")
+        account_id = self._query_value(query, "account_id")
+        folder = self._query_value(query, "folder")
+        message_key = self._query_value(query, "message_key")
+
+        if search_query != "" or "q" in query:
+            self.search_query = search_query
+            self.store.set_setting("search_query", self.search_query)
+
+        if account_id:
+            self.selected_account_id = int(account_id)
+            self.store.set_setting("selected_account_id", account_id)
+
+        if folder:
+            self.selected_folder = folder
+            self.store.set_setting("selected_folder", folder)
+            self.selected_message_key = ""
+            self.store.set_setting("selected_message_key", "")
+
+        if message_key:
+            self.selected_message_key = message_key
+            self.store.set_setting("selected_message_key", message_key)
+            self.store.mark_local_seen(message_key, True)
+            self._set_remote_seen(message_key, True)
+
+    def _fragment_messages_url(
+        self,
+        state: dict[str, Any],
+        *,
+        account_id: int | None = None,
+        folder: str | None = None,
+        message_key: str | None = None,
+        search_query: str | None = None,
+    ) -> str:
+        params: dict[str, str] = {}
+        chosen_account_id = account_id if account_id is not None else int(state.get("selected_account_id") or 0)
+        chosen_folder = folder if folder is not None else str(state.get("selected_folder", "INBOX"))
+        chosen_query = search_query if search_query is not None else str(state.get("search_query", ""))
+        if chosen_account_id:
+            params["account_id"] = str(chosen_account_id)
+        if chosen_folder:
+            params["folder"] = chosen_folder
+        if message_key:
+            params["message_key"] = message_key
+        if chosen_query:
+            params["q"] = chosen_query
+        encoded = urllib.parse.urlencode(params)
+        return f"{state['server_base']}/fragment/messages" + (f"?{encoded}" if encoded else "")
+
+    def _render_account_list_markup(self, state: dict[str, Any]) -> str:
         accounts = state["accounts"]
-        folder_items: list[str] = []
-        selected_account = next((item for item in accounts if item["selected"]), None)
-        if selected_account:
-            for folder in selected_account["folders"]:
-                unread = int(selected_account["unread_by_folder"].get(folder, 0))
-                is_selected = folder == state["selected_folder"]
-                classes = "mail-nav-item active" if is_selected else "mail-nav-item"
-                badge = f"<span class='mail-badge'>{unread}</span>" if unread else ""
-                folder_items.append(
-                    f"""
-                    <button class="{classes}" data-action="select-folder" data-folder="{html.escape(folder)}">
-                        <span>{html.escape(folder)}</span>
-                        {badge}
-                    </button>
-                    """
-                )
-        account_cards = []
+        if not accounts:
+            return '<div class="empty-card"><h3>No accounts</h3><p>Add an account in Python when you are ready to wire up live sync.</p></div>'
+        cards: list[str] = []
         for account in accounts:
-            classes = "account-chip active" if account["selected"] else "account-chip"
-            account_cards.append(
+            cards.append(
                 f"""
-                <button class="{classes}" data-action="select-account" data-account="{account['id']}">
-                    <span class="account-chip-title">{html.escape(account['label'])}</span>
-                    <span class="account-chip-sub">{html.escape(account['email_address'])}</span>
-                    <span class="account-chip-badge">{int(account['unread_total'])}</span>
+                <button
+                    class="account-card {'active' if account['selected'] else ''}"
+                    type="button"
+                    hx-get="{html.escape(self._fragment_messages_url(state, account_id=int(account['id']), folder=str(account['folders'][0]) if account['folders'] else 'INBOX', message_key=''))}"
+                    hx-target="#messageList"
+                    hx-swap="innerHTML"
+                >
+                    <div>
+                        <div>{html.escape(account['label'])}</div>
+                        <div style="font-size:12px; color: var(--text-dim); margin-top:4px;">{html.escape(account['email_address'])}</div>
+                    </div>
+                    <span class="badge">{int(account['unread_total'])}</span>
                 </button>
                 """
             )
-        return f"""
-        <section class="side-section">
-            <div class="side-title-row">
-                <h3>Accounts</h3>
-                <button class="ghost-button" data-action="open-account-settings">Manage</button>
-            </div>
-            <div class="account-stack">{''.join(account_cards) or '<div class="empty-copy">Add an account to start syncing mail.</div>'}</div>
-        </section>
-        <section class="side-section">
-            <div class="side-title-row">
-                <h3>Folders</h3>
-                <button class="ghost-button" data-action="refresh">Sync</button>
-            </div>
-            <div class="folder-stack">{''.join(folder_items) or '<div class="empty-copy">No folders available.</div>'}</div>
-        </section>
-        """
+        return "".join(cards)
 
-    def _render_messages_fragment(self, state: dict[str, Any]) -> str:
-        account_id = int(state.get("selected_account_id") or 0)
-        folder = str(state.get("selected_folder", "INBOX"))
-        search_query = str(state.get("search_query", ""))
-        messages = self.store.list_messages(account_id, folder, search_query) if account_id else []
-        if not messages:
-            return """
-            <div class="empty-state">
-                <h3>No mail here yet</h3>
-                <p>Sync the selected account, change folders, or clear the current search query.</p>
-            </div>
-            """
-        items = []
-        for item in messages:
-            classes = ["mail-row"]
-            if item["key"] == state.get("selected_message_key"):
-                classes.append("active")
-            if not bool(item["seen"]):
-                classes.append("unread")
-            attachment = "<span class='mail-tag'>Attachment</span>" if bool(item["has_attachments"]) else ""
-            flag = "<span class='mail-tag'>Starred</span>" if bool(item["flagged"]) else ""
+    def _render_folder_list_markup(self, state: dict[str, Any]) -> str:
+        accounts = state["accounts"]
+        selected_account = next((item for item in accounts if item["selected"]), None)
+        if not selected_account:
+            return ""
+        items: list[str] = []
+        for folder in selected_account["folders"]:
+            unread = int(selected_account["unread_by_folder"].get(folder, 0))
             items.append(
                 f"""
-                <button class="{' '.join(classes)}" data-action="select-message" data-message="{html.escape(item['key'])}">
-                    <div class="mail-row-top">
-                        <span class="mail-row-sender">{html.escape(item['sender'])}</span>
-                        <span class="mail-row-time">{html.escape(item['display_time'])}</span>
-                    </div>
-                    <div class="mail-row-subject">{html.escape(item['subject'] or '(No subject)')}</div>
-                    <div class="mail-row-snippet">{html.escape(item['snippet'])}</div>
-                    <div class="mail-row-tags">{attachment}{flag}</div>
+                <button
+                    class="folder-button {'active' if folder == state['selected_folder'] else ''}"
+                    type="button"
+                    hx-get="{html.escape(self._fragment_messages_url(state, folder=folder, message_key=''))}"
+                    hx-target="#messageList"
+                    hx-swap="innerHTML"
+                >
+                    <span>{html.escape(folder)}</span>
+                    {'<span class="badge">' + str(unread) + '</span>' if unread else ''}
                 </button>
                 """
             )
         return "".join(items)
 
-    def _render_detail_fragment(self, state: dict[str, Any]) -> str:
+    def _render_sidebar_fragment(self, state: dict[str, Any]) -> str:
+        return (
+            f'<div id="accountList" hx-swap-oob="innerHTML">{self._render_account_list_markup(state)}</div>'
+            f'<div id="folderList" hx-swap-oob="innerHTML">{self._render_folder_list_markup(state)}</div>'
+        )
+
+    def _render_message_list_markup(self, state: dict[str, Any]) -> str:
+        account_id = int(state.get("selected_account_id") or 0)
+        folder = str(state.get("selected_folder", "INBOX"))
+        search_query = str(state.get("search_query", ""))
+        messages = self.store.list_messages(account_id, folder, search_query)
+        if not messages:
+            return """
+            <div class="empty-state">
+              <div class="empty-card">
+                <h3>Nothing to show</h3>
+                <p>This folder is empty for the current search, or no mail has been synced yet.</p>
+              </div>
+            </div>
+            """
+        items: list[str] = []
+        for item in messages:
+            items.append(
+                f"""
+                <button
+                    class="message-card {'active' if item['key'] == state.get('selected_message_key') else ''} {'unread' if not bool(item['seen']) else ''}"
+                    type="button"
+                    hx-get="{html.escape(self._fragment_messages_url(state, message_key=str(item['key'])))}"
+                    hx-target="#messageList"
+                    hx-swap="innerHTML"
+                >
+                    <div class="message-row">
+                        <span class="sender">{html.escape(item['sender'])}</span>
+                        <span class="time">{html.escape(item['display_time'])}</span>
+                    </div>
+                    <div class="subject">{html.escape(item['subject'] or '(No subject)')}</div>
+                    <div class="snippet">{html.escape(item['snippet'])}</div>
+                    <div class="tags">
+                        {'<span class="tag">Attachment</span>' if bool(item['has_attachments']) else ''}
+                        {'<span class="tag">Starred</span>' if bool(item['flagged']) else ''}
+                        {'<span class="tag">Unread</span>' if not bool(item['seen']) else ''}
+                    </div>
+                </button>
+                """
+            )
+        return "".join(items)
+
+    def _render_messages_fragment(self, state: dict[str, Any]) -> str:
+        messages_markup = self._render_message_list_markup(state)
+        selected_account = next((item for item in state["accounts"] if item["selected"]), None)
+        unread_total = int(selected_account["unread_total"]) if selected_account else 0
+        folder = html.escape(str(state.get("selected_folder", "Inbox")))
+        message_count = len(
+            self.store.list_messages(
+                int(state.get("selected_account_id") or 0),
+                str(state.get("selected_folder", "INBOX")),
+                str(state.get("search_query", "")),
+            )
+        )
+        selected = selected_account or {}
+        initials = "".join(part[:1].upper() for part in str(selected.get("display_name") or selected.get("label") or "HM").split()[:2]) or "HM"
+        return (
+            messages_markup
+            + f'<div id="detailView" hx-swap-oob="innerHTML">{self._render_detail_content(state)}</div>'
+            + f'<p id="detailSubtitle" hx-swap-oob="outerHTML">{html.escape(self._detail_subtitle(state))}</p>'
+            + f'<h2 id="folderTitle" hx-swap-oob="outerHTML">{folder}</h2>'
+            + f'<p id="folderSubtitle" hx-swap-oob="outerHTML">{message_count} conversation{"s" if message_count != 1 else ""} in view</p>'
+            + f'<strong id="unreadStat" hx-swap-oob="outerHTML">{unread_total}</strong>'
+            + f'<strong id="accountStat" hx-swap-oob="outerHTML">{html.escape(str(selected.get("label", "Preview")))}</strong>'
+            + f'<div class="avatar" id="profileAvatar" hx-swap-oob="outerHTML">{html.escape(initials)}</div>'
+            + f'<div id="accountList" hx-swap-oob="innerHTML">{self._render_account_list_markup(state)}</div>'
+            + f'<div id="folderList" hx-swap-oob="innerHTML">{self._render_folder_list_markup(state)}</div>'
+            + f'<select id="composeAccount" hx-swap-oob="outerHTML">{self._render_compose_accounts_markup(state)}</select>'
+        )
+
+    def _detail_subtitle(self, state: dict[str, Any]) -> str:
+        message = state.get("selected_message")
+        if not message:
+            return "Select a message to inspect the full thread"
+        display_name = str(message.get("from_name") or message.get("sender") or "Unknown Sender")
+        sent_at = str(message.get("display_time") or "")
+        return f"{display_name} · {sent_at}"
+
+    def _render_compose_accounts_markup(self, state: dict[str, Any]) -> str:
+        selected_account_id = int(state.get("selected_account_id") or 0)
+        return "".join(
+            f'<option value="{int(account["id"])}"{" selected" if int(account["id"]) == selected_account_id else ""}>{html.escape(str(account["label"]))} · {html.escape(str(account["email_address"]))}</option>'
+            for account in state["accounts"]
+            if int(account["id"]) > 0
+        )
+
+    def _render_detail_content(self, state: dict[str, Any]) -> str:
         message = state.get("selected_message")
         if not message:
             return """
-            <div class="empty-detail">
-                <div class="focus-badge">Inbox Focus</div>
-                <h2>Pick a conversation</h2>
-                <p>Your mail body, sender context, and quick actions will appear here.</p>
+            <div class="empty-state">
+              <div class="empty-card">
+                <h3>Conversation detail</h3>
+                <p>The selected message will open here with sender context, quick actions, and the full body.</p>
+              </div>
             </div>
             """
-        action_bar = f"""
-        <div class="detail-actions">
-            <button class="action-pill" data-action="reply" data-message="{html.escape(message['key'])}">Reply</button>
-            <button class="action-pill" data-action="toggle-seen" data-message="{html.escape(message['key'])}" data-seen="{0 if bool(message['seen']) else 1}">
-                {'Mark unread' if bool(message['seen']) else 'Mark read'}
-            </button>
-            <button class="action-pill" data-action="archive" data-message="{html.escape(message['key'])}">Archive</button>
-            <button class="action-pill danger" data-action="delete" data-message="{html.escape(message['key'])}">Delete</button>
-        </div>
-        """
-        subject = html.escape(str(message.get("subject", "") or "(No subject)"))
-        from_line = html.escape(formataddr((str(message.get("from_name", "")), str(message.get("from_email", "")))))
-        to_line = html.escape(str(message.get("to_line", "")))
-        body_html = str(message.get("body_html", "")).strip() or "<pre>" + html.escape(str(message.get("body_text", ""))) + "</pre>"
+        display_name = html.escape(str(message.get("from_name") or message.get("sender") or "Unknown Sender"))
+        avatar = html.escape(display_name[:1].upper() or "H")
+        sent_at = html.escape(str(message.get("display_time") or ""))
+        body_html = str(message.get("body_html", "")).strip() or "<pre>" + html.escape(str(message.get("body_text", "") or str(message.get("snippet", "")))) + "</pre>"
+        pills = [f'<span class="pill">{html.escape(str(state.get("selected_folder", "Inbox")))}</span>']
+        if bool(message.get("flagged")):
+            pills.append('<span class="pill">Starred</span>')
+        if bool(message.get("has_attachments")):
+            pills.append('<span class="pill">Has attachments</span>')
+        if bool(message.get("is_spam")):
+            pills.append('<span class="pill">Spam risk</span>')
         return f"""
-        <article class="detail-shell">
-            <header class="detail-header">
-                <div class="detail-meta">
-                    <span class="focus-badge">{html.escape(str(message.get('folder', 'INBOX')))}</span>
-                    <span class="detail-time">{html.escape(str(message.get('display_time', '')))}</span>
-                </div>
-                <h1>{subject}</h1>
-                <p class="detail-from">{from_line}</p>
-                <p class="detail-to">To: {to_line}</p>
-                {action_bar}
-            </header>
-            <section class="detail-body">{body_html}</section>
-        </article>
+        <div class="detail-hero">
+          <div>
+            <div class="pill-row">{''.join(pills)}</div>
+            <h1 class="detail-title">{html.escape(str(message.get("subject") or "(No subject)"))}</h1>
+          </div>
+        </div>
+        <div class="detail-meta">
+          <div class="sender-block">
+            <div class="sender-avatar">{avatar}</div>
+            <div class="sender-copy">
+              <h3>{display_name}</h3>
+              <p>{html.escape(str(message.get("from_email") or ""))}</p>
+              <p>To: {html.escape(str(message.get("to_line") or "You"))}</p>
+            </div>
+          </div>
+          <div class="pill-row">
+            <span class="pill">{sent_at}</span>
+            <span class="pill">{'Read' if bool(message.get('seen')) else 'Unread'}</span>
+          </div>
+        </div>
+        <article class="message-content">{body_html}</article>
         """
+
+    def _render_detail_fragment(self, state: dict[str, Any]) -> str:
+        return self._render_detail_content(state)
 
     def save_account(self, payload_json: str) -> None:
         try:
@@ -1067,6 +1820,9 @@ class EmailClientWindow(QWidget):
     def _finish_sync(self, message: str, error_message: str) -> None:
         self._sync_busy = False
         self.push_state()
+        while self._pending_status_toasts:
+            title, body = self._pending_status_toasts.pop(0)
+            self.push_toast(title, body)
         if error_message:
             self.push_toast("Mail sync failed", error_message)
         elif message:
@@ -1079,7 +1835,7 @@ class EmailClientWindow(QWidget):
             client: imaplib.IMAP4 = imaplib.IMAP4_SSL(host, port)
         else:
             client = imaplib.IMAP4(host, port)
-        client.login(str(account["username"]), str(account["password"]))
+        client.login(str(account["username"]), self.store.cipher.decrypt_text(str(account["password"])))
         return client
 
     def _connect_smtp(self, account: dict[str, Any]) -> smtplib.SMTP:
@@ -1093,12 +1849,20 @@ class EmailClientWindow(QWidget):
             if bool(account["smtp_starttls"]):
                 smtp.starttls(context=ssl.create_default_context())
                 smtp.ehlo()
-        smtp.login(str(account["username"]), str(account["password"]))
+        smtp.login(str(account["username"]), self.store.cipher.decrypt_text(str(account["password"])))
         return smtp
 
     def _sync_all_accounts(self, *, send_notifications: bool) -> None:
+        errors: list[str] = []
         for account in self.store.list_accounts():
-            self._sync_account(account, send_notifications=send_notifications)
+            try:
+                self._sync_account(account, send_notifications=send_notifications)
+                self._record_account_status(account, True, "Mail server reachable.")
+            except Exception as exc:
+                self._record_account_status(account, False, str(exc))
+                errors.append(f"{account.get('label') or account.get('email_address')}: {exc}")
+        if errors:
+            raise RuntimeError("; ".join(errors[:3]))
 
     def _sync_account(self, account: dict[str, Any], *, send_notifications: bool) -> None:
         account_id = int(account["id"])
@@ -1189,10 +1953,23 @@ class EmailClientWindow(QWidget):
                 "snippet": snippet(body_text, body_html),
                 "body_html": body_html,
                 "body_text": body_text,
+                "raw_source": raw_bytes,
                 "seen": flags_seen,
                 "flagged": flags_flagged,
                 "has_attachments": has_attachments,
             }
+            spam_score, is_spam = spam_assessment(
+                folder=folder,
+                subject=str(payload["subject"]),
+                from_email=str(payload["from_email"]),
+                body_text=str(payload["body_text"]),
+                body_html=str(payload["body_html"]),
+            )
+            real_spam = real_spam_assessment(raw_bytes)
+            if real_spam is not None:
+                spam_score, is_spam = real_spam
+            payload["spam_score"] = spam_score
+            payload["is_spam"] = is_spam
             self.store.store_message(account_id, folder, uid, payload)
             self.store.upsert_contact(from_name, from_email)
 
