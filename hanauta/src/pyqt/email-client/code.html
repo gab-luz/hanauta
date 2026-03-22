@@ -4,25 +4,33 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hanauta Mail</title>
+  <script>
+    if (navigator.userAgent.includes("QtWebEngine")) {
+      document.documentElement.classList.add("qtwebengine");
+    }
+  </script>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0f1119;
-      --bg-elevated: rgba(26, 27, 38, 0.92);
-      --panel: rgba(29, 31, 45, 0.84);
-      --panel-strong: rgba(39, 41, 59, 0.94);
-      --panel-soft: rgba(45, 47, 68, 0.72);
-      --text: #edf1ff;
-      --text-soft: #aeb5d6;
-      --text-dim: #7981a7;
-      --accent: #d3bcff;
-      --accent-strong: #bb9af7;
-      --accent-ink: #28164d;
+      --bg: #090b14;
+      --bg-elevated: rgba(16, 20, 34, 0.94);
+      --panel: rgba(20, 24, 39, 0.84);
+      --panel-strong: rgba(27, 33, 52, 0.95);
+      --panel-soft: rgba(34, 41, 61, 0.76);
+      --text: #eef4ff;
+      --text-soft: #a9bad6;
+      --text-dim: #6f83a8;
+      --accent: #9ce7ff;
+      --accent-strong: #e39cff;
+      --accent-ink: #08111f;
       --danger: #ff9b9b;
       --success: #98d7b0;
-      --line: rgba(255, 255, 255, 0.06);
-      --line-strong: rgba(255, 255, 255, 0.1);
-      --shadow: 0 36px 80px rgba(0, 0, 0, 0.35);
+      --ui-font: "Google Sans";
+      --display-font: "Google Sans";
+      --mono-font: "JetBrains Mono";
+      --line: rgba(176, 222, 255, 0.08);
+      --line-strong: rgba(176, 222, 255, 0.16);
+      --shadow: 0 38px 80px rgba(0, 0, 0, 0.44);
       --radius-xl: 28px;
       --radius-lg: 22px;
       --radius-md: 16px;
@@ -40,12 +48,15 @@
       margin: 0;
       min-height: 100%;
       background:
-        radial-gradient(circle at top left, rgba(211, 188, 255, 0.17), transparent 30%),
-        radial-gradient(circle at top right, rgba(123, 206, 189, 0.12), transparent 24%),
-        radial-gradient(circle at bottom left, rgba(94, 108, 189, 0.16), transparent 22%),
-        linear-gradient(180deg, #12131d 0%, #0d1018 100%);
+        radial-gradient(circle at 12% 12%, rgba(156, 231, 255, 0.18), transparent 30%),
+        radial-gradient(circle at 86% 10%, rgba(227, 156, 255, 0.13), transparent 24%),
+        radial-gradient(circle at 18% 92%, rgba(111, 132, 255, 0.14), transparent 24%),
+        linear-gradient(180deg, #090b14 0%, #0b1120 48%, #090d19 100%);
       color: var(--text);
-      font-family: "Lexend", "Inter", "Segoe UI", sans-serif;
+      font-family: var(--display-font), var(--ui-font), "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: geometricPrecision;
       overflow: hidden;
     }
 
@@ -80,12 +91,12 @@
       height: calc(100vh - 48px);
       border-radius: 32px;
       overflow: hidden;
-      background: rgba(14, 17, 26, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, rgba(13, 17, 29, 0.92), rgba(11, 15, 26, 0.9));
+      border: 1px solid rgba(178, 228, 255, 0.09);
       box-shadow: var(--shadow);
       backdrop-filter: blur(20px);
       display: grid;
-      grid-template-rows: 76px 1fr;
+      grid-template-rows: 68px 1fr;
     }
 
     .shell::before {
@@ -93,8 +104,8 @@
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(140deg, rgba(211, 188, 255, 0.08), transparent 30%),
-        radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.05), transparent 35%);
+        linear-gradient(140deg, rgba(156, 231, 255, 0.08), transparent 30%),
+        radial-gradient(circle at 20% 0%, rgba(227, 156, 255, 0.08), transparent 35%);
       pointer-events: none;
     }
 
@@ -105,8 +116,8 @@
       grid-template-columns: minmax(220px, 280px) 1fr minmax(240px, 320px);
       gap: 20px;
       align-items: center;
-      padding: 20px 24px;
-      background: rgba(17, 19, 29, 0.64);
+      padding: 14px 18px;
+      background: rgba(10, 14, 25, 0.6);
       border-bottom: 1px solid var(--line);
     }
 
@@ -118,16 +129,16 @@
     }
 
     .brand-badge {
-      width: 42px;
-      height: 42px;
-      border-radius: 14px;
+      width: 32px;
+      height: 32px;
+      border-radius: 12px;
       display: grid;
       place-items: center;
       color: var(--accent-ink);
       font-size: 20px;
       font-weight: 800;
-      background: linear-gradient(135deg, var(--accent), #99e9d8);
-      box-shadow: 0 18px 36px rgba(211, 188, 255, 0.18);
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 18px 36px rgba(156, 231, 255, 0.18);
     }
 
     .brand-copy {
@@ -144,7 +155,7 @@
 
     .brand-copy h1 {
       margin: 4px 0 0;
-      font-size: 24px;
+      font-size: 20px;
       line-height: 1;
     }
 
@@ -155,24 +166,24 @@
 
     .searchbar input {
       width: 100%;
-      height: 50px;
+      height: 38px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      border-color: rgba(255, 255, 255, 0.05);
-      padding: 0 18px 0 52px;
+      background: rgba(255, 255, 255, 0.045);
+      border-color: rgba(176, 222, 255, 0.08);
+      padding: 0 16px 0 46px;
       color: var(--text);
       transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
     }
 
     .searchbar input:focus {
-      border-color: rgba(211, 188, 255, 0.4);
+      border-color: rgba(156, 231, 255, 0.4);
       background: rgba(255, 255, 255, 0.08);
-      box-shadow: 0 0 0 4px rgba(211, 188, 255, 0.1);
+      box-shadow: 0 0 0 4px rgba(156, 231, 255, 0.1);
     }
 
     .searchbar .icon {
       position: absolute;
-      left: 18px;
+      left: 16px;
       top: 50%;
       transform: translateY(-50%);
       color: var(--text-dim);
@@ -183,30 +194,57 @@
       display: flex;
       justify-content: flex-end;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     .chip {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      min-height: 42px;
-      padding: 0 16px;
+      min-height: 30px;
+      padding: 0 11px;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.05);
       color: var(--text-soft);
-      font-size: 13px;
+      font-size: 12px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--text-dim);
+      flex: 0 0 auto;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.14);
+    }
+
+    .status-dot.online {
+      background: #79f0a7;
+      box-shadow: 0 0 12px rgba(121, 240, 167, 0.4);
+    }
+
+    .status-dot.offline {
+      background: #ff7b7b;
+      box-shadow: 0 0 12px rgba(255, 123, 123, 0.35);
     }
 
     .avatar {
-      width: 42px;
-      height: 42px;
-      border-radius: 14px;
+      width: 30px;
+      height: 30px;
+      border-radius: 12px;
       display: grid;
       place-items: center;
-      background: linear-gradient(135deg, rgba(211, 188, 255, 0.32), rgba(110, 209, 183, 0.3));
+      background: linear-gradient(135deg, rgba(156, 231, 255, 0.28), rgba(227, 156, 255, 0.28));
       color: var(--text);
       font-weight: 700;
+      overflow: hidden;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
     .workspace {
@@ -227,7 +265,7 @@
     }
 
     .sidebar {
-      padding: 20px;
+      padding: 16px;
       background: rgba(18, 20, 31, 0.76);
       border-right: 1px solid var(--line);
       gap: 18px;
@@ -239,22 +277,24 @@
       align-items: center;
       justify-content: center;
       gap: 10px;
-      min-height: 54px;
-      padding: 0 20px;
-      border-radius: 18px;
-      background: linear-gradient(135deg, rgba(211, 188, 255, 0.95), rgba(153, 233, 216, 0.95));
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(156, 231, 255, 0.98), rgba(227, 156, 255, 0.95));
       color: var(--accent-ink);
       font-weight: 700;
-      box-shadow: 0 20px 36px rgba(211, 188, 255, 0.18);
+      letter-spacing: 0.01em;
+      box-shadow: 0 18px 32px rgba(90, 164, 255, 0.22);
     }
 
     .section {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      padding: 18px;
-      border-radius: 24px;
-      background: rgba(255, 255, 255, 0.03);
+      gap: 10px;
+      padding: 12px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.024));
+      border: 1px solid rgba(176, 222, 255, 0.05);
     }
 
     .section-head {
@@ -267,15 +307,15 @@
     .section-head h2,
     .section-head h3 {
       margin: 0;
-      font-size: 15px;
+      font-size: 13px;
       color: var(--text);
     }
 
     .ghost-button {
       color: var(--text-soft);
-      font-size: 13px;
-      padding: 8px 12px;
-      border-radius: 12px;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 10px;
       background: rgba(255, 255, 255, 0.04);
     }
 
@@ -302,8 +342,8 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 14px 16px;
-      border-radius: 18px;
+      padding: 10px 12px;
+      border-radius: 14px;
       background: transparent;
       color: var(--text-soft);
       border: 1px solid transparent;
@@ -313,9 +353,9 @@
 
     .folder-button.active,
     .account-card.active {
-      background: rgba(211, 188, 255, 0.12);
+      background: linear-gradient(135deg, rgba(156, 231, 255, 0.12), rgba(227, 156, 255, 0.1));
       color: var(--text);
-      border-color: rgba(211, 188, 255, 0.22);
+      border-color: rgba(156, 231, 255, 0.22);
     }
 
     .folder-button:hover,
@@ -328,16 +368,16 @@
     }
 
     .badge {
-      min-width: 26px;
-      height: 26px;
+      min-width: 22px;
+      height: 22px;
       padding: 0 8px;
       border-radius: 999px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
-      background: rgba(211, 188, 255, 0.18);
+      background: rgba(156, 231, 255, 0.16);
       color: var(--accent);
     }
 
@@ -346,11 +386,11 @@
       justify-content: space-between;
       align-items: center;
       gap: 14px;
-      padding: 14px 16px;
-      border-radius: 18px;
+      padding: 10px 12px;
+      border-radius: 14px;
       background: rgba(255, 255, 255, 0.03);
       color: var(--text-soft);
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .message-list {
@@ -360,7 +400,7 @@
 
     .list-head,
     .detail-head {
-      padding: 22px 22px 18px;
+      padding: 16px 16px 14px;
       border-bottom: 1px solid var(--line);
       display: flex;
       align-items: center;
@@ -377,13 +417,13 @@
 
     .headline h2 {
       margin: 0;
-      font-size: 24px;
+      font-size: 20px;
     }
 
     .headline p {
       margin: 0;
       color: var(--text-dim);
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .list-toolbar,
@@ -395,13 +435,17 @@
     }
 
     .action-icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 14px;
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
       display: grid;
       place-items: center;
       background: rgba(255, 255, 255, 0.04);
       color: var(--text-soft);
+      cursor: pointer;
+      pointer-events: auto;
+      position: relative;
+      z-index: 2;
     }
 
     .message-items {
@@ -413,18 +457,18 @@
       width: 100%;
       text-align: left;
       border-radius: 22px;
-      padding: 16px;
-      background: rgba(255, 255, 255, 0.02);
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.03);
       border: 1px solid transparent;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
       color: var(--text-soft);
     }
 
     .message-card.active {
-      background: rgba(211, 188, 255, 0.12);
-      border-color: rgba(211, 188, 255, 0.18);
+      background: linear-gradient(135deg, rgba(156, 231, 255, 0.12), rgba(227, 156, 255, 0.09));
+      border-color: rgba(156, 231, 255, 0.18);
       color: var(--text);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
@@ -467,6 +511,23 @@
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+    }
+
+    .message-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .account-pill {
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(211, 188, 255, 0.1);
+      color: var(--accent);
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
 
     .tags {
@@ -526,7 +587,7 @@
 
     .detail-title {
       margin: 0;
-      font-size: clamp(28px, 3vw, 42px);
+      font-size: clamp(24px, 3vw, 34px);
       line-height: 1.06;
       max-width: 820px;
     }
@@ -550,9 +611,9 @@
     }
 
     .sender-avatar {
-      width: 52px;
-      height: 52px;
-      border-radius: 18px;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
       display: grid;
       place-items: center;
       background: linear-gradient(135deg, rgba(211, 188, 255, 0.24), rgba(153, 233, 216, 0.2));
@@ -587,7 +648,7 @@
       background: rgba(255, 255, 255, 0.03);
       color: var(--text-soft);
       line-height: 1.75;
-      font-size: 15px;
+      font-size: 14px;
       overflow-wrap: anywhere;
     }
 
@@ -605,6 +666,43 @@
       border-radius: 18px;
       background: rgba(0, 0, 0, 0.18);
       color: var(--text);
+    }
+
+    .message-content img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 14px 0;
+      border-radius: 16px;
+    }
+
+    .message-content a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(156, 231, 255, 0.32);
+    }
+
+    .message-content a:hover {
+      border-bottom-color: rgba(156, 231, 255, 0.78);
+    }
+
+    .message-content blockquote {
+      margin: 14px 0;
+      padding-left: 14px;
+      border-left: 3px solid rgba(156, 231, 255, 0.22);
+      color: var(--text-soft);
+    }
+
+    .message-content table {
+      width: 100%;
+      max-width: 100%;
+      border-collapse: collapse;
+    }
+
+    .message-content td,
+    .message-content th {
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 8px 10px;
     }
 
     .empty-state {
@@ -726,9 +824,9 @@
     }
 
     .secondary-button {
-      min-height: 48px;
-      padding: 0 18px;
-      border-radius: 16px;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 12px;
       background: rgba(255, 255, 255, 0.05);
       color: var(--text);
       font-weight: 600;
@@ -821,6 +919,89 @@
         border-right: 0;
       }
     }
+
+    html.qtwebengine,
+    html.qtwebengine body {
+      background: #12131d;
+    }
+
+    html.qtwebengine .shell,
+    html.qtwebengine .modal-backdrop {
+      backdrop-filter: none;
+    }
+
+    html.qtwebengine .shell {
+      background: #11131d;
+      box-shadow: none;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    html.qtwebengine .shell::before {
+      display: none;
+    }
+
+    html.qtwebengine .topbar {
+      background: #171b29;
+    }
+
+    html.qtwebengine .sidebar {
+      background: #171a27;
+    }
+
+    html.qtwebengine .message-list {
+      background: #1a1d2c;
+    }
+
+    html.qtwebengine .detail {
+      background: #141823;
+    }
+
+    html.qtwebengine .section,
+    html.qtwebengine .message-card,
+    html.qtwebengine .detail-meta,
+    html.qtwebengine .message-content,
+    html.qtwebengine .empty-card,
+    html.qtwebengine .modal,
+    html.qtwebengine .toast,
+    html.qtwebengine .stat-card {
+      background: #1f2332;
+      box-shadow: none;
+    }
+
+    html.qtwebengine .searchbar input,
+    html.qtwebengine .chip,
+    html.qtwebengine .ghost-button,
+    html.qtwebengine .action-icon,
+    html.qtwebengine .pill,
+    html.qtwebengine .tag,
+    html.qtwebengine .field input,
+    html.qtwebengine .field textarea,
+    html.qtwebengine .field select {
+      background: #24293a;
+      box-shadow: none;
+    }
+
+    html.qtwebengine .searchbar input:focus,
+    html.qtwebengine .field input:focus,
+    html.qtwebengine .field textarea:focus,
+    html.qtwebengine .field select:focus {
+      box-shadow: 0 0 0 2px rgba(211, 188, 255, 0.16), 0 0 18px rgba(211, 188, 255, 0.08);
+    }
+
+    html.qtwebengine .compose-button,
+    html.qtwebengine .primary-button,
+    html.qtwebengine .brand-badge,
+    html.qtwebengine .avatar,
+    html.qtwebengine .sender-avatar {
+      box-shadow: none;
+    }
+
+    html.qtwebengine .section,
+    html.qtwebengine .message-card,
+    html.qtwebengine .detail-meta,
+    html.qtwebengine .message-content {
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
   </style>
 </head>
 <body>
@@ -829,7 +1010,7 @@
       <div class="brand">
         <div class="brand-badge">H</div>
         <div class="brand-copy">
-          <div class="eyebrow">Rendered Html / Js / Css</div>
+          <div class="eyebrow">Hanauta Mail v0.1</div>
           <h1>Hanauta Mail</h1>
         </div>
       </div>
@@ -840,6 +1021,8 @@
       </label>
 
       <div class="topbar-right">
+        <button class="action-icon" id="settingsButton" type="button" title="Settings">⚙</button>
+        <button class="action-icon" id="exportVisibleButton" type="button" title="Export visible messages">⇩</button>
         <div class="chip" id="mailStatus">Live preview</div>
         <div class="avatar" id="profileAvatar">HM</div>
       </div>
@@ -890,6 +1073,7 @@
           </div>
           <div class="list-toolbar">
             <button class="action-icon" id="replyButton" type="button" title="Reply">↩</button>
+            <button class="action-icon" id="exportSelectedButton" type="button" title="Export selected message">⤓</button>
             <button class="action-icon" id="archiveButton" type="button" title="Archive">⌁</button>
             <button class="action-icon" id="deleteButton" type="button" title="Delete">✕</button>
           </div>
@@ -953,11 +1137,37 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="linkModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Privacy Check</div>
+          <h2>Open external link?</h2>
+        </div>
+        <button class="secondary-button" id="closeLinkModalButton" type="button">Close</button>
+      </div>
+      <div class="field-grid">
+        <div class="field full">
+          <label>Safer option</label>
+          <p id="linkModalPrompt" style="margin:0; color: var(--text-soft); line-height:1.6;">
+            This message contains an external link. We can open a privacy-cleaned version that removes common tracking parameters, or use the original address exactly as the sender provided it.
+          </p>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary-button" id="openOriginalLinkButton" type="button">Open Original</button>
+        <button class="primary-button" id="openCleanLinkButton" type="button">Open Cleaner Link</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-stack" id="toastStack"></div>
 
+  <script src="../study-tracker/htmx.min.js"></script>
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
   <script>
     const mockState = {
+      server_base: "",
       accounts: [
         {
           id: 1,
@@ -1041,6 +1251,8 @@
 
     const state = structuredClone(mockState);
     let mailBridge = null;
+    let searchSyncTimer = 0;
+    let pendingExternalLink = null;
 
     const elements = {
       searchInput: document.getElementById("searchInput"),
@@ -1056,10 +1268,15 @@
       detailView: document.getElementById("detailView"),
       detailSubtitle: document.getElementById("detailSubtitle"),
       composeModal: document.getElementById("composeModal"),
+      linkModal: document.getElementById("linkModal"),
       composeButton: document.getElementById("composeButton"),
       closeComposeButton: document.getElementById("closeComposeButton"),
+      closeLinkModalButton: document.getElementById("closeLinkModalButton"),
       discardComposeButton: document.getElementById("discardComposeButton"),
       sendComposeButton: document.getElementById("sendComposeButton"),
+      openOriginalLinkButton: document.getElementById("openOriginalLinkButton"),
+      openCleanLinkButton: document.getElementById("openCleanLinkButton"),
+      linkModalPrompt: document.getElementById("linkModalPrompt"),
       composeAccount: document.getElementById("composeAccount"),
       composeTo: document.getElementById("composeTo"),
       composeCc: document.getElementById("composeCc"),
@@ -1068,6 +1285,9 @@
       refreshButton: document.getElementById("refreshButton"),
       clearSearchButton: document.getElementById("clearSearchButton"),
       replyButton: document.getElementById("replyButton"),
+      settingsButton: document.getElementById("settingsButton"),
+      exportSelectedButton: document.getElementById("exportSelectedButton"),
+      exportVisibleButton: document.getElementById("exportVisibleButton"),
       archiveButton: document.getElementById("archiveButton"),
       deleteButton: document.getElementById("deleteButton"),
       markSeenButton: document.getElementById("markSeenButton"),
@@ -1088,28 +1308,65 @@
       return state.accounts.find((account) => account.id === state.selected_account_id) || state.accounts[0] || null;
     }
 
-    function getVisibleMessages() {
-      const account = getSelectedAccount();
-      const query = (state.search_query || "").trim().toLowerCase();
+    function applyTheme(theme) {
+      if (!theme) {
+        return;
+      }
+      const root = document.documentElement;
+      root.style.setProperty("--accent", theme.primary || "#d3bcff");
+      root.style.setProperty("--accent-strong", theme.secondary || theme.primary || "#bb9af7");
+      root.style.setProperty("--accent-ink", theme.on_surface || "#28164d");
+      root.style.setProperty("--bg", theme.background || "#0f1119");
+      root.style.setProperty("--bg-elevated", theme.surface || "#141218");
+      root.style.setProperty("--panel", theme.surface_container || "#1d1f2d");
+      root.style.setProperty("--panel-strong", theme.surface_container_high || "#27293b");
+      root.style.setProperty("--panel-soft", theme.surface_variant || "#30354a");
+      root.style.setProperty("--text", theme.on_surface || "#edf1ff");
+      root.style.setProperty("--text-soft", theme.on_surface_variant || "#aeb5d6");
+      root.style.setProperty("--text-dim", theme.outline || "#7981a7");
+      root.style.setProperty("--line", "rgba(255,255,255,0.08)");
+      root.style.setProperty("--line-strong", "rgba(255,255,255,0.12)");
+      root.style.setProperty("--danger", theme.error || "#ff9b9b");
+      if (theme.ui_font_family) {
+        root.style.setProperty("--ui-font", `"${theme.ui_font_family}"`);
+      }
+      if (theme.display_font_family) {
+        root.style.setProperty("--display-font", `"${theme.display_font_family}"`);
+      }
+      if (theme.mono_font_family) {
+        root.style.setProperty("--mono-font", `"${theme.mono_font_family}"`);
+      }
+      if (theme.use_matugen) {
+        root.classList.add("matugen-active");
+      } else {
+        root.classList.remove("matugen-active");
+      }
+    }
+
+    function fragmentUrl(params = {}) {
+      if (!state.server_base) {
+        return "";
+      }
+      const url = new URL(`${state.server_base}/fragment/messages`);
+      Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") {
+          return;
+        }
+        url.searchParams.set(key, String(value));
+      });
+      return url.toString();
+    }
+
+    function htmxActionAttributes(params = {}) {
+      const url = fragmentUrl(params);
+      if (!url) {
+        return "";
+      }
+      return `hx-get="${escapeHtml(url)}" hx-target="#messageList" hx-swap="innerHTML"`;
+    }
+
+    function getScopedMessages() {
       let messages = Array.isArray(state.messages) ? [...state.messages] : [];
-
-      if (state.selected_folder === "Sent") {
-        messages = messages.filter((message) => /re:|deployment|updates/i.test(message.subject || ""));
-      } else if (state.selected_folder === "Drafts") {
-        messages = messages.filter((message) => !message.seen);
-      } else if (state.selected_folder === "Archive") {
-        messages = messages.filter((message) => Boolean(message.seen));
-      } else if (state.selected_folder === "Trash") {
-        messages = [];
-      }
-
-      if (query) {
-        messages = messages.filter((message) =>
-          [message.sender, message.subject, message.snippet, message.from_email]
-            .filter(Boolean)
-            .some((part) => String(part).toLowerCase().includes(query))
-        );
-      }
 
       if (!state.selected_message_key && messages[0]) {
         state.selected_message_key = messages[0].key;
@@ -1119,8 +1376,21 @@
         state.selected_message_key = messages[0]?.key || "";
       }
 
-      state.selected_message = messages.find((message) => message.key === state.selected_message_key) || null;
+      const summaryMessage = messages.find((message) => message.key === state.selected_message_key) || null;
+      if (
+        state.selected_message &&
+        state.selected_message.key === state.selected_message_key &&
+        (state.selected_message.body_html || state.selected_message.body_text)
+      ) {
+        state.selected_message = {
+          ...summaryMessage,
+          ...state.selected_message,
+        };
+      } else {
+        state.selected_message = summaryMessage;
+      }
 
+      const account = getSelectedAccount();
       if (account) {
         const unreadByFolder = account.unread_by_folder || {};
         const total = Object.values(unreadByFolder).reduce((sum, value) => sum + Number(value || 0), 0);
@@ -1130,12 +1400,88 @@
       return messages;
     }
 
+    function matchesSearch(message, query) {
+      const normalized = (query || "").trim().toLowerCase();
+      if (!normalized) {
+        return true;
+      }
+      return [message.sender, message.subject, message.snippet, message.from_email]
+        .concat([message.account_label])
+        .filter(Boolean)
+        .some((part) => String(part).toLowerCase().includes(normalized));
+    }
+
+    function applyMessageSearchFilter() {
+      const scopedMessages = getScopedMessages();
+      const query = state.search_query || "";
+      const cards = Array.from(elements.messageList.querySelectorAll(".message-card[data-message-key]"));
+      const visibleMessages = scopedMessages.filter((message) => matchesSearch(message, query));
+      let visibleCount = 0;
+      let unreadVisible = 0;
+
+      for (const card of cards) {
+        const messageKey = card.dataset.messageKey || "";
+        const message = visibleMessages.find((item) => item.key === messageKey);
+        const visible = !!message && matchesSearch(message, query);
+        card.hidden = !visible;
+        if (visible) {
+          visibleCount += 1;
+          if (!message.seen) {
+            unreadVisible += 1;
+          }
+        }
+      }
+
+      const empty = elements.messageList.querySelector("[data-role='search-empty']");
+      if (empty) {
+        empty.remove();
+      }
+      if (!visibleCount && cards.length) {
+        const emptyState = document.createElement("div");
+        emptyState.dataset.role = "search-empty";
+        emptyState.className = "empty-state";
+        emptyState.innerHTML = `
+          <div class="empty-card">
+            <h3>Nothing to show</h3>
+            <p>This folder is empty for the current search, or your search filtered everything out.</p>
+          </div>
+        `;
+        elements.messageList.appendChild(emptyState);
+      }
+
+      if (visibleMessages.length && !visibleMessages.some((message) => message.key === state.selected_message_key)) {
+        state.selected_message_key = visibleMessages[0].key;
+        state.selected_message = {
+          ...(state.selected_message && state.selected_message.key === visibleMessages[0].key ? state.selected_message : {}),
+          ...visibleMessages[0],
+        };
+        renderDetail();
+      } else if (!visibleMessages.length) {
+        state.selected_message = null;
+        renderDetail();
+      }
+
+      elements.folderSubtitle.textContent = `${visibleCount} conversation${visibleCount === 1 ? "" : "s"} in view`;
+      elements.unreadStat.textContent = String(
+        visibleCount ? unreadVisible : (getSelectedAccount()?.unread_total || 0)
+      );
+    }
+
     function renderAccounts() {
       const accounts = state.accounts || [];
       const selected = getSelectedAccount();
       elements.accountList.innerHTML = accounts.length
         ? accounts.map((account) => `
-            <button class="account-card ${account.id === state.selected_account_id ? "active" : ""}" type="button" data-account-id="${account.id}">
+            <button
+              class="account-card ${account.id === state.selected_account_id ? "active" : ""}"
+              type="button"
+              data-account-id="${account.id}"
+              ${htmxActionAttributes({
+                account_id: account.id,
+                folder: account.folders?.[0] || "INBOX",
+                q: state.search_query || ""
+              })}
+            >
               <div>
                 <div>${escapeHtml(account.label || "Mailbox")}</div>
                 <div style="font-size:12px; color: var(--text-dim); margin-top:4px;">${escapeHtml(account.email_address || "")}</div>
@@ -1152,7 +1498,11 @@
         .slice(0, 2)
         .map((part) => part[0]?.toUpperCase() || "")
         .join("") || "HM";
-      elements.profileAvatar.textContent = initials;
+      if (selected?.avatar_path) {
+        elements.profileAvatar.innerHTML = `<img src="file://${encodeURI(selected.avatar_path)}" alt="${escapeHtml(selected.label || "Mailbox")}" />`;
+      } else {
+        elements.profileAvatar.textContent = initials;
+      }
     }
 
     function renderFolders() {
@@ -1160,7 +1510,16 @@
       const folders = account?.folders || ["INBOX", "Sent", "Drafts", "Archive", "Trash"];
       const unreadByFolder = account?.unread_by_folder || {};
       elements.folderList.innerHTML = folders.map((folder) => `
-        <button class="folder-button ${folder === state.selected_folder ? "active" : ""}" type="button" data-folder="${escapeHtml(folder)}">
+        <button
+          class="folder-button ${folder === state.selected_folder ? "active" : ""}"
+          type="button"
+          data-folder="${escapeHtml(folder)}"
+          ${htmxActionAttributes({
+            account_id: state.selected_account_id,
+            folder,
+            q: state.search_query || ""
+          })}
+        >
           <span>${escapeHtml(folder)}</span>
           ${Number(unreadByFolder[folder] || 0) ? `<span class="badge">${Number(unreadByFolder[folder])}</span>` : ""}
         </button>
@@ -1169,7 +1528,7 @@
     }
 
     function renderMessages() {
-      const messages = getVisibleMessages();
+      const messages = getScopedMessages();
       elements.folderSubtitle.textContent = `${messages.length} conversation${messages.length === 1 ? "" : "s"} in view`;
       elements.unreadStat.textContent = String(
         (getSelectedAccount()?.unread_total) || messages.filter((message) => !message.seen).length
@@ -1188,22 +1547,35 @@
       }
 
       elements.messageList.innerHTML = messages.map((message) => `
-        <button class="message-card ${message.key === state.selected_message_key ? "active" : ""} ${message.seen ? "" : "unread"}"
+        <button
+                class="message-card ${message.key === state.selected_message_key ? "active" : ""} ${message.seen ? "" : "unread"}"
                 type="button"
-                data-message-key="${escapeHtml(message.key)}">
+                data-message-key="${escapeHtml(message.key)}"
+                data-search="${escapeHtml([message.sender, message.subject, message.snippet, message.from_email].filter(Boolean).join(" ").toLowerCase())}"
+                ${htmxActionAttributes({
+                  account_id: state.selected_account_id,
+                  folder: state.selected_folder,
+                  message_key: message.key,
+                  q: state.search_query || ""
+                })}>
           <div class="message-row">
             <span class="sender">${escapeHtml(message.sender || message.from_name || "Unknown Sender")}</span>
             <span class="time">${escapeHtml(message.display_time || "")}</span>
           </div>
           <div class="subject">${escapeHtml(message.subject || "(No subject)")}</div>
           <div class="snippet">${escapeHtml(message.snippet || "")}</div>
+          <div class="message-meta">
+            ${state.selected_account_id === 0 ? `<span class="account-pill">${escapeHtml(message.account_label || "Mailbox")}</span>` : ""}
+          </div>
           <div class="tags">
             ${message.has_attachments ? `<span class="tag">Attachment</span>` : ""}
             ${message.flagged ? `<span class="tag">Starred</span>` : ""}
             ${!message.seen ? `<span class="tag">Unread</span>` : ""}
+            ${message.is_spam ? `<span class="tag">Spam</span>` : ""}
           </div>
         </button>
       `).join("");
+      applyMessageSearchFilter();
     }
 
     function renderDetail() {
@@ -1263,19 +1635,44 @@
 
     function renderComposeAccounts() {
       const selected = getSelectedAccount();
-      elements.composeAccount.innerHTML = (state.accounts || []).map((account) => `
+      elements.composeAccount.innerHTML = (state.accounts || []).filter((account) => Number(account.id) > 0).map((account) => `
         <option value="${account.id}" ${account.id === selected?.id ? "selected" : ""}>${escapeHtml(account.label)} · ${escapeHtml(account.email_address)}</option>
       `).join("");
     }
 
-    function renderAll() {
-      elements.searchInput.value = state.search_query || "";
-      renderAccounts();
-      renderFolders();
+    function syncSearchInput() {
+      if (document.activeElement === elements.searchInput) {
+        return;
+      }
+      const nextValue = state.search_query || "";
+      if (elements.searchInput.value !== nextValue) {
+        elements.searchInput.value = nextValue;
+      }
+    }
+
+    function renderSearchResults() {
       renderMessages();
       renderDetail();
+    }
+
+    function renderMailStatus() {
+      const online = Boolean(state.mail_online);
+      const label = state.mail_status_text || (online ? "Mail server reachable" : "Waiting for sync");
+      elements.mailStatus.innerHTML = `<span class="status-dot ${online ? "online" : "offline"}"></span><span>${escapeHtml(label)}</span>`;
+    }
+
+    function renderAll() {
+      syncSearchInput();
+      renderAccounts();
+      renderFolders();
+      renderSearchResults();
       renderComposeAccounts();
-      elements.mailStatus.textContent = mailBridge ? "Connected to Qt bridge" : "Live preview";
+      configureSearchHtmx();
+      renderMailStatus();
+    }
+
+    function configureSearchHtmx() {
+      return;
     }
 
     function openCompose(prefill = {}) {
@@ -1289,6 +1686,23 @@
 
     function closeCompose() {
       elements.composeModal.classList.remove("open");
+    }
+
+    function openLinkModal(originalUrl, cleanUrl) {
+      pendingExternalLink = {
+        original: originalUrl || cleanUrl || "",
+        clean: cleanUrl || originalUrl || ""
+      };
+      elements.linkModalPrompt.textContent =
+        pendingExternalLink.original && pendingExternalLink.clean && pendingExternalLink.original !== pendingExternalLink.clean
+          ? "This message includes an external link. Would you like to open the cleaner version with common tracking removed, or use the exact original address from the sender?"
+          : "This message includes an external link. Do you want to open it in your browser?";
+      elements.linkModal.classList.add("open");
+    }
+
+    function closeLinkModal() {
+      pendingExternalLink = null;
+      elements.linkModal.classList.remove("open");
     }
 
     function showToast(title, body = "") {
@@ -1313,33 +1727,21 @@
       const account = getSelectedAccount();
       state.selected_folder = account?.folders?.[0] || "INBOX";
       state.selected_message_key = "";
-      emitBridge("selectionRequested", JSON.stringify({
-        account_id: state.selected_account_id,
-        folder: state.selected_folder,
-        message_key: ""
-      }));
+      emitBridge("setSelection", String(state.selected_account_id), state.selected_folder, "");
       renderAll();
     }
 
     function selectFolder(folder) {
       state.selected_folder = folder;
       state.selected_message_key = "";
-      emitBridge("selectionRequested", JSON.stringify({
-        account_id: state.selected_account_id,
-        folder: state.selected_folder,
-        message_key: ""
-      }));
+      emitBridge("setSelection", String(state.selected_account_id), state.selected_folder, "");
       renderAll();
     }
 
     function selectMessage(messageKey) {
       state.selected_message_key = messageKey;
       renderAll();
-      emitBridge("selectionRequested", JSON.stringify({
-        account_id: state.selected_account_id,
-        folder: state.selected_folder,
-        message_key: state.selected_message_key
-      }));
+      emitBridge("setSelection", String(state.selected_account_id), state.selected_folder, state.selected_message_key);
     }
 
     function sendCompose() {
@@ -1359,7 +1761,7 @@
         return;
       }
 
-      emitBridge("sendRequested", JSON.stringify(payload));
+      emitBridge("sendCompose", JSON.stringify(payload));
       showToast("Message queued", "The compose action was sent to the Qt backend.");
       closeCompose();
     }
@@ -1371,15 +1773,24 @@
         : Array.isArray(payload.selected_account_messages)
           ? payload.selected_account_messages
           : [];
+      const messagesPresent = Array.isArray(payload.messages) || Array.isArray(payload.selected_account_messages);
+      const accountChanged = Array.isArray(payload.accounts);
+      const folderChanged = typeof payload.selected_folder === "string" && payload.selected_folder !== state.selected_folder;
+      const selectionChanged = typeof payload.selected_message_key === "string" && payload.selected_message_key !== state.selected_message_key;
+      const searchChanged = Object.prototype.hasOwnProperty.call(payload, "search_query") && payload.search_query !== state.search_query;
 
+      state.server_base = payload.server_base || state.server_base || "";
+      state.theme = payload.theme || state.theme || null;
       state.accounts = incomingAccounts.length ? incomingAccounts : state.accounts;
       state.selected_account_id = Number(payload.selected_account_id || state.selected_account_id || state.accounts[0]?.id || 0);
       state.selected_folder = payload.selected_folder || state.selected_folder || "INBOX";
       state.search_query = payload.search_query || "";
       state.selected_message_key = payload.selected_message_key || state.selected_message_key || "";
       state.reply_draft = payload.reply_draft || null;
+      state.mail_online = Boolean(payload.mail_online);
+      state.mail_status_text = payload.mail_status_text || state.mail_status_text || "";
 
-      if (incomingMessages.length) {
+      if (messagesPresent) {
         state.messages = incomingMessages;
       } else if (payload.selected_message) {
         const existing = state.messages.filter((message) => message.key !== payload.selected_message.key);
@@ -1388,21 +1799,42 @@
 
       if (payload.selected_message) {
         state.selected_message = payload.selected_message;
+      } else if (
+        state.selected_message &&
+        state.selected_message.key &&
+        !state.messages.some((message) => message.key === state.selected_message.key)
+      ) {
+        state.selected_message = null;
       }
 
-      renderAll();
+      applyTheme(state.theme);
+      syncSearchInput();
+      if (accountChanged || folderChanged) {
+        renderAccounts();
+        renderFolders();
+        renderComposeAccounts();
+      }
+      if (accountChanged || folderChanged || selectionChanged || searchChanged || incomingMessages.length || payload.selected_message) {
+        renderSearchResults();
+      }
+      configureSearchHtmx();
+      renderMailStatus();
     }
 
     function bindEvents() {
       elements.searchInput.addEventListener("input", (event) => {
         state.search_query = event.target.value;
-        renderAll();
-        emitBridge("searchRequested", state.search_query);
+        applyMessageSearchFilter();
+        window.clearTimeout(searchSyncTimer);
+        searchSyncTimer = window.setTimeout(() => {
+          emitBridge("setSearch", state.search_query);
+        }, 140);
       });
 
       elements.accountList.addEventListener("click", (event) => {
         const button = event.target.closest("[data-account-id]");
         if (button) {
+          event.preventDefault();
           selectAccount(button.dataset.accountId);
         }
       });
@@ -1410,6 +1842,7 @@
       elements.folderList.addEventListener("click", (event) => {
         const button = event.target.closest("[data-folder]");
         if (button) {
+          event.preventDefault();
           selectFolder(button.dataset.folder);
         }
       });
@@ -1417,22 +1850,48 @@
       elements.messageList.addEventListener("click", (event) => {
         const button = event.target.closest("[data-message-key]");
         if (button) {
+          event.preventDefault();
           selectMessage(button.dataset.messageKey);
         }
       });
+      elements.detailView.addEventListener("click", (event) => {
+        const link = event.target.closest("a[href]");
+        if (!link) {
+          return;
+        }
+        event.preventDefault();
+        openLinkModal(link.dataset.originalHref || link.href, link.dataset.cleanHref || link.href);
+      });
 
       elements.composeButton.addEventListener("click", () => openCompose());
+      elements.settingsButton.addEventListener("click", () => emitBridge("openSettings"));
+      elements.exportVisibleButton.addEventListener("click", () => emitBridge("exportVisible"));
       elements.closeComposeButton.addEventListener("click", closeCompose);
+      elements.closeLinkModalButton.addEventListener("click", closeLinkModal);
+      elements.openOriginalLinkButton.addEventListener("click", () => {
+        if (pendingExternalLink?.original) {
+          emitBridge("openExternalLink", pendingExternalLink.original);
+        }
+        closeLinkModal();
+      });
+      elements.openCleanLinkButton.addEventListener("click", () => {
+        if (pendingExternalLink?.clean) {
+          emitBridge("openExternalLink", pendingExternalLink.clean);
+        }
+        closeLinkModal();
+      });
       elements.discardComposeButton.addEventListener("click", closeCompose);
       elements.sendComposeButton.addEventListener("click", sendCompose);
       elements.refreshButton.addEventListener("click", () => {
-        emitBridge("refreshRequested");
+        emitBridge("refreshNow");
         showToast("Refreshing", "Requested a sync from the Qt backend.");
       });
       elements.clearSearchButton.addEventListener("click", () => {
         state.search_query = "";
-        renderAll();
-        emitBridge("searchRequested", "");
+        syncSearchInput();
+        applyMessageSearchFilter();
+        window.clearTimeout(searchSyncTimer);
+        emitBridge("setSearch", "");
       });
       elements.replyButton.addEventListener("click", () => {
         const selected = state.selected_message;
@@ -1444,15 +1903,22 @@
           subject: selected.subject && /^re:/i.test(selected.subject) ? selected.subject : `Re: ${selected.subject || ""}`,
           body: `\n\nOn ${selected.display_time || "earlier"}, ${selected.sender || selected.from_name || "someone"} wrote:\n> ${(selected.snippet || "").replace(/\n/g, "\n> ")}`
         };
-        emitBridge("replyRequested", selected.key);
+        emitBridge("startReply", selected.key);
         openCompose(prefill);
+      });
+      elements.exportSelectedButton.addEventListener("click", () => {
+        const selected = state.selected_message;
+        if (!selected) {
+          return;
+        }
+        emitBridge("exportSelected", selected.key);
       });
       elements.archiveButton.addEventListener("click", () => {
         const selected = state.selected_message;
         if (!selected) {
           return;
         }
-        emitBridge("archiveRequested", selected.key);
+        emitBridge("archiveMessage", selected.key);
         showToast("Archiving", "Requested archive action from the backend.");
       });
       elements.deleteButton.addEventListener("click", () => {
@@ -1460,7 +1926,7 @@
         if (!selected) {
           return;
         }
-        emitBridge("deleteRequested", selected.key);
+        emitBridge("deleteMessage", selected.key);
         showToast("Deleting", "Requested delete action from the backend.");
       });
       elements.markSeenButton.addEventListener("click", () => {
@@ -1469,7 +1935,7 @@
           return;
         }
         selected.seen = true;
-        emitBridge("seenRequested", selected.key, true);
+        emitBridge("setSeen", selected.key, true);
         renderAll();
       });
       elements.markUnreadButton.addEventListener("click", () => {
@@ -1478,12 +1944,17 @@
           return;
         }
         selected.seen = false;
-        emitBridge("seenRequested", selected.key, false);
+        emitBridge("setSeen", selected.key, false);
         renderAll();
       });
       elements.composeModal.addEventListener("click", (event) => {
         if (event.target === elements.composeModal) {
           closeCompose();
+        }
+      });
+      elements.linkModal.addEventListener("click", (event) => {
+        if (event.target === elements.linkModal) {
+          closeLinkModal();
         }
       });
       document.addEventListener("keydown", (event) => {
@@ -1498,6 +1969,7 @@
         }
         if (event.key === "Escape") {
           closeCompose();
+          closeLinkModal();
         }
       });
     }
@@ -1521,8 +1993,8 @@
           });
         }
 
-        if (mailBridge && typeof mailBridge.bootstrapRequested === "function") {
-          mailBridge.bootstrapRequested();
+        if (mailBridge && typeof mailBridge.bootstrap === "function") {
+          mailBridge.bootstrap();
         }
 
         renderAll();
@@ -1531,8 +2003,8 @@
 
     window.setMailState = function setMailState(payloadJson) {
       try {
-        const payload = JSON.parse(payloadJson);
-        mergeIncomingState(JSON.parse(payload));
+        const payload = typeof payloadJson === "string" ? JSON.parse(payloadJson) : payloadJson;
+        mergeIncomingState(payload);
       } catch (error) {
         console.error("Failed to apply mail state", error);
       }
@@ -1550,6 +2022,7 @@
     };
 
     bindEvents();
+    applyTheme(state.theme);
     renderAll();
     initWebChannel();
   </script>
