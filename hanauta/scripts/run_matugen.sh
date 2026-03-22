@@ -7,6 +7,7 @@ PYQT_THEME_FILE="$PYQT_THEME_DIR/pyqt_palette.json"
 SETTINGS_FILE="$HOME/.local/state/hanauta/notification-center/settings.json"
 PICOM_CONFIG="$HOME/.config/i3/picom.conf"
 I3_CONFIG="$HOME/.config/i3/config"
+MATUGEN_PAUSE_FILE="$HOME/.local/state/hanauta/matugen/paused-by-gamemode"
 
 apply_picom_halo() {
   export PICOM_CONFIG ACCENT OUTLINE
@@ -130,6 +131,10 @@ notify_matugen() {
 
 if [ -z "$WALLPAPER" ]; then
   WALLPAPER="$HOME/.wallpapers/tokyo.png"
+fi
+
+if [ -f "$MATUGEN_PAUSE_FILE" ]; then
+  exit 0
 fi
 
 if [ ! -x "$MATUGEN" ]; then
