@@ -20,7 +20,7 @@ from time import monotonic
 from urllib import error, parse, request
 
 from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPixmap, QTextCharFormat
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTextCharFormat
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -227,6 +227,16 @@ def run_bg(cmd: list[str]) -> None:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
+
+
+def apply_antialias_font(widget: QWidget) -> None:
+    font = widget.font()
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    widget.setFont(font)
+    for child in widget.findChildren(QWidget):
+        child_font = child.font()
+        child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        child.setFont(child_font)
 
 
 def terminate_background_matches(pattern: str) -> None:
@@ -1257,6 +1267,7 @@ class NotificationCenter(QWidget):
 
         self._build_window()
         self._build_ui()
+        apply_antialias_font(self)
         self._apply_styles()
         self._apply_media_palette()
         self._start_polls()
@@ -3827,6 +3838,16 @@ class NotificationCenter(QWidget):
         super().resizeEvent(event)
         self._sync_media_card_layers()
         self._render_media_progress()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(QColor(rgba(self.theme_palette.panel_border, 0.92)), 1))
+        painter.setBrush(QColor(rgba(self.theme_palette.panel_bg, 0.96)))
+        painter.drawRoundedRect(rect, 28, 28)
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
