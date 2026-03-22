@@ -12,7 +12,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.gamemode import LUTRIS_AUTO_SOURCE, STATE_FILE, service_enabled, set_active, summary
+from pyqt.shared.gamemode import LUTRIS_AUTO_SOURCE, STATE_FILE, ensure_visuals_restored_if_inactive, service_enabled, set_active, summary
 
 
 POLL_INTERVAL_SECONDS = 5
@@ -193,6 +193,7 @@ def main() -> int:
                 set_active(False, source=LUTRIS_AUTO_SOURCE)
                 current = summary()
             auto_enabled = bool(current.get("activation_source") == LUTRIS_AUTO_SOURCE)
+            ensure_visuals_restored_if_inactive()
 
         _write_monitor_state(
             {

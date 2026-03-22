@@ -78,6 +78,7 @@ CATEGORY_MAP = {
 }
 
 DESKTOP_DIRS = [
+    ROOT / "hanauta" / "config" / "applications",
     Path.home() / ".local/share/applications",
     Path("/var/lib/flatpak/exports/share/applications"),
     Path("/usr/local/share/applications"),
@@ -530,6 +531,7 @@ class LauncherWindow(QWidget):
         self.selected_index = 0
         self._app_index_worker: AppIndexWorker | None = None
         self._apps_loading = True
+        self._ready_to_autoclose = False
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(
             Qt.WindowType.Tool
@@ -545,9 +547,16 @@ class LauncherWindow(QWidget):
         self._apply_filter()
         self._start_app_index_refresh()
         QTimer.singleShot(40, self.search_input.setFocus)
+        QTimer.singleShot(180, self._finish_startup_focus)
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
+
+    def _finish_startup_focus(self) -> None:
+        self.raise_()
+        self.activateWindow()
+        self.search_input.setFocus()
+        self._ready_to_autoclose = True
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -926,6 +935,8 @@ class LauncherWindow(QWidget):
 
     def focusOutEvent(self, event) -> None:  # type: ignore[override]
         super().focusOutEvent(event)
+        if not self._ready_to_autoclose:
+            return
         QTimer.singleShot(0, self.close)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
@@ -940,6 +951,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     window = LauncherWindow()
     window.show()
+    window.raise_()
+    window.activateWindow()
     return app.exec()
 
 
