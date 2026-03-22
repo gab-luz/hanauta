@@ -355,6 +355,8 @@ DEFAULT_SERVICE_SETTINGS = {
     "kdeconnect": {
         "enabled": True,
         "show_in_notification_center": True,
+        "low_battery_fullscreen_notification": False,
+        "low_battery_threshold": 20,
     },
     "home_assistant": {
         "enabled": True,
@@ -462,6 +464,20 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
                 defaults["show_in_notification_center"],
             )
         )
+        if key == "kdeconnect":
+            try:
+                merged[key]["low_battery_threshold"] = max(
+                    1,
+                    min(100, int(current.get("low_battery_threshold", defaults.get("low_battery_threshold", 20)))),
+                )
+            except Exception:
+                merged[key]["low_battery_threshold"] = int(defaults.get("low_battery_threshold", 20))
+            merged[key]["low_battery_fullscreen_notification"] = bool(
+                current.get(
+                    "low_battery_fullscreen_notification",
+                    defaults.get("low_battery_fullscreen_notification", False),
+                )
+            )
         if key == "christian_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get(
@@ -4536,6 +4552,48 @@ class SettingsWindow(QWidget):
             )
         )
 
+        service = self.settings_state["services"].setdefault("kdeconnect", {})
+
+        self.kdeconnect_low_battery_switch = SwitchButton(
+            bool(service.get("low_battery_fullscreen_notification", False))
+        )
+        self.kdeconnect_low_battery_switch.toggledValue.connect(self._set_kdeconnect_low_battery_fullscreen_notification)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Fullscreen low-battery alert",
+                "Show a fullscreen Hanauta reminder-style alert when your paired phone battery drops below the threshold.",
+                self.icon_font,
+                self.ui_font,
+                self.kdeconnect_low_battery_switch,
+            )
+        )
+
+        self.kdeconnect_battery_threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.kdeconnect_battery_threshold_slider.setRange(1, 100)
+        self.kdeconnect_battery_threshold_slider.setValue(int(service.get("low_battery_threshold", 20)))
+        self.kdeconnect_battery_threshold_slider.valueChanged.connect(self._set_kdeconnect_low_battery_threshold)
+        self.kdeconnect_battery_threshold_label = QLabel(f"{int(service.get('low_battery_threshold', 20))}%")
+        self.kdeconnect_battery_threshold_label.setFixedWidth(48)
+        self.kdeconnect_battery_threshold_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.kdeconnect_battery_threshold_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+        threshold_wrap = QWidget()
+        threshold_layout = QHBoxLayout(threshold_wrap)
+        threshold_layout.setContentsMargins(0, 0, 0, 0)
+        threshold_layout.setSpacing(10)
+        threshold_layout.addWidget(self.kdeconnect_battery_threshold_slider)
+        threshold_layout.addWidget(self.kdeconnect_battery_threshold_label)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("phone_android"),
+                "Battery threshold",
+                "Trigger the fullscreen KDE Connect alert when the current phone battery percentage is at or below this value.",
+                self.icon_font,
+                self.ui_font,
+                threshold_wrap,
+            )
+        )
+
         rules_path_label = QLabel(str(NOTIFICATION_RULES_FILE))
         rules_path_label.setWordWrap(True)
         rules_path_label.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -6161,6 +6219,16 @@ class SettingsWindow(QWidget):
                 )
                 switch.setChecked(bool(rule.get("enabled", False) and enabled))
                 switch._apply_state()
+            low_battery_switch = getattr(self, "kdeconnect_low_battery_switch", None)
+            if low_battery_switch is not None:
+                low_battery_switch.setChecked(bool(service.get("low_battery_fullscreen_notification", False) and enabled))
+                low_battery_switch._apply_state()
+            threshold_slider = getattr(self, "kdeconnect_battery_threshold_slider", None)
+            threshold_label = getattr(self, "kdeconnect_battery_threshold_label", None)
+            if threshold_slider is not None:
+                threshold_slider.setValue(int(service.get("low_battery_threshold", 20)))
+            if threshold_label is not None:
+                threshold_label.setText(f"{int(service.get('low_battery_threshold', 20))}%")
         if key == "reminders_widget":
             switch = getattr(self, "reminders_bar_switch", None)
             if switch is not None:
@@ -6339,6 +6407,32 @@ class SettingsWindow(QWidget):
                 "KDE Connect WhatsApp ignore rule enabled."
                 if enabled
                 else "KDE Connect WhatsApp ignore rule disabled."
+            )
+
+    def _set_kdeconnect_low_battery_fullscreen_notification(self, enabled: bool) -> None:
+        service = self.settings_state["services"].setdefault("kdeconnect", {})
+        if not service.get("enabled", True) and enabled:
+            return
+        service["low_battery_fullscreen_notification"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "kdeconnect_rules_status"):
+            threshold = int(service.get("low_battery_threshold", 20))
+            self.kdeconnect_rules_status.setText(
+                f"Fullscreen low-battery alerts are enabled at {threshold}% for KDE Connect."
+                if enabled
+                else "KDE Connect low-battery fullscreen alerts are disabled."
+            )
+
+    def _set_kdeconnect_low_battery_threshold(self, value: int) -> None:
+        threshold = max(1, min(100, int(value)))
+        service = self.settings_state["services"].setdefault("kdeconnect", {})
+        service["low_battery_threshold"] = threshold
+        save_settings_state(self.settings_state)
+        if hasattr(self, "kdeconnect_battery_threshold_label"):
+            self.kdeconnect_battery_threshold_label.setText(f"{threshold}%")
+        if hasattr(self, "kdeconnect_rules_status") and bool(service.get("low_battery_fullscreen_notification", False)):
+            self.kdeconnect_rules_status.setText(
+                f"Fullscreen low-battery alerts are enabled at {threshold}% for KDE Connect."
             )
 
     def _set_calendar_show_week_numbers(self, enabled: bool) -> None:
