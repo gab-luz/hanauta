@@ -1264,6 +1264,7 @@ class EmailClientWindow(QWidget):
         self._reply_draft: dict[str, Any] | None = None
         self.account_status: dict[int, dict[str, Any]] = {}
         self._pending_status_toasts: list[tuple[str, str]] = []
+        self._message_render_cache: dict[tuple[str, bool, bool], dict[str, Any]] = {}
         self.fragment_server = FragmentServer(self)
 
         self.setWindowTitle(APP_NAME)
@@ -1336,7 +1337,10 @@ class EmailClientWindow(QWidget):
 
     def push_state(self) -> None:
         payload = json_ready(self._build_state_payload())
-        payload_json = json.dumps(payload)
+        self._push_payload(payload)
+
+    def _push_payload(self, payload: dict[str, Any]) -> None:
+        payload_json = json.dumps(json_ready(payload))
         self.bridge.stateChanged.emit(payload_json)
         self._run_js(f"window.setMailState({payload_json});")
 
@@ -1344,6 +1348,22 @@ class EmailClientWindow(QWidget):
         safe_title = json.dumps(title)
         safe_body = json.dumps(body)
         self._run_js(f"window.showToast({safe_title}, {safe_body});")
+
+    def _prune_message_render_cache(self, *, max_items: int = 256) -> None:
+        overflow = len(self._message_render_cache) - max_items
+        if overflow <= 0:
+            return
+        for key in list(self._message_render_cache.keys())[:overflow]:
+            self._message_render_cache.pop(key, None)
+
+    def _invalidate_message_render_cache(self, message_key: str = "") -> None:
+        if not message_key:
+            self._message_render_cache.clear()
+            return
+        prefix = str(message_key)
+        for key in list(self._message_render_cache.keys()):
+            if key[0] == prefix:
+                self._message_render_cache.pop(key, None)
 
     def _policy_setting_key(self, kind: str) -> str:
         return "script_policy_rules" if kind == "scripts" else "image_policy_rules"
@@ -1382,6 +1402,23 @@ class EmailClientWindow(QWidget):
 
     def _message_render_data(self, message: dict[str, Any]) -> tuple[str, dict[str, bool], dict[str, Any], dict[str, Any]]:
         raw_html = str(message.get("body_html", "") or "")
+        image_policy = self._permission_state("images", message)
+        script_policy = self._permission_state("scripts", message)
+        cache_key = (
+            str(message.get("key", "")),
+            bool(image_policy["effective"]),
+            bool(script_policy["effective"]),
+        )
+        cached = self._message_render_cache.get(cache_key)
+        if cached is not None:
+            if cached.get("body_text"):
+                message["body_text"] = str(cached["body_text"])
+            return (
+                str(cached["html"]),
+                dict(cached["detected"]),
+                image_policy,
+                script_policy,
+            )
         raw_source = self.store.raw_source_for_key(str(message.get("key", "")))
         parsed_msg = message_from_bytes(raw_source) if raw_source else None
         if parsed_msg:
@@ -1390,14 +1427,18 @@ class EmailClientWindow(QWidget):
                 raw_html = extracted_html
             if extracted_text.strip():
                 message["body_text"] = extracted_text
-        image_policy = self._permission_state("images", message)
-        script_policy = self._permission_state("scripts", message)
         rendered_html, detected = prepare_message_html(
             raw_html,
             parsed_msg,
             allow_remote_images=bool(image_policy["effective"]),
             allow_scripts=bool(script_policy["effective"]),
         )
+        self._message_render_cache[cache_key] = {
+            "html": rendered_html,
+            "detected": dict(detected),
+            "body_text": str(message.get("body_text", "") or ""),
+        }
+        self._prune_message_render_cache()
         return rendered_html, detected, image_policy, script_policy
 
     def _decorate_message_for_display(self, message: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1560,6 +1601,15 @@ class EmailClientWindow(QWidget):
             }
             return state
 
+    def _build_selection_payload(self) -> dict[str, Any]:
+        selected_message = self.store.get_message(self.selected_message_key) if self.selected_message_key else None
+        return {
+            "selected_account_id": self.selected_account_id,
+            "selected_folder": self.selected_folder,
+            "selected_message_key": self.selected_message_key,
+            "selected_message": self._decorate_message_for_display(selected_message),
+        }
+
     def _reload_theme_if_needed(self) -> None:
         current = palette_mtime()
         if current == self._theme_mtime:
@@ -1637,9 +1687,10 @@ class EmailClientWindow(QWidget):
         for key in ("messages", "senders", "domains"):
             rules[key] = sorted(set(rules[key]))
         self.store.set_json_setting(self._policy_setting_key(normalized_kind), rules)
+        self._invalidate_message_render_cache(str(message.get("key", "")))
         label = "Active content" if normalized_kind == "scripts" else "Remote images"
         self.push_toast("Trust preference saved", f"{label} will now load for {scope_label}.")
-        self.push_state()
+        self._push_payload(self._build_selection_payload())
 
     def open_external_link(self, url: str) -> None:
         cleaned = clean_tracking_url(url)
@@ -1994,6 +2045,7 @@ class EmailClientWindow(QWidget):
         self.push_state()
 
     def set_selection(self, account_id: str, folder: str, message_key: str) -> None:
+        selection_only = bool(message_key.strip()) and not bool(folder.strip()) and not bool(account_id.strip())
         if account_id.strip():
             self.selected_account_id = int(account_id)
             self.store.set_setting("selected_account_id", account_id)
@@ -2007,6 +2059,9 @@ class EmailClientWindow(QWidget):
             self.store.set_setting("selected_message_key", message_key)
             self.store.mark_local_seen(message_key, True)
             self._set_remote_seen(message_key, True)
+        if selection_only:
+            self._push_payload(self._build_selection_payload())
+            return
         self.push_state()
 
     def schedule_sync(self, message: str, *, send_notifications: bool) -> None:
@@ -2026,6 +2081,7 @@ class EmailClientWindow(QWidget):
 
     def _finish_sync(self, message: str, error_message: str) -> None:
         self._sync_busy = False
+        self._invalidate_message_render_cache()
         self.push_state()
         while self._pending_status_toasts:
             title, body = self._pending_status_toasts.pop(0)
@@ -2362,6 +2418,7 @@ class EmailClientWindow(QWidget):
         except Exception:
             pass
         self.store.delete_local_message(message_key)
+        self._invalidate_message_render_cache(message_key)
         if self.selected_message_key == message_key:
             self.selected_message_key = ""
             self.store.set_setting("selected_message_key", "")
@@ -2388,6 +2445,9 @@ class EmailClientWindow(QWidget):
             finally:
                 client.logout()
             new_key = self.store.move_local_message(message_key, target_folder)
+            self._invalidate_message_render_cache(message_key)
+            if new_key:
+                self._invalidate_message_render_cache(str(new_key))
             if self.selected_message_key == message_key:
                 self.selected_message_key = ""
                 self.store.set_setting("selected_message_key", "")

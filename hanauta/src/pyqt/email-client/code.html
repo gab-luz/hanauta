@@ -1937,8 +1937,16 @@
 
     function selectMessage(messageKey) {
       state.selected_message_key = messageKey;
-      renderAll();
-      emitBridge("setSelection", String(state.selected_account_id), state.selected_folder, state.selected_message_key);
+      const summary = (state.messages || []).find((message) => message.key === messageKey) || null;
+      if (summary) {
+        summary.seen = true;
+        state.selected_message = state.selected_message && state.selected_message.key === messageKey
+          ? { ...summary, ...state.selected_message, seen: true }
+          : { ...summary, seen: true };
+      }
+      renderMessages();
+      renderDetail();
+      emitBridge("setSelection", "", "", state.selected_message_key);
     }
 
     function sendCompose() {
