@@ -1175,6 +1175,10 @@
           <input id="composeCc" type="text" placeholder="Optional carbon copy recipients" />
         </div>
         <div class="field full">
+          <label for="composeBcc">Bcc</label>
+          <input id="composeBcc" type="text" placeholder="Optional blind copy recipients" />
+        </div>
+        <div class="field full">
           <label for="composeSubject">Subject</label>
           <input id="composeSubject" type="text" placeholder="What is this message about?" />
         </div>
@@ -1354,6 +1358,7 @@
       composeAccount: document.getElementById("composeAccount"),
       composeTo: document.getElementById("composeTo"),
       composeCc: document.getElementById("composeCc"),
+      composeBcc: document.getElementById("composeBcc"),
       composeSubject: document.getElementById("composeSubject"),
       composeBody: document.getElementById("composeBody"),
       refreshButton: document.getElementById("refreshButton"),
@@ -1876,6 +1881,7 @@
       renderComposeAccounts();
       elements.composeTo.value = prefill.to || "";
       elements.composeCc.value = prefill.cc || "";
+      elements.composeBcc.value = prefill.bcc || "";
       elements.composeSubject.value = prefill.subject || "";
       elements.composeBody.value = prefill.body || "";
       elements.composeModal.classList.add("open");
@@ -1954,7 +1960,7 @@
         account_id: Number(elements.composeAccount.value || state.selected_account_id || 0),
         to: elements.composeTo.value.split(",").map((item) => item.trim()).filter(Boolean),
         cc: elements.composeCc.value.split(",").map((item) => item.trim()).filter(Boolean),
-        bcc: [],
+        bcc: elements.composeBcc.value.split(",").map((item) => item.trim()).filter(Boolean),
         subject: elements.composeSubject.value.trim(),
         body: elements.composeBody.value,
         in_reply_to: "",
@@ -2233,6 +2239,7 @@
       openCompose({
         to: Array.isArray(draft.to) ? draft.to.join(", ") : "",
         cc: Array.isArray(draft.cc) ? draft.cc.join(", ") : "",
+        bcc: Array.isArray(draft.bcc) ? draft.bcc.join(", ") : "",
         subject: draft.subject || "",
         body: draft.body || ""
       });
