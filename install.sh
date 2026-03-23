@@ -667,6 +667,35 @@ install_local_binaries() {
   fi
 }
 
+offer_mail_desktop_setup() {
+  local helper="$HOME/.config/i3/hanauta/scripts/install_mail_desktop.sh"
+  local -a args=()
+
+  echo ""
+  echo -e "${MAGENTA}${BOLD}Optional Hanauta Mail Desktop Integration${NC}"
+  echo -e "Install a desktop entry for ${BOLD}Hanauta Mail${NC} so it appears in app launchers and can be selected by desktop tools."
+  if ! confirm_yes "Do you want to install Hanauta Mail desktop integration?"; then
+    info "Skipping Hanauta Mail desktop integration."
+    return 0
+  fi
+
+  if [ ! -f "$helper" ]; then
+    warn "Mail desktop integration helper not found at $helper"
+    return 1
+  fi
+
+  if confirm_yes "Do you want Hanauta Mail to support mailto links?"; then
+    args+=(--mailto)
+  fi
+
+  info "Installing Hanauta Mail desktop integration..."
+  if bash "$helper" "${args[@]}"; then
+    success "Hanauta Mail desktop integration installed"
+  else
+    warn "Hanauta Mail desktop integration could not be completed"
+  fi
+}
+
 ensure_hanauta_settings() {
   local settings_script="$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py"
   local state_dir="$HOME/.local/state/hanauta/notification-center"
@@ -963,6 +992,7 @@ main() {
     install_detected_editor_extensions
   fi
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
+    offer_mail_desktop_setup
     offer_custom_theme_install
   fi
 

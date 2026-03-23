@@ -244,6 +244,12 @@ DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
 MAIL_DB_PATH = MAIL_STATE_DIR / "mail.sqlite3"
+MAIL_DESKTOP_ID = "hanauta-mail.desktop"
+MAIL_DESKTOP_SOURCE = ROOT / "hanauta" / "config" / "applications" / MAIL_DESKTOP_ID
+MAIL_DESKTOP_LOCAL = Path.home() / ".local" / "share" / "applications" / MAIL_DESKTOP_ID
+MAIL_DESKTOP_SYSTEM = Path("/usr/local/share/applications") / MAIL_DESKTOP_ID
+MAIL_DESKTOP_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_mail_desktop.sh"
+MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_mail_desktop_system.sh"
 PICOM_DEFAULT_TEMPLATE = """backend = "glx";
 vsync = true;
 use-damage = true;
@@ -742,6 +748,22 @@ def run_text(cmd: list[str]) -> str:
         return result.stdout.strip()
     except Exception:
         return ""
+
+
+def hanauta_mail_desktop_installed() -> bool:
+    return MAIL_DESKTOP_LOCAL.exists() or MAIL_DESKTOP_SYSTEM.exists()
+
+
+def current_mailto_handler() -> str:
+    if shutil.which("xdg-mime") is None:
+        return ""
+    return run_text(["xdg-mime", "query", "default", "x-scheme-handler/mailto"]).strip()
+
+
+def current_favorite_mail_handler() -> str:
+    if shutil.which("xdg-settings") is None:
+        return ""
+    return run_text(["xdg-settings", "get", "default-url-scheme-handler", "mailto"]).strip()
 
 
 def _picom_rule_files() -> dict[str, Path]:
@@ -4674,6 +4696,21 @@ class SettingsWindow(QWidget):
         actions.addStretch(1)
         layout.addLayout(actions)
 
+        integration_actions = QHBoxLayout()
+        integration_actions.setSpacing(8)
+        self.mail_favorite_button = QPushButton("Set Favorite Mail Client")
+        self.mail_favorite_button.setObjectName("secondaryButton")
+        self.mail_mailto_button = QPushButton("Handle mailto Links")
+        self.mail_mailto_button.setObjectName("secondaryButton")
+        for button in (self.mail_favorite_button, self.mail_mailto_button):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_favorite_button.clicked.connect(self._set_hanauta_mail_favorite_client)
+        self.mail_mailto_button.clicked.connect(self._set_hanauta_mailto_handler)
+        integration_actions.addWidget(self.mail_favorite_button)
+        integration_actions.addWidget(self.mail_mailto_button)
+        integration_actions.addStretch(1)
+        layout.addLayout(integration_actions)
+
         self.mail_status = QLabel("Mail accounts are stored in Hanauta Mail's shared database.")
         self.mail_status.setWordWrap(True)
         self.mail_status.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -4692,6 +4729,7 @@ class SettingsWindow(QWidget):
         )
         self.service_sections["mail"] = section
         self._reload_mail_accounts()
+        self._sync_mail_integration_buttons()
         return section
 
     def _reload_mail_accounts(self, selected_account_id: int = 0) -> None:
@@ -4862,6 +4900,80 @@ class SettingsWindow(QWidget):
             self.mail_status.setText(f"Failed to open Hanauta Mail: {exc}")
             return
         self.mail_status.setText("Opened Hanauta Mail.")
+
+    def _sync_mail_integration_buttons(self) -> None:
+        favorite_enabled = current_favorite_mail_handler() == MAIL_DESKTOP_ID
+        mailto_enabled = current_mailto_handler() == MAIL_DESKTOP_ID
+        self.mail_favorite_button.setText("Favorite Mail Client Enabled" if favorite_enabled else "Set Favorite Mail Client")
+        self.mail_mailto_button.setText("mailto Links Enabled" if mailto_enabled else "Handle mailto Links")
+
+    def _ensure_hanauta_mail_desktop_entry(self) -> bool:
+        if hanauta_mail_desktop_installed():
+            return True
+        if not MAIL_DESKTOP_INSTALL_SCRIPT.exists():
+            self.mail_status.setText("The Hanauta Mail desktop install helper is missing.")
+            return False
+        result = subprocess.run(
+            ["bash", str(MAIL_DESKTOP_INSTALL_SCRIPT)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and hanauta_mail_desktop_installed():
+            return True
+        if not MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT.exists():
+            self.mail_status.setText("Unable to register the Hanauta Mail desktop entry.")
+            return False
+        if shutil.which("pkexec") is None:
+            self.mail_status.setText("Unable to register Hanauta Mail system-wide because pkexec is unavailable.")
+            return False
+        self.mail_status.setText("Installing the Hanauta Mail desktop entry system-wide. A polkit dialog may appear.")
+        system_result = subprocess.run(
+            ["pkexec", "bash", str(MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if system_result.returncode == 0 and hanauta_mail_desktop_installed():
+            return True
+        self.mail_status.setText("Unable to register the Hanauta Mail desktop entry.")
+        return False
+
+    def _set_hanauta_mail_favorite_client(self) -> None:
+        if not self._ensure_hanauta_mail_desktop_entry():
+            return
+        if shutil.which("xdg-settings") is None:
+            self.mail_status.setText("xdg-settings is unavailable, so Hanauta Mail could not be set as the favorite mail client.")
+            return
+        result = subprocess.run(
+            ["xdg-settings", "set", "default-url-scheme-handler", "mailto", MAIL_DESKTOP_ID],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            self.mail_status.setText("Failed to set Hanauta Mail as the favorite mail client.")
+            return
+        self._sync_mail_integration_buttons()
+        self.mail_status.setText("Hanauta Mail is now the favorite mail client for mailto links.")
+
+    def _set_hanauta_mailto_handler(self) -> None:
+        if not self._ensure_hanauta_mail_desktop_entry():
+            return
+        if shutil.which("xdg-mime") is None:
+            self.mail_status.setText("xdg-mime is unavailable, so mailto handling could not be enabled.")
+            return
+        result = subprocess.run(
+            ["xdg-mime", "default", MAIL_DESKTOP_ID, "x-scheme-handler/mailto"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            self.mail_status.setText("Failed to enable mailto link handling for Hanauta Mail.")
+            return
+        self._sync_mail_integration_buttons()
+        self.mail_status.setText("Hanauta Mail will now handle mailto links.")
 
     def _set_mail_notifications_enabled(self, enabled: bool) -> None:
         self.settings_state.setdefault("mail", {})["notify_new_messages"] = bool(enabled)
