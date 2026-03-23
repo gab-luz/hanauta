@@ -9,7 +9,13 @@
 
 typedef struct {
     gchar *key;
+    gchar *action;
     gchar *label;
+    gchar *url;
+    gchar *method;
+    gchar *body;
+    gchar *value;
+    gboolean clear;
 } ActionEntry;
 
 typedef struct {
@@ -340,7 +346,12 @@ static void action_entry_free(gpointer data) {
         return;
     }
     g_free(entry->key);
+    g_free(entry->action);
     g_free(entry->label);
+    g_free(entry->url);
+    g_free(entry->method);
+    g_free(entry->body);
+    g_free(entry->value);
     g_free(entry);
 }
 
@@ -406,6 +417,97 @@ static gchar *replace_all(const gchar *source, const gchar *needle, const gchar 
     }
     g_string_append(result, cursor);
     return g_string_free(result, FALSE);
+}
+
+static void apply_emoji_fallback_to_label(GtkWidget *widget) {
+    PangoAttrList *attrs = NULL;
+    if (widget == NULL || !GTK_IS_LABEL(widget)) {
+        return;
+    }
+    attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_fallback_new(TRUE));
+    gtk_label_set_attributes(GTK_LABEL(widget), attrs);
+    pango_attr_list_unref(attrs);
+}
+
+static gboolean is_emoji_codepoint(gunichar ch) {
+    return
+        (ch >= 0x1F300 && ch <= 0x1FAFF) ||
+        (ch >= 0x2600 && ch <= 0x27BF) ||
+        (ch >= 0xFE00 && ch <= 0xFE0F) ||
+        (ch >= 0x1F1E6 && ch <= 0x1F1FF) ||
+        (ch >= 0x1F3FB && ch <= 0x1F3FF) ||
+        ch == 0x200D ||
+        ch == 0x20E3;
+}
+
+static gchar *markup_with_emoji_font(const gchar *text) {
+    const gchar *cursor = text != NULL ? text : "";
+    GString *markup = NULL;
+    gboolean in_emoji_span = FALSE;
+    gboolean has_emoji = FALSE;
+
+    while (*cursor != '\0') {
+        gunichar ch = g_utf8_get_char(cursor);
+        gunichar next = 0;
+        gchar buf[8] = {0};
+        gchar *escaped = NULL;
+        gboolean emoji = is_emoji_codepoint(ch);
+
+        if (!emoji && *cursor != '\0') {
+            const gchar *next_ptr = g_utf8_next_char(cursor);
+            if (*next_ptr != '\0') {
+                next = g_utf8_get_char(next_ptr);
+                if ((ch == '#' || ch == '*' || (ch >= '0' && ch <= '9')) && (next == 0xFE0F || next == 0x20E3)) {
+                    emoji = TRUE;
+                }
+            }
+        }
+
+        if (markup == NULL) {
+            markup = g_string_new("");
+        }
+        if (emoji && !in_emoji_span) {
+            g_string_append(markup, "<span font_desc=\"Noto Color Emoji\">");
+            in_emoji_span = TRUE;
+            has_emoji = TRUE;
+        } else if (!emoji && in_emoji_span) {
+            g_string_append(markup, "</span>");
+            in_emoji_span = FALSE;
+        }
+
+        gint len = g_unichar_to_utf8(ch, buf);
+        buf[len] = '\0';
+        escaped = g_markup_escape_text(buf, -1);
+        g_string_append(markup, escaped);
+        g_free(escaped);
+        cursor = g_utf8_next_char(cursor);
+    }
+
+    if (!has_emoji) {
+        if (markup != NULL) {
+            g_string_free(markup, TRUE);
+        }
+        return NULL;
+    }
+    if (in_emoji_span) {
+        g_string_append(markup, "</span>");
+    }
+    return g_string_free(markup, FALSE);
+}
+
+static void apply_text_with_emoji_markup(GtkWidget *widget, const gchar *text) {
+    gchar *markup = NULL;
+    if (widget == NULL || !GTK_IS_LABEL(widget)) {
+        return;
+    }
+    markup = markup_with_emoji_font(text);
+    if (markup != NULL) {
+        gtk_label_set_markup(GTK_LABEL(widget), markup);
+        g_free(markup);
+    } else {
+        gtk_label_set_text(GTK_LABEL(widget), text != NULL ? text : "");
+    }
 }
 
 static gchar *load_toast_css(const ThemePalette *theme) {
@@ -685,6 +787,46 @@ static void save_history(void) {
     g_free(path);
 }
 
+static void execute_action_entry(const ActionEntry *entry) {
+    if (entry == NULL || entry->action == NULL || *entry->action == '\0') {
+        return;
+    }
+    if (g_strcmp0(entry->action, "view") == 0) {
+        if (entry->url != NULL && *entry->url != '\0') {
+            const gchar *argv[] = {"xdg-open", entry->url, NULL};
+            g_spawn_async(NULL, (gchar **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+        }
+        return;
+    }
+    if (g_strcmp0(entry->action, "http") == 0) {
+        if (entry->url != NULL && *entry->url != '\0') {
+            const gchar *method = (entry->method != NULL && *entry->method != '\0') ? entry->method : "POST";
+            const gchar *argv_with_body[] = {"curl", "-fsSL", "-X", method, "-d", entry->body, entry->url, NULL};
+            const gchar *argv_without_body[] = {"curl", "-fsSL", "-X", method, entry->url, NULL};
+            g_spawn_async(
+                NULL,
+                (gchar **)((entry->body != NULL && *entry->body != '\0') ? argv_with_body : argv_without_body),
+                NULL,
+                G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL
+            );
+        }
+        return;
+    }
+    if (g_strcmp0(entry->action, "copy") == 0) {
+        const gchar *value = entry->value != NULL ? entry->value : "";
+        GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+        GtkClipboard *primary = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+        gtk_clipboard_set_text(clipboard, value, -1);
+        gtk_clipboard_store(clipboard);
+        gtk_clipboard_set_text(primary, value, -1);
+        return;
+    }
+}
+
 static void append_history(const NotificationPayload *payload) {
     HistoryEntry *entry = g_new0(HistoryEntry, 1);
     entry->id = payload->id;
@@ -804,8 +946,19 @@ static void close_button_clicked(GtkButton *button, gpointer user_data) {
 static void action_button_clicked(GtkButton *button, gpointer user_data) {
     guint id = GPOINTER_TO_UINT(user_data);
     const gchar *action_key = g_object_get_data(G_OBJECT(button), "action-key");
+    ActionEntry entry = {0};
+    entry.key = (gchar *)action_key;
+    entry.action = g_object_get_data(G_OBJECT(button), "action-type");
+    entry.url = g_object_get_data(G_OBJECT(button), "action-url");
+    entry.method = g_object_get_data(G_OBJECT(button), "action-method");
+    entry.body = g_object_get_data(G_OBJECT(button), "action-body");
+    entry.value = g_object_get_data(G_OBJECT(button), "action-value");
+    entry.clear = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "action-clear")) != 0;
+    execute_action_entry(&entry);
     emit_action(id, action_key);
-    dismiss_toast(id, 2);
+    if (entry.clear) {
+        dismiss_toast(id, 2);
+    }
 }
 
 static GtkWidget *make_label(const gchar *name, const gchar *text, gdouble xalign) {
@@ -814,6 +967,8 @@ static GtkWidget *make_label(const gchar *name, const gchar *text, gdouble xalig
     gtk_label_set_xalign(GTK_LABEL(label), (gfloat)xalign);
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
     gtk_label_set_line_wrap_mode(GTK_LABEL(label), PANGO_WRAP_WORD_CHAR);
+    apply_emoji_fallback_to_label(label);
+    apply_text_with_emoji_markup(label, text);
     return label;
 }
 
@@ -895,6 +1050,7 @@ static void show_toast(const NotificationPayload *payload) {
 
     GtkWidget *close_button = gtk_button_new_with_label("×");
     gtk_widget_set_name(close_button, "closeButton");
+    apply_emoji_fallback_to_label(gtk_bin_get_child(GTK_BIN(close_button)));
     g_signal_connect(close_button, "clicked", G_CALLBACK(close_button_clicked), GUINT_TO_POINTER(payload->id));
     gtk_box_pack_end(GTK_BOX(top), close_button, FALSE, FALSE, 0);
 
@@ -914,6 +1070,14 @@ static void show_toast(const NotificationPayload *payload) {
             GtkWidget *button = gtk_button_new_with_label(action->label != NULL ? action->label : "Action");
             gtk_widget_set_name(button, "actionButton");
             g_object_set_data_full(G_OBJECT(button), "action-key", g_strdup(action->key), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-type", g_strdup(action->action), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-url", g_strdup(action->url), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-method", g_strdup(action->method), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-body", g_strdup(action->body), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-value", g_strdup(action->value), g_free);
+            g_object_set_data(G_OBJECT(button), "action-clear", GINT_TO_POINTER(action->clear ? 1 : 0));
+            apply_emoji_fallback_to_label(gtk_bin_get_child(GTK_BIN(button)));
+            apply_text_with_emoji_markup(gtk_bin_get_child(GTK_BIN(button)), action->label != NULL ? action->label : "Action");
             g_signal_connect(button, "clicked", G_CALLBACK(action_button_clicked), GUINT_TO_POINTER(payload->id));
             gtk_box_pack_start(GTK_BOX(actions_box), button, FALSE, FALSE, 0);
         }
@@ -941,6 +1105,72 @@ static void show_toast(const NotificationPayload *payload) {
     g_hash_table_insert(g_daemon.toasts, GUINT_TO_POINTER(payload->id), toast);
     gtk_widget_show_all(window);
     reposition_toasts();
+}
+
+static GHashTable *parse_action_metadata(const gchar *actions_json) {
+    GHashTable *metadata = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)action_entry_free);
+    gchar *array_json = NULL;
+    const gchar *cursor = NULL;
+    if (actions_json == NULL || *actions_json == '\0') {
+        return metadata;
+    }
+    array_json = g_strdup(actions_json);
+    cursor = array_json;
+    while ((cursor = strchr(cursor, '{')) != NULL) {
+        gint depth = 0;
+        gboolean in_string = FALSE;
+        gboolean escaped = FALSE;
+        const gchar *end = NULL;
+        for (const gchar *scan = cursor; *scan != '\0'; ++scan) {
+            gchar ch = *scan;
+            if (escaped) {
+                escaped = FALSE;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = TRUE;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = !in_string;
+                continue;
+            }
+            if (in_string) {
+                continue;
+            }
+            if (ch == '{') {
+                depth += 1;
+            } else if (ch == '}') {
+                depth -= 1;
+                if (depth == 0) {
+                    end = scan;
+                    break;
+                }
+            }
+        }
+        if (end == NULL) {
+            break;
+        }
+        gchar *object_json = g_strndup(cursor, (gsize)(end - cursor + 1));
+        ActionEntry *entry = g_new0(ActionEntry, 1);
+        entry->key = json_string_value(object_json, "key");
+        entry->action = json_string_value(object_json, "action");
+        entry->label = json_string_value(object_json, "label");
+        entry->url = json_string_value(object_json, "url");
+        entry->method = json_string_value(object_json, "method");
+        entry->body = json_string_value(object_json, "body");
+        entry->value = json_string_value(object_json, "value");
+        entry->clear = json_bool_value(object_json, "clear", FALSE);
+        if (entry->key != NULL && *entry->key != '\0') {
+            g_hash_table_insert(metadata, g_strdup(entry->key), entry);
+        } else {
+            action_entry_free(entry);
+        }
+        g_free(object_json);
+        cursor = end + 1;
+    }
+    g_free(array_json);
+    return metadata;
 }
 
 static NotificationPayload *payload_from_variant(GVariant *parameters) {
@@ -1000,6 +1230,43 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
         g_variant_unref(actions_variant);
     }
     if (hints_variant != NULL) {
+        GHashTable *metadata = NULL;
+        gchar *actions_json = NULL;
+        GVariantIter hints_iter;
+        const gchar *hint_key = NULL;
+        GVariant *hint_value = NULL;
+        g_variant_iter_init(&hints_iter, hints_variant);
+        while (g_variant_iter_next(&hints_iter, "{&sv}", &hint_key, &hint_value)) {
+            if (g_strcmp0(hint_key, "x-hanauta-ntfy-actions") == 0 && g_variant_is_of_type(hint_value, G_VARIANT_TYPE_STRING)) {
+                actions_json = g_strdup(g_variant_get_string(hint_value, NULL));
+            }
+            g_variant_unref(hint_value);
+        }
+        metadata = parse_action_metadata(actions_json);
+        for (guint i = 0; i < payload->actions->len; ++i) {
+            ActionEntry *action = g_ptr_array_index(payload->actions, i);
+            ActionEntry *rich = g_hash_table_lookup(metadata, action->key);
+            if (rich == NULL) {
+                continue;
+            }
+            g_free(action->action);
+            g_free(action->url);
+            g_free(action->method);
+            g_free(action->body);
+            g_free(action->value);
+            if (rich->label != NULL && *rich->label != '\0') {
+                g_free(action->label);
+                action->label = g_strdup(rich->label);
+            }
+            action->action = g_strdup(rich->action);
+            action->url = g_strdup(rich->url);
+            action->method = g_strdup(rich->method);
+            action->body = g_strdup(rich->body);
+            action->value = g_strdup(rich->value);
+            action->clear = rich->clear;
+        }
+        g_hash_table_unref(metadata);
+        g_free(actions_json);
         g_variant_unref(hints_variant);
     }
     return payload;

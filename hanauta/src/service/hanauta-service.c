@@ -27,6 +27,17 @@ typedef struct {
 
 static HanautaService g_service = {0};
 
+typedef struct {
+    gchar *key;
+    gchar *action;
+    gchar *label;
+    gchar *url;
+    gchar *method;
+    gchar *body;
+    gchar *value;
+    gboolean clear;
+} NtfyActionSpec;
+
 static gint compare_strings(gconstpointer a, gconstpointer b) {
     return g_strcmp0(*(const gchar * const *)a, *(const gchar * const *)b);
 }
@@ -86,6 +97,53 @@ static gchar *extract_object_block(const gchar *json, const gchar *key) {
             depth -= 1;
             if (depth == 0) {
                 result = g_strndup(brace, (gsize)(cursor - brace + 1));
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+static gchar *extract_array_block(const gchar *json, const gchar *key) {
+    gchar *pattern = g_strdup_printf("\"%s\"", key);
+    const gchar *found = g_strstr_len(json, -1, pattern);
+    const gchar *bracket = NULL;
+    gint depth = 0;
+    gboolean in_string = FALSE;
+    gboolean escaped = FALSE;
+    gchar *result = NULL;
+    const gchar *cursor = NULL;
+    g_free(pattern);
+    if (found == NULL) {
+        return NULL;
+    }
+    bracket = strchr(found, '[');
+    if (bracket == NULL) {
+        return NULL;
+    }
+    for (cursor = bracket; *cursor != '\0'; ++cursor) {
+        gchar ch = *cursor;
+        if (escaped) {
+            escaped = FALSE;
+            continue;
+        }
+        if (ch == '\\') {
+            escaped = TRUE;
+            continue;
+        }
+        if (ch == '"') {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) {
+            continue;
+        }
+        if (ch == '[') {
+            depth += 1;
+        } else if (ch == ']') {
+            depth -= 1;
+            if (depth == 0) {
+                result = g_strndup(bracket, (gsize)(cursor - bracket + 1));
                 break;
             }
         }
@@ -286,6 +344,21 @@ static void replace_string_array(GPtrArray **target, GPtrArray *replacement) {
         g_ptr_array_free(*target, TRUE);
     }
     *target = replacement;
+}
+
+static void ntfy_action_spec_free(gpointer data) {
+    NtfyActionSpec *action = data;
+    if (action == NULL) {
+        return;
+    }
+    g_free(action->key);
+    g_free(action->action);
+    g_free(action->label);
+    g_free(action->url);
+    g_free(action->method);
+    g_free(action->body);
+    g_free(action->value);
+    g_free(action);
 }
 
 static void write_status_json(const gchar *status, const gchar *details) {
@@ -821,7 +894,84 @@ cleanup:
     return ok;
 }
 
-static void notify_desktop(const gchar *summary, const gchar *body, const gchar *topic) {
+static gchar *json_escape_plain(const gchar *text) {
+    GString *buffer = g_string_new("");
+    const gchar *cursor = text != NULL ? text : "";
+    while (*cursor != '\0') {
+        switch (*cursor) {
+            case '\\':
+                g_string_append(buffer, "\\\\");
+                break;
+            case '"':
+                g_string_append(buffer, "\\\"");
+                break;
+            case '\n':
+                g_string_append(buffer, "\\n");
+                break;
+            case '\r':
+                g_string_append(buffer, "\\r");
+                break;
+            case '\t':
+                g_string_append(buffer, "\\t");
+                break;
+            default:
+                g_string_append_c(buffer, *cursor);
+                break;
+        }
+        cursor += 1;
+    }
+    return g_string_free(buffer, FALSE);
+}
+
+static gchar *serialize_ntfy_actions_json(const GPtrArray *actions) {
+    GString *json = g_string_new("[");
+    if (actions != NULL) {
+        for (guint i = 0; i < actions->len; ++i) {
+            const NtfyActionSpec *action = g_ptr_array_index((GPtrArray *)actions, i);
+            gchar *key = NULL;
+            gchar *type = NULL;
+            gchar *label = NULL;
+            gchar *url = NULL;
+            gchar *method = NULL;
+            gchar *body = NULL;
+            gchar *value = NULL;
+            if (action == NULL || action->key == NULL || *action->key == '\0') {
+                continue;
+            }
+            key = json_escape_plain(action->key);
+            type = json_escape_plain(action->action);
+            label = json_escape_plain(action->label);
+            url = json_escape_plain(action->url);
+            method = json_escape_plain(action->method);
+            body = json_escape_plain(action->body);
+            value = json_escape_plain(action->value);
+            g_string_append_printf(
+                json,
+                "%s{\"key\":\"%s\",\"action\":\"%s\",\"label\":\"%s\",\"url\":\"%s\",\"method\":\"%s\",\"body\":\"%s\",\"value\":\"%s\",\"clear\":%s}",
+                json->len > 1 ? "," : "",
+                key,
+                type,
+                label,
+                url,
+                method,
+                body,
+                value,
+                action->clear ? "true" : "false"
+            );
+            g_free(key);
+            g_free(type);
+            g_free(label);
+            g_free(url);
+            g_free(method);
+            g_free(body);
+            g_free(value);
+        }
+    }
+    g_string_append_c(json, ']');
+    return g_string_free(json, FALSE);
+}
+
+static void notify_desktop_ntfy(const gchar *summary, const gchar *body, const gchar *topic, gint priority, const GPtrArray *actions) {
     GDBusConnection *connection = NULL;
     GVariantBuilder actions_builder;
     GVariantBuilder hints_builder;
@@ -829,7 +979,8 @@ static void notify_desktop(const gchar *summary, const gchar *body, const gchar 
     GVariant *result = NULL;
     gchar *resolved_summary = NULL;
     gchar *resolved_body = NULL;
-    const gchar *icon = "notifications";
+    gchar *actions_json = NULL;
+    guint8 urgency = 1;
 
     connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
     if (connection == NULL) {
@@ -846,15 +997,33 @@ static void notify_desktop(const gchar *summary, const gchar *body, const gchar 
         resolved_body = g_strdup("New ntfy message");
     }
 
+    if (priority >= 5) {
+        urgency = 2;
+    } else if (priority <= 2 && priority > 0) {
+        urgency = 0;
+    }
+
     g_variant_builder_init(&actions_builder, G_VARIANT_TYPE("as"));
+    if (actions != NULL) {
+        for (guint i = 0; i < actions->len; ++i) {
+            const NtfyActionSpec *action = g_ptr_array_index((GPtrArray *)actions, i);
+            if (action == NULL || action->key == NULL || *action->key == '\0') {
+                continue;
+            }
+            g_variant_builder_add(&actions_builder, "s", action->key);
+            g_variant_builder_add(&actions_builder, "s", (action->label != NULL && *action->label != '\0') ? action->label : action->key);
+        }
+    }
+
     g_variant_builder_init(&hints_builder, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&hints_builder, "{sv}", "urgency", g_variant_new_byte(urgency));
+    g_variant_builder_add(&hints_builder, "{sv}", "desktop-entry", g_variant_new_string("hanauta-ntfy"));
     if (topic != NULL && *topic != '\0') {
-        g_variant_builder_add(
-            &hints_builder,
-            "{sv}",
-            "desktop-entry",
-            g_variant_new_string("hanauta-ntfy")
-        );
+        g_variant_builder_add(&hints_builder, "{sv}", "x-hanauta-ntfy-topic", g_variant_new_string(topic));
+    }
+    if (actions != NULL && actions->len > 0) {
+        actions_json = serialize_ntfy_actions_json(actions);
+        g_variant_builder_add(&hints_builder, "{sv}", "x-hanauta-ntfy-actions", g_variant_new_string(actions_json));
     }
 
     result = g_dbus_connection_call_sync(
@@ -867,12 +1036,12 @@ static void notify_desktop(const gchar *summary, const gchar *body, const gchar 
             "(susssasa{sv}i)",
             "ntfy",
             0,
-            icon,
+            "notifications",
             resolved_summary,
             resolved_body,
             &actions_builder,
             &hints_builder,
-            8000
+            priority >= 5 ? 0 : 8000
         ),
         G_VARIANT_TYPE("(u)"),
         G_DBUS_CALL_FLAGS_NONE,
@@ -885,6 +1054,7 @@ static void notify_desktop(const gchar *summary, const gchar *body, const gchar 
     }
     g_clear_error(&error);
     g_object_unref(connection);
+    g_free(actions_json);
     g_free(resolved_summary);
     g_free(resolved_body);
 }
@@ -1008,6 +1178,71 @@ static GPtrArray *parse_ntfy_topics_payload(const gchar *payload_text) {
     return topics;
 }
 
+static GPtrArray *parse_ntfy_action_specs(const gchar *entry_json) {
+    GPtrArray *actions = g_ptr_array_new_with_free_func(ntfy_action_spec_free);
+    gchar *actions_json = extract_array_block(entry_json, "actions");
+    const gchar *cursor = NULL;
+    if (actions_json == NULL) {
+        return actions;
+    }
+    cursor = actions_json;
+    while ((cursor = strchr(cursor, '{')) != NULL) {
+        gint depth = 0;
+        gboolean in_string = FALSE;
+        gboolean escaped = FALSE;
+        const gchar *end = NULL;
+        for (const gchar *scan = cursor; *scan != '\0'; ++scan) {
+            gchar ch = *scan;
+            if (escaped) {
+                escaped = FALSE;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = TRUE;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = !in_string;
+                continue;
+            }
+            if (in_string) {
+                continue;
+            }
+            if (ch == '{') {
+                depth += 1;
+            } else if (ch == '}') {
+                depth -= 1;
+                if (depth == 0) {
+                    end = scan;
+                    break;
+                }
+            }
+        }
+        if (end == NULL) {
+            break;
+        }
+        gchar *object_json = g_strndup(cursor, (gsize)(end - cursor + 1));
+        NtfyActionSpec *action = g_new0(NtfyActionSpec, 1);
+        action->key = object_string(object_json, "id", "");
+        action->action = object_string(object_json, "action", "");
+        action->label = object_string(object_json, "label", "");
+        action->url = object_string(object_json, "url", "");
+        action->method = object_string(object_json, "method", "");
+        action->body = object_string(object_json, "body", "");
+        action->value = object_string(object_json, "value", "");
+        action->clear = object_bool(object_json, "clear", FALSE);
+        if (action->key[0] != '\0' && action->label[0] != '\0' && action->action[0] != '\0') {
+            g_ptr_array_add(actions, action);
+        } else {
+            ntfy_action_spec_free(action);
+        }
+        g_free(object_json);
+        cursor = end + 1;
+    }
+    g_free(actions_json);
+    return actions;
+}
+
 static GPtrArray *fetch_ntfy_all_topics(const gchar *server_url, const gchar *auth_mode, const gchar *token, const gchar *username, const gchar *password) {
     GPtrArray *topics = g_ptr_array_new_with_free_func(g_free);
     gchar *auth_header = NULL;
@@ -1112,6 +1347,7 @@ static gboolean refresh_ntfy(void) {
     GPtrArray *effective_topics = g_ptr_array_new_with_free_func(g_free);
     gboolean enabled = FALSE;
     gboolean all_topics = FALSE;
+    gboolean hide_content = FALSE;
     gboolean ok = FALSE;
 
     if (ntfy_obj == NULL) {
@@ -1132,6 +1368,7 @@ static gboolean refresh_ntfy(void) {
     legacy_topic = object_string(ntfy_obj, "topic", "");
     selected_topics = object_string_array(ntfy_obj, "topics");
     all_topics = object_bool(ntfy_obj, "all_topics", FALSE);
+    hide_content = object_bool(ntfy_obj, "hide_notification_content", FALSE);
     g_strstrip(server_url);
     while (g_str_has_suffix(server_url, "/")) {
         server_url[strlen(server_url) - 1] = '\0';
@@ -1247,6 +1484,10 @@ static gboolean refresh_ntfy(void) {
         gchar *topic = NULL;
         gchar *title = NULL;
         gchar *message = NULL;
+        GPtrArray *actions = NULL;
+        gchar *display_title = NULL;
+        gchar *display_message = NULL;
+        gint priority = 0;
         gint64 message_time = 0;
         if (*entry == '\0' || *entry != '{') {
             continue;
@@ -1265,19 +1506,36 @@ static gboolean refresh_ntfy(void) {
         topic = object_string(entry, "topic", "");
         title = object_string(entry, "title", "");
         message = object_string(entry, "message", "");
+        actions = parse_ntfy_action_specs(entry);
+        priority = (gint)object_number(entry, "priority", 0.0);
         message_time = (gint64)object_number(entry, "time", 0.0);
         if (message_time > newest_time) {
             newest_time = message_time;
         }
         ntfy_mark_seen(message_id);
         if (!initial_sync) {
-            notify_desktop(title, message, topic);
+            if (hide_content) {
+                display_title = g_strdup("New ntfy notification");
+                display_message = g_strdup((topic != NULL && *topic != '\0') ? "Content hidden for privacy." : "Content hidden.");
+                if (actions != NULL) {
+                    g_ptr_array_set_size(actions, 0);
+                }
+            } else {
+                display_title = g_strdup((title != NULL && *title != '\0') ? title : ((topic != NULL && *topic != '\0') ? topic : "ntfy"));
+                display_message = g_strdup(message);
+            }
+            notify_desktop_ntfy(display_title, display_message, topic, priority, actions);
         }
         g_free(event);
         g_free(message_id);
         g_free(topic);
         g_free(title);
         g_free(message);
+        g_free(display_title);
+        g_free(display_message);
+        if (actions != NULL) {
+            g_ptr_array_free(actions, TRUE);
+        }
     }
     g_strfreev(lines);
 
