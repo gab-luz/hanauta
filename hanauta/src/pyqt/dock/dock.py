@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover
     tomllib = None
 
 from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QTimer
-from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap
+from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap, QScreen
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -47,6 +47,7 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSizePolicy,
     QSpinBox,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -88,6 +89,11 @@ MATERIAL_ICONS = {
     "volume_off": "\ue04f",
     "volume_up": "\ue050",
 }
+MONITOR_MODE_PRIMARY = "primary"
+MONITOR_MODE_FOLLOW_MOUSE = "follow_mouse"
+MONITOR_MODE_NAMED = "named"
+
+
 def run_cmd(cmd: list[str], timeout: float = 3.0) -> str:
     try:
         result = subprocess.run(
@@ -142,6 +148,16 @@ def load_app_fonts() -> dict[str, str]:
         if families:
             loaded[key] = families[0]
     return loaded
+
+
+def apply_antialias_font(widget: QWidget) -> None:
+    font = widget.font()
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    widget.setFont(font)
+    for child in widget.findChildren(QWidget):
+        child_font = child.font()
+        child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        child.setFont(child_font)
 
 
 def material_icon(name: str) -> str:
@@ -227,6 +243,76 @@ def i3_tree() -> dict:
         return json.loads(result.stdout)
     except Exception:
         return {}
+
+
+def _screen_matches_output(screen: QScreen, output_name: str) -> bool:
+    screen_name = screen.name().strip()
+    return bool(screen_name) and screen_name == output_name.strip()
+
+
+def _active_output_names() -> tuple[str, str]:
+    primary_output_name = ""
+    fallback_output_name = ""
+    raw = run_cmd(["i3-msg", "-t", "get_outputs"])
+    if not raw:
+        return primary_output_name, fallback_output_name
+    try:
+        outputs = json.loads(raw)
+    except Exception:
+        return primary_output_name, fallback_output_name
+    if not isinstance(outputs, list):
+        return primary_output_name, fallback_output_name
+    for item in outputs:
+        if not isinstance(item, dict) or not bool(item.get("active", False)):
+            continue
+        output_name = str(item.get("name", "")).strip()
+        if not output_name:
+            continue
+        if not fallback_output_name:
+            fallback_output_name = output_name
+        if bool(item.get("primary", False)):
+            primary_output_name = output_name
+            break
+    return primary_output_name, fallback_output_name
+
+
+def _screen_by_name(output_name: str) -> QScreen | None:
+    target_name = output_name.strip()
+    if not target_name:
+        return None
+    for screen in QApplication.screens():
+        if _screen_matches_output(screen, target_name):
+            return screen
+    return None
+
+
+def preferred_dock_screen(monitor_mode: str = MONITOR_MODE_PRIMARY, monitor_name: str = "") -> QScreen | None:
+    screens = QApplication.screens()
+    if not screens:
+        return None
+
+    normalized_mode = str(monitor_mode or MONITOR_MODE_PRIMARY).strip().lower()
+    if normalized_mode == MONITOR_MODE_FOLLOW_MOUSE:
+        screen = QGuiApplication.screenAt(QCursor.pos())
+        if screen is not None:
+            return screen
+        normalized_mode = MONITOR_MODE_PRIMARY
+    elif normalized_mode == MONITOR_MODE_NAMED:
+        screen = _screen_by_name(monitor_name)
+        if screen is not None:
+            return screen
+        normalized_mode = MONITOR_MODE_PRIMARY
+
+    primary_output_name, fallback_output_name = _active_output_names()
+    for output_name in (primary_output_name, fallback_output_name):
+        screen = _screen_by_name(output_name)
+        if screen is not None:
+            return screen
+
+    primary_screen = QApplication.primaryScreen()
+    if primary_screen is not None:
+        return primary_screen
+    return screens[0]
 
 
 def walk_nodes(node: dict):
@@ -490,7 +576,17 @@ def load_dock_config() -> dict:
         return {
             "pinned": {"apps": []},
             "blacklist": {"wm_class": [], "desktop_id": [], "window_name": []},
-            "dock": {"auto_hide": False, "width": 60, "width_unit": "%", "height": 64, "icons_left": False, "position": "center", "transparency": 60},
+            "dock": {
+                "auto_hide": False,
+                "width": 60,
+                "width_unit": "%",
+                "height": 64,
+                "icons_left": False,
+                "position": "center",
+                "transparency": 60,
+                "monitor_mode": MONITOR_MODE_PRIMARY,
+                "monitor_name": "",
+            },
         }
     try:
         config = tomllib.loads(DOCK_CONFIG.read_text(encoding="utf-8"))
@@ -498,7 +594,17 @@ def load_dock_config() -> dict:
         return {
             "pinned": {"apps": []},
             "blacklist": {"wm_class": [], "desktop_id": [], "window_name": []},
-            "dock": {"auto_hide": False, "width": 60, "width_unit": "%", "height": 64, "icons_left": False, "position": "center", "transparency": 60},
+            "dock": {
+                "auto_hide": False,
+                "width": 60,
+                "width_unit": "%",
+                "height": 64,
+                "icons_left": False,
+                "position": "center",
+                "transparency": 60,
+                "monitor_mode": MONITOR_MODE_PRIMARY,
+                "monitor_name": "",
+            },
         }
     dock_cfg = dict(config.get("dock", {}))
     dock_cfg.setdefault("auto_hide", False)
@@ -508,6 +614,9 @@ def load_dock_config() -> dict:
     dock_cfg.setdefault("icons_left", False)
     dock_cfg.setdefault("position", "center")
     dock_cfg.setdefault("transparency", 60)
+    monitor_mode = str(dock_cfg.get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
+    dock_cfg["monitor_mode"] = monitor_mode if monitor_mode in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED} else MONITOR_MODE_PRIMARY
+    dock_cfg["monitor_name"] = str(dock_cfg.get("monitor_name", "")).strip()
     config["dock"] = dock_cfg
     config.setdefault("pinned", {"apps": []})
     config.setdefault("blacklist", {"wm_class": [], "desktop_id": []})
@@ -536,8 +645,10 @@ def save_dock_config(config: dict) -> None:
         f'width_unit = "{dock.get("width_unit", "px")}"\n'
         f"height = {int(dock.get('height', 64) or 64)}\n"
         f"icons_left = {'true' if dock.get('icons_left') else 'false'}\n\n"
-        f'position = "{dock.get("position", "center")}"\n\n'
-        f"transparency = {int(dock.get('transparency', 60) or 60)}\n\n"
+        f'position = "{dock.get("position", "center")}"\n'
+        f"transparency = {int(dock.get('transparency', 60) or 60)}\n"
+        f'monitor_mode = "{dock.get("monitor_mode", MONITOR_MODE_PRIMARY)}"\n'
+        f'monitor_name = "{str(dock.get("monitor_name", "")).strip()}"\n\n'
         "[pinned]\n"
         f"apps = {write_list(list(pinned.get('apps', [])))}\n\n"
         "[blacklist]\n"
@@ -926,66 +1037,224 @@ class DockAppsScrollArea(QScrollArea):
 
 
 class DockSettingsDialog(QDialog):
-    def __init__(self, config: dict, material_font: str, on_transparency_preview=None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        config: dict,
+        theme,
+        material_font: str,
+        ui_font: str,
+        display_font: str,
+        on_transparency_preview=None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.config = config
+        self.theme = theme
+        self.material_font = material_font
+        self.ui_font = ui_font
+        self.display_font = display_font
         self.on_transparency_preview = on_transparency_preview
         self._accepted_config: dict | None = None
         self._width_value = int(config.get("dock", {}).get("width", 0) or 0)
         self._height_value = int(config.get("dock", {}).get("height", 74) or 74)
         self._transparency_value = int(config.get("dock", {}).get("transparency", 100) or 100)
         self.setWindowTitle("Dock Settings")
-        self.resize(560, 720)
+        self.resize(880, 620)
         self.setModal(True)
+        self.setObjectName("dockSettingsDialog")
         self.setStyleSheet(
-            """
-            QDialog {
-                background: #171320;
-                color: #f6efff;
-            }
-            QLabel {
-                color: rgba(246,239,255,0.88);
-            }
-            QTextEdit {
-                background: rgba(8,7,13,0.82);
-                border: 1px solid rgba(255,255,255,0.08);
+            f"""
+            QDialog#dockSettingsDialog {{
+                background: {rgba(theme.surface_container, 0.97)};
+                color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.20)};
+                border-radius: 28px;
+            }}
+            QLabel {{
+                color: {theme.text};
+                font-family: "{self.ui_font}";
+            }}
+            QLabel#dockSettingsTitle {{
+                color: {theme.on_surface};
+                font-family: "{self.display_font}";
+                font-size: 20px;
+                font-weight: 700;
+            }}
+            QLabel#dockSettingsEyebrow {{
+                color: {theme.text_muted};
+                font-family: "{self.ui_font}";
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+            }}
+            QFrame#dockSettingsSurface {{
+                background: transparent;
+            }}
+            QFrame#dockSettingsPanel {{
+                background: {rgba(theme.surface, 0.62)};
+                border: 1px solid {rgba(theme.outline, 0.14)};
+                border-radius: 24px;
+            }}
+            QTextEdit, QListWidget, QComboBox, QSpinBox {{
+                background: {rgba(theme.surface, 0.92)};
+                border: 1px solid {rgba(theme.outline, 0.22)};
                 border-radius: 18px;
-                color: #ffffff;
-                padding: 10px;
-            }
-            QListWidget {
-                background: rgba(8,7,13,0.82);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 18px;
-                color: #ffffff;
+                color: {theme.text};
+                padding: 10px 12px;
+                selection-background-color: {rgba(theme.primary, 0.22)};
+                selection-color: {theme.text};
+                font-family: "{self.ui_font}";
+            }}
+            QListWidget#dockSettingsSidebar {{
+                background: {rgba(theme.surface, 0.68)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 22px;
                 padding: 8px;
-            }
-            QListWidget::item:selected {
-                background: rgba(208,188,255,0.24);
-                color: #ffffff;
-                border-radius: 10px;
-            }
-            QCheckBox {
-                color: #ffffff;
-            }
-            QPushButton {
-                min-height: 36px;
-            }
+            }}
+            QListWidget#dockSettingsSidebar::item {{
+                border-radius: 16px;
+                padding: 12px 14px;
+                margin: 2px 0;
+            }}
+            QListWidget#dockSettingsSidebar::item:selected {{
+                background: {rgba(theme.primary, 0.18)};
+                color: {theme.text};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 28px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: {theme.surface_container};
+                color: {theme.text};
+                selection-background-color: {rgba(theme.primary, 0.22)};
+                selection-color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.20)};
+                outline: none;
+            }}
+            QCheckBox {{
+                color: {theme.text};
+                spacing: 10px;
+                font-family: "{self.ui_font}";
+            }}
+            QCheckBox::indicator {{
+                width: 20px;
+                height: 20px;
+                border-radius: 6px;
+                border: 1px solid {rgba(theme.outline, 0.36)};
+                background: {rgba(theme.surface, 0.90)};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {theme.primary};
+                border: 1px solid {rgba(theme.primary, 0.88)};
+            }}
+            QListWidget::item:selected {{
+                background: {rgba(theme.primary, 0.18)};
+                color: {theme.text};
+                border-radius: 12px;
+            }}
+            QPushButton {{
+                min-height: 42px;
+                border-radius: 18px;
+                padding: 0 16px;
+                font-family: "{self.ui_font}";
+                font-weight: 600;
+            }}
+            QPushButton#filledButton {{
+                background: {theme.primary};
+                border: none;
+                color: {theme.active_text};
+            }}
+            QPushButton#filledButton:hover {{
+                background: {theme.primary_container};
+            }}
+            QPushButton#filledButton:pressed {{
+                background: {rgba(theme.primary, 0.80)};
+            }}
+            QPushButton#tonalButton {{
+                background: {rgba(theme.primary, 0.14)};
+                border: 1px solid {rgba(theme.primary, 0.16)};
+                color: {theme.text};
+            }}
+            QPushButton#tonalButton:hover {{
+                background: {rgba(theme.primary, 0.20)};
+            }}
+            QPushButton#tonalButton:pressed {{
+                background: {rgba(theme.primary, 0.26)};
+            }}
+            QPushButton#textButton {{
+                background: transparent;
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                color: {theme.text_muted};
+            }}
+            QPushButton#textButton:hover {{
+                background: {rgba(theme.on_surface, 0.06)};
+                color: {theme.text};
+            }}
+            QSlider::groove:horizontal {{
+                height: 6px;
+                background: {rgba(theme.outline, 0.20)};
+                border-radius: 999px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {theme.primary};
+                border-radius: 999px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {theme.primary};
+                width: 18px;
+                margin: -6px 0;
+                border-radius: 9px;
+            }}
             """
         )
 
         layout = QVBoxLayout(self)
-        title = QLabel("Dock Settings")
-        title.setFont(QFont("Rubik", 16, QFont.Weight.DemiBold))
+        layout.setContentsMargins(22, 22, 22, 18)
+        layout.setSpacing(14)
+
+        eyebrow = QLabel("Dock")
+        eyebrow.setObjectName("dockSettingsEyebrow")
+        title = QLabel("Placement & behavior")
+        title.setObjectName("dockSettingsTitle")
+        subtitle = QLabel("Tune where the dock lives, how wide it feels, and which windows it should ignore.")
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet(f"color: {theme.text_muted}; font-family: \"{self.ui_font}\";")
+        layout.addWidget(eyebrow)
         layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        surface = QFrame()
+        surface.setObjectName("dockSettingsSurface")
+        surface_layout = QHBoxLayout(surface)
+        surface_layout.setContentsMargins(0, 0, 0, 0)
+        surface_layout.setSpacing(14)
+        layout.addWidget(surface, 1)
+
+        self.settings_sidebar = QListWidget()
+        self.settings_sidebar.setObjectName("dockSettingsSidebar")
+        self.settings_sidebar.setFixedWidth(180)
+        self.settings_sidebar.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.settings_sidebar.setSpacing(4)
+        self.settings_sidebar.currentRowChanged.connect(self._switch_settings_page)
+        surface_layout.addWidget(self.settings_sidebar)
+
+        self.settings_stack = QStackedWidget()
+        surface_layout.addWidget(self.settings_stack, 1)
+
+        general_page = QFrame()
+        general_page.setObjectName("dockSettingsPanel")
+        general_layout = QVBoxLayout(general_page)
+        general_layout.setContentsMargins(18, 18, 18, 18)
+        general_layout.setSpacing(12)
 
         self.auto_hide = QCheckBox("Enable auto-hide")
         self.auto_hide.setChecked(bool(config.get("dock", {}).get("auto_hide", False)))
-        layout.addWidget(self.auto_hide)
+        general_layout.addWidget(self.auto_hide)
 
         self.icons_left = QCheckBox("Keep launcher and app icons on the left")
         self.icons_left.setChecked(bool(config.get("dock", {}).get("icons_left", False)))
-        layout.addWidget(self.icons_left)
+        general_layout.addWidget(self.icons_left)
 
         position_label = QLabel("Dock position")
         self.position_combo = QComboBox()
@@ -994,25 +1263,17 @@ class DockSettingsDialog(QDialog):
         self.position_combo.addItem("Right", "right")
         position_index = self.position_combo.findData(config.get("dock", {}).get("position", "center"))
         self.position_combo.setCurrentIndex(max(0, position_index))
-        self.position_combo.setStyleSheet(
-            """
-            QComboBox {
-                background: rgba(8,7,13,0.82);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 14px;
-                color: #ffffff;
-                padding: 8px 10px;
-            }
-            QComboBox QAbstractItemView {
-                background: #171320;
-                color: #ffffff;
-                selection-background-color: #d0bcff;
-                selection-color: #251431;
-            }
-            """
-        )
-        layout.addWidget(position_label)
-        layout.addWidget(self.position_combo)
+        general_layout.addWidget(position_label)
+        general_layout.addWidget(self.position_combo)
+
+        monitor_label = QLabel("Monitor target")
+        self.monitor_combo = QComboBox()
+        self._populate_monitor_combo()
+        monitor_mode = str(config.get("dock", {}).get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
+        monitor_name = str(config.get("dock", {}).get("monitor_name", "")).strip()
+        self._set_current_monitor_combo(monitor_mode, monitor_name)
+        general_layout.addWidget(monitor_label)
+        general_layout.addWidget(self.monitor_combo)
 
         width_label = QLabel("Dock width (0 = fit content)")
         width_row = QHBoxLayout()
@@ -1026,39 +1287,11 @@ class DockSettingsDialog(QDialog):
         self.width_spin.setKeyboardTracking(False)
         self.width_spin.setValue(self._width_value)
         self.width_spin.valueChanged.connect(self._remember_width)
-        self.width_spin.setStyleSheet(
-            """
-            QSpinBox {
-                background: rgba(8,7,13,0.82);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 14px;
-                color: #ffffff;
-                padding: 8px 10px;
-            }
-            """
-        )
-        self.width_unit.setStyleSheet(
-            """
-            QComboBox {
-                background: rgba(8,7,13,0.82);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 14px;
-                color: #ffffff;
-                padding: 8px 10px;
-            }
-            QComboBox QAbstractItemView {
-                background: #171320;
-                color: #ffffff;
-                selection-background-color: #d0bcff;
-                selection-color: #251431;
-            }
-            """
-        )
         self._sync_width_unit()
-        layout.addWidget(width_label)
+        general_layout.addWidget(width_label)
         width_row.addWidget(self.width_spin, 1)
         width_row.addWidget(self.width_unit)
-        layout.addLayout(width_row)
+        general_layout.addLayout(width_row)
 
         height_label = QLabel("Dock app height")
         self.height_spin = QSpinBox()
@@ -1067,19 +1300,8 @@ class DockSettingsDialog(QDialog):
         self.height_spin.setValue(self._height_value)
         self.height_spin.valueChanged.connect(self._remember_height)
         self.height_spin.setSuffix(" px")
-        self.height_spin.setStyleSheet(
-            """
-            QSpinBox {
-                background: rgba(8,7,13,0.82);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 14px;
-                color: #ffffff;
-                padding: 8px 10px;
-            }
-            """
-        )
-        layout.addWidget(height_label)
-        layout.addWidget(self.height_spin)
+        general_layout.addWidget(height_label)
+        general_layout.addWidget(self.height_spin)
 
         transparency_label = QLabel("Dock transparency")
         transparency_row = QHBoxLayout()
@@ -1091,8 +1313,15 @@ class DockSettingsDialog(QDialog):
         self.transparency_value_label.setMinimumWidth(44)
         transparency_row.addWidget(self.transparency_slider, 1)
         transparency_row.addWidget(self.transparency_value_label)
-        layout.addWidget(transparency_label)
-        layout.addLayout(transparency_row)
+        general_layout.addWidget(transparency_label)
+        general_layout.addLayout(transparency_row)
+        general_layout.addStretch(1)
+
+        blacklist_page = QFrame()
+        blacklist_page.setObjectName("dockSettingsPanel")
+        blacklist_layout = QVBoxLayout(blacklist_page)
+        blacklist_layout.setContentsMargins(18, 18, 18, 18)
+        blacklist_layout.setSpacing(12)
 
         wm_label = QLabel("Blacklisted WM_CLASS patterns")
         self.wm_edit = QTextEdit("\n".join(config.get("blacklist", {}).get("wm_class", [])))
@@ -1101,38 +1330,64 @@ class DockSettingsDialog(QDialog):
         name_label = QLabel("Blacklisted window names")
         self.name_list = QListWidget()
         self.name_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        self.name_list.setMinimumHeight(140)
+        self.name_list.setMinimumHeight(180)
         for pattern in config.get("blacklist", {}).get("window_name", []):
             self.name_list.addItem(QListWidgetItem(pattern))
-        picker_label = QLabel("Current open window names")
+        blacklist_layout.addWidget(wm_label)
+        blacklist_layout.addWidget(self.wm_edit, 1)
+        blacklist_layout.addWidget(did_label)
+        blacklist_layout.addWidget(self.did_edit, 1)
+        blacklist_layout.addWidget(name_label)
+        blacklist_layout.addWidget(self.name_list, 1)
+
+        picker_page = QFrame()
+        picker_page.setObjectName("dockSettingsPanel")
+        picker_layout = QVBoxLayout(picker_page)
+        picker_layout.setContentsMargins(18, 18, 18, 18)
+        picker_layout.setSpacing(12)
+
+        picker_label = QLabel("Current open window names. Select to blacklist.")
         self.open_windows_list = QListWidget()
         self.open_windows_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        self.open_windows_list.setMinimumHeight(180)
-        self.add_names_button = QPushButton("Add Selected Window Names")
+        self.open_windows_list.setMinimumHeight(260)
+        self.add_names_button = QPushButton("Blacklist Selected Window Names")
+        self.add_names_button.setObjectName("tonalButton")
         self.add_names_button.clicked.connect(self._add_selected_window_names)
         self.remove_names_button = QPushButton("Remove Selected Blacklist Names")
+        self.remove_names_button.setObjectName("textButton")
         self.remove_names_button.clicked.connect(self._remove_selected_window_names)
         self.refresh_windows_button = QPushButton("Refresh Open Windows")
+        self.refresh_windows_button.setObjectName("tonalButton")
         self.refresh_windows_button.clicked.connect(self._populate_open_windows)
         picker_actions = QHBoxLayout()
         picker_actions.addWidget(self.add_names_button, 1)
         picker_actions.addWidget(self.remove_names_button, 1)
         picker_actions.addWidget(self.refresh_windows_button, 1)
-        layout.addWidget(wm_label)
-        layout.addWidget(self.wm_edit, 1)
-        layout.addWidget(did_label)
-        layout.addWidget(self.did_edit, 1)
-        layout.addWidget(name_label)
-        layout.addWidget(self.name_list, 1)
-        layout.addWidget(picker_label)
-        layout.addWidget(self.open_windows_list, 1)
-        layout.addLayout(picker_actions)
+        picker_layout.addWidget(picker_label)
+        picker_layout.addWidget(self.open_windows_list, 1)
+        picker_layout.addLayout(picker_actions)
         self._populate_open_windows()
 
+        self.settings_stack.addWidget(general_page)
+        self.settings_stack.addWidget(blacklist_page)
+        self.settings_stack.addWidget(picker_page)
+        for label in ("Layout", "Blacklist", "Window picker"):
+            self.settings_sidebar.addItem(QListWidgetItem(label))
+        self.settings_sidebar.setCurrentRow(0)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        save_button = buttons.button(QDialogButtonBox.StandardButton.Save)
+        cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if save_button is not None:
+            save_button.setText("Save dock settings")
+            save_button.setObjectName("filledButton")
+        if cancel_button is not None:
+            cancel_button.setText("Cancel")
+            cancel_button.setObjectName("textButton")
         buttons.accepted.connect(self._accept_with_commits)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        apply_antialias_font(self)
 
     def _build_config(self) -> dict:
         self.width_spin.interpretText()
@@ -1146,6 +1401,8 @@ class DockSettingsDialog(QDialog):
             "icons_left": self.icons_left.isChecked(),
             "position": self.position_combo.currentData(),
             "transparency": int(self._transparency_value),
+            "monitor_mode": self._selected_monitor_payload().get("mode", MONITOR_MODE_PRIMARY),
+            "monitor_name": self._selected_monitor_payload().get("name", ""),
         }
         config["pinned"] = {"apps": list(self.config.get("pinned", {}).get("apps", []))}
         config["blacklist"] = {
@@ -1157,6 +1414,65 @@ class DockSettingsDialog(QDialog):
 
     def updated_config(self) -> dict:
         return dict(self._accepted_config or self._build_config())
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        screen = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        frame = self.frameGeometry()
+        frame.moveCenter(available.center())
+        self.move(frame.topLeft())
+
+    def _switch_settings_page(self, index: int) -> None:
+        if index < 0:
+            return
+        self.settings_stack.setCurrentIndex(index)
+
+    def _monitor_entries(self) -> list[tuple[str, str, str]]:
+        entries: list[tuple[str, str, str]] = [
+            ("Primary monitor", MONITOR_MODE_PRIMARY, ""),
+            ("Follow mouse", MONITOR_MODE_FOLLOW_MOUSE, ""),
+        ]
+        primary_output_name, _ = _active_output_names()
+        seen: set[str] = set()
+        for screen in QApplication.screens():
+            name = screen.name().strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            label = f"{name} (primary)" if name == primary_output_name else name
+            entries.append((label, MONITOR_MODE_NAMED, name))
+        return entries
+
+    def _populate_monitor_combo(self) -> None:
+        self.monitor_combo.clear()
+        for label, mode, name in self._monitor_entries():
+            self.monitor_combo.addItem(label, {"mode": mode, "name": name})
+
+    def _set_current_monitor_combo(self, monitor_mode: str, monitor_name: str) -> None:
+        target_mode = monitor_mode if monitor_mode in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED} else MONITOR_MODE_PRIMARY
+        target_name = monitor_name.strip()
+        selected_index = 0
+        for index in range(self.monitor_combo.count()):
+            payload = self.monitor_combo.itemData(index)
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("mode") == target_mode and payload.get("name") == target_name:
+                selected_index = index
+                break
+        self.monitor_combo.setCurrentIndex(selected_index)
+
+    def _selected_monitor_payload(self) -> dict[str, str]:
+        payload = self.monitor_combo.currentData()
+        if not isinstance(payload, dict):
+            return {"mode": MONITOR_MODE_PRIMARY, "name": ""}
+        mode = str(payload.get("mode", MONITOR_MODE_PRIMARY)).strip().lower()
+        name = str(payload.get("name", "")).strip()
+        if mode not in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED}:
+            mode = MONITOR_MODE_PRIMARY
+        return {"mode": mode, "name": name}
 
     def _sync_width_unit(self) -> None:
         if self.width_unit.currentData() == "%":
@@ -1235,6 +1551,7 @@ class CyberDock(QWidget):
             "Material Symbols Rounded",
         )
         self.ui_font = detect_font(theme_font_family("ui"), "Rubik", self.loaded_fonts.get("ui_sans", ""), "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.display_font = detect_font(theme_font_family("display"), "Rubik", self.ui_font)
         self.mono_font = detect_font(theme_font_family("mono"), "JetBrains Mono", "DejaVu Sans Mono", "Monospace")
         self._theme_font_signature = (
             theme_font_family("ui"),
@@ -1454,6 +1771,12 @@ class CyberDock(QWidget):
         self.apps_scroll.setMaximumWidth(available_for_apps)
 
     def _target_screen(self):
+        dock_settings = self.config.get("dock", {})
+        monitor_mode = str(dock_settings.get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
+        monitor_name = str(dock_settings.get("monitor_name", "")).strip()
+        screen = preferred_dock_screen(monitor_mode, monitor_name)
+        if screen is not None:
+            return screen
         handle = self.windowHandle()
         if handle is not None and handle.screen() is not None:
             return handle.screen()
@@ -1612,7 +1935,10 @@ class CyberDock(QWidget):
     def _open_settings(self) -> None:
         dialog = DockSettingsDialog(
             self.config,
+            self.theme,
             self.material_font,
+            self.ui_font,
+            self.display_font,
             self._preview_transparency,
             self,
         )

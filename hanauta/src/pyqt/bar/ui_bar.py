@@ -187,6 +187,9 @@ MATERIAL_ICONS = {
     "wifi_off": "\ue648",
     "sports_esports": "\uea28",
 }
+MONITOR_MODE_PRIMARY = "primary"
+MONITOR_MODE_FOLLOW_MOUSE = "follow_mouse"
+MONITOR_MODE_NAMED = "named"
 
 REMINDERS_BAR_GLYPH = "\ue003"
 
@@ -205,6 +208,8 @@ DEFAULT_BAR_SETTINGS = {
     "tray_tint_with_matugen": True,
     "merge_all_chips": False,
     "full_bar_radius": 18,
+    "monitor_mode": MONITOR_MODE_PRIMARY,
+    "monitor_name": "",
 }
 
 
@@ -302,6 +307,76 @@ def focused_workspace_name() -> str:
         if isinstance(item, dict) and bool(item.get("focused", False)):
             return str(item.get("name", "")).strip()
     return ""
+
+
+def _screen_matches_output(screen: QScreen, output_name: str) -> bool:
+    screen_name = screen.name().strip()
+    return bool(screen_name) and screen_name == output_name.strip()
+
+
+def _active_output_names() -> tuple[str, str]:
+    primary_output_name = ""
+    fallback_output_name = ""
+    raw = run_cmd(["i3-msg", "-t", "get_outputs"])
+    if not raw:
+        return primary_output_name, fallback_output_name
+    try:
+        outputs = json.loads(raw)
+    except Exception:
+        return primary_output_name, fallback_output_name
+    if not isinstance(outputs, list):
+        return primary_output_name, fallback_output_name
+    for item in outputs:
+        if not isinstance(item, dict) or not bool(item.get("active", False)):
+            continue
+        output_name = str(item.get("name", "")).strip()
+        if not output_name:
+            continue
+        if not fallback_output_name:
+            fallback_output_name = output_name
+        if bool(item.get("primary", False)):
+            primary_output_name = output_name
+            break
+    return primary_output_name, fallback_output_name
+
+
+def _screen_by_name(output_name: str) -> QScreen | None:
+    target_name = output_name.strip()
+    if not target_name:
+        return None
+    for screen in QApplication.screens():
+        if _screen_matches_output(screen, target_name):
+            return screen
+    return None
+
+
+def preferred_bar_screen(monitor_mode: str = MONITOR_MODE_PRIMARY, monitor_name: str = "") -> QScreen | None:
+    screens = QApplication.screens()
+    if not screens:
+        return None
+
+    normalized_mode = str(monitor_mode or MONITOR_MODE_PRIMARY).strip().lower()
+    if normalized_mode == MONITOR_MODE_FOLLOW_MOUSE:
+        screen = QGuiApplication.screenAt(QCursor.pos())
+        if screen is not None:
+            return screen
+        normalized_mode = MONITOR_MODE_PRIMARY
+    elif normalized_mode == MONITOR_MODE_NAMED:
+        screen = _screen_by_name(monitor_name)
+        if screen is not None:
+            return screen
+        normalized_mode = MONITOR_MODE_PRIMARY
+
+    primary_output_name, fallback_output_name = _active_output_names()
+    for output_name in (primary_output_name, fallback_output_name):
+        screen = _screen_by_name(output_name)
+        if screen is not None:
+            return screen
+
+    primary_screen = QApplication.primaryScreen()
+    if primary_screen is not None:
+        return primary_screen
+    return screens[0]
 
 
 def _collect_leaf_windows(node: dict, visible_windows: list[dict]) -> None:
@@ -547,12 +622,15 @@ def load_region_settings_from_payload(settings: object) -> dict[str, object]:
     }
 
 
-def load_bar_settings_from_payload(settings: object) -> dict[str, int | bool]:
+def load_bar_settings_from_payload(settings: object) -> dict[str, int | bool | str]:
     current = settings.get("bar", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
     offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
+        if isinstance(default, str):
+            merged[key] = str(current.get(key, default)).strip()
+            continue
         if isinstance(default, bool):
             merged[key] = bool(current.get(key, default))
             continue
@@ -568,6 +646,9 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, int | bool]:
             merged[key] = max(32, min(72, int(merged[key])))
         else:
             merged[key] = max(0, min(32, int(merged[key])))
+    monitor_mode = str(merged.get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
+    merged["monitor_mode"] = monitor_mode if monitor_mode in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED} else MONITOR_MODE_PRIMARY
+    merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
     return merged
 
 
@@ -1943,9 +2024,20 @@ class CyberBar(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_X11NetWmWindowTypeDock, True)
         self.setWindowTitle("CyberBar")
 
-        screen = QApplication.primaryScreen()
+        self._position_on_target_screen(int(self.bar_settings.get("bar_height", 40)))
+
+    def _target_screen(self) -> QScreen | None:
+        monitor_mode = str(self.bar_settings.get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
+        monitor_name = str(self.bar_settings.get("monitor_name", "")).strip()
+        return preferred_bar_screen(monitor_mode, monitor_name)
+
+    def _position_on_target_screen(self, bar_height: int | None = None) -> None:
+        screen = self._target_screen()
+        if screen is None:
+            return
         geo = screen.availableGeometry()
-        self.setFixedSize(geo.width(), int(self.bar_settings.get("bar_height", 40)))
+        target_height = bar_height if bar_height is not None else self.height()
+        self.setFixedSize(geo.width(), max(1, int(target_height)))
         self.move(geo.x(), geo.y())
 
     def _build_ui(self) -> None:
@@ -2547,11 +2639,7 @@ class CyberBar(QWidget):
         outer_vertical_margin = 4
         surface_height = max(24, bar_height - (outer_vertical_margin * 2))
         chip_vertical_padding = max(4, min(14, (surface_height - 22) // 2))
-        screen = QApplication.primaryScreen()
-        if screen is not None:
-            geo = screen.availableGeometry()
-            self.setFixedSize(geo.width(), bar_height)
-            self.move(geo.x(), geo.y())
+        self._position_on_target_screen(bar_height)
         self.outer_layout.setContentsMargins(12, outer_vertical_margin, 12, outer_vertical_margin)
         self.bar_surface.setFixedHeight(surface_height)
         self.root_layout.setSpacing(0 if merge_all_chips else 14)
@@ -4755,6 +4843,7 @@ class CyberBar(QWidget):
             check=False,
         )
         self._set_window_class()
+        QTimer.singleShot(0, self._position_on_target_screen)
         QTimer.singleShot(150, self._apply_i3_window_rules)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -4781,12 +4870,19 @@ class CyberBar(QWidget):
             pass
 
     def _apply_i3_window_rules(self) -> None:
+        screen = self._target_screen()
+        target_x = 0
+        target_y = 0
+        if screen is not None:
+            geo = screen.availableGeometry()
+            target_x = geo.x()
+            target_y = geo.y()
         try:
             subprocess.run(
                 [
                     "i3-msg",
                     '[title="CyberBar"]',
-                    "floating enable, sticky enable, move position 0 0",
+                    f"floating enable, sticky enable, move position {target_x} {target_y}",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
