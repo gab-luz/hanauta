@@ -405,6 +405,9 @@ def load_notification_settings() -> dict:
             "token": "",
             "username": "",
             "password": "",
+            "auth_mode": "token",
+            "topics": [],
+            "all_topics": False,
         },
     }
     try:
@@ -445,6 +448,15 @@ def load_notification_settings() -> dict:
     ntfy.setdefault("token", "")
     ntfy.setdefault("username", "")
     ntfy.setdefault("password", "")
+    ntfy.setdefault("auth_mode", "token")
+    ntfy.setdefault("topics", [])
+    ntfy.setdefault("all_topics", False)
+    topics = [
+        str(item).strip()
+        for item in ntfy.get("topics", [])
+        if isinstance(item, str) and str(item).strip()
+    ]
+    ntfy["topics"] = topics
     payload["appearance"] = appearance
     payload["home_assistant"] = home_assistant
     payload["services"] = services

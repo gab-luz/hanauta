@@ -46,6 +46,8 @@ MATERIAL_ICONS = {
     "close": "\ue5cd",
 }
 
+NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
+
 
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
@@ -78,6 +80,17 @@ def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
 
 
+def normalize_ntfy_auth_mode(raw: str | None, has_token: bool = False) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"token", "access token", "bearer", "bearer token", "access"}:
+        return "token"
+    if value in {"basic", "username & password", "username/password", "basic auth"}:
+        return "basic"
+    if has_token:
+        return "token"
+    return "basic"
+
+
 def load_ntfy_settings() -> dict[str, str | bool]:
     try:
         payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
@@ -93,6 +106,13 @@ def load_ntfy_settings() -> dict[str, str | bool]:
         "token": str(ntfy.get("token", "")),
         "username": str(ntfy.get("username", "")),
         "password": str(ntfy.get("password", "")),
+        "auth_mode": str(ntfy.get("auth_mode", "token")),
+        "topics": [
+            str(item).strip()
+            for item in ntfy.get("topics", [])
+            if isinstance(item, str) and str(item).strip()
+        ],
+        "all_topics": bool(ntfy.get("all_topics", False)),
     }
 
 
@@ -102,6 +122,7 @@ def send_ntfy_message(settings: dict[str, str | bool], title: str, message: str,
     token = str(settings.get("token", ""))
     username = str(settings.get("username", ""))
     password = str(settings.get("password", ""))
+    auth_mode = normalize_ntfy_auth_mode(settings.get("auth_mode", "token"), has_token=bool(token.strip()))
     if not server_url:
         return False, "Server URL is required."
     if not topic:
@@ -109,13 +130,17 @@ def send_ntfy_message(settings: dict[str, str | bool], title: str, message: str,
     if not message.strip():
         return False, "Message is required."
     url = f"{server_url}/{parse.quote(topic)}"
-    headers = {"Content-Type": "text/plain; charset=utf-8"}
+    headers = {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Accept": "text/plain, application/json, */*",
+        "User-Agent": NTFY_USER_AGENT,
+    }
     if title.strip():
         headers["Title"] = title.strip()
-    if token.strip():
+    if auth_mode == "token" and token.strip():
         headers["Authorization"] = f"Bearer {token.strip()}"
     req = request.Request(url, data=message.encode("utf-8"), headers=headers, method="POST")
-    if username.strip() or password.strip():
+    if auth_mode == "basic" and (username.strip() or password.strip()):
         credentials = f"{username.strip()}:{password}"
         encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
         req.add_header("Authorization", f"Basic {encoded}")
@@ -204,7 +229,13 @@ class NtfyPopup(QWidget):
         subtitle.setFont(QFont(self.ui_font, 10))
         layout.addWidget(subtitle)
 
-        self.topic_input = QLineEdit(str(self.settings.get("topic", "")))
+        default_topic = ""
+        topics = self.settings.get("topics", [])
+        if isinstance(topics, list) and topics:
+            default_topic = str(topics[0])
+        elif str(self.settings.get("topic", "")).strip():
+            default_topic = str(self.settings.get("topic", "")).strip()
+        self.topic_input = QLineEdit(default_topic)
         self.topic_input.setPlaceholderText("Topic")
         self.title_input = QLineEdit()
         self.title_input.setPlaceholderText("Title")
