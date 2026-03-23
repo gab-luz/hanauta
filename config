@@ -10,17 +10,32 @@ set $ws2 "2"
 set $ws3 "3"
 set $ws4 "4"
 set $ws5 "5"
+set $ws6 "6"
+set $ws7 "7"
+set $ws8 "8"
+set $ws9 "9"
+set $ws10 "10"
 
 bindsym $mod+1 workspace $ws1
 bindsym $mod+2 workspace $ws2
 bindsym $mod+3 workspace $ws3
 bindsym $mod+4 workspace $ws4
 bindsym $mod+5 workspace $ws5
+bindsym $mod+6 workspace $ws6
+bindsym $mod+7 workspace $ws7
+bindsym $mod+8 workspace $ws8
+bindsym $mod+9 workspace $ws9
+bindsym $mod+0 workspace $ws10
 bindsym $mod+Shift+1 move container to workspace $ws1
 bindsym $mod+Shift+2 move container to workspace $ws2
 bindsym $mod+Shift+3 move container to workspace $ws3
 bindsym $mod+Shift+4 move container to workspace $ws4
 bindsym $mod+Shift+5 move container to workspace $ws5
+bindsym $mod+Shift+6 move container to workspace $ws6
+bindsym $mod+Shift+7 move container to workspace $ws7
+bindsym $mod+Shift+8 move container to workspace $ws8
+bindsym $mod+Shift+9 move container to workspace $ws9
+bindsym $mod+Shift+0 move container to workspace $ws10
 # Gaps/borders (requires i3-gaps)
 # bspwm: border_width=0, window_gap=20, border_radius=15 (no i3 equivalent)
 # If you are on vanilla i3, comment out the gaps lines.
@@ -34,12 +49,12 @@ gaps outer $gap
 gaps top 5
 # Colors (mapped from bspwm colors)
 # format: client.<state> border background text indicator child_border
-client.focused          #eebf6d #eebf6d #ece1d4 #eebf6d #eebf6d
-client.focused_inactive #9a8f80 #9a8f80 #ece1d4 #9a8f80 #9a8f80
-client.unfocused        #9a8f80 #9a8f80 #ece1d4 #9a8f80 #9a8f80
-client.urgent           #ffb4ab #ffb4ab #17130b #ffb4ab #ffb4ab
-client.placeholder      #9a8f80 #9a8f80 #ece1d4 #9a8f80 #9a8f80
-client.background       #17130b
+client.focused          #ffb1c2 #ffb1c2 #efdee0 #ffb1c2 #ffb1c2
+client.focused_inactive #9e8c8f #9e8c8f #efdee0 #9e8c8f #9e8c8f
+client.unfocused        #9e8c8f #9e8c8f #efdee0 #9e8c8f #9e8c8f
+client.urgent           #ffb4ab #ffb4ab #191113 #ffb4ab #ffb4ab
+client.placeholder      #9e8c8f #9e8c8f #efdee0 #9e8c8f #9e8c8f
+client.background       #191113
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
