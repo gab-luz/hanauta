@@ -17,9 +17,19 @@ typedef struct {
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
     guint refresh_source;
+    gchar *ntfy_topic_key;
+    gint64 ntfy_since_time;
+    gboolean ntfy_cursor_ready;
+    gint64 ntfy_topics_checked_at;
+    GPtrArray *ntfy_all_topics_cache;
+    GHashTable *ntfy_seen_ids;
 } HanautaService;
 
 static HanautaService g_service = {0};
+
+static gint compare_strings(gconstpointer a, gconstpointer b) {
+    return g_strcmp0(*(const gchar * const *)a, *(const gchar * const *)b);
+}
 
 static gchar *escape_json_string(const gchar *text) {
     gchar *escaped = g_strescape(text != NULL ? text : "", NULL);
@@ -149,6 +159,67 @@ static gchar *object_string(const gchar *object_json, const gchar *key, const gc
     return result;
 }
 
+static GPtrArray *object_string_array(const gchar *object_json, const gchar *key) {
+    gchar *pattern = g_strdup_printf("\"%s\"", key);
+    const gchar *found = g_strstr_len(object_json, -1, pattern);
+    const gchar *cursor = NULL;
+    GPtrArray *values = g_ptr_array_new_with_free_func(g_free);
+    gboolean in_string = FALSE;
+    gboolean escaped = FALSE;
+    GString *current = NULL;
+    g_free(pattern);
+    if (found == NULL) {
+        return values;
+    }
+    cursor = strchr(found, ':');
+    if (cursor == NULL) {
+        return values;
+    }
+    cursor += 1;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\n' || *cursor == '\r') {
+        cursor += 1;
+    }
+    if (*cursor != '[') {
+        return values;
+    }
+    cursor += 1;
+    while (*cursor != '\0') {
+        gchar ch = *cursor;
+        if (escaped) {
+            if (current != NULL) {
+                g_string_append_c(current, ch);
+            }
+            escaped = FALSE;
+        } else if (ch == '\\') {
+            escaped = TRUE;
+        } else if (ch == '"') {
+            if (!in_string) {
+                current = g_string_new("");
+                in_string = TRUE;
+            } else {
+                gchar *value = g_string_free(current, FALSE);
+                g_strstrip(value);
+                if (*value != '\0') {
+                    g_ptr_array_add(values, value);
+                } else {
+                    g_free(value);
+                }
+                current = NULL;
+                in_string = FALSE;
+            }
+        } else if (in_string) {
+            g_string_append_c(current, ch);
+        } else if (ch == ']') {
+            break;
+        }
+        cursor += 1;
+    }
+    if (current != NULL) {
+        g_string_free(current, TRUE);
+    }
+    return values;
+}
+
 static gdouble object_number(const gchar *object_json, const gchar *key, gdouble fallback) {
     gchar *pattern = g_strdup_printf("\"%s\"", key);
     const gchar *found = g_strstr_len(object_json, -1, pattern);
@@ -202,6 +273,19 @@ static gchar *run_capture(GError **error, const gchar * const *argv) {
     g_clear_object(&process);
     g_free(stderr_text);
     return stdout_text;
+}
+
+static void ntfy_seen_ids_clear(void) {
+    if (g_service.ntfy_seen_ids != NULL) {
+        g_hash_table_remove_all(g_service.ntfy_seen_ids);
+    }
+}
+
+static void replace_string_array(GPtrArray **target, GPtrArray *replacement) {
+    if (*target != NULL) {
+        g_ptr_array_free(*target, TRUE);
+    }
+    *target = replacement;
 }
 
 static void write_status_json(const gchar *status, const gchar *details) {
@@ -737,13 +821,502 @@ cleanup:
     return ok;
 }
 
+static void notify_desktop(const gchar *summary, const gchar *body, const gchar *topic) {
+    GDBusConnection *connection = NULL;
+    GVariantBuilder actions_builder;
+    GVariantBuilder hints_builder;
+    GError *error = NULL;
+    GVariant *result = NULL;
+    gchar *resolved_summary = NULL;
+    gchar *resolved_body = NULL;
+    const gchar *icon = "notifications";
+
+    connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+    if (connection == NULL) {
+        g_clear_error(&error);
+        return;
+    }
+
+    resolved_summary = g_strdup((summary != NULL && *summary != '\0') ? summary : "ntfy");
+    if (body != NULL && *body != '\0') {
+        resolved_body = g_strdup(body);
+    } else if (topic != NULL && *topic != '\0') {
+        resolved_body = g_strdup_printf("New message on %s", topic);
+    } else {
+        resolved_body = g_strdup("New ntfy message");
+    }
+
+    g_variant_builder_init(&actions_builder, G_VARIANT_TYPE("as"));
+    g_variant_builder_init(&hints_builder, G_VARIANT_TYPE("a{sv}"));
+    if (topic != NULL && *topic != '\0') {
+        g_variant_builder_add(
+            &hints_builder,
+            "{sv}",
+            "desktop-entry",
+            g_variant_new_string("hanauta-ntfy")
+        );
+    }
+
+    result = g_dbus_connection_call_sync(
+        connection,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "Notify",
+        g_variant_new(
+            "(susssasa{sv}i)",
+            "ntfy",
+            0,
+            icon,
+            resolved_summary,
+            resolved_body,
+            &actions_builder,
+            &hints_builder,
+            8000
+        ),
+        G_VARIANT_TYPE("(u)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        3000,
+        NULL,
+        &error
+    );
+    if (result != NULL) {
+        g_variant_unref(result);
+    }
+    g_clear_error(&error);
+    g_object_unref(connection);
+    g_free(resolved_summary);
+    g_free(resolved_body);
+}
+
+static gchar *ntfy_auth_header(const gchar *mode, const gchar *token, const gchar *username, const gchar *password) {
+    gboolean has_token = token != NULL && *token != '\0';
+    if (has_token || g_strcmp0(mode, "token") == 0) {
+        if (!has_token) {
+            return NULL;
+        }
+        return g_strdup_printf("Authorization: Bearer %s", token);
+    }
+    if ((username == NULL || *username == '\0') && (password == NULL || *password == '\0')) {
+        return NULL;
+    }
+    gchar *credentials = g_strdup_printf("%s:%s", username != NULL ? username : "", password != NULL ? password : "");
+    gchar *encoded = g_base64_encode((const guchar *)credentials, strlen(credentials));
+    gchar *header = g_strdup_printf("Authorization: Basic %s", encoded);
+    g_free(credentials);
+    g_free(encoded);
+    return header;
+}
+
+static gchar *join_topics_path(const GPtrArray *topics) {
+    GString *builder = NULL;
+    if (topics == NULL || topics->len == 0) {
+        return g_strdup("");
+    }
+    builder = g_string_new("");
+    for (guint i = 0; i < topics->len; ++i) {
+        const gchar *topic = g_ptr_array_index((GPtrArray *)topics, i);
+        gchar *escaped = NULL;
+        if (topic == NULL || *topic == '\0') {
+            continue;
+        }
+        escaped = g_uri_escape_string(topic, NULL, TRUE);
+        if (builder->len > 0) {
+            g_string_append_c(builder, ',');
+        }
+        g_string_append(builder, escaped);
+        g_free(escaped);
+    }
+    return g_string_free(builder, FALSE);
+}
+
+static GPtrArray *parse_ntfy_topics_payload(const gchar *payload_text) {
+    GPtrArray *topics = g_ptr_array_new_with_free_func(g_free);
+    gchar *working = NULL;
+    gchar *trimmed = NULL;
+    if (payload_text == NULL || *payload_text == '\0') {
+        return topics;
+    }
+    trimmed = g_strdup(payload_text);
+    g_strstrip(trimmed);
+    if (*trimmed == '[') {
+        gchar *start = trimmed + 1;
+        gchar *end = strrchr(start, ']');
+        if (end != NULL) {
+            *end = '\0';
+            gchar **parts = g_strsplit(start, ",", -1);
+            for (gchar **part = parts; part != NULL && *part != NULL; ++part) {
+                gchar *value = g_strdup(g_strstrip(*part));
+                g_strdelimit(value, "\"", ' ');
+                g_strstrip(value);
+                if (*value != '\0') {
+                    g_ptr_array_add(topics, value);
+                } else {
+                    g_free(value);
+                }
+            }
+            g_strfreev(parts);
+        }
+        g_ptr_array_sort(topics, compare_strings);
+        g_free(trimmed);
+        return topics;
+    }
+    if (strstr(payload_text, "\"topics\"") != NULL) {
+        working = g_strdup(payload_text);
+        gchar *start = strchr(working, '[');
+        gchar *end = start != NULL ? strchr(start, ']') : NULL;
+        if (start != NULL && end != NULL && end > start) {
+            *end = '\0';
+            gchar **parts = g_strsplit(start + 1, ",", -1);
+            for (gchar **part = parts; part != NULL && *part != NULL; ++part) {
+                gchar *value = g_strdup(g_strstrip(*part));
+                g_strdelimit(value, "\"", ' ');
+                g_strstrip(value);
+                if (*value != '\0') {
+                    g_ptr_array_add(topics, value);
+                } else {
+                    g_free(value);
+                }
+            }
+            g_strfreev(parts);
+        }
+        g_free(working);
+        g_ptr_array_sort(topics, compare_strings);
+        g_free(trimmed);
+        return topics;
+    }
+    gchar **lines = g_strsplit(payload_text, "\n", -1);
+    for (gchar **line = lines; line != NULL && *line != NULL; ++line) {
+        gchar *value = g_strdup(g_strstrip(*line));
+        if (*value != '\0') {
+            if (value[0] == '"' && value[strlen(value) - 1] == '"') {
+                value[strlen(value) - 1] = '\0';
+                memmove(value, value + 1, strlen(value));
+            }
+            if (*value != '\0') {
+                g_ptr_array_add(topics, value);
+            } else {
+                g_free(value);
+            }
+        } else {
+            g_free(value);
+        }
+    }
+    g_strfreev(lines);
+    g_ptr_array_sort(topics, compare_strings);
+    g_free(trimmed);
+    return topics;
+}
+
+static GPtrArray *fetch_ntfy_all_topics(const gchar *server_url, const gchar *auth_mode, const gchar *token, const gchar *username, const gchar *password) {
+    GPtrArray *topics = g_ptr_array_new_with_free_func(g_free);
+    gchar *auth_header = NULL;
+    gchar *url = NULL;
+    gchar *payload = NULL;
+    GError *error = NULL;
+    const gchar *argv_no_auth[] = {
+        "curl",
+        "-fsSL",
+        "--max-time",
+        "8",
+        "-H",
+        "Accept: application/json, text/plain, */*",
+        "-H",
+        "User-Agent: HanautaService/1.0",
+        NULL,
+        NULL
+    };
+    const gchar *argv_auth[] = {
+        "curl",
+        "-fsSL",
+        "--max-time",
+        "8",
+        "-H",
+        "Accept: application/json, text/plain, */*",
+        "-H",
+        "User-Agent: HanautaService/1.0",
+        "-H",
+        NULL,
+        NULL,
+        NULL
+    };
+
+    if (server_url == NULL || *server_url == '\0') {
+        return topics;
+    }
+
+    auth_header = ntfy_auth_header(auth_mode, token, username, password);
+    url = g_strdup_printf("%s/topics", server_url);
+    if (auth_header != NULL) {
+        argv_auth[9] = auth_header;
+        argv_auth[10] = url;
+        payload = run_capture(&error, argv_auth);
+    } else {
+        argv_no_auth[8] = url;
+        payload = run_capture(&error, argv_no_auth);
+    }
+    if (payload != NULL) {
+        GPtrArray *parsed = parse_ntfy_topics_payload(payload);
+        replace_string_array(&topics, parsed);
+    }
+    g_clear_error(&error);
+    g_free(auth_header);
+    g_free(url);
+    g_free(payload);
+    return topics;
+}
+
+static void ntfy_cursor_reset(const gchar *server_url, const GPtrArray *topics) {
+    gchar *joined_topics = join_topics_path(topics);
+    gchar *new_key = g_strdup_printf("%s|%s", server_url != NULL ? server_url : "", joined_topics);
+    if (g_strcmp0(g_service.ntfy_topic_key, new_key) != 0) {
+        g_free(g_service.ntfy_topic_key);
+        g_service.ntfy_topic_key = new_key;
+        g_service.ntfy_since_time = 0;
+        g_service.ntfy_cursor_ready = FALSE;
+        ntfy_seen_ids_clear();
+        g_free(joined_topics);
+        return;
+    }
+    g_free(joined_topics);
+    g_free(new_key);
+}
+
+static gboolean ntfy_seen_id_recent(const gchar *message_id) {
+    if (message_id == NULL || *message_id == '\0' || g_service.ntfy_seen_ids == NULL) {
+        return FALSE;
+    }
+    return g_hash_table_contains(g_service.ntfy_seen_ids, message_id);
+}
+
+static void ntfy_mark_seen(const gchar *message_id) {
+    if (message_id == NULL || *message_id == '\0' || g_service.ntfy_seen_ids == NULL) {
+        return;
+    }
+    if (g_hash_table_size(g_service.ntfy_seen_ids) >= 1024) {
+        g_hash_table_remove_all(g_service.ntfy_seen_ids);
+    }
+    g_hash_table_add(g_service.ntfy_seen_ids, g_strdup(message_id));
+}
+
+static gboolean refresh_ntfy(void) {
+    gchar *settings = load_file_text(g_service.settings_path);
+    gchar *ntfy_obj = extract_object_block(settings, "ntfy");
+    gchar *server_url = NULL;
+    gchar *token = NULL;
+    gchar *username = NULL;
+    gchar *password = NULL;
+    gchar *auth_mode = NULL;
+    gchar *legacy_topic = NULL;
+    GPtrArray *selected_topics = NULL;
+    GPtrArray *effective_topics = g_ptr_array_new_with_free_func(g_free);
+    gboolean enabled = FALSE;
+    gboolean all_topics = FALSE;
+    gboolean ok = FALSE;
+
+    if (ntfy_obj == NULL) {
+        goto cleanup;
+    }
+    enabled = object_bool(ntfy_obj, "enabled", FALSE);
+    if (!enabled) {
+        ntfy_cursor_reset("", NULL);
+        replace_string_array(&g_service.ntfy_all_topics_cache, g_ptr_array_new_with_free_func(g_free));
+        goto cleanup;
+    }
+
+    server_url = object_string(ntfy_obj, "server_url", "");
+    token = object_string(ntfy_obj, "token", "");
+    username = object_string(ntfy_obj, "username", "");
+    password = object_string(ntfy_obj, "password", "");
+    auth_mode = object_string(ntfy_obj, "auth_mode", (token[0] != '\0') ? "token" : "basic");
+    legacy_topic = object_string(ntfy_obj, "topic", "");
+    selected_topics = object_string_array(ntfy_obj, "topics");
+    all_topics = object_bool(ntfy_obj, "all_topics", FALSE);
+    g_strstrip(server_url);
+    while (g_str_has_suffix(server_url, "/")) {
+        server_url[strlen(server_url) - 1] = '\0';
+    }
+
+    if (server_url[0] == '\0') {
+        goto cleanup;
+    }
+
+    if (all_topics) {
+        gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+        if (g_service.ntfy_all_topics_cache == NULL || now - g_service.ntfy_topics_checked_at >= 60) {
+            GPtrArray *all = fetch_ntfy_all_topics(server_url, auth_mode, token, username, password);
+            replace_string_array(&g_service.ntfy_all_topics_cache, all);
+            g_service.ntfy_topics_checked_at = now;
+        }
+        if (g_service.ntfy_all_topics_cache != NULL) {
+            for (guint i = 0; i < g_service.ntfy_all_topics_cache->len; ++i) {
+                const gchar *topic = g_ptr_array_index(g_service.ntfy_all_topics_cache, i);
+                if (topic != NULL && *topic != '\0') {
+                    g_ptr_array_add(effective_topics, g_strdup(topic));
+                }
+            }
+        }
+    } else {
+        for (guint i = 0; selected_topics != NULL && i < selected_topics->len; ++i) {
+            const gchar *topic = g_ptr_array_index(selected_topics, i);
+            if (topic != NULL && *topic != '\0') {
+                g_ptr_array_add(effective_topics, g_strdup(topic));
+            }
+        }
+        if (effective_topics->len == 0 && legacy_topic[0] != '\0') {
+            g_ptr_array_add(effective_topics, g_strdup(legacy_topic));
+        }
+    }
+
+    g_ptr_array_sort(effective_topics, compare_strings);
+    ntfy_cursor_reset(server_url, effective_topics);
+    if (effective_topics->len == 0) {
+        ok = TRUE;
+        goto cleanup;
+    }
+
+    gchar *topics_path = join_topics_path(effective_topics);
+    gchar *auth_header = ntfy_auth_header(auth_mode, token, username, password);
+    gchar *url = NULL;
+    gchar *payload = NULL;
+    GError *error = NULL;
+    gint64 newest_time = g_service.ntfy_since_time;
+    gboolean initial_sync = !g_service.ntfy_cursor_ready;
+    const gchar *argv_no_auth[] = {
+        "curl",
+        "-fsSL",
+        "--max-time",
+        "8",
+        "-H",
+        "Accept: application/x-ndjson, application/json, text/plain, */*",
+        "-H",
+        "User-Agent: HanautaService/1.0",
+        NULL,
+        NULL
+    };
+    const gchar *argv_auth[] = {
+        "curl",
+        "-fsSL",
+        "--max-time",
+        "8",
+        "-H",
+        "Accept: application/x-ndjson, application/json, text/plain, */*",
+        "-H",
+        "User-Agent: HanautaService/1.0",
+        "-H",
+        NULL,
+        NULL,
+        NULL
+    };
+
+    if (topics_path[0] == '\0') {
+        g_free(topics_path);
+        g_free(auth_header);
+        goto cleanup;
+    }
+
+    if (g_service.ntfy_cursor_ready && g_service.ntfy_since_time > 0) {
+        url = g_strdup_printf("%s/%s/json?poll=1&since=%" G_GINT64_FORMAT, server_url, topics_path, g_service.ntfy_since_time);
+    } else {
+        url = g_strdup_printf("%s/%s/json?poll=1&since=latest", server_url, topics_path);
+    }
+
+    if (auth_header != NULL) {
+        argv_auth[9] = auth_header;
+        argv_auth[10] = url;
+        payload = run_capture(&error, argv_auth);
+    } else {
+        argv_no_auth[8] = url;
+        payload = run_capture(&error, argv_no_auth);
+    }
+
+    if (payload == NULL) {
+        write_status_json("degraded", error != NULL ? error->message : "ntfy refresh failed.");
+        g_clear_error(&error);
+        g_free(topics_path);
+        g_free(auth_header);
+        g_free(url);
+        goto cleanup;
+    }
+
+    gchar **lines = g_strsplit(payload, "\n", -1);
+    for (gchar **line = lines; line != NULL && *line != NULL; ++line) {
+        gchar *entry = g_strstrip(*line);
+        gchar *event = NULL;
+        gchar *message_id = NULL;
+        gchar *topic = NULL;
+        gchar *title = NULL;
+        gchar *message = NULL;
+        gint64 message_time = 0;
+        if (*entry == '\0' || *entry != '{') {
+            continue;
+        }
+        event = object_string(entry, "event", "");
+        if (g_strcmp0(event, "message") != 0) {
+            g_free(event);
+            continue;
+        }
+        message_id = object_string(entry, "id", "");
+        if (ntfy_seen_id_recent(message_id)) {
+            g_free(event);
+            g_free(message_id);
+            continue;
+        }
+        topic = object_string(entry, "topic", "");
+        title = object_string(entry, "title", "");
+        message = object_string(entry, "message", "");
+        message_time = (gint64)object_number(entry, "time", 0.0);
+        if (message_time > newest_time) {
+            newest_time = message_time;
+        }
+        ntfy_mark_seen(message_id);
+        if (!initial_sync) {
+            notify_desktop(title, message, topic);
+        }
+        g_free(event);
+        g_free(message_id);
+        g_free(topic);
+        g_free(title);
+        g_free(message);
+    }
+    g_strfreev(lines);
+
+    g_service.ntfy_since_time = newest_time > 0 ? newest_time : (g_get_real_time() / G_USEC_PER_SEC);
+    g_service.ntfy_cursor_ready = TRUE;
+    ok = TRUE;
+
+    g_free(topics_path);
+    g_free(auth_header);
+    g_free(url);
+    g_free(payload);
+    g_clear_error(&error);
+
+cleanup:
+    g_free(settings);
+    g_free(ntfy_obj);
+    g_free(server_url);
+    g_free(token);
+    g_free(username);
+    g_free(password);
+    g_free(auth_mode);
+    g_free(legacy_topic);
+    if (selected_topics != NULL) {
+        g_ptr_array_free(selected_topics, TRUE);
+    }
+    if (effective_topics != NULL) {
+        g_ptr_array_free(effective_topics, TRUE);
+    }
+    return ok;
+}
+
 static gboolean refresh_all(gpointer user_data) {
     (void)user_data;
     gboolean wifi_ok = refresh_wifi();
     gboolean weather_ok = refresh_weather();
     gboolean crypto_ok = refresh_crypto();
     gboolean home_assistant_ok = refresh_home_assistant();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok;
+    gboolean ntfy_ok = refresh_ntfy();
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -785,6 +1358,8 @@ int main(void) {
     g_service.wifi_path = g_build_filename(g_service.state_dir, "wifi.json", NULL);
     g_service.home_assistant_path = g_build_filename(g_service.state_dir, "home_assistant.json", NULL);
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
+    g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
+    g_service.ntfy_seen_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     g_mkdir_with_parents(g_service.state_dir, 0755);
     write_status_json("starting", "Initializing service caches.");
@@ -820,5 +1395,12 @@ int main(void) {
     g_free(g_service.wifi_path);
     g_free(g_service.home_assistant_path);
     g_free(g_service.status_path);
+    g_free(g_service.ntfy_topic_key);
+    if (g_service.ntfy_all_topics_cache != NULL) {
+        g_ptr_array_free(g_service.ntfy_all_topics_cache, TRUE);
+    }
+    if (g_service.ntfy_seen_ids != NULL) {
+        g_hash_table_unref(g_service.ntfy_seen_ids);
+    }
     return 0;
 }
