@@ -26,6 +26,11 @@ from urllib import parse
 import locale as pylocale
 import zipfile
 
+try:
+    import tomllib
+except Exception:  # pragma: no cover
+    tomllib = None
+
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtQuickWidgets import QQuickWidget
@@ -253,6 +258,7 @@ MAIL_DESKTOP_LOCAL = Path.home() / ".local" / "share" / "applications" / MAIL_DE
 MAIL_DESKTOP_SYSTEM = Path("/usr/local/share/applications") / MAIL_DESKTOP_ID
 MAIL_DESKTOP_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_mail_desktop.sh"
 MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_mail_desktop_system.sh"
+DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
 PICOM_DEFAULT_TEMPLATE = """backend = "glx";
 vsync = true;
 use-damage = true;
@@ -478,15 +484,20 @@ DEFAULT_BAR_SETTINGS = {
     "tray_tint_with_matugen": True,
     "merge_all_chips": False,
     "full_bar_radius": 18,
+    "monitor_mode": "primary",
+    "monitor_name": "",
 }
 
 
-def merged_bar_settings(payload: object) -> dict[str, int | bool]:
+def merged_bar_settings(payload: object) -> dict[str, int | bool | str]:
     current = payload if isinstance(payload, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
     offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
     radius_keys = {"chip_radius", "full_bar_radius"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
+        if isinstance(default, str):
+            merged[key] = str(current.get(key, default)).strip() if isinstance(current, dict) else str(default)
+            continue
         if isinstance(default, bool):
             merged[key] = bool(current.get(key, default)) if isinstance(current, dict) else bool(default)
             continue
@@ -502,7 +513,82 @@ def merged_bar_settings(payload: object) -> dict[str, int | bool]:
             merged[key] = max(32, min(72, int(merged[key])))
         elif key in radius_keys:
             merged[key] = max(0, min(32, int(merged[key])))
+    monitor_mode = str(merged.get("monitor_mode", "primary")).strip().lower()
+    merged["monitor_mode"] = monitor_mode if monitor_mode in {"primary", "follow_mouse", "named"} else "primary"
+    merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
     return merged
+
+
+def load_dock_settings_state() -> dict:
+    defaults = {
+        "pinned": {"apps": []},
+        "blacklist": {"wm_class": [], "desktop_id": [], "window_name": []},
+        "dock": {
+            "auto_hide": False,
+            "width": 60,
+            "width_unit": "%",
+            "height": 64,
+            "icons_left": False,
+            "position": "center",
+            "transparency": 60,
+            "monitor_mode": "primary",
+            "monitor_name": "",
+        },
+    }
+    if not DOCK_CONFIG.exists() or tomllib is None:
+        return defaults
+    try:
+        config = tomllib.loads(DOCK_CONFIG.read_text(encoding="utf-8"))
+    except Exception:
+        return defaults
+    dock_cfg = dict(config.get("dock", {}))
+    for key, value in defaults["dock"].items():
+        dock_cfg.setdefault(key, value)
+    monitor_mode = str(dock_cfg.get("monitor_mode", "primary")).strip().lower()
+    dock_cfg["monitor_mode"] = monitor_mode if monitor_mode in {"primary", "follow_mouse", "named"} else "primary"
+    dock_cfg["monitor_name"] = str(dock_cfg.get("monitor_name", "")).strip()
+    config["dock"] = dock_cfg
+    config.setdefault("pinned", {"apps": []})
+    config.setdefault("blacklist", {"wm_class": [], "desktop_id": [], "window_name": []})
+    blacklist_cfg = dict(config.get("blacklist", {}))
+    blacklist_cfg.setdefault("wm_class", [])
+    blacklist_cfg.setdefault("desktop_id", [])
+    blacklist_cfg.setdefault("window_name", [])
+    config["blacklist"] = blacklist_cfg
+    return config
+
+
+def save_dock_settings_state(config: dict) -> None:
+    def write_list(values: list[str]) -> str:
+        if not values:
+            return "[]"
+        items = ",\n".join(f'  "{value}"' for value in values)
+        return f"[\n{items}\n]"
+
+    dock = dict(config.get("dock", {}))
+    dock.setdefault("monitor_mode", "primary")
+    dock.setdefault("monitor_name", "")
+    pinned = config.get("pinned", {})
+    blacklist = config.get("blacklist", {})
+    body = (
+        "[dock]\n"
+        f"auto_hide = {'true' if dock.get('auto_hide') else 'false'}\n"
+        f"width = {int(dock.get('width', 0) or 0)}\n"
+        f'width_unit = "{dock.get("width_unit", "px")}"\n'
+        f"height = {int(dock.get('height', 64) or 64)}\n"
+        f"icons_left = {'true' if dock.get('icons_left') else 'false'}\n"
+        f'position = "{dock.get("position", "center")}"\n'
+        f"transparency = {int(dock.get('transparency', 60) or 60)}\n"
+        f'monitor_mode = "{dock.get("monitor_mode", "primary")}"\n'
+        f'monitor_name = "{str(dock.get("monitor_name", "")).strip()}"\n\n'
+        "[pinned]\n"
+        f"apps = {write_list(list(pinned.get('apps', [])))}\n\n"
+        "[blacklist]\n"
+        f"wm_class = {write_list(list(blacklist.get('wm_class', [])))}\n\n"
+        f"desktop_id = {write_list(list(blacklist.get('desktop_id', [])))}\n\n"
+        f"window_name = {write_list(list(blacklist.get('window_name', [])))}\n"
+    )
+    DOCK_CONFIG.write_text(body, encoding="utf-8")
 
 
 DEFAULT_SERVICE_SETTINGS = {
@@ -963,6 +1049,7 @@ def load_settings_state() -> dict:
             "auth_mode": "token",
             "topics": [],
             "all_topics": False,
+            "hide_notification_content": False,
         },
         "weather": {
             "enabled": False,
@@ -1143,6 +1230,10 @@ def load_settings_state() -> dict:
     ntfy.setdefault("token", "")
     ntfy.setdefault("username", "")
     ntfy.setdefault("password", "")
+    ntfy.setdefault("auth_mode", "token")
+    ntfy.setdefault("topics", [])
+    ntfy.setdefault("all_topics", False)
+    ntfy["hide_notification_content"] = bool(ntfy.get("hide_notification_content", False))
     mail = dict(payload.get("mail", {}))
     mail["notify_new_messages"] = bool(mail.get("notify_new_messages", True))
     mail["play_notification_sound"] = bool(mail.get("play_notification_sound", False))
@@ -3062,6 +3153,7 @@ class SettingsWindow(QWidget):
         self._ha_entities: list[dict] = []
         self._ha_entity_map: dict[str, dict] = {}
         self.display_state = parse_xrandr_state()
+        self.dock_settings_state = load_dock_settings_state()
         self.display_controls: dict[str, dict[str, QWidget]] = {}
         self.picom_state = parse_picom_settings(read_picom_text())
         self.wallpaper = self._pick_wallpaper()
@@ -3958,6 +4050,47 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         self._apply_current_wallpaper_layout()
 
+    def _monitor_choice_entries(self) -> list[tuple[str, str, str]]:
+        entries: list[tuple[str, str, str]] = [
+            ("Primary monitor", "primary", ""),
+            ("Follow mouse", "follow_mouse", ""),
+        ]
+        names: list[str] = []
+        for display in self.display_state:
+            name = str(display.get("name", "")).strip()
+            if name and name not in names:
+                names.append(name)
+        if not names:
+            for screen in QGuiApplication.screens():
+                name = screen.name().strip()
+                if name and name not in names:
+                    names.append(name)
+        primary_name = next((str(display.get("name", "")).strip() for display in self.display_state if display.get("primary")), "")
+        for name in names:
+            label = f"{name} (primary)" if name == primary_name else name
+            entries.append((label, "named", name))
+        return entries
+
+    def _populate_monitor_target_combo(self, combo: QComboBox, mode: str, name: str) -> None:
+        combo.blockSignals(True)
+        combo.clear()
+        entries = self._monitor_choice_entries()
+        target_index = 0
+        normalized_mode = mode if mode in {"primary", "follow_mouse", "named"} else "primary"
+        normalized_name = name.strip()
+        for index, (label, entry_mode, entry_name) in enumerate(entries):
+            combo.addItem(label, {"mode": entry_mode, "name": entry_name})
+            if normalized_mode == entry_mode and normalized_name == entry_name:
+                target_index = index
+        if normalized_mode == "named" and normalized_name:
+            for index in range(combo.count()):
+                payload = combo.itemData(index)
+                if isinstance(payload, dict) and payload.get("mode") == "named" and payload.get("name") == normalized_name:
+                    target_index = index
+                    break
+        combo.setCurrentIndex(target_index)
+        combo.blockSignals(False)
+
     def _refresh_display_state(self) -> None:
         self.display_state = parse_xrandr_state()
         self.display_status.setText("Display state refreshed from xrandr." if self.display_state else "No displays detected through xrandr.")
@@ -3976,6 +4109,20 @@ class SettingsWindow(QWidget):
         saved_layout = str(self.settings_state.get("display", {}).get("layout_mode", "extend"))
         if saved_layout in {"extend", "duplicate"}:
             self._set_display_layout_mode(saved_layout)
+        if hasattr(self, "bar_monitor_target_combo"):
+            bar_settings = self.settings_state.get("bar", {})
+            self._populate_monitor_target_combo(
+                self.bar_monitor_target_combo,
+                str(bar_settings.get("monitor_mode", "primary")).strip().lower(),
+                str(bar_settings.get("monitor_name", "")).strip(),
+            )
+        if hasattr(self, "dock_monitor_target_combo"):
+            dock_settings = self.dock_settings_state.get("dock", {})
+            self._populate_monitor_target_combo(
+                self.dock_monitor_target_combo,
+                str(dock_settings.get("monitor_mode", "primary")).strip().lower(),
+                str(dock_settings.get("monitor_name", "")).strip(),
+            )
         self._rebuild_display_output_cards()
 
     def _collect_display_form_state(self) -> list[dict]:
@@ -4244,6 +4391,25 @@ class SettingsWindow(QWidget):
         self.bar_tray_tint_switch = SwitchButton(bool(self.settings_state["bar"].get("tray_tint_with_matugen", True)))
         self.bar_tray_tint_switch.toggledValue.connect(self._set_bar_tray_tint_with_matugen)
 
+        self.bar_monitor_target_combo = QComboBox()
+        self.bar_monitor_target_combo.setFixedWidth(220)
+        self._populate_monitor_target_combo(
+            self.bar_monitor_target_combo,
+            str(self.settings_state["bar"].get("monitor_mode", "primary")).strip().lower(),
+            str(self.settings_state["bar"].get("monitor_name", "")).strip(),
+        )
+        self.bar_monitor_target_combo.currentIndexChanged.connect(self._set_bar_monitor_target)
+
+        self.dock_monitor_target_combo = QComboBox()
+        self.dock_monitor_target_combo.setFixedWidth(220)
+        dock_monitor_settings = self.dock_settings_state.get("dock", {})
+        self._populate_monitor_target_combo(
+            self.dock_monitor_target_combo,
+            str(dock_monitor_settings.get("monitor_mode", "primary")).strip().lower(),
+            str(dock_monitor_settings.get("monitor_name", "")).strip(),
+        )
+        self.dock_monitor_target_combo.currentIndexChanged.connect(self._set_dock_monitor_target)
+
         self.bar_full_radius_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_full_radius_slider.setRange(0, 32)
         self.bar_full_radius_slider.setValue(int(self.settings_state["bar"].get("full_bar_radius", 18)))
@@ -4368,6 +4534,26 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_full_merge_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Bar monitor",
+                "Choose whether the bar should stay on the primary monitor, follow the mouse, or lock to one output.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_monitor_target_combo,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("desktop_windows"),
+                "Dock monitor",
+                "Choose where the PyQt dock should appear when it starts and when it repositions itself.",
+                self.icon_font,
+                self.ui_font,
+                self.dock_monitor_target_combo,
             )
         )
         layout.addWidget(
@@ -6843,6 +7029,19 @@ class SettingsWindow(QWidget):
             )
         )
 
+        self.ntfy_hide_content_switch = SwitchButton(bool(self.settings_state["ntfy"].get("hide_notification_content", False)))
+        self.ntfy_hide_content_switch.toggledValue.connect(self._set_ntfy_hide_notification_content)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("visibility_off"),
+                "Hide notification content",
+                "Show a privacy-friendly ntfy alert without the original title, message text, or action buttons.",
+                self.icon_font,
+                self.ui_font,
+                self.ntfy_hide_content_switch,
+            )
+        )
+
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.ntfy_save_button = QPushButton("Save")
@@ -7689,6 +7888,16 @@ class SettingsWindow(QWidget):
         ntfy["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
 
+    def _set_ntfy_hide_notification_content(self, enabled: bool) -> None:
+        self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "ntfy_status"):
+            self.ntfy_status.setText(
+                "ntfy notifications will hide message content."
+                if enabled
+                else "ntfy notifications will show full message content."
+            )
+
     def _set_weather_enabled(self, enabled: bool) -> None:
         weather = self.settings_state.setdefault("weather", {})
         weather["enabled"] = bool(enabled)
@@ -7780,6 +7989,28 @@ class SettingsWindow(QWidget):
     def _set_bar_tray_tint_with_matugen(self, enabled: bool) -> None:
         self.settings_state.setdefault("bar", {})["tray_tint_with_matugen"] = bool(enabled)
         self._save_bar_settings()
+
+    def _set_bar_monitor_target(self, index: int) -> None:
+        if not hasattr(self, "bar_monitor_target_combo"):
+            return
+        payload = self.bar_monitor_target_combo.itemData(index)
+        if not isinstance(payload, dict):
+            return
+        bar_settings = self.settings_state.setdefault("bar", {})
+        bar_settings["monitor_mode"] = str(payload.get("mode", "primary")).strip()
+        bar_settings["monitor_name"] = str(payload.get("name", "")).strip()
+        self._save_bar_settings()
+
+    def _set_dock_monitor_target(self, index: int) -> None:
+        if not hasattr(self, "dock_monitor_target_combo"):
+            return
+        payload = self.dock_monitor_target_combo.itemData(index)
+        if not isinstance(payload, dict):
+            return
+        dock_settings = self.dock_settings_state.setdefault("dock", {})
+        dock_settings["monitor_mode"] = str(payload.get("mode", "primary")).strip()
+        dock_settings["monitor_name"] = str(payload.get("name", "")).strip()
+        save_dock_settings_state(self.dock_settings_state)
 
     def _set_bar_full_radius(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["full_bar_radius"] = int(value)
@@ -8493,6 +8724,7 @@ class SettingsWindow(QWidget):
         ntfy["auth_mode"] = self._ntfy_auth_mode()
         ntfy["topics"] = list(self.ntfy_selected_topics)
         ntfy["all_topics"] = bool(self.ntfy_all_topics_checkbox.isChecked())
+        ntfy["hide_notification_content"] = bool(self.ntfy_hide_content_switch.isChecked())
         existing_topic = str(ntfy.get("topic", "")).strip()
         primary_topic = self.ntfy_selected_topics[0] if self.ntfy_selected_topics else existing_topic
         ntfy["topic"] = primary_topic

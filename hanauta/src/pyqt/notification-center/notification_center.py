@@ -408,6 +408,7 @@ def load_notification_settings() -> dict:
             "auth_mode": "token",
             "topics": [],
             "all_topics": False,
+            "hide_notification_content": False,
         },
     }
     try:
@@ -451,6 +452,7 @@ def load_notification_settings() -> dict:
     ntfy.setdefault("auth_mode", "token")
     ntfy.setdefault("topics", [])
     ntfy.setdefault("all_topics", False)
+    ntfy["hide_notification_content"] = bool(ntfy.get("hide_notification_content", False))
     topics = [
         str(item).strip()
         for item in ntfy.get("topics", [])
