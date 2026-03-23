@@ -41,6 +41,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -80,6 +82,7 @@ COMMUNITY_WALLPAPER_DIR = ROOT / "hanauta" / "walls" / "community"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
+NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
 
 
 def apply_antialias_font(widget: QWidget) -> None:
@@ -957,6 +960,9 @@ def load_settings_state() -> dict:
             "token": "",
             "username": "",
             "password": "",
+            "auth_mode": "token",
+            "topics": [],
+            "all_topics": False,
         },
         "weather": {
             "enabled": False,
@@ -1692,6 +1698,17 @@ def fetch_home_assistant_json(base_url: str, token: str, path: str) -> tuple[obj
         return None, "Unable to reach Home Assistant."
 
 
+def normalize_ntfy_auth_mode(raw: str | None, has_token: bool = False) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"token", "access token", "bearer", "bearer token", "access"}:
+        return "token"
+    if value in {"basic", "username & password", "username/password", "basic auth"}:
+        return "basic"
+    if has_token:
+        return "token"
+    return "basic"
+
+
 def send_ntfy_message(
     server_url: str,
     topic: str,
@@ -1700,6 +1717,7 @@ def send_ntfy_message(
     token: str = "",
     username: str = "",
     password: str = "",
+    auth_mode: str = "token",
 ) -> tuple[bool, str]:
     base = (server_url or "").strip().rstrip("/")
     channel = (topic or "").strip()
@@ -1710,13 +1728,19 @@ def send_ntfy_message(
     if not message.strip():
         return False, "Message body is required."
     url = f"{base}/{parse.quote(channel)}"
-    headers = {"Content-Type": "text/plain; charset=utf-8"}
+    headers = {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Accept": "text/plain, application/json, */*",
+        "User-Agent": NTFY_USER_AGENT,
+    }
     if title.strip():
         headers["Title"] = title.strip()
-    if token.strip():
+    has_token = bool(token.strip())
+    auth_mode_clean = normalize_ntfy_auth_mode(auth_mode, has_token=has_token)
+    if has_token:
         headers["Authorization"] = f"Bearer {token.strip()}"
     req = request.Request(url, data=message.encode("utf-8"), headers=headers, method="POST")
-    if username.strip() or password.strip():
+    if not has_token and auth_mode_clean == "basic" and (username.strip() or password):
         credentials = f"{username.strip()}:{password}"
         encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
         req.add_header("Authorization", f"Basic {encoded}")
@@ -6682,22 +6706,129 @@ class SettingsWindow(QWidget):
 
         self.ntfy_server_input = QLineEdit(self.settings_state["ntfy"].get("server_url", "https://ntfy.sh"))
         self.ntfy_server_input.setPlaceholderText("https://ntfy.sh")
-        self.ntfy_topic_input = QLineEdit(self.settings_state["ntfy"].get("topic", ""))
-        self.ntfy_topic_input.setPlaceholderText("alerts-topic")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("web_asset"),
+                "Server URL",
+                "Custom ntfy instance URL.",
+                self.icon_font,
+                self.ui_font,
+                self.ntfy_server_input,
+            )
+        )
+
+        self.ntfy_auth_mode_combo = QComboBox()
+        self.ntfy_auth_mode_combo.setObjectName("settingsCombo")
+        self.ntfy_auth_mode_combo.addItem("Access token", "token")
+        self.ntfy_auth_mode_combo.addItem("Username & password", "basic")
+        auth_mode = str(self.settings_state["ntfy"].get("auth_mode", "token"))
+        auth_index = self.ntfy_auth_mode_combo.findData(auth_mode)
+        self.ntfy_auth_mode_combo.setCurrentIndex(auth_index if auth_index >= 0 else 0)
+        self.ntfy_auth_mode_combo.currentIndexChanged.connect(self._sync_ntfy_auth_inputs)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("shield"),
+                "Authentication method",
+                "Choose whether to authenticate via bearer token or basic auth.",
+                self.icon_font,
+                self.ui_font,
+                self.ntfy_auth_mode_combo,
+            )
+        )
+
         self.ntfy_token_input = QLineEdit(self.settings_state["ntfy"].get("token", ""))
         self.ntfy_token_input.setPlaceholderText("Access token")
         self.ntfy_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.ntfy_username_input = QLineEdit(self.settings_state["ntfy"].get("username", ""))
-        self.ntfy_username_input.setPlaceholderText("Username (optional)")
-        self.ntfy_password_input = QLineEdit(self.settings_state["ntfy"].get("password", ""))
-        self.ntfy_password_input.setPlaceholderText("Password (optional)")
-        self.ntfy_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ntfy_token_row = SettingsRow(
+            material_icon("bolt"),
+            "Access token",
+            "Bearer token for ntfy authentication if required.",
+            self.icon_font,
+            self.ui_font,
+            self.ntfy_token_input,
+        )
+        layout.addWidget(self.ntfy_token_row)
 
-        layout.addWidget(SettingsRow(material_icon("web_asset"), "Server URL", "Custom ntfy instance URL.", self.icon_font, self.ui_font, self.ntfy_server_input))
-        layout.addWidget(SettingsRow(material_icon("hub"), "Default topic", "Topic used by the bar publisher and test sends.", self.icon_font, self.ui_font, self.ntfy_topic_input))
-        layout.addWidget(SettingsRow(material_icon("bolt"), "Access token", "Bearer token for ntfy authentication if required.", self.icon_font, self.ui_font, self.ntfy_token_input))
-        layout.addWidget(SettingsRow(material_icon("person"), "Username", "Optional basic auth username.", self.icon_font, self.ui_font, self.ntfy_username_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Password", "Optional basic auth password.", self.icon_font, self.ui_font, self.ntfy_password_input))
+        self.ntfy_username_input = QLineEdit(self.settings_state["ntfy"].get("username", ""))
+        self.ntfy_username_input.setPlaceholderText("Username")
+        self.ntfy_password_input = QLineEdit(self.settings_state["ntfy"].get("password", ""))
+        self.ntfy_password_input.setPlaceholderText("Password")
+        self.ntfy_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ntfy_username_row = SettingsRow(
+            material_icon("person"),
+            "Username",
+            "Basic auth username.",
+            self.icon_font,
+            self.ui_font,
+            self.ntfy_username_input,
+        )
+        self.ntfy_password_row = SettingsRow(
+            material_icon("lock"),
+            "Password",
+            "Basic auth password.",
+            self.icon_font,
+            self.ui_font,
+            self.ntfy_password_input,
+        )
+        layout.addWidget(self.ntfy_username_row)
+        layout.addWidget(self.ntfy_password_row)
+
+        self.ntfy_topics_model = QStringListModel(self)
+        self.ntfy_topic_entry_input = QLineEdit()
+        self.ntfy_topic_entry_input.setPlaceholderText("Add or pick a topic and press Enter")
+        self.ntfy_topic_entry_input_completer = QCompleter(self.ntfy_topics_model, self)
+        self.ntfy_topic_entry_input_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.ntfy_topic_entry_input_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.ntfy_topic_entry_input.setCompleter(self.ntfy_topic_entry_input_completer)
+        self.ntfy_topic_entry_input.returnPressed.connect(self._add_ntfy_topic_from_entry)
+        self.ntfy_topic_entry_input_completer.activated[str].connect(self._add_ntfy_topic)
+
+        self.ntfy_topic_filter_input = QLineEdit()
+        self.ntfy_topic_filter_input.setPlaceholderText("Filter available topics")
+        self.ntfy_topic_filter_input.textChanged.connect(self._filter_ntfy_topics)
+
+        self.ntfy_refresh_topics_button = QPushButton("Refresh topics")
+        self.ntfy_refresh_topics_button.setObjectName("secondaryButton")
+        self.ntfy_refresh_topics_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_refresh_topics_button.clicked.connect(self._fetch_ntfy_topics)
+
+        self.ntfy_topic_list = QListWidget()
+        self.ntfy_topic_list.setAlternatingRowColors(True)
+        self.ntfy_topic_list.setMinimumHeight(150)
+        self.ntfy_topic_list.itemChanged.connect(self._update_ntfy_selected_topics)
+
+        self.ntfy_selected_topics_label = QLabel("No topics selected yet.")
+        self.ntfy_selected_topics_label.setWordWrap(True)
+        self.ntfy_selected_topics_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+
+        self.ntfy_all_topics_checkbox = QCheckBox("Receive notifications from all topics")
+        self.ntfy_all_topics_checkbox.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_all_topics_checkbox.stateChanged.connect(self._sync_ntfy_topic_controls)
+
+        topic_controls = QWidget()
+        topic_layout = QVBoxLayout(topic_controls)
+        topic_layout.setContentsMargins(0, 0, 0, 0)
+        topic_layout.setSpacing(6)
+        topic_layout.addWidget(self.ntfy_topic_entry_input)
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(6)
+        filter_row.addWidget(self.ntfy_topic_filter_input)
+        filter_row.addWidget(self.ntfy_refresh_topics_button)
+        topic_layout.addLayout(filter_row)
+        topic_layout.addWidget(self.ntfy_topic_list)
+        topic_layout.addWidget(self.ntfy_selected_topics_label)
+        topic_layout.addWidget(self.ntfy_all_topics_checkbox)
+
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications"),
+                "Topics",
+                "Select one or more topics to publish to and optionally fetch them from the server.",
+                self.icon_font,
+                self.ui_font,
+                topic_controls,
+            )
+        )
 
         self.ntfy_bar_switch = SwitchButton(bool(self.settings_state["ntfy"].get("show_in_bar", False)))
         self.ntfy_bar_switch.toggledValue.connect(self._set_ntfy_show_in_bar)
@@ -6715,9 +6846,11 @@ class SettingsWindow(QWidget):
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.ntfy_save_button = QPushButton("Save")
+        self.ntfy_save_button.setObjectName("primaryButton")
         self.ntfy_test_button = QPushButton("Send Test")
-        self.ntfy_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.ntfy_test_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_test_button.setObjectName("secondaryButton")
+        for button in (self.ntfy_save_button, self.ntfy_test_button):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.ntfy_save_button.clicked.connect(self._save_ntfy_settings)
         self.ntfy_test_button.clicked.connect(self._send_ntfy_test)
         buttons.addWidget(self.ntfy_save_button)
@@ -6729,6 +6862,24 @@ class SettingsWindow(QWidget):
         self.ntfy_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         self.ntfy_status.setWordWrap(True)
         layout.addWidget(self.ntfy_status)
+
+        saved_topics = [
+            str(item).strip()
+            for item in self.settings_state["ntfy"].get("topics", [])
+            if isinstance(item, str) and str(item).strip()
+        ]
+        legacy_topic = str(self.settings_state["ntfy"].get("topic", "")).strip()
+        if legacy_topic and legacy_topic not in saved_topics:
+            saved_topics.insert(0, legacy_topic)
+        self.ntfy_selected_topics = []
+        for topic in saved_topics:
+            if topic and topic not in self.ntfy_selected_topics:
+                self.ntfy_selected_topics.append(topic)
+        self.ntfy_available_topics = list(self.ntfy_selected_topics)
+        self._populate_ntfy_topic_list(self.ntfy_available_topics)
+        self.ntfy_all_topics_checkbox.setChecked(bool(self.settings_state["ntfy"].get("all_topics", False)))
+        self._sync_ntfy_auth_inputs()
+        self._sync_ntfy_topic_controls()
 
         section = ExpandableServiceSection(
             "ntfy",
@@ -6743,6 +6894,178 @@ class SettingsWindow(QWidget):
         )
         self.ntfy_section = section
         return section
+
+    def _ntfy_auth_mode(self) -> str:
+        if not hasattr(self, "ntfy_auth_mode_combo"):
+            return "token"
+        raw = self.ntfy_auth_mode_combo.currentData() or "token"
+        has_token = bool(str(getattr(self, "ntfy_token_input", QLineEdit()).text()).strip()) if hasattr(self, "ntfy_token_input") else False
+        return normalize_ntfy_auth_mode(raw, has_token=has_token)
+
+    def _sync_ntfy_auth_inputs(self) -> None:
+        mode = self._ntfy_auth_mode()
+        if hasattr(self, "ntfy_token_row"):
+            self.ntfy_token_row.setVisible(mode == "token")
+            self.ntfy_token_input.setEnabled(mode == "token")
+        if hasattr(self, "ntfy_username_row"):
+            self.ntfy_username_row.setVisible(mode == "basic")
+            self.ntfy_username_input.setEnabled(mode == "basic")
+        if hasattr(self, "ntfy_password_row"):
+            self.ntfy_password_row.setVisible(mode == "basic")
+            self.ntfy_password_input.setEnabled(mode == "basic")
+
+    def _populate_ntfy_topic_list(self, topics: list[str]) -> None:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for topic in topics:
+            text = str(topic).strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        for topic in self.ntfy_selected_topics:
+            if topic and topic not in seen:
+                seen.add(topic)
+                normalized.append(topic)
+        normalized.sort()
+        self.ntfy_available_topics = normalized
+        self.ntfy_topics_model.setStringList(normalized)
+        if not hasattr(self, "ntfy_topic_list"):
+            return
+        self.ntfy_topic_list.blockSignals(True)
+        self.ntfy_topic_list.clear()
+        for topic in normalized:
+            item = QListWidgetItem(topic)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            state = Qt.CheckState.Checked if topic in self.ntfy_selected_topics else Qt.CheckState.Unchecked
+            item.setCheckState(state)
+            self.ntfy_topic_list.addItem(item)
+        self.ntfy_topic_list.blockSignals(False)
+        self._update_ntfy_selected_topics_label()
+
+    def _update_ntfy_selected_topics(self, item: QListWidgetItem | None = None) -> None:
+        if not hasattr(self, "ntfy_topic_list"):
+            return
+        selected: list[str] = []
+        for index in range(self.ntfy_topic_list.count()):
+            entry = self.ntfy_topic_list.item(index)
+            if entry.checkState() == Qt.CheckState.Checked:
+                selected.append(str(entry.text()))
+        self.ntfy_selected_topics = selected
+        self._update_ntfy_selected_topics_label()
+
+    def _update_ntfy_selected_topics_label(self) -> None:
+        if not hasattr(self, "ntfy_selected_topics_label"):
+            return
+        if getattr(self, "ntfy_all_topics_checkbox", None) and self.ntfy_all_topics_checkbox.isChecked():
+            text = "Receiving notifications from all topics."
+        elif not self.ntfy_selected_topics:
+            text = "No topics selected yet."
+        else:
+            text = "Selected topics: " + ", ".join(self.ntfy_selected_topics)
+        self.ntfy_selected_topics_label.setText(text)
+
+    def _filter_ntfy_topics(self, text: str) -> None:
+        if not hasattr(self, "ntfy_topic_list"):
+            return
+        query = str(text).strip().lower()
+        for index in range(self.ntfy_topic_list.count()):
+            item = self.ntfy_topic_list.item(index)
+            if not item:
+                continue
+            item.setHidden(bool(query) and query not in item.text().lower())
+
+    def _add_ntfy_topic(self, topic: str) -> None:
+        value = str(topic).strip()
+        if not value:
+            return
+        if value not in self.ntfy_selected_topics:
+            self.ntfy_selected_topics.append(value)
+        if value not in self.ntfy_available_topics:
+            self.ntfy_available_topics.append(value)
+        self._populate_ntfy_topic_list(self.ntfy_available_topics)
+
+    def _add_ntfy_topic_from_entry(self) -> None:
+        if not hasattr(self, "ntfy_topic_entry_input"):
+            return
+        text = self.ntfy_topic_entry_input.text().strip()
+        if not text:
+            return
+        self._add_ntfy_topic(text)
+        self.ntfy_topic_entry_input.clear()
+
+    def _sync_ntfy_topic_controls(self) -> None:
+        all_topics = bool(getattr(self, "ntfy_all_topics_checkbox", None) and self.ntfy_all_topics_checkbox.isChecked())
+        for widget in (
+            getattr(self, "ntfy_topic_entry_input", None),
+            getattr(self, "ntfy_topic_filter_input", None),
+            getattr(self, "ntfy_refresh_topics_button", None),
+            getattr(self, "ntfy_topic_list", None),
+        ):
+            if widget is not None:
+                widget.setEnabled(not all_topics)
+        self._update_ntfy_selected_topics_label()
+
+    def _fetch_ntfy_topics(self) -> None:
+        server = str(self.ntfy_server_input.text()).strip().rstrip("/")
+        if not server:
+            if hasattr(self, "ntfy_status"):
+                self.ntfy_status.setText("Server URL is required to fetch topics.")
+            return
+        url = f"{server}/topics"
+        headers: dict[str, str] = {
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": NTFY_USER_AGENT,
+        }
+        if self._ntfy_auth_mode() == "token":
+            token = self.ntfy_token_input.text().strip()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        else:
+            username = self.ntfy_username_input.text().strip()
+            password = self.ntfy_password_input.text()
+            if username or password:
+                credentials = f"{username}:{password}"
+                encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+                headers["Authorization"] = f"Basic {encoded}"
+        try:
+            req = request.Request(url, headers=headers, method="GET")
+            with request.urlopen(req, timeout=8) as response:
+                payload_text = response.read().decode("utf-8", errors="ignore")
+        except error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", errors="ignore").strip()
+            except Exception:
+                detail = ""
+            if hasattr(self, "ntfy_status"):
+                self.ntfy_status.setText(detail or f"HTTP {exc.code} while fetching topics.")
+            return
+        except Exception as exc:
+            if hasattr(self, "ntfy_status"):
+                self.ntfy_status.setText(str(exc))
+            return
+        parsed: list[str] = []
+        try:
+            payload = json.loads(payload_text)
+            if isinstance(payload, dict):
+                parsed = [str(item).strip() for item in payload.get("topics", []) if isinstance(item, str)]
+            elif isinstance(payload, list):
+                parsed = [str(item).strip() for item in payload if isinstance(item, str)]
+        except Exception:
+            parsed = [line.strip() for line in payload_text.splitlines() if line.strip()]
+        parsed = [item for item in parsed if item]
+        if parsed:
+            self._populate_ntfy_topic_list(parsed)
+        if hasattr(self, "ntfy_status"):
+            self.ntfy_status.setText(f"Fetched {len(parsed)} topic(s).")
+
+    def _resolve_ntfy_test_topic(self) -> str:
+        if getattr(self, "ntfy_all_topics_checkbox", None) and self.ntfy_all_topics_checkbox.isChecked():
+            return ""
+        if self.ntfy_selected_topics:
+            return self.ntfy_selected_topics[0]
+        return str(self.settings_state["ntfy"].get("topic", "")).strip()
 
     def _service_enabled(self, key: str) -> bool:
         return bool(self.settings_state["services"].get(key, {}).get("enabled", True))
@@ -8164,25 +8487,37 @@ class SettingsWindow(QWidget):
     def _save_ntfy_settings(self) -> None:
         ntfy = self.settings_state.setdefault("ntfy", {})
         ntfy["server_url"] = self.ntfy_server_input.text().strip().rstrip("/")
-        ntfy["topic"] = self.ntfy_topic_input.text().strip()
         ntfy["token"] = self.ntfy_token_input.text().strip()
         ntfy["username"] = self.ntfy_username_input.text().strip()
         ntfy["password"] = self.ntfy_password_input.text()
+        ntfy["auth_mode"] = self._ntfy_auth_mode()
+        ntfy["topics"] = list(self.ntfy_selected_topics)
+        ntfy["all_topics"] = bool(self.ntfy_all_topics_checkbox.isChecked())
+        existing_topic = str(ntfy.get("topic", "")).strip()
+        primary_topic = self.ntfy_selected_topics[0] if self.ntfy_selected_topics else existing_topic
+        ntfy["topic"] = primary_topic
         save_settings_state(self.settings_state)
         if hasattr(self, "ntfy_status"):
             self.ntfy_status.setText("ntfy settings saved.")
 
     def _send_ntfy_test(self) -> None:
         self._save_ntfy_settings()
+        topic = self._resolve_ntfy_test_topic()
+        if not topic:
+            if hasattr(self, "ntfy_status"):
+                self.ntfy_status.setText("Select a topic before sending a test message.")
+            return
         ntfy = self.settings_state.get("ntfy", {})
+        auth_mode = self._ntfy_auth_mode()
         ok, message = send_ntfy_message(
             str(ntfy.get("server_url", "")),
-            str(ntfy.get("topic", "")),
+            topic,
             "Hanauta Test",
             "ntfy integration is working.",
             token=str(ntfy.get("token", "")),
             username=str(ntfy.get("username", "")),
             password=str(ntfy.get("password", "")),
+            auth_mode=auth_mode,
         )
         if hasattr(self, "ntfy_status"):
             self.ntfy_status.setText(message if message else ("ntfy test sent." if ok else "ntfy test failed."))
