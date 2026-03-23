@@ -328,6 +328,40 @@ def clean_tracking_url(url_text: str) -> str:
     )
 
 
+def parse_mailto_draft(url_text: str) -> dict[str, Any] | None:
+    raw = str(url_text or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(raw)
+    except Exception:
+        return None
+    if parsed.scheme.lower() != "mailto":
+        return None
+
+    def _parse_addresses(values: list[str]) -> list[str]:
+        addresses: list[str] = []
+        for value in values:
+            for item in str(value or "").split(","):
+                normalized = normalize_email(item)
+                if normalized:
+                    addresses.append(normalized)
+        return addresses
+
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    to_values = [urllib.parse.unquote(parsed.path)] if parsed.path else []
+    to_values.extend(query.get("to", []))
+    subject = str(query.get("subject", [""])[0] or "")
+    body = str(query.get("body", [""])[0] or "").replace("\r\n", "\n").replace("\r", "\n")
+    return {
+        "to": _parse_addresses(to_values),
+        "cc": _parse_addresses(query.get("cc", [])),
+        "bcc": _parse_addresses(query.get("bcc", [])),
+        "subject": subject,
+        "body": body,
+    }
+
+
 def email_domain(address: str) -> str:
     value = normalize_email(address)
     if "@" not in value:
@@ -1248,7 +1282,7 @@ class FragmentServer:
 class EmailClientWindow(QWidget):
     syncCompleted = pyqtSignal(str, str)
 
-    def __init__(self) -> None:
+    def __init__(self, launch_targets: list[str] | None = None) -> None:
         super().__init__()
         if not WEBENGINE_AVAILABLE:
             raise RuntimeError(f"QtWebEngine is unavailable: {WEBENGINE_ERROR}")
@@ -1265,6 +1299,7 @@ class EmailClientWindow(QWidget):
         self.account_status: dict[int, dict[str, Any]] = {}
         self._pending_status_toasts: list[tuple[str, str]] = []
         self._message_render_cache: dict[tuple[str, bool, bool], dict[str, Any]] = {}
+        self._open_compose_after_load = False
         self.fragment_server = FragmentServer(self)
 
         self.setWindowTitle(APP_NAME)
@@ -1314,6 +1349,7 @@ class EmailClientWindow(QWidget):
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
 
+        self._apply_launch_targets(launch_targets or [])
         self._load_page()
         QTimer.singleShot(1000, lambda: self.schedule_sync("Initial sync completed.", send_notifications=False))
 
@@ -1329,6 +1365,9 @@ class EmailClientWindow(QWidget):
         self._page_ready = ok
         if ok:
             self.push_state()
+            if self._open_compose_after_load and self._reply_draft:
+                QTimer.singleShot(120, lambda: self._run_js("window.openComposeFromReply();"))
+                self._open_compose_after_load = False
 
     def _run_js(self, script: str) -> None:
         if not self._page_ready:
@@ -1348,6 +1387,40 @@ class EmailClientWindow(QWidget):
         safe_title = json.dumps(title)
         safe_body = json.dumps(body)
         self._run_js(f"window.showToast({safe_title}, {safe_body});")
+
+    def _default_compose_account_id(self) -> int:
+        account = self.store.get_account(self.selected_account_id) if self.selected_account_id > 0 else None
+        if account:
+            return int(account["id"])
+        accounts = self.store.list_accounts()
+        if accounts:
+            return int(accounts[0].get("id", 0) or 0)
+        return 0
+
+    def _queue_compose_draft(self, draft: dict[str, Any]) -> None:
+        prepared = {
+            "account_id": int(draft.get("account_id", self._default_compose_account_id()) or self._default_compose_account_id()),
+            "to": [normalize_email(item) for item in draft.get("to", []) if normalize_email(item)],
+            "cc": [normalize_email(item) for item in draft.get("cc", []) if normalize_email(item)],
+            "bcc": [normalize_email(item) for item in draft.get("bcc", []) if normalize_email(item)],
+            "subject": str(draft.get("subject", "") or ""),
+            "body": str(draft.get("body", "") or ""),
+            "in_reply_to": str(draft.get("in_reply_to", "") or ""),
+            "references": [str(item) for item in draft.get("references", []) if str(item).strip()],
+        }
+        self._reply_draft = prepared
+        self._open_compose_after_load = True
+        if self._page_ready:
+            self.push_state()
+            self._run_js("window.openComposeFromReply();")
+            self._open_compose_after_load = False
+
+    def _apply_launch_targets(self, launch_targets: list[str]) -> None:
+        for target in launch_targets:
+            draft = parse_mailto_draft(target)
+            if draft is not None:
+                self._queue_compose_draft(draft)
+                break
 
     def _prune_message_render_cache(self, *, max_items: int = 256) -> None:
         overflow = len(self._message_render_cache) - max_items
@@ -2470,7 +2543,7 @@ def main() -> int:
         raise RuntimeError(f"QtWebEngine is unavailable: {WEBENGINE_ERROR}")
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    window = EmailClientWindow()
+    window = EmailClientWindow(sys.argv[1:])
     window.show()
     return app.exec()
 
