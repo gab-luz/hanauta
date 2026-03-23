@@ -129,6 +129,7 @@ OBS_RECORDING_INACTIVE_ICON = ASSETS_DIR / "obs-recording-inactive.svg"
 RSS_ICON = ASSETS_DIR / "rss-feed.svg"
 REMINDER_ICON = ASSETS_DIR / "reminder-widget.svg"
 POMODORO_ICON = ASSETS_DIR / "pomodoro.svg"
+NTFY_ICON = ASSETS_DIR / "ntfy.svg"
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
@@ -3173,7 +3174,7 @@ class CyberBar(QWidget):
         self._set_obs_button_icon()
         self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 20)
         self._apply_icon_to_widget(self.mail_button, "mail", material_icon("mail"), 16)
-        self._apply_icon_to_widget(self.ntfy_button, "notifications", material_icon("notifications"), 16)
+        self._set_ntfy_button_icon()
         self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 20)
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
         self._apply_icon_to_widget(self.btn_clip, "content_paste", material_icon("content_paste"), 16)
@@ -4192,6 +4193,19 @@ class CyberBar(QWidget):
             return
         self.rss_button.setIcon(QIcon())
         self.rss_button.setText(self._bar_icon_overrides.get("rss_feed", material_icon("public")))
+
+    def _set_ntfy_button_icon(self) -> None:
+        icon = tinted_svg_icon(NTFY_ICON, QColor(self.theme.primary), 16)
+        self.ntfy_button.setProperty("iconKey", "notifications")
+        self.ntfy_button.setProperty("nerdIcon", False)
+        self.ntfy_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.ntfy_button.setIcon(icon)
+            self.ntfy_button.setIconSize(QSize(16, 16))
+            self.ntfy_button.setText("")
+            return
+        self.ntfy_button.setIcon(QIcon())
+        self.ntfy_button.setText(self._bar_icon_overrides.get("notifications", material_icon("notifications")))
 
     def _set_obs_button_icon(self) -> None:
         if self._obs_recording:
