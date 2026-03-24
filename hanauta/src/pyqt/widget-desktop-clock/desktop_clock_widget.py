@@ -9,8 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QPoint, QPointF, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF, QRegion
+from PyQt6.QtCore import QPoint, QPointF, QRectF, QTimer, Qt
+from PyQt6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF, QRegion
 from PyQt6.QtWidgets import QApplication, QWidget
 
 
@@ -250,6 +250,8 @@ class DesktopClockWidget(QWidget):
         self.settings_state = load_settings_state()
         self.drag_offset = QPoint()
         self.dragging = False
+        self._drag_moved = False
+        self._suspend_position_persist = False
         self.preview_mode = bool(sys.stdin.isatty() or sys.stdout.isatty())
         self._desktop_visible = True
         self._last_workspace_name = ""
@@ -288,8 +290,10 @@ class DesktopClockWidget(QWidget):
         clock_settings = self.settings_state.get("clock", {})
         pos_x = int(clock_settings.get("position_x", -1) or -1)
         pos_y = int(clock_settings.get("position_y", -1) or -1)
+        self._suspend_position_persist = True
         if pos_x >= 0 and pos_y >= 0:
             self.move(pos_x, pos_y)
+            self._suspend_position_persist = False
             return
         if workspace_rect is not None:
             area_x = int(workspace_rect.get("x", 0))
@@ -298,6 +302,7 @@ class DesktopClockWidget(QWidget):
         else:
             screen = QGuiApplication.primaryScreen()
             if screen is None:
+                self._suspend_position_persist = False
                 return
             available = screen.availableGeometry()
             area_x = available.x()
@@ -308,6 +313,12 @@ class DesktopClockWidget(QWidget):
             area_x + (area_width - self.width()) // 2,
             area_y + bar_height + 24,
         )
+        self._suspend_position_persist = False
+
+    def _persist_current_position(self) -> None:
+        if self._suspend_position_persist:
+            return
+        save_clock_position(self.x(), self.y())
 
     def _reload_theme_if_needed(self) -> None:
         current_mtime = palette_mtime()
@@ -341,6 +352,7 @@ class DesktopClockWidget(QWidget):
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = True
+            self._drag_moved = False
             self.drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
             return
@@ -348,6 +360,7 @@ class DesktopClockWidget(QWidget):
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
         if self.dragging and event.buttons() & Qt.MouseButton.LeftButton:
+            self._drag_moved = True
             self.move(event.globalPosition().toPoint() - self.drag_offset)
             event.accept()
             return
@@ -356,10 +369,16 @@ class DesktopClockWidget(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
         if self.dragging and event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
-            save_clock_position(self.x(), self.y())
+            if self._drag_moved:
+                self._persist_current_position()
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def moveEvent(self, event) -> None:  # type: ignore[override]
+        super().moveEvent(event)
+        if self.dragging and self._drag_moved:
+            self._persist_current_position()
 
     def _format_hour(self, moment: datetime) -> str:
         if bool(self.settings_state.get("region", {}).get("use_24_hour", False)):
@@ -524,9 +543,26 @@ class DesktopClockWidget(QWidget):
         hour_text = self._format_hour(now)
         minute_text = now.strftime("%M")
         painter.setPen(digital_color)
-        painter.setFont(QFont(self.display_font, max(44, int(outer_radius * 0.46)), QFont.Weight.Bold))
-        painter.drawText(self.rect().adjusted(0, int(-outer_radius * 0.18), 0, 0), Qt.AlignmentFlag.AlignCenter, hour_text)
-        painter.drawText(self.rect().adjusted(0, int(outer_radius * 0.24), 0, 0), Qt.AlignmentFlag.AlignCenter, minute_text)
+        # Tweak the multiplier below if the stacked hour/minute text still feels too tight.
+        digital_font = QFont(self.display_font, max(38, int(outer_radius * 0.40)), QFont.Weight.Bold)
+        painter.setFont(digital_font)
+        metrics = QFontMetrics(digital_font)
+        digital_rect = QRectF(
+            center.x() - inner_radius * 0.52,
+            center.y() - inner_radius * 0.36,
+            inner_radius * 1.04,
+            inner_radius * 0.72,
+        )
+        line_height = float(metrics.height())
+        # This directly controls the visible distance between the hour and minute.
+        # Lower it to bring them closer together, raise it to push them farther apart.
+        line_offset = max(33.0, outer_radius * 0.14)
+        hour_center_y = center.y() - line_offset
+        minute_center_y = center.y() + line_offset
+        hour_rect = QRectF(digital_rect.x(), hour_center_y - (line_height / 2.0), digital_rect.width(), line_height)
+        minute_rect = QRectF(digital_rect.x(), minute_center_y - (line_height / 2.0), digital_rect.width(), line_height)
+        painter.drawText(hour_rect, int(Qt.AlignmentFlag.AlignCenter), hour_text)
+        painter.drawText(minute_rect, int(Qt.AlignmentFlag.AlignCenter), minute_text)
 
         hour_angle = ((now.hour % 12) + now.minute / 60.0) * (math.tau / 12.0) - math.pi / 2
         minute_angle = (now.minute + now.second / 60.0) * (math.tau / 60.0) - math.pi / 2
