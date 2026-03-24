@@ -3101,23 +3101,30 @@ class SettingsWindow(QWidget):
     def __init__(self, initial_page: str = "appearance", initial_service_section: str = "") -> None:
         super().__init__()
         self.fonts = load_app_fonts()
-        self.ui_font = detect_font(
-            theme_font_family("ui"),
-            "Rubik",
+        self.main_font = detect_font(
+            "Google Sans Flex",
+            "Google Sans",
             self.fonts.get("ui_sans_medium", ""),
             self.fonts.get("ui_sans", ""),
-            "Google Sans",
             "Inter",
             "Noto Sans",
         )
-        self.display_font = detect_font(
-            theme_font_family("display"),
-            "Rubik",
+        self.title_font = detect_font(
+            "Space Grotesk",
+            "Google Sans Flex",
+            "Google Sans",
             self.fonts.get("ui_display_medium", ""),
             self.fonts.get("ui_display", ""),
-            "Google Sans Display",
-            self.ui_font,
+            "Rubik",
         )
+        self.expressive_font = detect_font(
+            "Space Grotesk",
+            "Google Sans Flex",
+            "Rubik",
+            "Inter",
+        )
+        self.ui_font = self.main_font
+        self.display_font = self.title_font
         self.icon_font = detect_font(
             self.fonts.get("material_icons", ""),
             self.fonts.get("material_icons_outlined", ""),
@@ -3175,7 +3182,8 @@ class SettingsWindow(QWidget):
         self.setGraphicsEffect(shadow)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(18)
 
         shell = QFrame()
         shell.setObjectName("shell")
@@ -3183,13 +3191,14 @@ class SettingsWindow(QWidget):
 
         shell_layout = QVBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
-        shell_layout.setSpacing(0)
+        shell_layout.setSpacing(16)
 
         shell_layout.addWidget(self._build_header())
 
         body = QHBoxLayout()
-        body.setContentsMargins(10, 10, 10, 10)
-        body.setSpacing(10)
+        body.setContentsMargins(18, 18, 18, 18)
+        body.setSpacing(18)
+        body.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         body.addWidget(self._build_sidebar())
         body.addWidget(self._build_scroll_body(), 1)
@@ -3236,14 +3245,14 @@ class SettingsWindow(QWidget):
         header.setFixedHeight(54)
 
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(14, 8, 14, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(18, 12, 18, 12)
+        layout.setSpacing(14)
 
         lead_chip = QFrame()
         lead_chip.setObjectName("headerLeadChip")
         lead_layout = QHBoxLayout(lead_chip)
-        lead_layout.setContentsMargins(10, 6, 10, 6)
-        lead_layout.setSpacing(6)
+        lead_layout.setContentsMargins(12, 8, 12, 8)
+        lead_layout.setSpacing(8)
         lead_icon = QLabel("♪")
         lead_icon.setProperty("iconRole", True)
         lead_icon.setObjectName("headerLeadIcon")
@@ -3286,8 +3295,8 @@ class SettingsWindow(QWidget):
         self.sidebar.setFixedWidth(244)
 
         layout = QVBoxLayout(self.sidebar)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 18, 16, 18)
+        layout.setSpacing(12)
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
@@ -3543,24 +3552,12 @@ class SettingsWindow(QWidget):
         self.random_wall_button = ActionCard(material_icon("auto_awesome"), "Random Wallpaper", "Pick a random image from your slideshow folder", self.icon_font, self.ui_font)
         self.choose_picture_button = ActionCard(material_icon("photo_library"), "Choose picture", "Select and apply a wallpaper image", self.icon_font, self.ui_font)
         self.choose_folder_button = ActionCard(material_icon("folder_open"), "Choose folder", "Use a folder as a slideshow source", self.icon_font, self.ui_font)
-        self.slideshow_button = ActionCard(material_icon("image"), "Start slideshow", "Rotate wallpapers from the selected folder", self.icon_font, self.ui_font)
-        self.sync_caelestia_button = ActionCard(material_icon("photo_library"), "Import Caelestia wallpapers", "Scan Caelestia wallpaper folders and copy every discovered image into Hanauta", self.icon_font, self.ui_font)
-        self.sync_end4_button = ActionCard(material_icon("image"), "Import End-4 wallpapers", "Scan End-4 wallpaper folders, including local downloads, and copy every discovered image into Hanauta", self.icon_font, self.ui_font)
-        self.sync_catholic_button = ActionCard(material_icon("photo_library"), "Import Catholic wallpapers", "Download the Catholic Hyprland pack and copy its wallpapers into Hanauta", self.icon_font, self.ui_font)
         self.random_wall_button.clicked.connect(self._apply_random_wallpaper)
         self.choose_picture_button.clicked.connect(self._choose_wallpaper_file)
         self.choose_folder_button.clicked.connect(self._choose_wallpaper_folder)
-        self.slideshow_button.clicked.connect(self._toggle_slideshow)
-        self.sync_caelestia_button.clicked.connect(lambda: self._sync_wallpaper_source("caelestia"))
-        self.sync_end4_button.clicked.connect(lambda: self._sync_wallpaper_source("end4"))
-        self.sync_catholic_button.clicked.connect(lambda: self._sync_wallpaper_source("catholic_hyprland"))
         actions.addWidget(self.random_wall_button)
         actions.addWidget(self.choose_picture_button)
         actions.addWidget(self.choose_folder_button)
-        actions.addWidget(self.slideshow_button)
-        actions.addWidget(self.sync_caelestia_button)
-        actions.addWidget(self.sync_end4_button)
-        actions.addWidget(self.sync_catholic_button)
 
         mode_heading = QLabel("Theme mode")
         mode_heading.setObjectName("appearanceSectionLabel")
@@ -8416,13 +8413,6 @@ class SettingsWindow(QWidget):
     def _sync_wallpaper_controls(self) -> None:
         if hasattr(self, "preview_card"):
             self.preview_card.update_wallpaper(self.wallpaper)
-        if hasattr(self, "slideshow_button"):
-            running = self._slideshow_timer.isActive()
-            self.slideshow_button.set_content(
-                material_icon("image"),
-                "Stop slideshow" if running else "Start slideshow",
-                "Rotate wallpapers from the selected folder" if not running else "Pause the current slideshow rotation",
-            )
 
     def _save_appearance_state(self) -> None:
         self.settings_state["appearance"]["wallpaper_path"] = str(self.wallpaper)
@@ -8963,12 +8953,14 @@ class SettingsWindow(QWidget):
             }}
             QLabel#sidebarTitle {{
                 color: {theme.text};
+                font-family: "{self.title_font}";
             }}
             QLabel#sidebarSectionLabel {{
                 color: {theme.text_muted};
                 padding-left: 8px;
                 letter-spacing: 0.7px;
                 text-transform: uppercase;
+                font-family: "{self.main_font}";
             }}
             QLabel#headerLeadIcon {{
                 color: {accent};
@@ -9051,6 +9043,7 @@ class SettingsWindow(QWidget):
                 background: transparent;
                 color: {theme.text};
                 text-align: left;
+                font-family: "{self.main_font}";
             }}
             QPushButton#navPill:hover {{
                 background: {theme.hover_bg};
@@ -9068,6 +9061,10 @@ class SettingsWindow(QWidget):
             }}
             QPushButton#navPill QLabel[iconRole="true"] {{
                 font-family: "{self.icon_font}";
+            }}
+            QPushButton#navPill QLabel[iconRole="false"] {{
+                font-family: "{self.main_font}";
+                font-size: 10px;
             }}
             QPushButton#actionCard {{
                 background: {rgba(theme.surface_container_high, 0.88)};
