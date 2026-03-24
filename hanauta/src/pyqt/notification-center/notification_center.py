@@ -390,6 +390,7 @@ def load_notification_settings() -> dict:
         "home_assistant": {"url": "", "token": "", "pinned_entities": []},
         "services": merged_service_settings({}),
         "display": {"layout_mode": "extend", "primary": "", "outputs": []},
+        "autolock": {"enabled": True, "timeout_minutes": 2},
         "weather": {
             "enabled": False,
             "name": "",
@@ -435,6 +436,12 @@ def load_notification_settings() -> dict:
     display.setdefault("primary", "")
     outputs = display.get("outputs", [])
     display["outputs"] = outputs if isinstance(outputs, list) else []
+    autolock = dict(payload.get("autolock", {}))
+    autolock["enabled"] = bool(autolock.get("enabled", True))
+    try:
+        autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2))))
+    except Exception:
+        autolock["timeout_minutes"] = 2
     weather = dict(payload.get("weather", {}))
     weather.setdefault("enabled", False)
     weather.setdefault("name", "")
@@ -465,6 +472,7 @@ def load_notification_settings() -> dict:
     payload["home_assistant"] = home_assistant
     payload["services"] = services
     payload["display"] = display
+    payload["autolock"] = autolock
     payload["weather"] = weather
     payload["ntfy"] = ntfy
     return payload

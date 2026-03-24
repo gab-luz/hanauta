@@ -32,7 +32,7 @@ except Exception:  # pragma: no cover
     tomllib = None
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QIntValidator, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets import (
     QApplication,
@@ -80,6 +80,7 @@ NOTIFICATION_RULES_FILE = Path.home() / ".local" / "state" / "hanauta" / "notifi
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "hanauta" / "scripts" / "run_matugen.sh"
+LOCK_SCRIPT = ROOT / "hanauta" / "scripts" / "lock"
 CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
 RENDERED_WALLPAPER_DIR = Path.home() / ".wallpapers" / "rendered"
 WALLPAPER_SOURCE_CACHE_DIR = ROOT / "hanauta" / "vendor" / "wallpaper-sources"
@@ -839,6 +840,77 @@ def run_text(cmd: list[str]) -> str:
         return ""
 
 
+def detect_battery_base() -> Path | None:
+    power_supply = Path("/sys/class/power_supply")
+    if not power_supply.exists():
+        return None
+    for candidate in sorted(power_supply.iterdir()):
+        if not candidate.is_dir() or not candidate.name.startswith("BAT"):
+            continue
+        type_path = candidate / "type"
+        try:
+            if not type_path.exists() or type_path.read_text(encoding="utf-8").strip().lower() == "battery":
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _read_int_file(path: Path) -> int | None:
+    text = _read_text_file(path)
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _first_available_int(base: Path, names: tuple[str, ...]) -> int | None:
+    for name in names:
+        value = _read_int_file(base / name)
+        if value is not None:
+            return value
+    return None
+
+
+def read_battery_snapshot() -> dict[str, object] | None:
+    base = detect_battery_base()
+    if base is None:
+        return None
+    capacity = _read_int_file(base / "capacity")
+    status = _read_text_file(base / "status") or "Unknown"
+    technology = _read_text_file(base / "technology") or "Unknown"
+    manufacturer = _read_text_file(base / "manufacturer")
+    model_name = _read_text_file(base / "model_name")
+    cycle_count = _read_int_file(base / "cycle_count")
+    full_now = _first_available_int(base, ("energy_full", "charge_full"))
+    full_design = _first_available_int(base, ("energy_full_design", "charge_full_design"))
+    health_percent: int | None = None
+    if full_now is not None and full_design and full_design > 0:
+        try:
+            health_percent = max(1, min(100, int(round((full_now / full_design) * 100))))
+        except Exception:
+            health_percent = None
+    return {
+        "path": str(base),
+        "capacity": capacity if capacity is not None else 0,
+        "status": status,
+        "technology": technology,
+        "manufacturer": manufacturer,
+        "model_name": model_name,
+        "cycle_count": cycle_count,
+        "health_percent": health_percent,
+    }
+
+
 def hanauta_mail_desktop_installed() -> bool:
     return MAIL_DESKTOP_LOCAL.exists() or MAIL_DESKTOP_SYSTEM.exists()
 
@@ -1135,6 +1207,10 @@ def load_settings_state() -> dict:
             "position_x": -1,
             "position_y": -1,
         },
+        "autolock": {
+            "enabled": True,
+            "timeout_minutes": 2,
+        },
         "health": {
             "provider": "manual",
             "step_goal": 10000,
@@ -1410,6 +1486,12 @@ def load_settings_state() -> dict:
         clock["position_y"] = int(clock.get("position_y", -1))
     except Exception:
         clock["position_y"] = -1
+    autolock = dict(payload.get("autolock", {}))
+    autolock["enabled"] = bool(autolock.get("enabled", True))
+    try:
+        autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2))))
+    except Exception:
+        autolock["timeout_minutes"] = 2
     health = dict(payload.get("health", {}))
     health["provider"] = str(health.get("provider", "manual")).strip().lower()
     if health["provider"] not in {"manual", "fitbit"}:
@@ -1459,6 +1541,7 @@ def load_settings_state() -> dict:
         "crypto": crypto,
         "vps": vps,
         "clock": clock,
+        "autolock": autolock,
         "health": health,
         "display": display,
         "mail": mail,
@@ -3159,6 +3242,9 @@ class SettingsWindow(QWidget):
         self._slideshow_index = 0
         self._ha_entities: list[dict] = []
         self._ha_entity_map: dict[str, dict] = {}
+        self._battery_snapshot = read_battery_snapshot()
+        self._battery_present = self._battery_snapshot is not None
+        self._energy_battery_expanded = self._battery_present
         self.display_state = parse_xrandr_state()
         self.dock_settings_state = load_dock_settings_state()
         self.display_controls: dict[str, dict[str, QWidget]] = {}
@@ -3336,6 +3422,7 @@ class SettingsWindow(QWidget):
             ("overview", material_icon("grid_view"), "Overview", False),
             ("appearance", material_icon("palette"), "Looks", True),
             ("display", material_icon("desktop_windows"), "Display", False),
+            ("energy", material_icon("bolt"), "Energy", False),
             ("region", material_icon("public"), "Region", False),
             ("bar", material_icon("crop_square"), "Bar", False),
             ("services", material_icon("settings"), "Services", False),
@@ -3359,6 +3446,7 @@ class SettingsWindow(QWidget):
         self.page_stack.addWidget(self._build_overview_page())
         self.page_stack.addWidget(self._build_appearance_page())
         self.page_stack.addWidget(self._build_display_page())
+        self.page_stack.addWidget(self._build_energy_page())
         self.page_stack.addWidget(self._build_region_page())
         self.page_stack.addWidget(self._build_bar_page())
         self.page_stack.addWidget(self._build_services_page())
@@ -3405,6 +3493,9 @@ class SettingsWindow(QWidget):
     def _build_bar_page(self) -> QWidget:
         return self._scroll_page(self._build_bar_screen_card())
 
+    def _build_energy_page(self) -> QWidget:
+        return self._scroll_page(self._build_energy_card())
+
     def _build_region_page(self) -> QWidget:
         return self._scroll_page(self._build_region_card())
 
@@ -3418,7 +3509,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_picom_card())
 
     def _show_page(self, key: str) -> None:
-        order = {"overview": 0, "appearance": 1, "display": 2, "region": 3, "bar": 4, "services": 5, "picom": 6}
+        order = {"overview": 0, "appearance": 1, "display": 2, "energy": 3, "region": 4, "bar": 5, "services": 6, "picom": 7}
         resolved = key if key in order else "appearance"
         self.current_page = resolved
         self.page_stack.setCurrentIndex(order[resolved])
@@ -4578,6 +4669,212 @@ class SettingsWindow(QWidget):
                 rice_button,
             )
         )
+        return card
+
+    def _build_energy_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("bolt"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Energy & power")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Idle locking, power actions, brightness, and battery health in one place.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.energy_refresh_button = QPushButton("Refresh energy")
+        self.energy_refresh_button.setObjectName("secondaryButton")
+        self.energy_refresh_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.energy_refresh_button.clicked.connect(self._refresh_energy_state)
+        actions.addWidget(self.energy_refresh_button)
+
+        self.energy_lock_button = QPushButton("Lock now")
+        self.energy_lock_button.setObjectName("secondaryButton")
+        self.energy_lock_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.energy_lock_button.clicked.connect(self._lock_now)
+        actions.addWidget(self.energy_lock_button)
+
+        self.energy_suspend_button = QPushButton("Suspend")
+        self.energy_suspend_button.setObjectName("secondaryButton")
+        self.energy_suspend_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.energy_suspend_button.clicked.connect(self._suspend_now)
+        actions.addWidget(self.energy_suspend_button)
+
+        self.energy_hibernate_button = QPushButton("Hibernate")
+        self.energy_hibernate_button.setObjectName("secondaryButton")
+        self.energy_hibernate_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.energy_hibernate_button.clicked.connect(self._hibernate_now)
+        self.energy_hibernate_button.setEnabled(shutil.which("systemctl") is not None)
+        actions.addWidget(self.energy_hibernate_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        self.energy_status = QLabel("Energy controls are ready.")
+        self.energy_status.setWordWrap(True)
+        self.energy_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.energy_status)
+
+        self.autolock_enabled_switch = SwitchButton(bool(self.settings_state.get("autolock", {}).get("enabled", True)))
+        self.autolock_enabled_switch.toggledValue.connect(self._set_autolock_enabled)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Auto lock",
+                "Lock the PC after the chosen idle time. Turning on caffeine in the notification center pauses this until caffeine is disabled.",
+                self.icon_font,
+                self.ui_font,
+                self.autolock_enabled_switch,
+            )
+        )
+
+        self.autolock_timeout_input = QLineEdit(str(int(self.settings_state.get("autolock", {}).get("timeout_minutes", 2))))
+        self.autolock_timeout_input.setValidator(QIntValidator(1, 60, self))
+        self.autolock_timeout_input.setFixedWidth(88)
+        self.autolock_timeout_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.autolock_timeout_input.editingFinished.connect(self._set_autolock_timeout_minutes_from_input)
+        self.autolock_timeout_input.setEnabled(bool(self.settings_state.get("autolock", {}).get("enabled", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("timer"),
+                "Auto lock timeout",
+                "How many idle minutes Hanauta waits before locking the session.",
+                self.icon_font,
+                self.ui_font,
+                self.autolock_timeout_input,
+            )
+        )
+
+        brightness_wrap = QWidget()
+        brightness_row = QHBoxLayout(brightness_wrap)
+        brightness_row.setContentsMargins(0, 0, 0, 0)
+        brightness_row.setSpacing(8)
+        self.energy_brightness_input = QLineEdit("0")
+        self.energy_brightness_input.setValidator(QIntValidator(1, 100, self))
+        self.energy_brightness_input.setFixedWidth(88)
+        self.energy_brightness_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.energy_brightness_input.editingFinished.connect(self._apply_energy_brightness)
+        self.energy_brightness_apply_button = QPushButton("Apply")
+        self.energy_brightness_apply_button.setObjectName("secondaryButton")
+        self.energy_brightness_apply_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.energy_brightness_apply_button.clicked.connect(self._apply_energy_brightness)
+        brightness_row.addWidget(self.energy_brightness_input)
+        brightness_row.addWidget(self.energy_brightness_apply_button)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lightbulb"),
+                "Brightness",
+                "Quick display brightness override in percent using Hanauta's shared brightness script.",
+                self.icon_font,
+                self.ui_font,
+                brightness_wrap,
+            )
+        )
+
+        self.energy_caffeine_note = QLabel(
+            "Caffeine wins over auto lock. If you need the PC to stay awake temporarily, use the notification center caffeine toggle instead of disabling auto lock permanently."
+        )
+        self.energy_caffeine_note.setWordWrap(True)
+        self.energy_caffeine_note.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.energy_caffeine_note)
+
+        self.energy_battery_section = QFrame()
+        self.energy_battery_section.setObjectName("serviceSection")
+        battery_layout = QVBoxLayout(self.energy_battery_section)
+        battery_layout.setContentsMargins(12, 12, 12, 12)
+        battery_layout.setSpacing(10)
+
+        self.energy_battery_header = QPushButton()
+        self.energy_battery_header.setObjectName("serviceHeaderButton")
+        self.energy_battery_header.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.energy_battery_header.setMinimumHeight(84)
+        self.energy_battery_header.clicked.connect(self._toggle_energy_battery_section)
+        battery_header = QHBoxLayout(self.energy_battery_header)
+        battery_header.setContentsMargins(14, 14, 14, 14)
+        battery_header.setSpacing(12)
+
+        battery_icon_wrap = QFrame()
+        battery_icon_wrap.setObjectName("rowIconWrap")
+        battery_icon_wrap.setFixedSize(32, 32)
+        battery_icon_layout = QVBoxLayout(battery_icon_wrap)
+        battery_icon_layout.setContentsMargins(0, 0, 0, 0)
+        self.energy_battery_icon = QLabel(material_icon("monitor_heart"))
+        self.energy_battery_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.energy_battery_icon.setFont(QFont(self.icon_font, 16))
+        self.energy_battery_icon.setProperty("iconRole", True)
+        battery_icon_layout.addWidget(self.energy_battery_icon)
+
+        battery_text_wrap = QVBoxLayout()
+        battery_text_wrap.setContentsMargins(0, 0, 0, 0)
+        battery_text_wrap.setSpacing(5)
+        self.energy_battery_title = QLabel("Battery")
+        self.energy_battery_title.setWordWrap(True)
+        self.energy_battery_title.setFont(QFont(self.ui_font, 12, QFont.Weight.DemiBold))
+        self.energy_battery_title.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.energy_battery_summary = QLabel("")
+        self.energy_battery_summary.setWordWrap(True)
+        self.energy_battery_summary.setFont(QFont(self.ui_font, 9))
+        self.energy_battery_summary.setStyleSheet("color: rgba(255,255,255,0.80); background: transparent;")
+        battery_text_wrap.addWidget(self.energy_battery_title)
+        battery_text_wrap.addWidget(self.energy_battery_summary)
+
+        battery_trailing = QHBoxLayout()
+        battery_trailing.setContentsMargins(0, 0, 0, 0)
+        battery_trailing.setSpacing(8)
+        self.energy_battery_chevron = QLabel(material_icon("expand_more"))
+        self.energy_battery_chevron.setObjectName("serviceChevron")
+        self.energy_battery_chevron.setFont(QFont(self.icon_font, 18))
+        self.energy_battery_chevron.setProperty("iconRole", True)
+        battery_trailing.addWidget(self.energy_battery_chevron)
+
+        battery_header.addWidget(battery_icon_wrap)
+        battery_header.addLayout(battery_text_wrap, 1)
+        battery_header.addLayout(battery_trailing)
+        battery_layout.addWidget(self.energy_battery_header)
+
+        self.energy_battery_content = QWidget()
+        battery_content_layout = QVBoxLayout(self.energy_battery_content)
+        battery_content_layout.setContentsMargins(0, 0, 0, 0)
+        battery_content_layout.setSpacing(10)
+
+        battery_grid = QGridLayout()
+        battery_grid.setContentsMargins(0, 0, 0, 0)
+        battery_grid.setHorizontalSpacing(10)
+        battery_grid.setVerticalSpacing(10)
+        self.energy_battery_labels: dict[str, QLabel] = {}
+        for index, key in enumerate(("Charge", "State", "Health", "Cycles")):
+            label = QLabel("...")
+            label.setFont(QFont(self.ui_font, 10))
+            label.setStyleSheet("color: #FFFFFF;")
+            self.energy_battery_labels[key] = label
+            battery_grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
+        battery_content_layout.addLayout(battery_grid)
+
+        self.energy_battery_meta = QLabel("")
+        self.energy_battery_meta.setWordWrap(True)
+        self.energy_battery_meta.setStyleSheet("color: rgba(246,235,247,0.72);")
+        battery_content_layout.addWidget(self.energy_battery_meta)
+
+        battery_layout.addWidget(self.energy_battery_content)
+        layout.addWidget(self.energy_battery_section)
+
+        self._refresh_energy_state()
         return card
 
     def _build_region_card(self) -> QWidget:
@@ -7906,11 +8203,150 @@ class SettingsWindow(QWidget):
                 "Weather icon enabled on the bar." if enabled else "Weather icon disabled."
             )
 
+    def _toggle_energy_battery_section(self) -> None:
+        if not getattr(self, "_battery_present", False):
+            return
+        self._set_energy_battery_section_expanded(not getattr(self, "_energy_battery_expanded", False))
+
+    def _set_energy_battery_section_expanded(self, expanded: bool) -> None:
+        active = bool(getattr(self, "_battery_present", False))
+        self._energy_battery_expanded = bool(expanded) and active
+        if hasattr(self, "energy_battery_content"):
+            self.energy_battery_content.setVisible(self._energy_battery_expanded)
+        if hasattr(self, "energy_battery_header"):
+            self.energy_battery_header.setEnabled(active)
+        if hasattr(self, "energy_battery_chevron"):
+            self.energy_battery_chevron.setVisible(active)
+            self.energy_battery_chevron.setStyleSheet(
+                "color: #F2E7F4; background: transparent;"
+                + ("transform: rotate(180deg);" if self._energy_battery_expanded else "")
+            )
+
+    def _refresh_energy_state(self) -> None:
+        self._battery_snapshot = read_battery_snapshot()
+        self._battery_present = self._battery_snapshot is not None
+        autolock = self.settings_state.get("autolock", {})
+        autolock_enabled = bool(autolock.get("enabled", True))
+        autolock_minutes = max(1, min(60, int(autolock.get("timeout_minutes", 2) or 2)))
+
+        if hasattr(self, "autolock_timeout_input"):
+            self.autolock_timeout_input.setText(str(autolock_minutes))
+            self.autolock_timeout_input.setEnabled(autolock_enabled)
+
+        brightness = run_text([str(ROOT / "hanauta" / "scripts" / "brightness.sh"), "br"])
+        try:
+            brightness_value = max(1, min(100, int(brightness or "0")))
+        except Exception:
+            brightness_value = 0
+        if hasattr(self, "energy_brightness_input") and brightness_value > 0:
+            self.energy_brightness_input.setText(str(brightness_value))
+
+        if hasattr(self, "energy_status"):
+            battery_text = "battery detected" if self._battery_present else "no battery detected"
+            lock_text = f"auto lock in {autolock_minutes} min" if autolock_enabled else "auto lock disabled"
+            brightness_text = f"brightness {brightness_value}%" if brightness_value > 0 else "brightness unavailable"
+            self.energy_status.setText(f"{lock_text} • {brightness_text} • {battery_text}.")
+
+        if not hasattr(self, "energy_battery_summary"):
+            return
+        if not self._battery_present:
+            self.energy_battery_summary.setText("No battery detected on this PC. Battery controls stay collapsed and inactive.")
+            self.energy_battery_meta.setText("Connect a laptop battery or UPS-backed battery source if you want battery-specific details here.")
+            for label in getattr(self, "energy_battery_labels", {}).values():
+                label.setText("Unavailable")
+            self._set_energy_battery_section_expanded(False)
+            return
+
+        snapshot = self._battery_snapshot or {}
+        capacity = int(snapshot.get("capacity", 0) or 0)
+        status = str(snapshot.get("status", "Unknown") or "Unknown")
+        technology = str(snapshot.get("technology", "Unknown") or "Unknown")
+        cycle_count = snapshot.get("cycle_count")
+        health_percent = snapshot.get("health_percent")
+        model_name = str(snapshot.get("model_name", "") or "").strip()
+        manufacturer = str(snapshot.get("manufacturer", "") or "").strip()
+        self.energy_battery_summary.setText(f"{capacity}% • {status} • {technology}")
+        self.energy_battery_labels["Charge"].setText(f"{capacity}%")
+        self.energy_battery_labels["State"].setText(status)
+        self.energy_battery_labels["Health"].setText(f"{health_percent}%" if health_percent is not None else "Unknown")
+        self.energy_battery_labels["Cycles"].setText(str(cycle_count) if cycle_count is not None else "Unknown")
+        meta_parts = [part for part in (manufacturer, model_name, str(snapshot.get("path", "") or "").strip()) if part]
+        self.energy_battery_meta.setText(" • ".join(meta_parts) if meta_parts else "Battery details are available.")
+        self._set_energy_battery_section_expanded(getattr(self, "_energy_battery_expanded", True))
+
+    def _lock_now(self) -> None:
+        if LOCK_SCRIPT.exists():
+            run_bg([str(LOCK_SCRIPT)])
+            if hasattr(self, "energy_status"):
+                self.energy_status.setText("Lock command sent.")
+            return
+        if hasattr(self, "energy_status"):
+            self.energy_status.setText("Lock script is unavailable.")
+
+    def _suspend_now(self) -> None:
+        run_bg(["systemctl", "suspend"])
+        if hasattr(self, "energy_status"):
+            self.energy_status.setText("Suspend command sent.")
+
+    def _hibernate_now(self) -> None:
+        run_bg(["systemctl", "hibernate"])
+        if hasattr(self, "energy_status"):
+            self.energy_status.setText("Hibernate command sent.")
+
+    def _apply_energy_brightness(self) -> None:
+        if not hasattr(self, "energy_brightness_input"):
+            return
+        text = self.energy_brightness_input.text().strip() or "0"
+        try:
+            value = max(1, min(100, int(text)))
+        except Exception:
+            value = 50
+        self.energy_brightness_input.setText(str(value))
+        run_bg([str(ROOT / "hanauta" / "scripts" / "brightness.sh"), "set", str(value)])
+        if hasattr(self, "energy_status"):
+            self.energy_status.setText(f"Brightness set to {value}%.")
+
     def _set_region_use_24_hour(self, enabled: bool) -> None:
         self.settings_state.setdefault("region", {})["use_24_hour"] = bool(enabled)
         save_settings_state(self.settings_state)
         if hasattr(self, "region_status"):
             self.region_status.setText("Clock format updated.")
+
+    def _set_autolock_enabled(self, enabled: bool) -> None:
+        autolock = self.settings_state.setdefault("autolock", {})
+        autolock["enabled"] = bool(enabled)
+        autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2) or 2)))
+        if hasattr(self, "autolock_timeout_input"):
+            self.autolock_timeout_input.setEnabled(bool(enabled))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "energy_status"):
+            if enabled:
+                minutes = int(autolock["timeout_minutes"])
+                label = "minute" if minutes == 1 else "minutes"
+                self.energy_status.setText(f"Auto lock enabled after {minutes} {label} of idle time unless caffeine is on.")
+            else:
+                self.energy_status.setText("Auto lock disabled.")
+
+    def _set_autolock_timeout_minutes(self, value: int) -> None:
+        autolock = self.settings_state.setdefault("autolock", {})
+        minutes = max(1, min(60, int(value)))
+        autolock["timeout_minutes"] = minutes
+        save_settings_state(self.settings_state)
+        if hasattr(self, "autolock_timeout_input"):
+            self.autolock_timeout_input.setText(str(minutes))
+        if hasattr(self, "energy_status"):
+            label = "minute" if minutes == 1 else "minutes"
+            self.energy_status.setText(f"Auto lock timeout set to {minutes} {label}.")
+
+    def _set_autolock_timeout_minutes_from_input(self) -> None:
+        if not hasattr(self, "autolock_timeout_input"):
+            return
+        text = self.autolock_timeout_input.text().strip() or "2"
+        try:
+            value = int(text)
+        except Exception:
+            value = 2
+        self._set_autolock_timeout_minutes(value)
 
     def _set_region_date_style(self, index: int) -> None:
         value = self.region_date_style_combo.itemData(index) if hasattr(self, "region_date_style_combo") else "us"
@@ -9232,7 +9668,7 @@ class SettingsWindow(QWidget):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--page", choices=("overview", "appearance", "display", "region", "bar", "services", "picom"), default="appearance")
+    parser.add_argument("--page", choices=("overview", "appearance", "display", "energy", "region", "bar", "services", "picom"), default="appearance")
     parser.add_argument("--service-section", default="")
     parser.add_argument("--ensure-settings", action="store_true")
     parser.add_argument("--restore-displays", action="store_true")
