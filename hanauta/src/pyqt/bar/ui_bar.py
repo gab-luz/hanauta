@@ -33,7 +33,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QImage, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
@@ -263,6 +263,17 @@ def run_bg(cmd: list[str]) -> None:
 
 def action_notifications_supported() -> bool:
     return ACTION_NOTIFICATION_SCRIPT.exists() and HAS_DBUS_NEXT
+
+
+def antialias_font(font: QFont) -> QFont:
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    return font
+
+
+def apply_antialias_font(widget: QWidget) -> None:
+    widget.setFont(antialias_font(widget.font()))
+    for child in widget.findChildren(QWidget):
+        child.setFont(antialias_font(child.font()))
 
 
 def widget_python() -> str:
@@ -558,6 +569,9 @@ def tinted_svg_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     renderer.render(painter)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
     painter.fillRect(pixmap.rect(), color)
@@ -578,6 +592,9 @@ def tinted_raster_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
         Qt.TransformationMode.SmoothTransformation,
     )
     painter = QPainter(tinted)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
     painter.fillRect(tinted.rect(), color)
     painter.end()
@@ -847,41 +864,53 @@ class WorkspaceDot(QPushButton):
         self.setToolTip(f"WorkspaceDot {num}")
         self.clicked.connect(lambda: self.callback(self.num))
         self.state = "empty"
+        self._hovered = False
         self.colors = {
             "focused": "#d0bcff",
             "occupied": "rgba(255,255,255,0.34)",
             "urgent": "#efb8c8",
             "empty": "rgba(255,255,255,0.14)",
         }
-        self._apply_state()
+        self.setFlat(True)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; padding: 0; }")
 
     def set_colors(self, colors: dict[str, str]) -> None:
         self.colors = dict(colors)
-        self._apply_state()
+        self.update()
 
     def set_state(self, state: str) -> None:
         self.state = state
-        self._apply_state()
+        self.update()
 
-    def _apply_state(self) -> None:
-        size = 14 if self.state == "focused" else 10
-        border = "1px solid rgba(255,255,255,0.18)" if self.state != "focused" else "none"
-        self.setStyleSheet(
-            f"""
-            QPushButton {{
-                background: {self.colors.get(self.state, self.colors["empty"])};
-                border: {border};
-                border-radius: {size // 2}px;
-                min-width: {size}px;
-                max-width: {size}px;
-                min-height: {size}px;
-                max-height: {size}px;
-            }}
-            QPushButton:hover {{
-                background: #e8def8;
-            }}
-            """
-        )
+    def enterEvent(self, event) -> None:  # type: ignore[override]
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # type: ignore[override]
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+        dot_size = 14 if self.state == "focused" else 10
+        inset = (self.width() - dot_size) / 2.0
+        rect = QRectF(inset + 0.5, inset + 0.5, dot_size - 1.0, dot_size - 1.0)
+        fill = QColor("#e8def8") if self._hovered else QColor(self.colors.get(self.state, self.colors["empty"]))
+        border = QColor(255, 255, 255, 46)
+
+        pen = painter.pen()
+        pen.setWidthF(1.0)
+        pen.setColor(border)
+        painter.setPen(pen)
+        painter.setBrush(fill)
+        painter.drawEllipse(rect)
 
 
 class ClickableLabel(QLabel):
@@ -2012,6 +2041,7 @@ class CyberBar(QWidget):
         self._build_ui()
         self._apply_bar_icon_overrides()
         self._apply_styles()
+        apply_antialias_font(self)
         self._setup_settings_watcher()
         self._start_polls()
 
@@ -2639,6 +2669,7 @@ class CyberBar(QWidget):
         bar_height = int(self.bar_settings.get("bar_height", 40))
         outer_vertical_margin = 4
         surface_height = max(24, bar_height - (outer_vertical_margin * 2))
+        chip_height = max(22, surface_height - 2)
         chip_vertical_padding = max(4, min(14, (surface_height - 22) // 2))
         self._position_on_target_screen(bar_height)
         self.outer_layout.setContentsMargins(12, outer_vertical_margin, 12, outer_vertical_margin)
@@ -2647,7 +2678,7 @@ class CyberBar(QWidget):
         self.left_layout.setSpacing(0 if merge_all_chips else 10)
         self.center_layout.setSpacing(0 if merge_all_chips else 10)
         self.right_layout.setSpacing(0 if merge_all_chips else 8)
-        self.root_layout.setContentsMargins(8, 0, 8, 0)
+        self.root_layout.setContentsMargins(8, 1, 8, 1)
         for chip in (
             self.launcher_chip,
             self.workspace_chip,
@@ -2656,7 +2687,7 @@ class CyberBar(QWidget):
             self.cap_alert_chip,
             self.status_chip,
         ):
-            chip.setFixedHeight(surface_height)
+            chip.setFixedHeight(chip_height)
         self.launcher_layout.setContentsMargins(8, chip_vertical_padding, 8, chip_vertical_padding)
         self.workspace_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
         self.datetime_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
@@ -3182,6 +3213,7 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.launcher_note, "launcher_note", "♪", 14)
         self._set_vpn_button_icon(self.vpn_icon.property("active") == True)
         self._set_christian_button_icon()
+        apply_antialias_font(self)
 
     def _update_window_mask(self) -> None:
         self.setMask(QRegion(self.rect()))
@@ -4913,6 +4945,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setFont(antialias_font(app.font()))
 
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
