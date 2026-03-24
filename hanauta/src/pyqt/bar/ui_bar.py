@@ -678,6 +678,26 @@ def load_bar_settings() -> dict[str, int | bool]:
     return load_bar_settings_from_payload(load_runtime_settings())
 
 
+def load_autolock_settings_from_payload(settings: object) -> dict[str, object]:
+    current = settings.get("autolock", {}) if isinstance(settings, dict) else {}
+    current = current if isinstance(current, dict) else {}
+    try:
+        timeout_minutes = max(1, min(60, int(current.get("timeout_minutes", 2))))
+    except Exception:
+        timeout_minutes = 2
+    return {
+        "enabled": bool(current.get("enabled", True)),
+        "timeout_minutes": timeout_minutes,
+    }
+
+
+def lock_screen_command() -> list[str]:
+    lock_script = SCRIPTS_DIR / "lock"
+    if lock_script.exists():
+        return [str(lock_script)]
+    return []
+
+
 def mail_now_iso() -> str:
     return datetime.now().astimezone().isoformat()
 
@@ -1939,6 +1959,7 @@ class CyberBar(QWidget):
         self.service_settings = services if isinstance(services, dict) else {}
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
         self.region_settings = load_region_settings_from_payload(self.runtime_settings)
+        self.autolock_settings = load_autolock_settings_from_payload(self.runtime_settings)
         self.ui_font = detect_font(
             theme_font_family("ui"),
             "Rubik",
@@ -2026,6 +2047,8 @@ class CyberBar(QWidget):
         self._bar_icon_overrides = load_bar_icon_overrides()
         self._caps_lock_on: Optional[bool] = None
         self._num_lock_on: Optional[bool] = None
+        self._autolock_armed = True
+        self._autolock_launch_pending = False
         self._rss_last_interval_ms = 0
         self._mail_last_sync_at: dict[int, float] = {}
         self._mail_account_summary: list[dict[str, object]] = []
@@ -3174,6 +3197,7 @@ class CyberBar(QWidget):
         self.service_settings = services if isinstance(services, dict) else {}
         self.region_settings = load_region_settings()
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
+        self.autolock_settings = load_autolock_settings_from_payload(self.runtime_settings)
         self._apply_bar_settings()
         self._apply_bar_icon_overrides()
         self._apply_styles()
@@ -3251,6 +3275,10 @@ class CyberBar(QWidget):
         self.settings_timer = QTimer(self)
         self.settings_timer.timeout.connect(self._reload_settings_if_needed)
         self.settings_timer.start(2000)
+
+        self.autolock_timer = QTimer(self)
+        self.autolock_timer.timeout.connect(self._poll_autolock)
+        self.autolock_timer.start(5000)
 
         self.ai_popup_timer = QTimer(self)
         self.ai_popup_timer.timeout.connect(self._sync_ai_button)
@@ -4414,6 +4442,59 @@ class CyberBar(QWidget):
         caffeine_on = run_script("caffeine.sh", "status") == "on"
         self.caffeine_icon.setVisible(caffeine_on)
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
+
+    def _current_idle_milliseconds(self) -> int | None:
+        idle_text = run_cmd(["xssstate", "-i"], timeout=1.0)
+        if not idle_text:
+            return None
+        try:
+            return max(0, int(idle_text))
+        except Exception:
+            return None
+
+    def _locker_running(self) -> bool:
+        for name in ("i3lock-color", "i3lock"):
+            result = subprocess.run(
+                ["pgrep", "-x", name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if result.returncode == 0:
+                return True
+        return False
+
+    def _poll_autolock(self) -> None:
+        settings = self.autolock_settings if isinstance(self.autolock_settings, dict) else {}
+        if not bool(settings.get("enabled", True)):
+            self._autolock_armed = True
+            return
+        if run_script("caffeine.sh", "status") == "on":
+            self._autolock_armed = True
+            return
+        idle_ms = self._current_idle_milliseconds()
+        if idle_ms is None:
+            return
+        if idle_ms < 1000:
+            self._autolock_armed = True
+            return
+        if self._locker_running():
+            self._autolock_armed = False
+            return
+        threshold_ms = max(1, int(settings.get("timeout_minutes", 2))) * 60 * 1000
+        if idle_ms < threshold_ms:
+            return
+        if not self._autolock_armed or self._autolock_launch_pending:
+            return
+        command = lock_screen_command()
+        if not command:
+            return
+        self._autolock_armed = False
+        self._autolock_launch_pending = True
+        try:
+            run_bg_detached(command)
+        finally:
+            self._autolock_launch_pending = False
 
     def _detect_battery_base(self) -> Optional[Path]:
         power_supply = Path("/sys/class/power_supply")
