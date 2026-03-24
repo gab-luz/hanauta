@@ -2884,17 +2884,14 @@ class CyberBar(QWidget):
             #mailStatusWrap {{
                 background: transparent;
                 border: none;
-                border-radius: {max(0, chip_radius - 5)}px;
-            }}
-            #mailStatusWrap:hover {{
-                background: {theme.hover_bg};
+                border-radius: 0px;
             }}
             #mailUnreadCount {{
-                background: {theme.accent_soft};
-                color: {theme.text};
-                border-radius: 8px;
-                min-width: 18px;
-                padding: 1px 5px;
+                background: transparent;
+                color: {theme.text_muted};
+                border: none;
+                min-width: 0px;
+                padding: 0;
                 font-size: 10px;
                 font-weight: 700;
             }}
