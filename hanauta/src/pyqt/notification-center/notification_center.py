@@ -271,9 +271,11 @@ def run_bg_singleton(script_path: Path, *args: str) -> None:
 
 
 def desktop_clock_command() -> list[str]:
+    if DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
+        return entry_command(DESKTOP_CLOCK_WIDGET_SCRIPT)
     if DESKTOP_CLOCK_BINARY.exists():
         return [str(DESKTOP_CLOCK_BINARY)]
-    return entry_command(DESKTOP_CLOCK_WIDGET_SCRIPT)
+    return []
 
 
 def notification_control_command(*args: str) -> list[str]:

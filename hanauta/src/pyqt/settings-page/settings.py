@@ -7826,9 +7826,11 @@ class SettingsWindow(QWidget):
             self.clock_status.setText("Desktop clock position reset.")
 
     def _desktop_clock_command(self) -> list[str]:
+        if DESKTOP_CLOCK_WIDGET.exists():
+            return entry_command(DESKTOP_CLOCK_WIDGET)
         if DESKTOP_CLOCK_BINARY.exists():
             return [str(DESKTOP_CLOCK_BINARY)]
-        return entry_command(DESKTOP_CLOCK_WIDGET)
+        return []
 
     def _launch_desktop_clock(self) -> None:
         command = self._desktop_clock_command()

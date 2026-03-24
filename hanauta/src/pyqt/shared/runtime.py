@@ -21,7 +21,6 @@ ENTRYPOINT_BINARIES = {
     "pyqt/widget-cap-alerts/cap_alerts_popup.py": "hanauta-cap-alerts-popup",
     "pyqt/widget-calendar/qcal-wrapper.py": "hanauta-qcal-wrapper",
     "pyqt/widget-crypto/crypto_widget.py": "hanauta-crypto-widget",
-    "pyqt/widget-desktop-clock/desktop_clock_widget.py": "hanauta-clock",
     "pyqt/widget-game-mode/game_mode_popup.py": "hanauta-game-mode-popup",
     "pyqt/widget-hotkeys-overlay/hotkeys_overlay.py": "hanauta-hotkeys-overlay",
     "pyqt/widget-ntfy-control/ntfy_popup.py": "hanauta-ntfy-popup",
