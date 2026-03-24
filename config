@@ -49,12 +49,12 @@ gaps outer $gap
 gaps top 5
 # Colors (mapped from bspwm colors)
 # format: client.<state> border background text indicator child_border
-client.focused          #ffb1c2 #ffb1c2 #efdee0 #ffb1c2 #ffb1c2
-client.focused_inactive #9e8c8f #9e8c8f #efdee0 #9e8c8f #9e8c8f
-client.unfocused        #9e8c8f #9e8c8f #efdee0 #9e8c8f #9e8c8f
-client.urgent           #ffb4ab #ffb4ab #191113 #ffb4ab #ffb4ab
-client.placeholder      #9e8c8f #9e8c8f #efdee0 #9e8c8f #9e8c8f
-client.background       #191113
+client.focused          #bec2ff #bec2ff #e4e1e9 #bec2ff #bec2ff
+client.focused_inactive #91909a #91909a #e4e1e9 #91909a #91909a
+client.unfocused        #91909a #91909a #e4e1e9 #91909a #91909a
+client.urgent           #ffb4ab #ffb4ab #131318 #ffb4ab #ffb4ab
+client.placeholder      #91909a #91909a #e4e1e9 #91909a #91909a
+client.background       #131318
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
