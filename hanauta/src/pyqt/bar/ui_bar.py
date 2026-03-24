@@ -471,10 +471,10 @@ def focused_workspace_has_real_windows() -> bool:
 
 
 def desktop_clock_target() -> Path | None:
-    if DESKTOP_CLOCK_BINARY.exists():
-        return DESKTOP_CLOCK_BINARY
     if DESKTOP_CLOCK_WIDGET.exists():
         return DESKTOP_CLOCK_WIDGET
+    if DESKTOP_CLOCK_BINARY.exists():
+        return DESKTOP_CLOCK_BINARY
     return None
 
 
