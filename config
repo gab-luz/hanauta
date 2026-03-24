@@ -36,6 +36,7 @@ bindsym $mod+Shift+7 move container to workspace $ws7
 bindsym $mod+Shift+8 move container to workspace $ws8
 bindsym $mod+Shift+9 move container to workspace $ws9
 bindsym $mod+Shift+0 move container to workspace $ws10
+
 # Gaps/borders (requires i3-gaps)
 # bspwm: border_width=0, window_gap=20, border_radius=15 (no i3 equivalent)
 # If you are on vanilla i3, comment out the gaps lines.
@@ -47,18 +48,18 @@ gaps inner $gap
 gaps outer $gap
 # this gap is the gap between window and things like hanauta bar or the hanauta dock
 gaps top 5
-# Colors (mapped from bspwm colors)
+
+# Colors
 # format: client.<state> border background text indicator child_border
-client.focused          #d3bbfd #d3bbfd #e7e0e8 #d3bbfd #d3bbfd
-client.focused_inactive #948f99 #948f99 #e7e0e8 #948f99 #948f99
-client.unfocused        #948f99 #948f99 #e7e0e8 #948f99 #948f99
-client.urgent           #ffb4ab #ffb4ab #151218 #ffb4ab #ffb4ab
-client.placeholder      #948f99 #948f99 #e7e0e8 #948f99 #948f99
-client.background       #151218
+client.focused          #82d3e0 #82d3e0 #dee3e5 #82d3e0 #82d3e0
+client.focused_inactive #899294 #899294 #dee3e5 #899294 #899294
+client.unfocused        #899294 #899294 #dee3e5 #899294 #899294
+client.urgent           #ffb4ab #ffb4ab #0e1415 #ffb4ab #ffb4ab
+client.placeholder      #899294 #899294 #dee3e5 #899294 #899294
+client.background       #0e1415
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
-
 
 # Notifications are handled by Hanauta's native PyQt notification daemon from startup.sh
 
@@ -69,8 +70,6 @@ exec --no-startup-id sh -c 'command -v lxqt-policykit-agent >/dev/null 2>&1 && l
 exec --no-startup-id sh -c 'command -v xfce4-power-manager >/dev/null 2>&1 && xfce4-power-manager'
 exec --no-startup-id sh -c 'if command -v clipit >/dev/null 2>&1; then clipit; elif command -v copyq >/dev/null 2>&1; then copyq; fi'
 exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x picom 2>/dev/null; picom --config "$HOME/.config/i3/picom.conf" --daemon'
-# Eww (restart on reload)
-# I need to load the startup file from this folder
 exec_always --no-startup-id ~/.config/i3/startup.sh
 
 # CyberDock
@@ -78,14 +77,12 @@ exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pk
 
 # CyberBar (PyQt6 top bar)
 exec_always --no-startup-id sh -c 'pkill -x hanauta-bar 2>/dev/null || true; pkill -x hanauta-game-mode-popup 2>/dev/null || true; pkill -x hanauta-ai-popup 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/ai-popup/ai_popup.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; fi'
-# Eww startup removed; PyQt bar and dock are the active shell UI
 
 # Window rules (translated from bspwm rules)
 for_window [class=Peek] floating enable
 # for_window [class=kitty] floating enable
 for_window [class=conky-manager2] floating enable
 for_window [class=Kupfer.py] focus
-# Screenkey was unmanaged in bspwm; best-effort here: 
 for_window [class=Screenkey] floating enable, border pixel 0
 
 for_window [class="mpv"] floating enable, resize set 1090 615, move position center
@@ -94,16 +91,12 @@ for_window [class=Rofi] floating enable
 for_window [class="com-abdownloadmanager-desktop-AppKt"] floating enable, move position center
 for_window [class="copyq"] floating enable, resize set 550 410, move position center
 for_window [class="Audacious"] floating enable, resize set 550 410, move position center
-# GLava: best-effort translation of layer/sticky/geometry
 for_window [class=GLava] floating enable, sticky enable, border pixel 0
 for_window [class=GLava] move position 0 0
 for_window [class=GLava] resize set 1920 1080
 
-# External rules command in bspwm has no i3 equivalent.
-
 # CyberDock window rules
 for_window [class="CyberDock"] floating enable, border pixel 0, sticky enable
-# Dock placement is handled by CyberDock itself.
 
 # CyberBar window rules
 for_window [class="CyberBar"] floating enable, border pixel 0, sticky enable
@@ -142,38 +135,33 @@ no_focus [class="HanautaNotification"]
 for_window [class="HanautaReminder"] floating enable, border pixel 0, sticky enable
 for_window [title="Hanauta Reminder"] floating enable, border pixel 0, sticky enable
 
-# Basic i3 controls (minimal, adjust to taste)
-# Start a terminal
+# Basic i3 controls
 bindsym $mod+Return exec --no-startup-id kitty
-# Screenshot with Flameshot on PrintScreen
 bindsym --release Print exec --no-startup-id flameshot gui
-# Window switcher (ALT+TAB)
 bindsym Mod1+Tab exec --no-startup-id "$HOME/.config/i3/scripts/alt_tab.sh"
-# Open hotkeys overlay
 bindsym Mod1+F1 exec --no-startup-id "$HOME/.config/i3/hanauta/bin/hanauta-hotkeys-overlay"
-# Openapps launcher (from bspwm)
 bindsym $mod+space exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/open_launcher.sh"
-# Wallpaper manager
 bindsym $mod+w exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/open_wallpaper_manager.sh"
-# Desktop menu (right click)
-# Close focused window
 bindsym $mod+q kill
-# Focus and move
 bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
+bindsym $mod+l focus right
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
 bindsym $mod+Right focus right
 bindsym $mod+Shift+h move left
 bindsym $mod+Shift+j move down
 bindsym $mod+Shift+k move up
 bindsym $mod+Shift+l move right
-# Lock screen
-bindsym $mod+l exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/lock"
-# Split
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Down move down
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Right move right
+bindsym $mod+Ctrl+l exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/lock"
 bindsym $mod+v split v
 bindsym $mod+b split h
-# Fullscreen
 bindsym $mod+f fullscreen toggle
-# Reload/Restart
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+r restart

@@ -427,6 +427,7 @@ MATERIAL_ICONS = {
     "lock": "\ue897",
     "notifications": "\ue7f4",
     "notifications_active": "\ue7f7",
+    "notifications_off": "\ue7f6",
     "mail": "\ue158",
     "person": "\ue7fd",
     "favorite": "\ue87d",
@@ -462,8 +463,10 @@ MATERIAL_ICONS = {
     "mode_fan": "\uf168",
     "shield": "\ue9e0",
     "water_drop": "\ue798",
+    "description": "\ue873",
     "push_pin": "\uef3e",
     "push_pin_outline": "\uf10f",
+    "visibility_off": "\ue8f5",
 }
 
 
@@ -911,6 +914,80 @@ def read_battery_snapshot() -> dict[str, object] | None:
     }
 
 
+def list_audio_devices(kind: str) -> list[tuple[str, str]]:
+    if kind not in {"sinks", "sources"}:
+        return []
+    output = run_text(["pactl", "list", "short", kind]) if shutil.which("pactl") else ""
+    devices: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        device_name = parts[1].strip()
+        if device_name:
+            devices.append((device_name, device_name))
+    return devices
+
+
+def default_audio_device(kind: str) -> str:
+    if not shutil.which("pactl"):
+        return ""
+    command = "get-default-sink" if kind == "sink" else "get-default-source"
+    return run_text(["pactl", command]).strip()
+
+
+def list_wifi_interfaces() -> list[str]:
+    net_dir = Path("/sys/class/net")
+    if not net_dir.exists():
+        return []
+    interfaces: list[str] = []
+    for candidate in sorted(net_dir.iterdir()):
+        if (candidate / "wireless").exists():
+            interfaces.append(candidate.name)
+    return interfaces
+
+
+def list_wireguard_interfaces() -> list[str]:
+    vpn_script = ROOT / "hanauta" / "scripts" / "vpn.sh"
+    if not vpn_script.exists():
+        return []
+    return [line.strip() for line in run_text([str(vpn_script), "--interfaces"]).splitlines() if line.strip()]
+
+
+def directory_size_bytes(path: Path) -> int:
+    total = 0
+    try:
+        for item in path.rglob("*"):
+            if item.is_file():
+                total += item.stat().st_size
+    except OSError:
+        return 0
+    return total
+
+
+def format_bytes(value: int) -> str:
+    size = float(max(0, int(value)))
+    units = ["B", "KB", "MB", "GB", "TB"]
+    for unit in units:
+        if size < 1024.0 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return "0 B"
+
+
+def startup_exec_lines() -> list[str]:
+    startup_file = ROOT / "startup.sh"
+    if not startup_file.exists():
+        return []
+    try:
+        lines = startup_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [line.strip() for line in lines if line.strip().startswith(("exec", "python3", "bash", "setsid"))]
+
+
 def hanauta_mail_desktop_installed() -> bool:
     return MAIL_DESKTOP_LOCAL.exists() or MAIL_DESKTOP_SYSTEM.exists()
 
@@ -1211,6 +1288,56 @@ def load_settings_state() -> dict:
             "enabled": True,
             "timeout_minutes": 2,
         },
+        "audio": {
+            "default_sink": "",
+            "default_source": "",
+            "alert_sounds_enabled": True,
+            "mute_behavior": "leave_as_is",
+            "route_new_apps_to_default_sink": True,
+        },
+        "notifications": {
+            "history_limit": 150,
+            "urgency_policy": "normal",
+            "pause_while_sharing": True,
+            "per_app_rules_enabled": True,
+        },
+        "input": {
+            "keyboard_layout": "us",
+            "repeat_delay_ms": 300,
+            "repeat_rate": 30,
+            "tap_to_click": True,
+            "natural_scroll": False,
+            "mouse_accel": 0,
+        },
+        "startup": {
+            "launch_bar": True,
+            "launch_dock": True,
+            "restore_wallpaper": True,
+            "restore_displays": True,
+            "restore_vpn": True,
+            "startup_delay_seconds": 0,
+            "restart_hooks_enabled": True,
+            "watchdog_enabled": False,
+        },
+        "privacy": {
+            "lock_on_suspend": True,
+            "hide_notification_content_global": False,
+            "pause_notifications_while_sharing": True,
+            "screenshot_guard_enabled": False,
+            "screen_share_guard_enabled": True,
+        },
+        "networking": {
+            "preferred_wifi_interface": "",
+            "preferred_wireguard_interface": "",
+            "wifi_autoconnect": True,
+            "vpn_reconnect_on_login": False,
+            "split_tunnel_apps": [],
+        },
+        "storage": {
+            "wallpaper_cache_cleanup_days": 30,
+            "log_retention_days": 14,
+            "clean_temp_state_on_startup": False,
+        },
         "health": {
             "provider": "manual",
             "step_goal": 10000,
@@ -1492,6 +1619,73 @@ def load_settings_state() -> dict:
         autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2))))
     except Exception:
         autolock["timeout_minutes"] = 2
+    audio = dict(payload.get("audio", {}))
+    audio["default_sink"] = str(audio.get("default_sink", "")).strip()
+    audio["default_source"] = str(audio.get("default_source", "")).strip()
+    audio["alert_sounds_enabled"] = bool(audio.get("alert_sounds_enabled", True))
+    mute_behavior = str(audio.get("mute_behavior", "leave_as_is")).strip().lower()
+    audio["mute_behavior"] = mute_behavior if mute_behavior in {"leave_as_is", "mute_on_lock", "mute_on_suspend"} else "leave_as_is"
+    audio["route_new_apps_to_default_sink"] = bool(audio.get("route_new_apps_to_default_sink", True))
+    notifications = dict(payload.get("notifications", {}))
+    try:
+        notifications["history_limit"] = max(10, min(1000, int(notifications.get("history_limit", 150))))
+    except Exception:
+        notifications["history_limit"] = 150
+    urgency_policy = str(notifications.get("urgency_policy", "normal")).strip().lower()
+    notifications["urgency_policy"] = urgency_policy if urgency_policy in {"all", "normal", "critical_only"} else "normal"
+    notifications["pause_while_sharing"] = bool(notifications.get("pause_while_sharing", True))
+    notifications["per_app_rules_enabled"] = bool(notifications.get("per_app_rules_enabled", True))
+    input_settings = dict(payload.get("input", {}))
+    input_settings["keyboard_layout"] = str(input_settings.get("keyboard_layout", "us")).strip() or "us"
+    try:
+        input_settings["repeat_delay_ms"] = max(150, min(1200, int(input_settings.get("repeat_delay_ms", 300))))
+    except Exception:
+        input_settings["repeat_delay_ms"] = 300
+    try:
+        input_settings["repeat_rate"] = max(10, min(60, int(input_settings.get("repeat_rate", 30))))
+    except Exception:
+        input_settings["repeat_rate"] = 30
+    input_settings["tap_to_click"] = bool(input_settings.get("tap_to_click", True))
+    input_settings["natural_scroll"] = bool(input_settings.get("natural_scroll", False))
+    try:
+        input_settings["mouse_accel"] = max(-10, min(10, int(input_settings.get("mouse_accel", 0))))
+    except Exception:
+        input_settings["mouse_accel"] = 0
+    startup = dict(payload.get("startup", {}))
+    startup["launch_bar"] = bool(startup.get("launch_bar", True))
+    startup["launch_dock"] = bool(startup.get("launch_dock", True))
+    startup["restore_wallpaper"] = bool(startup.get("restore_wallpaper", True))
+    startup["restore_displays"] = bool(startup.get("restore_displays", True))
+    startup["restore_vpn"] = bool(startup.get("restore_vpn", True))
+    try:
+        startup["startup_delay_seconds"] = max(0, min(120, int(startup.get("startup_delay_seconds", 0))))
+    except Exception:
+        startup["startup_delay_seconds"] = 0
+    startup["restart_hooks_enabled"] = bool(startup.get("restart_hooks_enabled", True))
+    startup["watchdog_enabled"] = bool(startup.get("watchdog_enabled", False))
+    privacy = dict(payload.get("privacy", {}))
+    privacy["lock_on_suspend"] = bool(privacy.get("lock_on_suspend", True))
+    privacy["hide_notification_content_global"] = bool(privacy.get("hide_notification_content_global", False))
+    privacy["pause_notifications_while_sharing"] = bool(privacy.get("pause_notifications_while_sharing", True))
+    privacy["screenshot_guard_enabled"] = bool(privacy.get("screenshot_guard_enabled", False))
+    privacy["screen_share_guard_enabled"] = bool(privacy.get("screen_share_guard_enabled", True))
+    networking = dict(payload.get("networking", {}))
+    networking["preferred_wifi_interface"] = str(networking.get("preferred_wifi_interface", "")).strip()
+    networking["preferred_wireguard_interface"] = str(networking.get("preferred_wireguard_interface", "")).strip()
+    networking["wifi_autoconnect"] = bool(networking.get("wifi_autoconnect", True))
+    networking["vpn_reconnect_on_login"] = bool(networking.get("vpn_reconnect_on_login", False))
+    split_tunnel_apps = networking.get("split_tunnel_apps", [])
+    networking["split_tunnel_apps"] = split_tunnel_apps if isinstance(split_tunnel_apps, list) else []
+    storage = dict(payload.get("storage", {}))
+    try:
+        storage["wallpaper_cache_cleanup_days"] = max(1, min(365, int(storage.get("wallpaper_cache_cleanup_days", 30))))
+    except Exception:
+        storage["wallpaper_cache_cleanup_days"] = 30
+    try:
+        storage["log_retention_days"] = max(1, min(365, int(storage.get("log_retention_days", 14))))
+    except Exception:
+        storage["log_retention_days"] = 14
+    storage["clean_temp_state_on_startup"] = bool(storage.get("clean_temp_state_on_startup", False))
     health = dict(payload.get("health", {}))
     health["provider"] = str(health.get("provider", "manual")).strip().lower()
     if health["provider"] not in {"manual", "fitbit"}:
@@ -1542,6 +1736,13 @@ def load_settings_state() -> dict:
         "vps": vps,
         "clock": clock,
         "autolock": autolock,
+        "audio": audio,
+        "notifications": notifications,
+        "input": input_settings,
+        "startup": startup,
+        "privacy": privacy,
+        "networking": networking,
+        "storage": storage,
         "health": health,
         "display": display,
         "mail": mail,
@@ -3423,6 +3624,13 @@ class SettingsWindow(QWidget):
             ("appearance", material_icon("palette"), "Looks", True),
             ("display", material_icon("desktop_windows"), "Display", False),
             ("energy", material_icon("bolt"), "Energy", False),
+            ("audio", material_icon("music_note"), "Audio", False),
+            ("notifications", material_icon("notifications"), "Notifications", False),
+            ("input", material_icon("language"), "Input", False),
+            ("startup", material_icon("restart_alt"), "Startup", False),
+            ("privacy", material_icon("shield"), "Privacy", False),
+            ("networking", material_icon("hub"), "Networking", False),
+            ("storage", material_icon("storage"), "Storage", False),
             ("region", material_icon("public"), "Region", False),
             ("bar", material_icon("crop_square"), "Bar", False),
             ("services", material_icon("settings"), "Services", False),
@@ -3447,6 +3655,13 @@ class SettingsWindow(QWidget):
         self.page_stack.addWidget(self._build_appearance_page())
         self.page_stack.addWidget(self._build_display_page())
         self.page_stack.addWidget(self._build_energy_page())
+        self.page_stack.addWidget(self._build_audio_page())
+        self.page_stack.addWidget(self._build_notifications_page())
+        self.page_stack.addWidget(self._build_input_page())
+        self.page_stack.addWidget(self._build_startup_page())
+        self.page_stack.addWidget(self._build_privacy_page())
+        self.page_stack.addWidget(self._build_networking_page())
+        self.page_stack.addWidget(self._build_storage_page())
         self.page_stack.addWidget(self._build_region_page())
         self.page_stack.addWidget(self._build_bar_page())
         self.page_stack.addWidget(self._build_services_page())
@@ -3496,6 +3711,27 @@ class SettingsWindow(QWidget):
     def _build_energy_page(self) -> QWidget:
         return self._scroll_page(self._build_energy_card())
 
+    def _build_audio_page(self) -> QWidget:
+        return self._scroll_page(self._build_audio_card())
+
+    def _build_notifications_page(self) -> QWidget:
+        return self._scroll_page(self._build_notifications_card())
+
+    def _build_input_page(self) -> QWidget:
+        return self._scroll_page(self._build_input_card())
+
+    def _build_startup_page(self) -> QWidget:
+        return self._scroll_page(self._build_startup_card())
+
+    def _build_privacy_page(self) -> QWidget:
+        return self._scroll_page(self._build_privacy_card())
+
+    def _build_networking_page(self) -> QWidget:
+        return self._scroll_page(self._build_networking_card())
+
+    def _build_storage_page(self) -> QWidget:
+        return self._scroll_page(self._build_storage_card())
+
     def _build_region_page(self) -> QWidget:
         return self._scroll_page(self._build_region_card())
 
@@ -3509,7 +3745,23 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_picom_card())
 
     def _show_page(self, key: str) -> None:
-        order = {"overview": 0, "appearance": 1, "display": 2, "energy": 3, "region": 4, "bar": 5, "services": 6, "picom": 7}
+        order = {
+            "overview": 0,
+            "appearance": 1,
+            "display": 2,
+            "energy": 3,
+            "audio": 4,
+            "notifications": 5,
+            "input": 6,
+            "startup": 7,
+            "privacy": 8,
+            "networking": 9,
+            "storage": 10,
+            "region": 11,
+            "bar": 12,
+            "services": 13,
+            "picom": 14,
+        }
         resolved = key if key in order else "appearance"
         self.current_page = resolved
         self.page_stack.setCurrentIndex(order[resolved])
@@ -4875,6 +5127,515 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.energy_battery_section)
 
         self._refresh_energy_state()
+        return card
+
+    def _build_audio_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("music_note"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Audio")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Default output, mic input, alert sounds, and how Hanauta should behave when audio focus changes.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        self.audio_sink_combo = QComboBox()
+        self.audio_sink_combo.setObjectName("settingsCombo")
+        layout.addWidget(SettingsRow(material_icon("music_note"), "Default sink", "Choose the default playback device for new apps.", self.icon_font, self.ui_font, self.audio_sink_combo))
+
+        self.audio_source_combo = QComboBox()
+        self.audio_source_combo.setObjectName("settingsCombo")
+        layout.addWidget(SettingsRow(material_icon("monitor_heart"), "Microphone source", "Choose the default capture device for voice apps and recordings.", self.icon_font, self.ui_font, self.audio_source_combo))
+
+        self.audio_alert_sounds_switch = SwitchButton(bool(self.settings_state["audio"].get("alert_sounds_enabled", True)))
+        layout.addWidget(SettingsRow(material_icon("notifications"), "Alert sounds", "Allow notification and reminder sounds when supported by the widget or daemon.", self.icon_font, self.ui_font, self.audio_alert_sounds_switch))
+
+        self.audio_route_switch = SwitchButton(bool(self.settings_state["audio"].get("route_new_apps_to_default_sink", True)))
+        layout.addWidget(SettingsRow(material_icon("hub"), "Route new apps to default sink", "Prefer the selected sink for fresh app launches instead of leaving routing entirely to PulseAudio defaults.", self.icon_font, self.ui_font, self.audio_route_switch))
+
+        self.audio_mute_behavior_combo = QComboBox()
+        self.audio_mute_behavior_combo.setObjectName("settingsCombo")
+        self.audio_mute_behavior_combo.addItem("Leave as is", "leave_as_is")
+        self.audio_mute_behavior_combo.addItem("Mute on lock", "mute_on_lock")
+        self.audio_mute_behavior_combo.addItem("Mute on suspend", "mute_on_suspend")
+        mute_behavior = str(self.settings_state["audio"].get("mute_behavior", "leave_as_is"))
+        mute_index = self.audio_mute_behavior_combo.findData(mute_behavior)
+        self.audio_mute_behavior_combo.setCurrentIndex(max(0, mute_index))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Mute behavior", "What Hanauta should prefer to do when you lock or suspend the session.", self.icon_font, self.ui_font, self.audio_mute_behavior_combo))
+
+        self.audio_status = QLabel("Audio routing is ready.")
+        self.audio_status.setWordWrap(True)
+        self.audio_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.audio_status)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.audio_refresh_button = QPushButton("Refresh devices")
+        self.audio_refresh_button.setObjectName("secondaryButton")
+        self.audio_refresh_button.clicked.connect(self._refresh_audio_devices)
+        self.audio_save_button = QPushButton("Apply audio settings")
+        self.audio_save_button.setObjectName("primaryButton")
+        self.audio_save_button.clicked.connect(self._save_audio_settings)
+        for button in (self.audio_refresh_button, self.audio_save_button):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        buttons.addWidget(self.audio_refresh_button)
+        buttons.addWidget(self.audio_save_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        self._refresh_audio_devices()
+        return card
+
+    def _build_notifications_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("notifications"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Notifications")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Global toast behavior, history sizing, urgency preferences, and per-app rule entry points.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        self.notifications_history_limit_input = QLineEdit(str(int(self.settings_state["notifications"].get("history_limit", 150))))
+        self.notifications_history_limit_input.setValidator(QIntValidator(10, 1000, self))
+        self.notifications_history_limit_input.setFixedWidth(96)
+        self.notifications_history_limit_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("storage"), "History limit", "How many notifications Hanauta should aim to keep in recent history views.", self.icon_font, self.ui_font, self.notifications_history_limit_input))
+
+        self.notifications_urgency_combo = QComboBox()
+        self.notifications_urgency_combo.setObjectName("settingsCombo")
+        self.notifications_urgency_combo.addItem("All", "all")
+        self.notifications_urgency_combo.addItem("Normal and critical", "normal")
+        self.notifications_urgency_combo.addItem("Critical only", "critical_only")
+        urgency = str(self.settings_state["notifications"].get("urgency_policy", "normal"))
+        urgency_index = self.notifications_urgency_combo.findData(urgency)
+        self.notifications_urgency_combo.setCurrentIndex(max(0, urgency_index))
+        layout.addWidget(SettingsRow(material_icon("warning"), "Urgency policy", "A policy note for which notifications should interrupt you most aggressively.", self.icon_font, self.ui_font, self.notifications_urgency_combo))
+
+        self.notifications_pause_share_switch = SwitchButton(bool(self.settings_state["notifications"].get("pause_while_sharing", True)))
+        layout.addWidget(SettingsRow(material_icon("videocam"), "Pause while sharing", "Prefer quieter notifications while you are screen sharing or presenting.", self.icon_font, self.ui_font, self.notifications_pause_share_switch))
+
+        self.notifications_rules_switch = SwitchButton(bool(self.settings_state["notifications"].get("per_app_rules_enabled", True)))
+        layout.addWidget(SettingsRow(material_icon("settings"), "Per-app overrides", "Keep app-specific notification rules enabled through Hanauta's shared rules file.", self.icon_font, self.ui_font, self.notifications_rules_switch))
+
+        self.notifications_toast_width_input = QLineEdit(str(int(self.settings_state["appearance"].get("notification_toast_max_width", 356))))
+        self.notifications_toast_width_input.setValidator(QIntValidator(260, 640, self))
+        self.notifications_toast_width_input.setFixedWidth(96)
+        self.notifications_toast_width_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("crop_square"), "Toast max width", "Limit how wide desktop notifications are allowed to grow.", self.icon_font, self.ui_font, self.notifications_toast_width_input))
+
+        self.notifications_toast_height_input = QLineEdit(str(int(self.settings_state["appearance"].get("notification_toast_max_height", 280))))
+        self.notifications_toast_height_input.setValidator(QIntValidator(160, 640, self))
+        self.notifications_toast_height_input.setFixedWidth(96)
+        self.notifications_toast_height_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("crop_square"), "Toast max height", "Limit how tall desktop notifications can grow before clipping.", self.icon_font, self.ui_font, self.notifications_toast_height_input))
+
+        rules_row = QWidget()
+        rules_layout = QHBoxLayout(rules_row)
+        rules_layout.setContentsMargins(0, 0, 0, 0)
+        rules_layout.setSpacing(8)
+        rules_path_label = QLabel(str(NOTIFICATION_RULES_FILE))
+        rules_path_label.setWordWrap(True)
+        rules_path_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.notifications_open_rules_button = QPushButton("Open rules")
+        self.notifications_open_rules_button.setObjectName("secondaryButton")
+        self.notifications_open_rules_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.notifications_open_rules_button.clicked.connect(lambda: run_bg(["xdg-open", str(NOTIFICATION_RULES_FILE)]))
+        rules_layout.addWidget(rules_path_label, 1)
+        rules_layout.addWidget(self.notifications_open_rules_button)
+        layout.addWidget(SettingsRow(material_icon("settings"), "Rules file", "Direct path to Hanauta's per-app notification overrides.", self.icon_font, self.ui_font, rules_row))
+
+        self.notifications_status = QLabel("Notification routing is ready.")
+        self.notifications_status.setWordWrap(True)
+        self.notifications_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.notifications_status)
+
+        save_button = QPushButton("Save notification settings")
+        save_button.setObjectName("primaryButton")
+        save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        save_button.clicked.connect(self._save_notifications_page_settings)
+        layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
+        return card
+
+    def _build_input_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("language"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Input")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Keyboard repeat, layout switching, touchpad preferences, and mouse feel.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        self.input_keyboard_layout_input = QLineEdit(str(self.settings_state["input"].get("keyboard_layout", "us")))
+        self.input_keyboard_layout_input.setPlaceholderText("us, us intl, br")
+        layout.addWidget(SettingsRow(material_icon("language"), "Keyboard layout", "Layout passed to setxkbmap when you apply input settings.", self.icon_font, self.ui_font, self.input_keyboard_layout_input))
+
+        self.input_repeat_delay_input = QLineEdit(str(int(self.settings_state["input"].get("repeat_delay_ms", 300))))
+        self.input_repeat_delay_input.setValidator(QIntValidator(150, 1200, self))
+        self.input_repeat_delay_input.setFixedWidth(96)
+        self.input_repeat_delay_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("timer"), "Repeat delay (ms)", "How long the keyboard waits before repeating a held key.", self.icon_font, self.ui_font, self.input_repeat_delay_input))
+
+        self.input_repeat_rate_input = QLineEdit(str(int(self.settings_state["input"].get("repeat_rate", 30))))
+        self.input_repeat_rate_input.setValidator(QIntValidator(10, 60, self))
+        self.input_repeat_rate_input.setFixedWidth(96)
+        self.input_repeat_rate_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("timer"), "Repeat rate", "Approximate repeat rate used with xset for keyboard repeats.", self.icon_font, self.ui_font, self.input_repeat_rate_input))
+
+        self.input_tap_to_click_switch = SwitchButton(bool(self.settings_state["input"].get("tap_to_click", True)))
+        layout.addWidget(SettingsRow(material_icon("widgets"), "Touchpad tap to click", "Save whether touchpad taps should act as left clicks.", self.icon_font, self.ui_font, self.input_tap_to_click_switch))
+
+        self.input_natural_scroll_switch = SwitchButton(bool(self.settings_state["input"].get("natural_scroll", False)))
+        layout.addWidget(SettingsRow(material_icon("flip"), "Natural scroll", "Prefer content-following scroll direction for touchpads and mice where supported.", self.icon_font, self.ui_font, self.input_natural_scroll_switch))
+
+        self.input_mouse_accel_input = QLineEdit(str(int(self.settings_state["input"].get("mouse_accel", 0))))
+        self.input_mouse_accel_input.setValidator(QIntValidator(-10, 10, self))
+        self.input_mouse_accel_input.setFixedWidth(96)
+        self.input_mouse_accel_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("tune"), "Mouse acceleration", "Signed adjustment placeholder for your preferred mouse feel.", self.icon_font, self.ui_font, self.input_mouse_accel_input))
+
+        self.input_status = QLabel("Input preferences are ready.")
+        self.input_status.setWordWrap(True)
+        self.input_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.input_status)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        apply_button = QPushButton("Apply now")
+        apply_button.setObjectName("primaryButton")
+        apply_button.clicked.connect(self._save_input_settings)
+        buttons.addWidget(apply_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        return card
+
+    def _build_startup_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("restart_alt"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Startup")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("What the session should restore, how long it should wait, and whether extra hooks should watch the shell.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        startup_settings = self.settings_state["startup"]
+        self.startup_bar_switch = SwitchButton(bool(startup_settings.get("launch_bar", True)))
+        self.startup_dock_switch = SwitchButton(bool(startup_settings.get("launch_dock", True)))
+        self.startup_wallpaper_switch = SwitchButton(bool(startup_settings.get("restore_wallpaper", True)))
+        self.startup_displays_switch = SwitchButton(bool(startup_settings.get("restore_displays", True)))
+        self.startup_vpn_switch = SwitchButton(bool(startup_settings.get("restore_vpn", True)))
+        self.startup_restart_hooks_switch = SwitchButton(bool(startup_settings.get("restart_hooks_enabled", True)))
+        self.startup_watchdog_switch = SwitchButton(bool(startup_settings.get("watchdog_enabled", False)))
+        layout.addWidget(SettingsRow(material_icon("crop_square"), "Launch bar", "Remember that the PyQt bar should start with the session.", self.icon_font, self.ui_font, self.startup_bar_switch))
+        layout.addWidget(SettingsRow(material_icon("dock_to_left"), "Launch dock", "Remember that the PyQt dock should start with the session.", self.icon_font, self.ui_font, self.startup_dock_switch))
+        layout.addWidget(SettingsRow(material_icon("image"), "Restore wallpaper", "Reapply the saved wallpaper layout at startup.", self.icon_font, self.ui_font, self.startup_wallpaper_switch))
+        layout.addWidget(SettingsRow(material_icon("desktop_windows"), "Restore displays", "Reapply the saved display layout at startup.", self.icon_font, self.ui_font, self.startup_displays_switch))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Restore VPN", "Reconnect the preferred WireGuard tunnel when allowed.", self.icon_font, self.ui_font, self.startup_vpn_switch))
+        layout.addWidget(SettingsRow(material_icon("refresh"), "Restart hooks", "Persist whether restart-time helper hooks should be treated as enabled.", self.icon_font, self.ui_font, self.startup_restart_hooks_switch))
+        layout.addWidget(SettingsRow(material_icon("warning"), "Watchdogs", "Persist whether watchdog-style startup checks should be considered enabled.", self.icon_font, self.ui_font, self.startup_watchdog_switch))
+
+        self.startup_delay_input = QLineEdit(str(int(startup_settings.get("startup_delay_seconds", 0))))
+        self.startup_delay_input.setValidator(QIntValidator(0, 120, self))
+        self.startup_delay_input.setFixedWidth(96)
+        self.startup_delay_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("timer"), "Startup delay (sec)", "Optional delay before heavyweight startup work kicks in.", self.icon_font, self.ui_font, self.startup_delay_input))
+
+        startup_lines = startup_exec_lines()
+        startup_preview = "\n".join(startup_lines[:8]) if startup_lines else "No startup commands were detected."
+        self.startup_preview_label = QLabel(startup_preview)
+        self.startup_preview_label.setWordWrap(True)
+        self.startup_preview_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.startup_preview_label)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        open_button = QPushButton("Open startup.sh")
+        open_button.setObjectName("secondaryButton")
+        open_button.clicked.connect(lambda: run_bg(["xdg-open", str(ROOT / "startup.sh")]))
+        save_button = QPushButton("Save startup settings")
+        save_button.setObjectName("primaryButton")
+        save_button.clicked.connect(self._save_startup_settings)
+        for button in (open_button, save_button):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        buttons.addWidget(open_button)
+        buttons.addWidget(save_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        self.startup_status = QLabel("Startup preferences are ready.")
+        self.startup_status.setWordWrap(True)
+        self.startup_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.startup_status)
+        return card
+
+    def _build_privacy_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("shield"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Privacy")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Hide sensitive content, lock more aggressively, and soften what leaks during screenshots or screen sharing.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        privacy = self.settings_state["privacy"]
+        self.privacy_lock_suspend_switch = SwitchButton(bool(privacy.get("lock_on_suspend", True)))
+        self.privacy_hide_content_switch = SwitchButton(bool(privacy.get("hide_notification_content_global", False)))
+        self.privacy_pause_share_switch = SwitchButton(bool(privacy.get("pause_notifications_while_sharing", True)))
+        self.privacy_screenshot_guard_switch = SwitchButton(bool(privacy.get("screenshot_guard_enabled", False)))
+        self.privacy_screen_share_guard_switch = SwitchButton(bool(privacy.get("screen_share_guard_enabled", True)))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Lock on suspend", "Remember that suspending the PC should be treated as a privacy boundary.", self.icon_font, self.ui_font, self.privacy_lock_suspend_switch))
+        layout.addWidget(SettingsRow(material_icon("visibility_off"), "Hide notification content globally", "Apply a privacy-first notification preference across Hanauta-owned alerts.", self.icon_font, self.ui_font, self.privacy_hide_content_switch))
+        layout.addWidget(SettingsRow(material_icon("videocam"), "Pause while sharing", "Prefer muting or softening notifications while screen sharing.", self.icon_font, self.ui_font, self.privacy_pause_share_switch))
+        layout.addWidget(SettingsRow(material_icon("photo_library"), "Screenshot guard", "Remember a preference to hide or reduce sensitive surfaces during screenshots.", self.icon_font, self.ui_font, self.privacy_screenshot_guard_switch))
+        layout.addWidget(SettingsRow(material_icon("shield"), "Screen-share safeguard", "Keep the stronger privacy preference when screen-sharing tools are active.", self.icon_font, self.ui_font, self.privacy_screen_share_guard_switch))
+
+        self.privacy_status = QLabel("Privacy preferences are ready.")
+        self.privacy_status.setWordWrap(True)
+        self.privacy_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.privacy_status)
+
+        save_button = QPushButton("Save privacy settings")
+        save_button.setObjectName("primaryButton")
+        save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        save_button.clicked.connect(self._save_privacy_settings)
+        layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
+        return card
+
+    def _build_networking_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("hub"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Networking")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Preferred Wi-Fi and VPN interfaces, reconnect behavior, and split-tunnel notes.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        self.networking_wifi_combo = QComboBox()
+        self.networking_wifi_combo.setObjectName("settingsCombo")
+        self.networking_wifi_combo.addItem("Automatic", "")
+        for iface in list_wifi_interfaces():
+            self.networking_wifi_combo.addItem(iface, iface)
+        wifi_pref = str(self.settings_state["networking"].get("preferred_wifi_interface", ""))
+        wifi_idx = self.networking_wifi_combo.findData(wifi_pref)
+        self.networking_wifi_combo.setCurrentIndex(max(0, wifi_idx))
+        layout.addWidget(SettingsRow(material_icon("public"), "Preferred Wi-Fi interface", "Prefer one wireless interface when multiple are available.", self.icon_font, self.ui_font, self.networking_wifi_combo))
+
+        self.networking_wifi_autoconnect_switch = SwitchButton(bool(self.settings_state["networking"].get("wifi_autoconnect", True)))
+        layout.addWidget(SettingsRow(material_icon("refresh"), "Wi-Fi autoconnect", "Remember whether Wi-Fi should reconnect automatically when possible.", self.icon_font, self.ui_font, self.networking_wifi_autoconnect_switch))
+
+        self.networking_wg_combo = QComboBox()
+        self.networking_wg_combo.setObjectName("settingsCombo")
+        self.networking_wg_combo.addItem("Automatic", "")
+        for iface in list_wireguard_interfaces():
+            self.networking_wg_combo.addItem(iface, iface)
+        wg_pref = str(self.settings_state["networking"].get("preferred_wireguard_interface", self.settings_state["services"].get("vpn_control", {}).get("preferred_interface", "")))
+        wg_idx = self.networking_wg_combo.findData(wg_pref)
+        self.networking_wg_combo.setCurrentIndex(max(0, wg_idx))
+        layout.addWidget(SettingsRow(material_icon("lock"), "Preferred WireGuard interface", "Keep one tunnel selected for reconnect actions and the VPN widget.", self.icon_font, self.ui_font, self.networking_wg_combo))
+
+        vpn_reconnect = bool(self.settings_state["networking"].get("vpn_reconnect_on_login", self.settings_state["services"].get("vpn_control", {}).get("reconnect_on_login", False)))
+        self.networking_vpn_reconnect_switch = SwitchButton(vpn_reconnect)
+        layout.addWidget(SettingsRow(material_icon("refresh"), "Reconnect VPN on login", "Restore the preferred WireGuard tunnel at session start when enabled.", self.icon_font, self.ui_font, self.networking_vpn_reconnect_switch))
+
+        split_tunnel = self.settings_state["networking"].get("split_tunnel_apps", self.settings_state["services"].get("vpn_control", {}).get("split_tunnel_apps", []))
+        split_tunnel_text = ", ".join([str(item).strip() for item in split_tunnel if str(item).strip()])
+        self.networking_split_tunnel_input = QLineEdit(split_tunnel_text)
+        self.networking_split_tunnel_input.setPlaceholderText("discord, steam, firefox")
+        layout.addWidget(SettingsRow(material_icon("hub"), "Split-tunnel apps", "Comma-separated app names or desktop ids to remember for future VPN routing work.", self.icon_font, self.ui_font, self.networking_split_tunnel_input))
+
+        self.networking_status = QLabel("Networking preferences are ready.")
+        self.networking_status.setWordWrap(True)
+        self.networking_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.networking_status)
+
+        save_button = QPushButton("Save networking settings")
+        save_button.setObjectName("primaryButton")
+        save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        save_button.clicked.connect(self._save_networking_settings)
+        layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
+        return card
+
+    def _build_storage_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("storage"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Storage")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Cache sizes, cleanup policies, wallpaper source data, and temporary Hanauta state.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        self.storage_cache_cleanup_days_input = QLineEdit(str(int(self.settings_state["storage"].get("wallpaper_cache_cleanup_days", 30))))
+        self.storage_cache_cleanup_days_input.setValidator(QIntValidator(1, 365, self))
+        self.storage_cache_cleanup_days_input.setFixedWidth(96)
+        self.storage_cache_cleanup_days_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("image"), "Wallpaper cache cleanup days", "Preferred retention window for wallpaper source caches and rendered wallpaper assets.", self.icon_font, self.ui_font, self.storage_cache_cleanup_days_input))
+
+        self.storage_log_retention_days_input = QLineEdit(str(int(self.settings_state["storage"].get("log_retention_days", 14))))
+        self.storage_log_retention_days_input.setValidator(QIntValidator(1, 365, self))
+        self.storage_log_retention_days_input.setFixedWidth(96)
+        self.storage_log_retention_days_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(SettingsRow(material_icon("schedule"), "Log retention days", "Preferred retention window for Hanauta logs and debugging traces.", self.icon_font, self.ui_font, self.storage_log_retention_days_input))
+
+        self.storage_clean_temp_switch = SwitchButton(bool(self.settings_state["storage"].get("clean_temp_state_on_startup", False)))
+        layout.addWidget(SettingsRow(material_icon("refresh"), "Clean temp state on startup", "Remember whether short-lived cache and temp state should be cleaned when the session boots.", self.icon_font, self.ui_font, self.storage_clean_temp_switch))
+
+        self.storage_metrics: dict[str, QLabel] = {}
+        metrics_grid = QGridLayout()
+        metrics_grid.setContentsMargins(0, 0, 0, 0)
+        metrics_grid.setHorizontalSpacing(10)
+        metrics_grid.setVerticalSpacing(10)
+        for index, key in enumerate(("Wallpaper Source Cache", "Rendered Wallpapers", "Mail Attachments", "State Root")):
+            label = QLabel("...")
+            label.setFont(QFont(self.ui_font, 10))
+            label.setStyleSheet("color: #FFFFFF;")
+            self.storage_metrics[key] = label
+            metrics_grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
+        layout.addLayout(metrics_grid)
+
+        self.storage_status = QLabel("Storage tools are ready.")
+        self.storage_status.setWordWrap(True)
+        self.storage_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.storage_status)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        refresh_button = QPushButton("Refresh sizes")
+        refresh_button.setObjectName("secondaryButton")
+        refresh_button.clicked.connect(self._refresh_storage_metrics)
+        clear_wallpaper_button = QPushButton("Clear wallpaper cache")
+        clear_wallpaper_button.setObjectName("secondaryButton")
+        clear_wallpaper_button.clicked.connect(self._clear_wallpaper_cache)
+        clear_temp_button = QPushButton("Clean temp state")
+        clear_temp_button.setObjectName("secondaryButton")
+        clear_temp_button.clicked.connect(self._clear_temp_state)
+        save_button = QPushButton("Save storage settings")
+        save_button.setObjectName("primaryButton")
+        save_button.clicked.connect(self._save_storage_settings)
+        for button in (refresh_button, clear_wallpaper_button, clear_temp_button, save_button):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        buttons.addWidget(refresh_button)
+        buttons.addWidget(clear_wallpaper_button)
+        buttons.addWidget(clear_temp_button)
+        buttons.addWidget(save_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        self._refresh_storage_metrics()
         return card
 
     def _build_region_card(self) -> QWidget:
@@ -7734,6 +8495,210 @@ class SettingsWindow(QWidget):
             return
         run_bg(["xdg-open", str(BAR_ICON_CONFIG_FILE)])
 
+    def _refresh_audio_devices(self) -> None:
+        sinks = list_audio_devices("sinks")
+        sources = list_audio_devices("sources")
+        saved_audio = self.settings_state.get("audio", {})
+        selected_sink = str(saved_audio.get("default_sink", "")).strip() or default_audio_device("sink")
+        selected_source = str(saved_audio.get("default_source", "")).strip() or default_audio_device("source")
+        if hasattr(self, "audio_sink_combo"):
+            self.audio_sink_combo.blockSignals(True)
+            self.audio_sink_combo.clear()
+            self.audio_sink_combo.addItem("System default", "")
+            for label, value in sinks:
+                self.audio_sink_combo.addItem(label, value)
+            sink_index = self.audio_sink_combo.findData(selected_sink)
+            self.audio_sink_combo.setCurrentIndex(max(0, sink_index))
+            self.audio_sink_combo.blockSignals(False)
+        if hasattr(self, "audio_source_combo"):
+            self.audio_source_combo.blockSignals(True)
+            self.audio_source_combo.clear()
+            self.audio_source_combo.addItem("System default", "")
+            for label, value in sources:
+                self.audio_source_combo.addItem(label, value)
+            source_index = self.audio_source_combo.findData(selected_source)
+            self.audio_source_combo.setCurrentIndex(max(0, source_index))
+            self.audio_source_combo.blockSignals(False)
+        if hasattr(self, "audio_status"):
+            self.audio_status.setText(f"Detected {len(sinks)} sink(s) and {len(sources)} source(s).")
+
+    def _save_audio_settings(self) -> None:
+        audio = self.settings_state.setdefault("audio", {})
+        sink = str(self.audio_sink_combo.currentData() or "").strip() if hasattr(self, "audio_sink_combo") else ""
+        source = str(self.audio_source_combo.currentData() or "").strip() if hasattr(self, "audio_source_combo") else ""
+        audio["default_sink"] = sink
+        audio["default_source"] = source
+        audio["alert_sounds_enabled"] = bool(self.audio_alert_sounds_switch.isChecked()) if hasattr(self, "audio_alert_sounds_switch") else True
+        audio["route_new_apps_to_default_sink"] = bool(self.audio_route_switch.isChecked()) if hasattr(self, "audio_route_switch") else True
+        audio["mute_behavior"] = str(self.audio_mute_behavior_combo.currentData() or "leave_as_is") if hasattr(self, "audio_mute_behavior_combo") else "leave_as_is"
+        save_settings_state(self.settings_state)
+        if shutil.which("pactl"):
+            if sink:
+                subprocess.run(["pactl", "set-default-sink", sink], capture_output=True, text=True, check=False)
+            if source:
+                subprocess.run(["pactl", "set-default-source", source], capture_output=True, text=True, check=False)
+        if hasattr(self, "audio_status"):
+            self.audio_status.setText("Audio settings saved.")
+
+    def _save_notifications_page_settings(self) -> None:
+        notifications = self.settings_state.setdefault("notifications", {})
+        try:
+            notifications["history_limit"] = max(10, min(1000, int(self.notifications_history_limit_input.text().strip() or "150")))
+        except Exception:
+            notifications["history_limit"] = 150
+            self.notifications_history_limit_input.setText("150")
+        notifications["urgency_policy"] = str(self.notifications_urgency_combo.currentData() or "normal")
+        notifications["pause_while_sharing"] = bool(self.notifications_pause_share_switch.isChecked())
+        notifications["per_app_rules_enabled"] = bool(self.notifications_rules_switch.isChecked())
+        try:
+            self.settings_state["appearance"]["notification_toast_max_width"] = max(260, min(640, int(self.notifications_toast_width_input.text().strip() or "356")))
+        except Exception:
+            self.settings_state["appearance"]["notification_toast_max_width"] = 356
+            self.notifications_toast_width_input.setText("356")
+        try:
+            self.settings_state["appearance"]["notification_toast_max_height"] = max(160, min(640, int(self.notifications_toast_height_input.text().strip() or "280")))
+        except Exception:
+            self.settings_state["appearance"]["notification_toast_max_height"] = 280
+            self.notifications_toast_height_input.setText("280")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "notifications_status"):
+            self.notifications_status.setText("Notification settings saved.")
+
+    def _save_input_settings(self) -> None:
+        input_settings = self.settings_state.setdefault("input", {})
+        input_settings["keyboard_layout"] = self.input_keyboard_layout_input.text().strip() or "us"
+        try:
+            input_settings["repeat_delay_ms"] = max(150, min(1200, int(self.input_repeat_delay_input.text().strip() or "300")))
+        except Exception:
+            input_settings["repeat_delay_ms"] = 300
+            self.input_repeat_delay_input.setText("300")
+        try:
+            input_settings["repeat_rate"] = max(10, min(60, int(self.input_repeat_rate_input.text().strip() or "30")))
+        except Exception:
+            input_settings["repeat_rate"] = 30
+            self.input_repeat_rate_input.setText("30")
+        input_settings["tap_to_click"] = bool(self.input_tap_to_click_switch.isChecked())
+        input_settings["natural_scroll"] = bool(self.input_natural_scroll_switch.isChecked())
+        try:
+            input_settings["mouse_accel"] = max(-10, min(10, int(self.input_mouse_accel_input.text().strip() or "0")))
+        except Exception:
+            input_settings["mouse_accel"] = 0
+            self.input_mouse_accel_input.setText("0")
+        save_settings_state(self.settings_state)
+        if shutil.which("setxkbmap"):
+            run_bg(["setxkbmap", input_settings["keyboard_layout"]])
+        if shutil.which("xset"):
+            run_bg(["xset", "r", "rate", str(input_settings["repeat_delay_ms"]), str(input_settings["repeat_rate"])])
+        if hasattr(self, "input_status"):
+            self.input_status.setText("Input settings saved. Keyboard layout and repeat settings were applied when available.")
+
+    def _save_startup_settings(self) -> None:
+        startup = self.settings_state.setdefault("startup", {})
+        startup["launch_bar"] = bool(self.startup_bar_switch.isChecked())
+        startup["launch_dock"] = bool(self.startup_dock_switch.isChecked())
+        startup["restore_wallpaper"] = bool(self.startup_wallpaper_switch.isChecked())
+        startup["restore_displays"] = bool(self.startup_displays_switch.isChecked())
+        startup["restore_vpn"] = bool(self.startup_vpn_switch.isChecked())
+        startup["restart_hooks_enabled"] = bool(self.startup_restart_hooks_switch.isChecked())
+        startup["watchdog_enabled"] = bool(self.startup_watchdog_switch.isChecked())
+        try:
+            startup["startup_delay_seconds"] = max(0, min(120, int(self.startup_delay_input.text().strip() or "0")))
+        except Exception:
+            startup["startup_delay_seconds"] = 0
+            self.startup_delay_input.setText("0")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "startup_status"):
+            self.startup_status.setText("Startup settings saved. They are stored for launch and restore workflows.")
+
+    def _save_privacy_settings(self) -> None:
+        privacy = self.settings_state.setdefault("privacy", {})
+        privacy["lock_on_suspend"] = bool(self.privacy_lock_suspend_switch.isChecked())
+        privacy["hide_notification_content_global"] = bool(self.privacy_hide_content_switch.isChecked())
+        privacy["pause_notifications_while_sharing"] = bool(self.privacy_pause_share_switch.isChecked())
+        privacy["screenshot_guard_enabled"] = bool(self.privacy_screenshot_guard_switch.isChecked())
+        privacy["screen_share_guard_enabled"] = bool(self.privacy_screen_share_guard_switch.isChecked())
+        if privacy["hide_notification_content_global"]:
+            self.settings_state.setdefault("mail", {})["hide_notification_content"] = True
+            self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = True
+        save_settings_state(self.settings_state)
+        if hasattr(self, "privacy_status"):
+            self.privacy_status.setText("Privacy settings saved.")
+
+    def _save_networking_settings(self) -> None:
+        networking = self.settings_state.setdefault("networking", {})
+        vpn_service = self.settings_state.setdefault("services", {}).setdefault("vpn_control", {})
+        networking["preferred_wifi_interface"] = str(self.networking_wifi_combo.currentData() or "").strip()
+        networking["wifi_autoconnect"] = bool(self.networking_wifi_autoconnect_switch.isChecked())
+        preferred_wg = str(self.networking_wg_combo.currentData() or "").strip()
+        networking["preferred_wireguard_interface"] = preferred_wg
+        networking["vpn_reconnect_on_login"] = bool(self.networking_vpn_reconnect_switch.isChecked())
+        split_tunnel_apps = [item.strip() for item in self.networking_split_tunnel_input.text().split(",") if item.strip()]
+        networking["split_tunnel_apps"] = split_tunnel_apps
+        vpn_service["preferred_interface"] = preferred_wg
+        vpn_service["reconnect_on_login"] = bool(self.networking_vpn_reconnect_switch.isChecked())
+        vpn_service["split_tunnel_apps"] = split_tunnel_apps
+        save_settings_state(self.settings_state)
+        if hasattr(self, "networking_status"):
+            self.networking_status.setText("Networking settings saved.")
+
+    def _refresh_storage_metrics(self) -> None:
+        metrics = {
+            "Wallpaper Source Cache": format_bytes(directory_size_bytes(WALLPAPER_SOURCE_CACHE_DIR)),
+            "Rendered Wallpapers": format_bytes(directory_size_bytes(RENDERED_WALLPAPER_DIR)),
+            "Mail Attachments": format_bytes(directory_size_bytes(MAIL_STATE_DIR / "cache")),
+            "State Root": format_bytes(directory_size_bytes(STATE_DIR.parent)),
+        }
+        for key, label in getattr(self, "storage_metrics", {}).items():
+            label.setText(metrics.get(key, "0 B"))
+        if hasattr(self, "storage_status"):
+            self.storage_status.setText("Storage sizes refreshed.")
+
+    def _clear_wallpaper_cache(self) -> None:
+        removed = 0
+        for path in (WALLPAPER_SOURCE_CACHE_DIR, RENDERED_WALLPAPER_DIR):
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        if hasattr(self, "storage_status"):
+            self.storage_status.setText(f"Cleared {removed} wallpaper cache location(s).")
+        self._refresh_storage_metrics()
+
+    def _clear_temp_state(self) -> None:
+        state_root = STATE_DIR.parent
+        removed = 0
+        if state_root.exists():
+            for path in state_root.rglob("*"):
+                try:
+                    if path.is_dir() and path.name == "__pycache__":
+                        shutil.rmtree(path, ignore_errors=True)
+                        removed += 1
+                    elif path.is_file() and path.suffix in {".tmp", ".temp"}:
+                        path.unlink(missing_ok=True)
+                        removed += 1
+                except Exception:
+                    continue
+        if hasattr(self, "storage_status"):
+            self.storage_status.setText(f"Cleaned {removed} temporary state item(s).")
+        self._refresh_storage_metrics()
+
+    def _save_storage_settings(self) -> None:
+        storage = self.settings_state.setdefault("storage", {})
+        try:
+            storage["wallpaper_cache_cleanup_days"] = max(1, min(365, int(self.storage_cache_cleanup_days_input.text().strip() or "30")))
+        except Exception:
+            storage["wallpaper_cache_cleanup_days"] = 30
+            self.storage_cache_cleanup_days_input.setText("30")
+        try:
+            storage["log_retention_days"] = max(1, min(365, int(self.storage_log_retention_days_input.text().strip() or "14")))
+        except Exception:
+            storage["log_retention_days"] = 14
+            self.storage_log_retention_days_input.setText("14")
+        storage["clean_temp_state_on_startup"] = bool(self.storage_clean_temp_switch.isChecked())
+        save_settings_state(self.settings_state)
+        if hasattr(self, "storage_status"):
+            self.storage_status.setText("Storage settings saved.")
+        self._refresh_storage_metrics()
+
     def _set_christian_service_flag(self, flag: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault("christian_widget", {})
         if not service.get("enabled", True):
@@ -9668,7 +10633,11 @@ class SettingsWindow(QWidget):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--page", choices=("overview", "appearance", "display", "energy", "region", "bar", "services", "picom"), default="appearance")
+    parser.add_argument(
+        "--page",
+        choices=("overview", "appearance", "display", "energy", "audio", "notifications", "input", "startup", "privacy", "networking", "storage", "region", "bar", "services", "picom"),
+        default="appearance",
+    )
     parser.add_argument("--service-section", default="")
     parser.add_argument("--ensure-settings", action="store_true")
     parser.add_argument("--restore-displays", action="store_true")
