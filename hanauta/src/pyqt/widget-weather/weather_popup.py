@@ -52,7 +52,7 @@ SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
-        "ui_sans": FONTS_DIR / "InterVariable.ttf",
+        "ui_sans": FONTS_DIR / "Rubik-VariableFont_wght.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
