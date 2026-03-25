@@ -299,7 +299,7 @@ def material_icon(name: str) -> str:
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
-        "ui_sans": FONTS_DIR / "InterVariable.ttf",
+        "ui_sans": FONTS_DIR / "Rubik-VariableFont_wght.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
@@ -2260,7 +2260,7 @@ class NotificationCenter(QWidget):
             QWidget {{
                 background: transparent;
                 color: {theme.text};
-                font-family: "Inter", "Noto Sans", sans-serif;
+                font-family: "{self.ui_font}", "Rubik", "Noto Sans", sans-serif;
             }}
             #glassPanel {{
                 background: {theme.panel_bg};

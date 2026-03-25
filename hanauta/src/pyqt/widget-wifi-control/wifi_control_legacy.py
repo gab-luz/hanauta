@@ -86,6 +86,8 @@ def detect_font(*families: str) -> str:
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
+        "ui_sans": FONTS_DIR / "Rubik-VariableFont_wght.ttf",
+        "ui_sans_italic": FONTS_DIR / "Rubik-Italic-VariableFont_wght.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
         "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
@@ -433,7 +435,15 @@ class WifiControlPopup(QWidget):
             "Material Symbols Outlined",
             "Material Symbols Rounded",
         )
-        self.ui_font = detect_font("Rubik", "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
+        self.ui_font = detect_font(
+            "Rubik",
+            self.loaded_fonts.get("ui_sans", ""),
+            self.loaded_fonts.get("ui_sans_italic", ""),
+            "Inter",
+            "Noto Sans",
+            "DejaVu Sans",
+            "Sans Serif",
+        )
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
         self.scan_worker: WifiScanWorker | None = None
