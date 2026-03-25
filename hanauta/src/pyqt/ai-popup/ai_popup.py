@@ -150,13 +150,13 @@ def load_ui_font() -> str:
     font_dir = APP_DIR.parents[1] / "assets" / "fonts"
     if QFont("Rubik").exactMatch():
         return "Rubik"
-    for name in ("InterVariable.ttf", "Inter-Regular.ttf", "Inter.ttf"):
+    for name in ("Rubik-VariableFont_wght.ttf", "Rubik-Italic-VariableFont_wght.ttf", "Inter-Regular.ttf", "Inter.ttf"):
         font_id = QFontDatabase.addApplicationFont(str(font_dir / name))
         if font_id >= 0:
             families = QFontDatabase.applicationFontFamilies(font_id)
             if families:
                 return families[0]
-    return "Inter"
+    return "Rubik"
 
 
 def load_material_icon_font() -> str:

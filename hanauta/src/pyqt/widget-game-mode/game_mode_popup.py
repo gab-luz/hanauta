@@ -49,8 +49,8 @@ def detect_font(*families: str) -> str:
 def load_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
-        "ui_sans": FONTS_DIR / "InterVariable.ttf",
-        "ui_display": FONTS_DIR / "Outfit-VariableFont_wght.ttf",
+        "ui_sans": FONTS_DIR / "Rubik-VariableFont_wght.ttf",
+        "ui_display": FONTS_DIR / "Rubik-VariableFont_wght.ttf",
         "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
         "material_symbols_rounded": FONTS_DIR / "MaterialSymbolsRounded.ttf",
     }
