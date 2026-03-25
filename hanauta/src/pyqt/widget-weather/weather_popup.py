@@ -265,20 +265,21 @@ class WeatherPopup(QWidget):
         header.addLayout(titles, 1)
 
         self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.setObjectName("secondaryButton")
+        self.refresh_button.setObjectName("refreshButton")
         self.refresh_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.refresh_button.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
         self.refresh_button.clicked.connect(self.refresh_forecast)
         header.addWidget(self.refresh_button, 0, Qt.AlignmentFlag.AlignTop)
 
         self.settings_button = QPushButton("\ue8b8")
-        self.settings_button.setObjectName("iconButton")
+        self.settings_button.setObjectName("glassIconButton")
         self.settings_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.settings_button.setFont(QFont(self.icon_font, 18))
         self.settings_button.clicked.connect(self._open_weather_settings)
         header.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignTop)
 
         self.close_button = create_close_button("\ue5cd", self.icon_font)
-        self.close_button.setProperty("iconButton", True)
+        self.close_button.setObjectName("glassIconButton")
         self.close_button.setFixedSize(36, 36)
         self.close_button.clicked.connect(self.close)
         header.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
@@ -434,33 +435,37 @@ class WeatherPopup(QWidget):
             QLabel#forecastTempLow {{
                 color: {theme.text_muted};
             }}
-            QPushButton#secondaryButton {{
-                background: {rgba(theme.surface_container_high, 0.88)};
-                border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 999px;
-                color: {theme.text};
-                padding: 0 14px;
-                min-height: 34px;
-                font-size: 11px;
-                font-weight: 600;
-            }}
-            QPushButton#secondaryButton:hover {{
-                background: {theme.hover_bg};
-            }}
-            QPushButton#iconButton {{
-                background: {rgba(theme.surface_container_high, 0.88)};
-                border: 1px solid {rgba(theme.outline, 0.16)};
-                border-radius: 999px;
+            QPushButton#refreshButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {rgba(theme.primary, 0.18)},
+                    stop:1 {rgba(theme.primary, 0.06)});
+                border: 1px solid {rgba(theme.primary, 0.30)};
+                border-radius: 18px;
                 color: {theme.primary};
-                min-width: 34px;
-                max-width: 34px;
-                min-height: 34px;
-                max-height: 34px;
+                padding: 0 16px;
+                min-height: 36px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+            }}
+            QPushButton#refreshButton:hover {{
+                background: {rgba(theme.primary, 0.24)};
+                color: {theme.text};
+            }}
+            QPushButton#glassIconButton {{
+                background: {rgba(theme.surface_container_high, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.18)};
+                border-radius: 18px;
+                color: {theme.primary};
+                min-width: 36px;
+                max-width: 36px;
+                min-height: 36px;
+                max-height: 36px;
                 font-family: "{self.icon_font}";
                 padding: 0;
             }}
-            QPushButton#iconButton:hover {{
-                background: {theme.hover_bg};
+            QPushButton#glassIconButton:hover {{
+                background: {rgba(theme.primary, 0.14)};
                 color: {theme.text};
             }}
             QScrollArea#forecastScroll {{
@@ -469,12 +474,24 @@ class WeatherPopup(QWidget):
             }}
             QScrollBar:vertical {{
                 background: transparent;
-                width: 8px;
-                margin: 4px 0;
+                width: 10px;
+                margin: 6px 2px;
             }}
             QScrollBar::handle:vertical {{
-                background: {rgba(theme.outline, 0.30)};
-                border-radius: 4px;
+                background: {rgba(theme.outline, 0.34)};
+                border: 1px solid {rgba(theme.outline, 0.18)};
+                border-radius: 8px;
+                min-height: 32px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {rgba(theme.primary, 0.28)};
+                border: 1px solid {rgba(theme.primary, 0.32)};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
             }}
             """
         )
