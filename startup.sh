@@ -6,12 +6,112 @@ PYTHON_BIN="$HOME/.config/i3/.venv/bin/python"
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="$(command -v python3)"
 fi
-CURSOR_THEME="sweet-cursors"
-CURSOR_SIZE="24"
+CURSOR_THEME_DEFAULT="sweet-cursors"
+CURSOR_SIZE_DEFAULT="24"
+
+read_gtk_setting() {
+  local key="$1"
+  local file="$HOME/.config/gtk-3.0/settings.ini"
+  [ -f "$file" ] || return 1
+  awk -F= -v k="$key" '
+    {
+      gsub(/^[ \t]+|[ \t]+$/, "", $1)
+    }
+    $1 == k {
+      gsub(/^[ \t]+|[ \t]+$/, "", $2)
+      print $2
+      exit
+    }
+  ' "$file"
+}
+
+read_gtk2_setting() {
+  local key="$1"
+  local file="$HOME/.gtkrc-2.0"
+  [ -f "$file" ] || return 1
+  awk -F= -v k="$key" '
+    {
+      gsub(/^[ \t]+|[ \t]+$/, "", $1)
+    }
+    $1 == k {
+      gsub(/^[ \t"]+|[ \t"]+$/, "", $2)
+      print $2
+      exit
+    }
+  ' "$file"
+}
+
+resolve_cursor_theme() {
+  local value=""
+  value="$(read_gtk_setting "gtk-cursor-theme-name" 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  value="$(read_gtk2_setting "gtk-cursor-theme-name" 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  if [ -f "$HOME/.icons/default/index.theme" ]; then
+    value="$(awk -F= '$1=="Inherits"{print $2; exit}' "$HOME/.icons/default/index.theme" 2>/dev/null || true)"
+    if [ -n "$value" ]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  fi
+
+  value="$(gsettings get org.gnome.desktop.interface cursor-theme 2>/dev/null | tr -d "'" || true)"
+  if [ -n "$value" ] && [ "$value" != "''" ]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  printf '%s\n' "$CURSOR_THEME_DEFAULT"
+}
+
+resolve_cursor_size() {
+  local value=""
+  value="$(read_gtk_setting "gtk-cursor-theme-size" 2>/dev/null || true)"
+  if [ -n "$value" ] && [ "$value" -gt 0 ] 2>/dev/null; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  value="$(read_gtk2_setting "gtk-cursor-theme-size" 2>/dev/null || true)"
+  if [ -n "$value" ] && [ "$value" -gt 0 ] 2>/dev/null; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  value="$(gsettings get org.gnome.desktop.interface cursor-size 2>/dev/null | tr -d "'" || true)"
+  if [ -n "$value" ] && [ "$value" -gt 0 ] 2>/dev/null; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  printf '%s\n' "$CURSOR_SIZE_DEFAULT"
+}
+
+write_icons_default_theme() {
+  local theme="$1"
+  local icons_default_dir="$HOME/.icons/default"
+  mkdir -p "$icons_default_dir"
+  cat > "$icons_default_dir/index.theme" <<EOF
+[Icon Theme]
+Inherits=$theme
+EOF
+}
+
+CURSOR_THEME="$(resolve_cursor_theme)"
+CURSOR_SIZE="$(resolve_cursor_size)"
 
 {
   export XCURSOR_THEME="$CURSOR_THEME"
   export XCURSOR_SIZE="$CURSOR_SIZE"
+  write_icons_default_theme "$CURSOR_THEME"
   xrdb -merge <<EOF 2>/dev/null || true
 Xcursor.theme: $CURSOR_THEME
 Xcursor.size: $CURSOR_SIZE
