@@ -2851,16 +2851,16 @@ class CyberBar(QWidget):
             }}
             QLabel#launcherNote {{
                 font-family: "{self.ui_font}";
-                font-size: 13px;
+                font-size: 14px;
                 font-weight: 700;
                 letter-spacing: 0.3px;
                 padding-bottom: 2px;
             }}
             QLabel#launcherText {{
                 font-family: "{self.ui_font}";
-                font-size: 10px;
-                font-weight: 600;
-                letter-spacing: 0.6px;
+                font-size: 12px;
+                font-weight: 650;
+                letter-spacing: 0.7px;
                 padding-bottom: 0px;
             }}
             #launcherChip:hover {{

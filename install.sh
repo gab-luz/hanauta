@@ -4,6 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 VSCODE_EXTENSION_SRC="$SCRIPT_DIR/hanauta/vscode-wallpaper-theme"
 VSCODE_EXTENSION_ID="hanauta.hanauta-wallpaper-theme"
+SWEET_CURSOR_THEME_NAME="sweet-cursors"
+SWEET_CURSOR_THEME_SIZE="24"
+SWEET_CURSOR_REPO_URL="https://github.com/Gigas002/Sweet.git"
+SWEET_CURSOR_REPO_BRANCH="cursors"
 
 INSTALL_EDITOR_EXTENSIONS_AUTO=false
 INSTALL_VSCODE_ONLY=false
@@ -14,6 +18,12 @@ INSTALL_WIREGUARD_SYSTEMD_ONLY=false
 INSTALL_CUSTOM_THEMES=false
 CUSTOM_THEMES_SELECTION=""
 INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
+INSTALL_CURSOR_ONLY=false
+INSTALL_CURSOR_THEME_TO_SYSTEM=false
+INSTALL_GTK_THEME_ONLY=false
+INSTALL_RUBIK_FONT_ONLY=false
+GTK_THEME_SELECTION=""
+ADW_GTK_REPO="lassekongo83/adw-gtk3"
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -56,6 +66,19 @@ detect_arch() {
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+run_cmd_silencing_inkscape_stderr() {
+  "$@" 2> >(
+    while IFS= read -r line; do
+      case "${line,,}" in
+        *inkscape*)
+          continue
+          ;;
+      esac
+      printf '%s\n' "$line" >&2
+    done
+  )
+}
+
 normalize_custom_theme_selection() {
   local raw="${1:-all}"
   raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
@@ -67,6 +90,56 @@ normalize_custom_theme_selection() {
       return 1
       ;;
   esac
+}
+
+normalize_cursor_theme_selection() {
+  local raw="${1:-}"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$raw" in
+    sweet|sweet-cursors)
+      printf '%s\n' "sweet-cursors"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+normalize_gtk_theme_selection() {
+  local raw="${1:-}"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$raw" in
+    adw-gtk3|adw-gtk3-dark)
+      printf '%s\n' "$raw"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+print_help() {
+  cat <<EOF
+Usage: ./install.sh [OPTIONS]
+
+Without flags:
+  Runs the full desktop install.
+
+Options:
+  -h, --help                    Show this help and exit
+  --vscode                      Install only the VS Code extension
+  --vscodium                    Install only the VSCodium extension
+  --notification-daemon         Install only Hanauta notification daemon components
+  --quickshell                  Install only Quickshell runtime dependencies
+  --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
+  --custom-themes               Install all vendored custom themes (retrowave + dracula)
+  --custom-themes=NAME          Install custom themes by selection: retrowave, dracula, all
+  --custom-themes-system        Force custom themes installation into /usr/share/themes too
+  --cursor-theme=NAME           Install only cursor theme by name (supported: sweet-cursors)
+  --cursor-theme-system         Also install cursor theme into /usr/share/icons using sudo
+  --gtk-theme=NAME              Install only GTK theme by name (supported: adw-gtk3, adw-gtk3-dark)
+  --rubik-font                  Install only bundled Rubik fonts (user + optional system-wide)
+EOF
 }
 
 install_editor_extension_dir() {
@@ -149,22 +222,22 @@ parse_args() {
           CUSTOM_THEMES_SELECTION="all"
         fi
         ;;
+      --cursor-theme=*)
+        INSTALL_CURSOR_ONLY=true
+        SWEET_CURSOR_THEME_NAME="${1#*=}"
+        ;;
+      --cursor-theme-system)
+        INSTALL_CURSOR_THEME_TO_SYSTEM=true
+        ;;
+      --gtk-theme=*)
+        INSTALL_GTK_THEME_ONLY=true
+        GTK_THEME_SELECTION="${1#*=}"
+        ;;
+      --rubik-font)
+        INSTALL_RUBIK_FONT_ONLY=true
+        ;;
       -h|--help)
-        cat <<EOF
-Usage: ./install.sh [--vscode] [--vscodium] [--notification-daemon] [--quickshell] [--wireguard-systemd] [--custom-themes[=retrowave|dracula|all]] [--custom-themes-system]
-
-Without flags:
-  Runs the full desktop install only.
-
-With flags:
-  --vscode    Install only the VS Code extension
-  --vscodium  Install only the VSCodium extension
-  --notification-daemon  Install only the Hanauta notification daemon components
-  --quickshell  Install only the Quickshell runtime dependencies
-  --wireguard-systemd  Offer a systemd-based WireGuard auto-start setup
-  --custom-themes[=name]  Install vendored custom themes to both ~/.themes and /usr/share/themes by default. Accepted values: retrowave, dracula, all
-  --custom-themes-system  Explicitly force system installation too (default for custom-theme installs)
-EOF
+        print_help
         exit 0
         ;;
       *)
@@ -194,6 +267,59 @@ confirm_default_yes() {
     n|no) return 1 ;;
     *) return 0 ;;
   esac
+}
+
+install_rubik_fonts() {
+  local fonts_src_root="$SCRIPT_DIR/assets/fonts"
+  local user_dest_root="$HOME/.local/share/fonts/Rubik"
+  local system_dest_root="/usr/local/share/fonts/Rubik"
+  local -a rubik_files=(
+    Rubik-VariableFont_wght.ttf
+    Rubik-Italic-VariableFont_wght.ttf
+  )
+  local file=""
+
+  if [ ! -d "$fonts_src_root" ]; then
+    warn "Font source directory not found: $fonts_src_root"
+    return 1
+  fi
+
+  for file in "${rubik_files[@]}"; do
+    if [ ! -f "$fonts_src_root/$file" ]; then
+      warn "Missing bundled Rubik font file: $fonts_src_root/$file"
+      return 1
+    fi
+  done
+
+  mkdir -p "$user_dest_root"
+  for file in "${rubik_files[@]}"; do
+    cp -f "$fonts_src_root/$file" "$user_dest_root/"
+  done
+  success "Rubik fonts installed for user at $user_dest_root"
+
+  if need_cmd fc-cache; then
+    fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || fc-cache -f >/dev/null 2>&1 || true
+  fi
+
+  if ! confirm_default_yes "Also install Rubik fonts system-wide to $system_dest_root using sudo?"; then
+    info "Skipped system-wide Rubik font installation."
+    return 0
+  fi
+
+  if ! need_cmd sudo; then
+    warn "sudo not found; skipping system-wide Rubik font installation."
+    return 0
+  fi
+
+  sudo mkdir -p "$system_dest_root"
+  for file in "${rubik_files[@]}"; do
+    sudo cp -f "$fonts_src_root/$file" "$system_dest_root/"
+  done
+  success "Rubik fonts installed system-wide at $system_dest_root"
+
+  if need_cmd fc-cache; then
+    sudo fc-cache -f /usr/local/share/fonts >/dev/null 2>&1 || sudo fc-cache -f >/dev/null 2>&1 || true
+  fi
 }
 
 install_wireguard_systemd_support_debian() {
@@ -381,6 +507,7 @@ install_pacman_group() {
 
 install_packages_debian() {
   local -a core_pkgs=(
+    git
     i3-wm rofi feh picom
     x11-xserver-utils x11-utils xdotool xclip
     jq curl ffmpeg rsync
@@ -403,6 +530,8 @@ install_packages_debian() {
     libxkbcommon-x11-0
     libxcb-cursor0
     sassc
+    inkscape
+    xcursorgen
     xdg-user-dirs
     libgtk-3-bin
   )
@@ -421,6 +550,7 @@ install_packages_debian() {
 
 install_packages_arch() {
   local -a core_pkgs=(
+    git
     i3-wm rofi feh picom
     xorg-xrandr xorg-xsetroot xorg-xwininfo xorg-xev xdotool xclip
     jq curl ffmpeg rsync
@@ -442,6 +572,8 @@ install_packages_arch() {
     libxkbcommon-x11
     libxcb-cursor
     sassc
+    inkscape
+    xorg-xcursorgen
     xdg-user-dirs
     gtk3
   )
@@ -836,6 +968,224 @@ install_custom_themes_system() {
   success "Selected custom themes installed system-wide"
 }
 
+build_sweet_cursor_theme() {
+  local repo_root="$1"
+  local cursor_root="$repo_root/kde/cursors"
+
+  if [ ! -d "$cursor_root" ]; then
+    return 1
+  fi
+
+  if [ -d "$cursor_root/Sweet-cursors" ] || [ -d "$cursor_root/sweet-cursors" ] || [ -d "$cursor_root/Sweet_Cursors" ]; then
+    return 0
+  fi
+
+  if ! need_cmd inkscape || ! need_cmd xcursorgen; then
+    warn "Cannot build $SWEET_CURSOR_THEME_NAME: missing inkscape and/or xcursorgen."
+    return 1
+  fi
+
+  info "Building $SWEET_CURSOR_THEME_NAME from source..."
+  local attempt=1
+  local max_attempts=3
+  while [ "$attempt" -le "$max_attempts" ]; do
+    if (cd "$cursor_root" && run_cmd_silencing_inkscape_stderr bash build.sh); then
+      break
+    fi
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      warn "Cursor build attempt ${attempt}/${max_attempts} failed; retrying..."
+      sleep 1
+    else
+      warn "Failed to build $SWEET_CURSOR_THEME_NAME with build.sh after ${max_attempts} attempts."
+      return 1
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  [ -d "$cursor_root/Sweet-cursors" ] || [ -d "$cursor_root/sweet-cursors" ] || [ -d "$cursor_root/Sweet_Cursors" ]
+}
+
+install_sweet_cursor_theme_files() {
+  local destination_root="$1"
+  local tmp_root=""
+  local repo_root=""
+  local source_dir=""
+  local destination_dir="$destination_root/$SWEET_CURSOR_THEME_NAME"
+
+  mkdir -p "$destination_root"
+  tmp_root="$(mktemp -d)"
+  repo_root="$tmp_root/sweet-repo"
+
+  if ! git clone --depth 1 --branch "$SWEET_CURSOR_REPO_BRANCH" "$SWEET_CURSOR_REPO_URL" "$repo_root" >/dev/null 2>&1; then
+    warn "Could not clone $SWEET_CURSOR_REPO_URL ($SWEET_CURSOR_REPO_BRANCH)."
+    rm -rf "$tmp_root"
+    return 1
+  fi
+
+  build_sweet_cursor_theme "$repo_root" || {
+    rm -rf "$tmp_root"
+    return 1
+  }
+
+  for candidate in \
+    "$repo_root/kde/cursors/Sweet-cursors" \
+    "$repo_root/kde/cursors/sweet-cursors" \
+    "$repo_root/kde/cursors/Sweet_Cursors"; do
+    if [ -d "$candidate" ]; then
+      source_dir="$candidate"
+      break
+    fi
+  done
+
+  if [ -z "$source_dir" ]; then
+    warn "Built cursor theme directory was not found in upstream sources."
+    rm -rf "$tmp_root"
+    return 1
+  fi
+
+  rm -rf "$destination_dir"
+  copy_theme_tree "$source_dir" "$destination_dir"
+  rm -rf "$tmp_root"
+  success "$SWEET_CURSOR_THEME_NAME installed to $destination_dir"
+}
+
+apply_cursor_theme_defaults() {
+  local icons_default_dir="$HOME/.icons/default"
+  local index_file="$icons_default_dir/index.theme"
+
+  mkdir -p "$icons_default_dir"
+  cat > "$index_file" <<EOF
+[Icon Theme]
+Inherits=$SWEET_CURSOR_THEME_NAME
+EOF
+
+  if need_cmd gsettings; then
+    gsettings set org.gnome.desktop.interface cursor-theme "$SWEET_CURSOR_THEME_NAME" >/dev/null 2>&1 || true
+    gsettings set org.gnome.desktop.interface cursor-size "$SWEET_CURSOR_THEME_SIZE" >/dev/null 2>&1 || true
+  fi
+
+  xrdb -merge <<EOF >/dev/null 2>&1 || true
+Xcursor.theme: $SWEET_CURSOR_THEME_NAME
+Xcursor.size: $SWEET_CURSOR_THEME_SIZE
+EOF
+  success "Cursor defaults set to $SWEET_CURSOR_THEME_NAME ($SWEET_CURSOR_THEME_SIZE)"
+}
+
+install_sweet_cursor_theme() {
+  info "Installing $SWEET_CURSOR_THEME_NAME..."
+  local user_theme_dir="$HOME/.icons/$SWEET_CURSOR_THEME_NAME"
+  if ! install_sweet_cursor_theme_files "$HOME/.icons"; then
+    warn "$SWEET_CURSOR_THEME_NAME could not be installed. Keeping existing cursor settings."
+    return 1
+  fi
+
+  apply_cursor_theme_defaults
+
+  if [ "$INSTALL_CURSOR_THEME_TO_SYSTEM" = true ]; then
+    if ! need_cmd sudo; then
+      warn "sudo not found; skipping system-wide cursor install to /usr/share/icons."
+      return 0
+    fi
+    if [ ! -d "$user_theme_dir" ]; then
+      warn "User cursor theme directory missing: $user_theme_dir"
+      return 0
+    fi
+    info "Installing $SWEET_CURSOR_THEME_NAME system-wide to /usr/share/icons with sudo..."
+    sudo mkdir -p /usr/share/icons
+    sudo rm -rf "/usr/share/icons/$SWEET_CURSOR_THEME_NAME"
+    sudo cp -a "$user_theme_dir" "/usr/share/icons/"
+    success "$SWEET_CURSOR_THEME_NAME installed system-wide at /usr/share/icons/$SWEET_CURSOR_THEME_NAME"
+  fi
+}
+
+download_adw_gtk_release_archive() {
+  local output_file="$1"
+  local api_url="https://api.github.com/repos/$ADW_GTK_REPO/releases/latest"
+  local asset_url=""
+
+  if ! need_cmd jq; then
+    warn "jq is required to resolve adw-gtk3 release assets."
+    return 1
+  fi
+
+  asset_url="$(curl -fsSL "$api_url" | jq -r '.assets[]?.browser_download_url | select(test("adw-gtk3v[0-9].*\\.tar\\.xz$"))' | head -n 1)"
+  if [ -z "$asset_url" ] || [ "$asset_url" = "null" ]; then
+    warn "Could not find adw-gtk3 release archive URL."
+    return 1
+  fi
+
+  curl -fsSL -o "$output_file" "$asset_url"
+}
+
+install_adw_gtk_theme_files() {
+  local destination_root="$1"
+  local temp_root=""
+  local archive_file=""
+  local unpack_root=""
+  local candidate_root=""
+
+  mkdir -p "$destination_root"
+  temp_root="$(mktemp -d)"
+  archive_file="$temp_root/adw-gtk3.tar.xz"
+  unpack_root="$temp_root/unpack"
+
+  if ! download_adw_gtk_release_archive "$archive_file"; then
+    rm -rf "$temp_root"
+    return 1
+  fi
+
+  mkdir -p "$unpack_root"
+  tar -xJf "$archive_file" -C "$unpack_root"
+
+  if [ -d "$unpack_root/adw-gtk3" ] && [ -d "$unpack_root/adw-gtk3-dark" ]; then
+    candidate_root="$unpack_root"
+  else
+    for candidate in "$unpack_root"/*; do
+      if [ -d "$candidate/adw-gtk3" ] && [ -d "$candidate/adw-gtk3-dark" ]; then
+        candidate_root="$candidate"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$candidate_root" ]; then
+    warn "Could not locate adw-gtk3 theme folders in release archive."
+    rm -rf "$temp_root"
+    return 1
+  fi
+
+  copy_theme_tree "$candidate_root/adw-gtk3" "$destination_root/adw-gtk3"
+  copy_theme_tree "$candidate_root/adw-gtk3-dark" "$destination_root/adw-gtk3-dark"
+  rm -rf "$temp_root"
+  success "Installed adw-gtk3 and adw-gtk3-dark to $destination_root"
+}
+
+apply_gtk_theme_defaults() {
+  local selected_theme="$1"
+  local color_scheme="default"
+
+  if [ "$selected_theme" = "adw-gtk3-dark" ]; then
+    color_scheme="prefer-dark"
+  fi
+
+  if need_cmd gsettings; then
+    gsettings set org.gnome.desktop.interface gtk-theme "$selected_theme" >/dev/null 2>&1 || true
+    gsettings set org.gnome.desktop.interface color-scheme "$color_scheme" >/dev/null 2>&1 || true
+  fi
+  success "GTK theme set to $selected_theme (color-scheme: $color_scheme)"
+}
+
+install_adw_gtk_theme() {
+  local selected_theme="$1"
+  info "Installing GTK theme: $selected_theme..."
+  if install_adw_gtk_theme_files "$HOME/.themes"; then
+    apply_gtk_theme_defaults "$selected_theme"
+  else
+    warn "Failed to install adw-gtk3 themes."
+    return 1
+  fi
+}
+
 offer_custom_theme_install() {
   local selection="${CUSTOM_THEMES_SELECTION:-}"
   local reply=""
@@ -888,6 +1238,8 @@ print_summary() {
   echo -e "  ${GREEN}✓${NC} Dotfiles"
   echo -e "  ${GREEN}✓${NC} Config links"
   echo -e "  ${GREEN}✓${NC} Bundled binaries"
+  echo -e "  ${GREEN}✓${NC} Rubik fonts"
+  echo -e "  ${GREEN}✓${NC} Sweet cursor theme"
   echo -e "  ${GREEN}✓${NC} Optional custom themes"
   echo ""
 }
@@ -897,6 +1249,7 @@ post_notes() {
   echo -e "${YELLOW}Important notes:${NC}"
   echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
   echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
+  echo -e "  • Cursor defaults are set to ${BOLD}${SWEET_CURSOR_THEME_NAME}${NC} (${BOLD}${SWEET_CURSOR_THEME_SIZE}${NC}) to match Caelestia"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
   echo -e "  • PyQt6 notification center opens from the bar"
   echo ""
@@ -908,6 +1261,35 @@ post_notes() {
 
 main() {
   parse_args "$@"
+
+  if [ "$INSTALL_GTK_THEME_ONLY" = true ]; then
+    GTK_THEME_SELECTION="$(normalize_gtk_theme_selection "$GTK_THEME_SELECTION")" || {
+      error "Unsupported GTK theme selection: $GTK_THEME_SELECTION"
+      return 1
+    }
+    print_banner
+    install_adw_gtk_theme "$GTK_THEME_SELECTION"
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_CURSOR_ONLY" = true ]; then
+    SWEET_CURSOR_THEME_NAME="$(normalize_cursor_theme_selection "$SWEET_CURSOR_THEME_NAME")" || {
+      error "Unsupported cursor theme selection: $SWEET_CURSOR_THEME_NAME"
+      return 1
+    }
+    print_banner
+    install_sweet_cursor_theme
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_RUBIK_FONT_ONLY" = true ]; then
+    print_banner
+    install_rubik_fonts
+    info "Done!"
+    return 0
+  fi
 
   if [ "$INSTALL_VSCODE_ONLY" = true ] || [ "$INSTALL_VSCODIUM_ONLY" = true ]; then
     if [ "$INSTALL_VSCODE_ONLY" = true ]; then
@@ -982,9 +1364,11 @@ main() {
 
   setup_python_venv
   copy_dotfiles
+  install_rubik_fonts
   build_native_services
   ensure_dock_defaults
   ensure_hanauta_settings
+  install_sweet_cursor_theme
   link_configs
   make_exec
   install_local_binaries

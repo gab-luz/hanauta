@@ -6,6 +6,8 @@ env/
 uv.lock
 __pycache__/
 .venv-build
+nuitka-crash-report.xml
+main.py
 hanauta/src/pyqt/overview
 hanauta_lock.build
 .nuitka-cache
