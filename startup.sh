@@ -6,8 +6,20 @@ PYTHON_BIN="$HOME/.config/i3/.venv/bin/python"
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="$(command -v python3)"
 fi
+CURSOR_THEME="sweet-cursors"
+CURSOR_SIZE="24"
 
 {
+  export XCURSOR_THEME="$CURSOR_THEME"
+  export XCURSOR_SIZE="$CURSOR_SIZE"
+  xrdb -merge <<EOF 2>/dev/null || true
+Xcursor.theme: $CURSOR_THEME
+Xcursor.size: $CURSOR_SIZE
+EOF
+  gsettings set org.gnome.desktop.interface cursor-theme "$CURSOR_THEME" 2>/dev/null || true
+  gsettings set org.gnome.desktop.interface cursor-size "$CURSOR_SIZE" 2>/dev/null || true
+  systemctl --user set-environment XCURSOR_THEME="$CURSOR_THEME" XCURSOR_SIZE="$CURSOR_SIZE" 2>/dev/null || true
+  dbus-update-activation-environment --systemd XCURSOR_THEME="$CURSOR_THEME" XCURSOR_SIZE="$CURSOR_SIZE" 2>/dev/null || true
   unset GTK_THEME
   systemctl --user unset-environment GTK_THEME 2>/dev/null || true
   dbus-update-activation-environment --systemd GTK_THEME= 2>/dev/null || true
