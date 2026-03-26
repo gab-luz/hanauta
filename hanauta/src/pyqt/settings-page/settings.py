@@ -20,6 +20,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib import error, request
 from urllib import parse
@@ -1981,8 +1982,19 @@ def build_display_command(displays: list[dict], primary_name: str, layout_mode: 
     return cmd
 
 
+def normalize_display_orientation(value: object) -> str:
+    orientation = str(value or "normal").strip().lower()
+    if orientation in {"normal", "left", "right", "inverted"}:
+        return orientation
+    return "normal"
+
+
 def restore_saved_displays() -> None:
     settings = load_settings_state()
+    startup_state = settings.get("startup", {})
+    if isinstance(startup_state, dict) and not bool(startup_state.get("restore_displays", True)):
+        return
+
     display_state = settings.get("display", {})
     if not isinstance(display_state, dict):
         return
@@ -1990,58 +2002,98 @@ def restore_saved_displays() -> None:
     if not isinstance(saved_outputs, list) or not saved_outputs:
         return
 
-    current = parse_xrandr_state()
-    if not current:
-        return
-    available = {str(item.get("name", "")): item for item in current}
-    restored: list[dict] = []
-    for saved in saved_outputs:
-        if not isinstance(saved, dict):
-            continue
-        name = str(saved.get("name", "")).strip()
-        if not name or name not in available:
-            continue
-        current_item = available[name]
-        restored.append(
-            {
-                "name": name,
-                "enabled": bool(saved.get("enabled", current_item.get("enabled", True))),
-                "resolution": str(saved.get("resolution", current_item.get("current_mode", ""))),
-                "refresh": str(saved.get("refresh", "Auto")),
-                "orientation": str(saved.get("orientation", current_item.get("orientation", "normal"))),
-                "modes": list(current_item.get("modes", [])),
-            }
-        )
-    if not restored:
+    required_enabled_outputs = {
+        str(item.get("name", "")).strip()
+        for item in saved_outputs
+        if isinstance(item, dict) and bool(item.get("enabled", True))
+    }
+    required_enabled_outputs.discard("")
+    if not required_enabled_outputs:
         return
 
-    enabled = [display for display in restored if display.get("enabled")]
-    if not enabled:
-        return
-    primary_name = str(display_state.get("primary", "")).strip() or str(enabled[0]["name"])
-    if primary_name not in {str(display["name"]) for display in enabled}:
-        primary_name = str(enabled[0]["name"])
-    layout_mode = str(display_state.get("layout_mode", "extend"))
-    if layout_mode not in {"extend", "duplicate"}:
-        layout_mode = "extend"
+    max_attempts = 10
+    retry_delay_sec = 1.2
+    for _attempt in range(max_attempts):
+        current = parse_xrandr_state()
+        if not current:
+            time.sleep(retry_delay_sec)
+            continue
+        available = {str(item.get("name", "")): item for item in current}
+        if required_enabled_outputs - set(available):
+            time.sleep(retry_delay_sec)
+            continue
 
-    if layout_mode == "duplicate" and len(enabled) > 1:
-        common_modes = set(str(mode) for mode in enabled[0].get("modes", []))
-        for display in enabled[1:]:
-            common_modes &= set(str(mode) for mode in display.get("modes", []))
-        if not common_modes:
+        restored: list[dict] = []
+        for saved in saved_outputs:
+            if not isinstance(saved, dict):
+                continue
+            name = str(saved.get("name", "")).strip()
+            if not name or name not in available:
+                continue
+            current_item = available[name]
+            restored.append(
+                {
+                    "name": name,
+                    "enabled": bool(saved.get("enabled", current_item.get("enabled", True))),
+                    "resolution": str(saved.get("resolution", current_item.get("current_mode", ""))),
+                    "refresh": str(saved.get("refresh", "Auto")),
+                    "orientation": normalize_display_orientation(saved.get("orientation", current_item.get("orientation", "normal"))),
+                    "modes": list(current_item.get("modes", [])),
+                }
+            )
+        if not restored:
+            time.sleep(retry_delay_sec)
+            continue
+
+        enabled = [display for display in restored if display.get("enabled")]
+        if not enabled:
+            return
+        primary_name = str(display_state.get("primary", "")).strip() or str(enabled[0]["name"])
+        if primary_name not in {str(display["name"]) for display in enabled}:
+            primary_name = str(enabled[0]["name"])
+        layout_mode = str(display_state.get("layout_mode", "extend"))
+        if layout_mode not in {"extend", "duplicate"}:
             layout_mode = "extend"
-        else:
-            primary_display = next(display for display in enabled if str(display["name"]) == primary_name)
-            if str(primary_display.get("resolution", "")) not in common_modes:
-                primary_display["resolution"] = sorted(common_modes, key=resolution_area, reverse=True)[0]
-            for display in enabled:
-                display["resolution"] = primary_display["resolution"]
-                if str(display["name"]) != primary_name:
-                    display["refresh"] = "Auto"
 
-    cmd = build_display_command(restored, primary_name, layout_mode)
-    subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if layout_mode == "duplicate" and len(enabled) > 1:
+            common_modes = set(str(mode) for mode in enabled[0].get("modes", []))
+            for display in enabled[1:]:
+                common_modes &= set(str(mode) for mode in display.get("modes", []))
+            if not common_modes:
+                layout_mode = "extend"
+            else:
+                primary_display = next(display for display in enabled if str(display["name"]) == primary_name)
+                if str(primary_display.get("resolution", "")) not in common_modes:
+                    primary_display["resolution"] = sorted(common_modes, key=resolution_area, reverse=True)[0]
+                for display in enabled:
+                    display["resolution"] = primary_display["resolution"]
+                    if str(display["name"]) != primary_name:
+                        display["refresh"] = "Auto"
+
+        cmd = build_display_command(restored, primary_name, layout_mode)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            time.sleep(retry_delay_sec)
+            continue
+
+        time.sleep(0.35)
+        applied = {str(item.get("name", "")): item for item in parse_xrandr_state()}
+        if not applied:
+            return
+        mismatch = False
+        for display in enabled:
+            name = str(display["name"])
+            if name not in applied:
+                mismatch = True
+                break
+            want = normalize_display_orientation(display.get("orientation", "normal"))
+            got = normalize_display_orientation(applied[name].get("orientation", "normal"))
+            if got != want:
+                mismatch = True
+                break
+        if not mismatch:
+            return
+        time.sleep(retry_delay_sec)
 
 
 def accent_palette(name: str) -> dict[str, str]:
@@ -2928,7 +2980,7 @@ class ThemeModeCard(QPushButton):
 
 THEME_CHOICES = {"light", "dark", "custom", "wallpaper_aware"}
 BUILTIN_THEME_KEYS = {"hanauta_dark", "hanauta_light"}
-CUSTOM_THEME_KEYS = {"retrowave", "dracula"}
+CUSTOM_THEME_KEYS = {"retrowave", "dracula", "caelestia"}
 THEMES_HOME = Path.home() / ".themes"
 SYSTEM_THEMES_HOME = Path("/usr/share/themes")
 SYSTEM_THEME_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_theme_system.sh"
@@ -3032,6 +3084,29 @@ DRACULA_PALETTE = {
     "on_error": "#FFFFFF",
 }
 
+CAELESTIA_PALETTE = {
+    "source": "#7171AC",
+    "primary": "#C2C1FF",
+    "on_primary": "#2A2A60",
+    "primary_container": "#7171AC",
+    "on_primary_container": "#FFFFFF",
+    "secondary": "#C6C4E0",
+    "on_secondary": "#2E2E44",
+    "tertiary": "#F5B2E0",
+    "on_tertiary": "#4E1E44",
+    "background": "#131317",
+    "on_background": "#E5E1E7",
+    "surface": "#131317",
+    "on_surface": "#E5E1E7",
+    "surface_container": "#201F23",
+    "surface_container_high": "#2A292E",
+    "surface_variant": "#47464F",
+    "on_surface_variant": "#C8C5D1",
+    "outline": "#918F9A",
+    "error": "#FFB4AB",
+    "on_error": "#690005",
+}
+
 THEME_LIBRARY = {
     "hanauta_dark": {
         "label": "Hanauta Dark",
@@ -3069,6 +3144,13 @@ THEME_LIBRARY = {
             "serif_font_family": "Noto Serif",
         },
         "gtk_theme": "Dracula",
+        "color_scheme": "prefer-dark",
+    },
+    "caelestia": {
+        "label": "Caelestia",
+        "palette": CAELESTIA_PALETTE,
+        "fonts": HANAUTA_FONT_PROFILE,
+        "gtk_theme": "Hanauta-Caelestia",
         "color_scheme": "prefer-dark",
     },
 }
@@ -3945,7 +4027,8 @@ class SettingsWindow(QWidget):
         custom_theme_layout.setVerticalSpacing(8)
         retrowave = ThemeModeCard(material_icon("bolt"), "Retrowave", self.icon_font, self.ui_font)
         dracula = ThemeModeCard(material_icon("dark_mode"), "Dracula", self.icon_font, self.ui_font)
-        self.custom_theme_buttons = {"retrowave": retrowave, "dracula": dracula}
+        caelestia = ThemeModeCard(material_icon("auto_awesome"), "Caelestia", self.icon_font, self.ui_font)
+        self.custom_theme_buttons = {"retrowave": retrowave, "dracula": dracula, "caelestia": caelestia}
         self.custom_theme_group = QButtonGroup(self)
         self.custom_theme_group.setExclusive(True)
         for key, button in self.custom_theme_buttons.items():
@@ -3953,6 +4036,7 @@ class SettingsWindow(QWidget):
             button.clicked.connect(lambda checked=False, current=key: self._set_custom_theme(current))
         custom_theme_layout.addWidget(retrowave, 0, 0)
         custom_theme_layout.addWidget(dracula, 0, 1)
+        custom_theme_layout.addWidget(caelestia, 1, 0)
         actions.addWidget(self.custom_theme_wrap)
         self.custom_theme_hint = QLabel("Custom themes drive both Hanauta colors and the matching GTK theme.")
         self.custom_theme_hint.setObjectName("settingsStatus")
