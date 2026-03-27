@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QKeyEvent
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QKeyEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -40,6 +40,7 @@ FONTS_DIR = fonts_root()
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "launcher"
 CACHE_FILE = STATE_DIR / "apps_cache.json"
+LAUNCHER_ICON_DIR = ROOT / "hanauta" / "src" / "assets" / "launcher"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
@@ -75,6 +76,25 @@ CATEGORY_MAP = {
     "graphics": {"Graphics", "Photography", "2DGraphics", "RasterGraphics", "VectorGraphics"},
     "games": {"Game"},
     "multimedia": {"AudioVideo", "Player", "Recorder", "Audio", "Video", "Music"},
+}
+
+FALLBACK_CATEGORY_ICON = {
+    "internet": "public",
+    "system": "settings",
+    "development": "code",
+    "graphics": "brush",
+    "games": "gamepad",
+    "multimedia": "movie",
+}
+
+CATEGORY_ICON_ASSET = {
+    "all": "category_all",
+    "internet": "category_internet",
+    "system": "category_system",
+    "development": "category_development",
+    "graphics": "category_graphics",
+    "games": "category_games",
+    "multimedia": "category_multimedia",
 }
 
 DESKTOP_DIRS = [
@@ -115,6 +135,107 @@ def load_app_fonts() -> dict[str, str]:
 
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
+
+
+def app_category_key(app: DesktopApp) -> str:
+    for key, categories in CATEGORY_MAP.items():
+        if key == "all":
+            continue
+        if categories and app.categories.intersection(categories):
+            return key
+    return "all"
+
+
+def _load_icon_from_path(path_text: str, size: int) -> QPixmap | None:
+    if not path_text:
+        return None
+    path = Path(path_text).expanduser()
+    candidates = [path]
+    if path.suffix == "":
+        candidates.extend([Path(f"{path_text}.png").expanduser(), Path(f"{path_text}.svg").expanduser(), Path(f"{path_text}.xpm").expanduser()])
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        icon = QIcon(str(candidate))
+        if icon.isNull():
+            continue
+        pix = icon.pixmap(size, size)
+        if not pix.isNull():
+            return pix
+    return None
+
+
+def _tint_pixmap(source: QPixmap, color: QColor) -> QPixmap:
+    if source.isNull():
+        return source
+    tinted = QPixmap(source.size())
+    tinted.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(tinted)
+    painter.drawPixmap(0, 0, source)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(tinted.rect(), color)
+    painter.end()
+    return tinted
+
+
+def _load_category_icon_pixmap(category_key: str, fallback_icon_key: str, size: int) -> QPixmap | None:
+    candidates = []
+    asset_name = CATEGORY_ICON_ASSET.get(category_key, "")
+    if asset_name:
+        candidates.append(LAUNCHER_ICON_DIR / f"{asset_name}.svg")
+    if fallback_icon_key:
+        candidates.append(LAUNCHER_ICON_DIR / f"{fallback_icon_key}.svg")
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        icon = QIcon(str(candidate))
+        if icon.isNull():
+            continue
+        pix = icon.pixmap(size, size)
+        if not pix.isNull():
+            return pix
+    return None
+
+
+def _svg_fallback_pixmap(app: DesktopApp, size: int, theme=None, use_matugen: bool = False) -> QPixmap | None:
+    category = app_category_key(app)
+    icon_key = FALLBACK_CATEGORY_ICON.get(category, "apps")
+    local_svg = LAUNCHER_ICON_DIR / f"{icon_key}.svg"
+    if local_svg.is_file():
+        icon = QIcon(str(local_svg))
+        if not icon.isNull():
+            pix = icon.pixmap(size, size)
+            if not pix.isNull():
+                return pix
+    glyph = material_icon(icon_key)
+    if use_matugen and theme is not None:
+        bg = theme.surface_container_high
+        fg = theme.primary
+    else:
+        bg = "#2A292E"
+        fg = "#D0BCFF"
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 64 64">
+<rect x="1" y="1" width="62" height="62" rx="18" fill="{bg}" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+<text x="32" y="41" text-anchor="middle" font-family="Material Icons, Material Symbols Rounded, sans-serif" font-size="30" fill="{fg}">{glyph}</text>
+</svg>"""
+    pix = QPixmap()
+    if pix.loadFromData(svg.encode("utf-8"), "SVG") and not pix.isNull():
+        return pix
+    return None
+
+
+def resolve_app_icon_pixmap(app: DesktopApp, size: int, theme=None, use_matugen: bool = False) -> QPixmap | None:
+    icon_name = str(app.icon_name or "").strip()
+    if icon_name:
+        icon = QIcon.fromTheme(icon_name)
+        if not icon.isNull():
+            pix = icon.pixmap(size, size)
+            if not pix.isNull():
+                return pix
+        path_pix = _load_icon_from_path(icon_name, size)
+        if path_pix is not None:
+            return path_pix
+    return _svg_fallback_pixmap(app, size, theme=theme, use_matugen=use_matugen)
 
 
 def matugen_enabled() -> bool:
@@ -317,19 +438,26 @@ class AppIndexWorker(QThread):
 
 
 class CategoryButton(QPushButton):
-    def __init__(self, label: str, icon_text: str, material_font: str, theme=None, use_matugen: bool = False) -> None:
+    def __init__(self, category_key: str, label: str, fallback_icon_key: str, material_font: str, theme=None, use_matugen: bool = False) -> None:
         super().__init__()
+        self.category_key = category_key
+        self.fallback_icon_key = fallback_icon_key
         self._label_text = label
         self.theme = theme
         self.use_matugen = use_matugen
+        self._icon_base = _load_category_icon_pixmap(category_key, fallback_icon_key, 20)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setCheckable(True)
         self.setMinimumHeight(46)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
-        self.icon_label = QLabel(icon_text)
-        self.icon_label.setFont(QFont(material_font, 18))
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(22, 22)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if self._icon_base is None:
+            self.icon_label.setText(material_icon(fallback_icon_key))
+            self.icon_label.setFont(QFont(material_font, 18))
         self.icon_label.setObjectName("categoryIcon")
         self.text_label = QLabel(label)
         self.text_label.setObjectName("categoryText")
@@ -353,15 +481,24 @@ class CategoryButton(QPushButton):
                 icon_color = self.theme.icon
                 text_color = self.theme.text
                 weight = 600
-            self.icon_label.setStyleSheet(f"color: {icon_color};")
+            if self._icon_base is not None:
+                self.icon_label.setPixmap(_tint_pixmap(self._icon_base, QColor(icon_color)))
+                self.icon_label.setStyleSheet("background: transparent;")
+            else:
+                self.icon_label.setStyleSheet(f"color: {icon_color};")
             self.text_label.setStyleSheet(f"color: {text_color}; font-weight: {weight};")
             return
         if active:
-            self.icon_label.setStyleSheet("color: #381e72;")
+            icon_color = "#381e72"
             self.text_label.setStyleSheet("color: #381e72; font-weight: 700;")
         else:
-            self.icon_label.setStyleSheet("color: rgba(255,255,255,0.82);")
+            icon_color = "rgba(255,255,255,0.82)"
             self.text_label.setStyleSheet("color: rgba(255,255,255,0.96); font-weight: 600;")
+        if self._icon_base is not None:
+            self.icon_label.setPixmap(_tint_pixmap(self._icon_base, QColor(icon_color)))
+            self.icon_label.setStyleSheet("background: transparent;")
+        else:
+            self.icon_label.setStyleSheet(f"color: {icon_color};")
 
 
 class AppCard(QFrame):
@@ -385,9 +522,9 @@ class AppCard(QFrame):
         self.icon_wrap.setFixedSize(42, 42)
         self.icon_wrap.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_wrap.setObjectName("appCardIconWrap")
-        icon = QIcon.fromTheme(app.icon_name)
-        if not icon.isNull():
-            self.icon_wrap.setPixmap(icon.pixmap(28, 28))
+        icon_pixmap = resolve_app_icon_pixmap(app, 28, theme=theme, use_matugen=use_matugen)
+        if icon_pixmap is not None and not icon_pixmap.isNull():
+            self.icon_wrap.setPixmap(icon_pixmap)
         else:
             self.icon_wrap.setText(material_icon("apps"))
             self.icon_wrap.setFont(QFont(material_font, 20))
@@ -592,7 +729,7 @@ class LauncherWindow(QWidget):
 
         self.category_buttons: dict[str, CategoryButton] = {}
         for key, label, icon_name in CATEGORY_ITEMS:
-            button = CategoryButton(label, material_icon(icon_name), self.material_font, self.theme, self.use_matugen)
+            button = CategoryButton(key, label, icon_name, self.material_font, self.theme, self.use_matugen)
             button.clicked.connect(lambda checked=False, value=key: self._set_category(value))
             sidebar_layout.addWidget(button)
             self.category_buttons[key] = button
