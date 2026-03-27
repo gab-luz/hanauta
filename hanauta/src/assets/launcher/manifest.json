@@ -1,0 +1,25 @@
+{
+  "package": "@material-symbols/svg-400",
+  "variant": "rounded",
+  "icons": {
+    "apps": "https://unpkg.com/@material-symbols/svg-400/rounded/apps.svg",
+    "brush": "https://unpkg.com/@material-symbols/svg-400/rounded/brush.svg",
+    "code": "https://unpkg.com/@material-symbols/svg-400/rounded/code.svg",
+    "folder": "https://unpkg.com/@material-symbols/svg-400/rounded/folder.svg",
+    "gamepad": "https://unpkg.com/@material-symbols/svg-400/rounded/gamepad.svg",
+    "movie": "https://unpkg.com/@material-symbols/svg-400/rounded/movie.svg",
+    "public": "https://unpkg.com/@material-symbols/svg-400/rounded/public.svg",
+    "search": "https://unpkg.com/@material-symbols/svg-400/rounded/search.svg",
+    "settings": "https://unpkg.com/@material-symbols/svg-400/rounded/settings.svg",
+    "terminal": "https://unpkg.com/@material-symbols/svg-400/rounded/terminal.svg"
+  },
+  "category_icons": {
+    "category_all.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/apps.svg",
+    "category_internet.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/public.svg",
+    "category_system.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/settings.svg",
+    "category_development.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/code.svg",
+    "category_graphics.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/brush.svg",
+    "category_games.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/gamepad.svg",
+    "category_multimedia.svg": "https://unpkg.com/@material-symbols/svg-400/rounded/movie.svg"
+  }
+}
