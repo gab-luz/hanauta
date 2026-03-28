@@ -21,6 +21,7 @@ A plugin directory should contain at least:
 
 - `hanauta_plugin.py` (entrypoint used by Settings)
 - `hanauta_bar_plugin.py` (optional entrypoint used by Bar integrations)
+- `hanauta-service-plugin.json` (optional manifest for background tasks via `hanauta-service`)
 - `icon.svg` or `icon.png` at plugin root (used in Services section header icon)
 - plugin runtime files (`study_tracker_popup.py`, assets, etc.)
 
@@ -100,6 +101,55 @@ Plugins must:
 - Contain all runtime assets/scripts they need.
 - Use only documented integration hooks.
 - Avoid patching core files at runtime.
+
+## Native Service Bridge Contract
+
+Plugins can register background jobs with native `hanauta-service` using:
+
+- `hanauta-service-plugin.json` at plugin root
+
+Manifest shape:
+
+```json
+{
+  "plugin_id": "ani_cli_widget",
+  "tasks": [
+    {
+      "id": "catalog_preload",
+      "enabled": true,
+      "interval_seconds": 300,
+      "timeout_seconds": 25,
+      "working_dir": "${PLUGIN_DIR}",
+      "command": ["python3", "${PLUGIN_DIR}/service_preload.py"]
+    }
+  ]
+}
+```
+
+Rules:
+
+- `plugin_id`: stable plugin identifier.
+- `tasks[].id`: stable task identifier within plugin.
+- `tasks[].enabled`: optional, default `true`.
+- `tasks[].interval_seconds`: minimum 20 seconds enforced by service.
+- `tasks[].command`: required argv array.
+- `tasks[].working_dir`: optional.
+- Token expansion supported in command/working dir:
+  - `${PLUGIN_DIR}`
+  - `${HOME}`
+
+Discovery roots for service bridge:
+
+- `~/.config/i3/hanauta/plugins/*`
+- `~/dev/hanauta-plugin-*`
+
+Bridge behavior:
+
+- Core service stays plugin-agnostic (no plugin-specific code in C).
+- Service executes due tasks on its normal refresh cadence.
+- Failed tasks retry with a shorter backoff.
+- Plugin tasks should write their own cache files under:
+  - `~/.local/state/hanauta/service/plugins/`
 
 ## Study Tracker Plugin (Current)
 

@@ -23,6 +23,7 @@ typedef struct {
     gint64 ntfy_topics_checked_at;
     GPtrArray *ntfy_all_topics_cache;
     GHashTable *ntfy_seen_ids;
+    GHashTable *plugin_task_next_run;
 } HanautaService;
 
 static HanautaService g_service = {0};
@@ -37,6 +38,15 @@ typedef struct {
     gchar *value;
     gboolean clear;
 } NtfyActionSpec;
+
+typedef struct {
+    gchar *plugin_id;
+    gchar *task_id;
+    gint interval_seconds;
+    gint timeout_seconds;
+    gchar *working_dir;
+    GPtrArray *command;
+} PluginTaskSpec;
 
 static gint compare_strings(gconstpointer a, gconstpointer b) {
     return g_strcmp0(*(const gchar * const *)a, *(const gchar * const *)b);
@@ -359,6 +369,104 @@ static void ntfy_action_spec_free(gpointer data) {
     g_free(action->body);
     g_free(action->value);
     g_free(action);
+}
+
+static void plugin_task_spec_free(gpointer data) {
+    PluginTaskSpec *task = data;
+    if (task == NULL) {
+        return;
+    }
+    g_free(task->plugin_id);
+    g_free(task->task_id);
+    g_free(task->working_dir);
+    if (task->command != NULL) {
+        g_ptr_array_free(task->command, TRUE);
+    }
+    g_free(task);
+}
+
+static gchar *replace_token(const gchar *text, const gchar *token, const gchar *replacement) {
+    GString *result = NULL;
+    const gchar *cursor = NULL;
+    const gchar *found = NULL;
+    gsize token_len = 0;
+    if (text == NULL) {
+        return g_strdup("");
+    }
+    if (token == NULL || *token == '\0') {
+        return g_strdup(text);
+    }
+    token_len = strlen(token);
+    result = g_string_new("");
+    cursor = text;
+    while ((found = g_strstr_len(cursor, -1, token)) != NULL) {
+        g_string_append_len(result, cursor, (gssize)(found - cursor));
+        g_string_append(result, replacement != NULL ? replacement : "");
+        cursor = found + token_len;
+    }
+    g_string_append(result, cursor);
+    return g_string_free(result, FALSE);
+}
+
+static gchar *expand_plugin_token_string(const gchar *text, const gchar *plugin_dir) {
+    gchar *step = replace_token(text, "${PLUGIN_DIR}", plugin_dir != NULL ? plugin_dir : "");
+    gchar *expanded = replace_token(step, "${HOME}", g_get_home_dir());
+    g_free(step);
+    return expanded;
+}
+
+static GPtrArray *collect_plugin_dirs(void) {
+    GPtrArray *dirs = g_ptr_array_new_with_free_func(g_free);
+    GHashTable *seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    const gchar *home = g_get_home_dir();
+    gchar *roots[2] = {
+        g_build_filename(home, ".config", "i3", "hanauta", "plugins", NULL),
+        g_build_filename(home, "dev", NULL),
+    };
+    for (guint i = 0; i < G_N_ELEMENTS(roots); ++i) {
+        GDir *dir = NULL;
+        const gchar *name = NULL;
+        if (roots[i] == NULL || !g_file_test(roots[i], G_FILE_TEST_IS_DIR)) {
+            continue;
+        }
+        dir = g_dir_open(roots[i], 0, NULL);
+        if (dir == NULL) {
+            continue;
+        }
+        while ((name = g_dir_read_name(dir)) != NULL) {
+            gchar *candidate = g_build_filename(roots[i], name, NULL);
+            gchar *manifest = NULL;
+            gchar *resolved = NULL;
+            if (!g_file_test(candidate, G_FILE_TEST_IS_DIR)) {
+                g_free(candidate);
+                continue;
+            }
+            if (i == 1 && !g_str_has_prefix(name, "hanauta-plugin-")) {
+                g_free(candidate);
+                continue;
+            }
+            manifest = g_build_filename(candidate, "hanauta-service-plugin.json", NULL);
+            if (!g_file_test(manifest, G_FILE_TEST_EXISTS)) {
+                g_free(manifest);
+                g_free(candidate);
+                continue;
+            }
+            g_free(manifest);
+            resolved = g_canonicalize_filename(candidate, NULL);
+            if (!g_hash_table_contains(seen, resolved)) {
+                g_hash_table_add(seen, g_strdup(resolved));
+                g_ptr_array_add(dirs, resolved);
+            } else {
+                g_free(resolved);
+            }
+            g_free(candidate);
+        }
+        g_dir_close(dir);
+    }
+    g_free(roots[0]);
+    g_free(roots[1]);
+    g_hash_table_unref(seen);
+    return dirs;
 }
 
 static void write_status_json(const gchar *status, const gchar *details) {
@@ -1567,6 +1675,184 @@ cleanup:
     return ok;
 }
 
+static GPtrArray *parse_plugin_tasks_manifest(const gchar *manifest_path, const gchar *plugin_dir) {
+    gchar *text = load_file_text(manifest_path);
+    gchar *tasks_json = extract_array_block(text, "tasks");
+    gchar *plugin_id = object_string(text, "plugin_id", "");
+    GPtrArray *tasks = g_ptr_array_new_with_free_func(plugin_task_spec_free);
+    const gchar *cursor = tasks_json;
+    gchar *plugin_name = g_path_get_basename(plugin_dir);
+
+    if (plugin_id == NULL || *plugin_id == '\0') {
+        g_free(plugin_id);
+        plugin_id = g_strdup(plugin_name);
+    }
+
+    if (tasks_json == NULL) {
+        goto cleanup;
+    }
+
+    while ((cursor = strchr(cursor, '{')) != NULL) {
+        gint depth = 0;
+        gboolean in_string = FALSE;
+        gboolean escaped = FALSE;
+        const gchar *end = NULL;
+        gchar *task_json = NULL;
+        PluginTaskSpec *task = NULL;
+
+        for (const gchar *scan = cursor; *scan != '\0'; ++scan) {
+            const gchar ch = *scan;
+            if (escaped) {
+                escaped = FALSE;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = TRUE;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = !in_string;
+                continue;
+            }
+            if (in_string) {
+                continue;
+            }
+            if (ch == '{') {
+                depth += 1;
+            } else if (ch == '}') {
+                depth -= 1;
+                if (depth == 0) {
+                    end = scan;
+                    break;
+                }
+            }
+        }
+        if (end == NULL) {
+            break;
+        }
+
+        task_json = g_strndup(cursor, (gsize)(end - cursor + 1));
+        task = g_new0(PluginTaskSpec, 1);
+        task->plugin_id = g_strdup(plugin_id);
+        task->task_id = object_string(task_json, "id", "");
+        task->interval_seconds = (gint)object_number(task_json, "interval_seconds", 300.0);
+        task->timeout_seconds = (gint)object_number(task_json, "timeout_seconds", 25.0);
+        task->working_dir = object_string(task_json, "working_dir", "");
+        task->command = object_string_array(task_json, "command");
+        if (task->interval_seconds < 20) {
+            task->interval_seconds = 20;
+        }
+        if (task->timeout_seconds < 3) {
+            task->timeout_seconds = 3;
+        }
+        gboolean enabled = object_bool(task_json, "enabled", TRUE);
+
+        if (!enabled || task->task_id == NULL || *task->task_id == '\0' || task->command == NULL || task->command->len == 0) {
+            plugin_task_spec_free(task);
+        } else {
+            for (guint i = 0; i < task->command->len; ++i) {
+                gchar *arg = g_ptr_array_index(task->command, i);
+                gchar *expanded = expand_plugin_token_string(arg, plugin_dir);
+                g_free(arg);
+                g_ptr_array_index(task->command, i) = expanded;
+            }
+            gchar *expanded_workdir = expand_plugin_token_string(task->working_dir, plugin_dir);
+            g_free(task->working_dir);
+            task->working_dir = expanded_workdir;
+            g_ptr_array_add(tasks, task);
+        }
+
+        g_free(task_json);
+        cursor = end + 1;
+    }
+
+cleanup:
+    g_free(text);
+    g_free(tasks_json);
+    g_free(plugin_id);
+    g_free(plugin_name);
+    return tasks;
+}
+
+static gboolean run_plugin_task(PluginTaskSpec *task) {
+    GSubprocessLauncher *launcher = NULL;
+    GSubprocess *process = NULL;
+    GError *error = NULL;
+    gboolean ok = FALSE;
+    gchar **argv = NULL;
+    if (task == NULL || task->command == NULL || task->command->len == 0) {
+        return FALSE;
+    }
+
+    argv = g_new0(gchar *, task->command->len + 1);
+    for (guint i = 0; i < task->command->len; ++i) {
+        argv[i] = g_strdup(g_ptr_array_index(task->command, i));
+    }
+    argv[task->command->len] = NULL;
+
+    launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+    if (task->working_dir != NULL && *task->working_dir != '\0' && g_file_test(task->working_dir, G_FILE_TEST_IS_DIR)) {
+        g_subprocess_launcher_set_cwd(launcher, task->working_dir);
+    }
+    process = g_subprocess_launcher_spawnv(launcher, (const gchar * const *)argv, &error);
+    if (process == NULL) {
+        g_clear_error(&error);
+        goto cleanup;
+    }
+    if (!g_subprocess_wait(process, NULL, &error)) {
+        g_clear_error(&error);
+        goto cleanup;
+    }
+    if (!g_subprocess_get_successful(process)) {
+        goto cleanup;
+    }
+    ok = TRUE;
+
+cleanup:
+    if (argv != NULL) {
+        g_strfreev(argv);
+    }
+    g_clear_object(&process);
+    g_clear_object(&launcher);
+    g_clear_error(&error);
+    return ok;
+}
+
+static void refresh_plugin_background_tasks(void) {
+    GPtrArray *plugin_dirs = collect_plugin_dirs();
+    gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+    for (guint i = 0; i < plugin_dirs->len; ++i) {
+        const gchar *plugin_dir = g_ptr_array_index(plugin_dirs, i);
+        gchar *manifest_path = g_build_filename(plugin_dir, "hanauta-service-plugin.json", NULL);
+        GPtrArray *tasks = NULL;
+        if (!g_file_test(manifest_path, G_FILE_TEST_EXISTS)) {
+            g_free(manifest_path);
+            continue;
+        }
+        tasks = parse_plugin_tasks_manifest(manifest_path, plugin_dir);
+        g_free(manifest_path);
+        for (guint j = 0; j < tasks->len; ++j) {
+            PluginTaskSpec *task = g_ptr_array_index(tasks, j);
+            gchar *task_key = g_strdup_printf("%s::%s", task->plugin_id, task->task_id);
+            gpointer slot = g_hash_table_lookup(g_service.plugin_task_next_run, task_key);
+            gint64 due_at = slot != NULL ? GPOINTER_TO_INT(slot) : 0;
+            gboolean should_run = due_at <= 0 || now >= due_at;
+            if (should_run) {
+                gboolean ok = run_plugin_task(task);
+                gint next_interval = ok ? task->interval_seconds : MIN(task->interval_seconds, 60);
+                if (next_interval < 10) {
+                    next_interval = 10;
+                }
+                g_hash_table_replace(g_service.plugin_task_next_run, task_key, GINT_TO_POINTER((gint)(now + next_interval)));
+            } else {
+                g_free(task_key);
+            }
+        }
+        g_ptr_array_free(tasks, TRUE);
+    }
+    g_ptr_array_free(plugin_dirs, TRUE);
+}
+
 static gboolean refresh_all(gpointer user_data) {
     (void)user_data;
     gboolean wifi_ok = refresh_wifi();
@@ -1574,6 +1860,7 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean crypto_ok = refresh_crypto();
     gboolean home_assistant_ok = refresh_home_assistant();
     gboolean ntfy_ok = refresh_ntfy();
+    refresh_plugin_background_tasks();
     gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok;
     write_status_json(
         any_ok ? "running" : "idle",
@@ -1618,6 +1905,7 @@ int main(void) {
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
     g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
     g_service.ntfy_seen_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    g_service.plugin_task_next_run = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     g_mkdir_with_parents(g_service.state_dir, 0755);
     write_status_json("starting", "Initializing service caches.");
@@ -1659,6 +1947,9 @@ int main(void) {
     }
     if (g_service.ntfy_seen_ids != NULL) {
         g_hash_table_unref(g_service.ntfy_seen_ids);
+    }
+    if (g_service.plugin_task_next_run != NULL) {
+        g_hash_table_unref(g_service.plugin_task_next_run);
     }
     return 0;
 }
