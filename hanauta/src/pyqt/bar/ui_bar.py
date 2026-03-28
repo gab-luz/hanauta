@@ -106,7 +106,6 @@ CAP_ALERTS_POPUP = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alerts_popup.py
 CAP_ALERTS_OVERLAY = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alert_overlay.py"
 CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
 GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
-STUDY_TRACKER_POPUP = APP_DIR / "pyqt" / "widget-study-tracker" / "study_tracker_popup.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
@@ -145,6 +144,7 @@ TRAY_SLOT_SIZE = 20
 TRAY_ICON_SIZE = 16
 MAIL_NOTIFICATION_ACTION_KEY = "hanauta-mail-read"
 MAIL_NOTIFICATION_TIMEOUT_MS = 15000
+BAR_PLUGIN_ENTRYPOINT = "hanauta_bar_plugin.py"
 HAS_DBUS_NEXT = importlib.util.find_spec("dbus_next") is not None
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -611,6 +611,51 @@ def load_service_settings() -> dict[str, dict[str, object]]:
         return {}
     services = payload.get("services", {})
     return services if isinstance(services, dict) else {}
+
+
+def discover_bar_plugin_entrypoints() -> list[Path]:
+    settings = load_runtime_settings()
+    marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
+    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+    entrypoints: list[Path] = []
+    seen: set[str] = set()
+    if isinstance(installed, list):
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            install_path = str(row.get("install_path", "")).strip()
+            if not install_path:
+                continue
+            entrypoint = Path(install_path).expanduser() / BAR_PLUGIN_ENTRYPOINT
+            if not entrypoint.exists():
+                continue
+            key = str(entrypoint.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            entrypoints.append(entrypoint)
+
+    install_root = Path(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))).expanduser() if isinstance(marketplace, dict) else ROOT / "hanauta" / "plugins"
+    search_roots = [install_root, ROOT / "hanauta" / "plugins"]
+    for root in search_roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            children = sorted(root.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if not child.is_dir():
+                continue
+            entrypoint = child / BAR_PLUGIN_ENTRYPOINT
+            if not entrypoint.exists():
+                continue
+            key = str(entrypoint.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            entrypoints.append(entrypoint)
+    return entrypoints
 
 
 def load_runtime_settings() -> dict[str, object]:
@@ -2022,7 +2067,6 @@ class CyberBar(QWidget):
         self._weather_popup_process: Optional[subprocess.Popen] = None
         self._calendar_popup_process: Optional[subprocess.Popen] = None
         self._game_mode_popup_process: Optional[subprocess.Popen] = None
-        self._study_tracker_popup_process: Optional[subprocess.Popen] = None
         self._powermenu_process: Optional[subprocess.Popen] = None
         self._cap_alerts_popup_process: Optional[subprocess.Popen] = None
         self._cap_alert_overlay_process: Optional[subprocess.Popen] = None
@@ -2063,8 +2107,16 @@ class CyberBar(QWidget):
         self._obs_recording = False
         self._obs_flash_visible = True
         self._crypto_last_interval_ms = 0
+        self._bar_plugin_hooks: dict[str, list[Callable[[], None]]] = {
+            "settings_reloaded": [],
+            "poll": [],
+            "icons": [],
+            "close": [],
+        }
+        self._bar_plugin_buttons: dict[str, QPushButton] = {}
         self._setup_window()
         self._build_ui()
+        self._load_bar_plugins()
         self._apply_bar_icon_overrides()
         self._apply_styles()
         apply_antialias_font(self)
@@ -2408,18 +2460,13 @@ class CyberBar(QWidget):
         self.game_mode_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.game_mode_button.setCheckable(True)
         self.game_mode_button.clicked.connect(self._toggle_game_mode_popup)
-        self.study_tracker_button = QPushButton(self._icon_text("school"))
-        self.study_tracker_button.setObjectName("statusIconButton")
-        self.study_tracker_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.study_tracker_button.setCheckable(True)
-        self.study_tracker_button.clicked.connect(self._toggle_study_tracker_popup)
         self.battery_icon = QLabel(self._icon_text("battery_full"))
         self.battery_icon.setObjectName("statusIcon")
         self.caffeine_icon = QLabel(self._icon_text("coffee"))
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.home_assistant_button, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.mail_button, self.ntfy_button, self.game_mode_button, self.study_tracker_button, self.battery_icon, self.caffeine_icon):
+        for label in (self.net_icon, self.vpn_icon, self.home_assistant_button, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.mail_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.caps_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
@@ -2437,7 +2484,6 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.crypto_button)
         self.status_layout.addWidget(self.ntfy_button)
         self.status_layout.addWidget(self.game_mode_button)
-        self.status_layout.addWidget(self.study_tracker_button)
         self.status_layout.addWidget(self.caffeine_icon)
         self.status_layout.addWidget(self.battery_icon)
         self.status_layout.addWidget(self.battery_value)
@@ -2479,7 +2525,7 @@ class CyberBar(QWidget):
         self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
-        self._sync_study_tracker_button_visibility()
+        self._run_bar_plugin_hooks("settings_reloaded")
         self._sync_cap_alert_chip()
         self._apply_bar_settings()
         self._install_debug_tooltips()
@@ -2494,6 +2540,76 @@ class CyberBar(QWidget):
 
     def _icon_text(self, icon_name: str) -> str:
         return self._bar_icon_overrides.get(icon_name, material_icon(icon_name))
+
+    def _register_bar_plugin_hook(self, kind: str, callback: Callable[[], None]) -> None:
+        hooks = self._bar_plugin_hooks.get(kind)
+        if hooks is None or not callable(callback):
+            return
+        hooks.append(callback)
+
+    def _run_bar_plugin_hooks(self, kind: str) -> None:
+        hooks = self._bar_plugin_hooks.get(kind, [])
+        for callback in list(hooks):
+            try:
+                callback()
+            except Exception:
+                continue
+
+    def _add_status_plugin_button(
+        self,
+        key: str,
+        glyph: str,
+        *,
+        tooltip: str = "",
+        checkable: bool = False,
+        on_click: Callable[[], None] | None = None,
+        font_size: int = 16,
+    ) -> QPushButton:
+        button = QPushButton(glyph)
+        button.setObjectName("statusIconButton")
+        button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        button.setCheckable(checkable)
+        button.setFont(QFont(self.material_font, font_size))
+        if tooltip:
+            button.setToolTip(tooltip)
+        if on_click is not None:
+            button.clicked.connect(on_click)
+        anchor_index = self.status_layout.indexOf(self.caffeine_icon)
+        if anchor_index >= 0:
+            self.status_layout.insertWidget(anchor_index, button)
+        else:
+            self.status_layout.addWidget(button)
+        self._bar_plugin_buttons[key] = button
+        return button
+
+    def _bar_plugin_api(self, plugin_dir: Path) -> dict[str, object]:
+        return {
+            "plugin_dir": plugin_dir,
+            "material_icon": material_icon,
+            "load_service_settings": load_service_settings,
+            "toggle_singleton_process": self._toggle_singleton_process,
+            "sync_popup_button": self._sync_popup_button,
+            "apply_icon": self._apply_icon_to_widget,
+            "python_bin": self._python_bin,
+            "register_hook": self._register_bar_plugin_hook,
+            "add_status_button": self._add_status_plugin_button,
+        }
+
+    def _load_bar_plugins(self) -> None:
+        for entrypoint in discover_bar_plugin_entrypoints():
+            module_name = f"hanauta_bar_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
+            try:
+                spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                register = getattr(module, "register_hanauta_bar_plugin", None)
+                if not callable(register):
+                    continue
+                register(self, self._bar_plugin_api(entrypoint.parent))
+            except Exception:
+                continue
 
     def _font_supports_text(self, font: QFont, text: str) -> bool:
         if not text:
@@ -2687,7 +2803,6 @@ class CyberBar(QWidget):
         self.mail_button.setToolTip("Mail")
         self.mail_count.setToolTip("Unread mail count")
         self.ntfy_button.setToolTip("ntfy publisher button")
-        self.study_tracker_button.setToolTip("Study Tracker popup button")
         self.caffeine_icon.setToolTip("Caffeine icon")
         self.battery_icon.setToolTip("Battery icon")
         self.battery_value.setToolTip("Battery value")
@@ -3222,7 +3337,6 @@ class CyberBar(QWidget):
         self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
-        self._sync_study_tracker_button_visibility()
         self._sync_cap_alert_chip()
         self._poll_cap_alerts()
         self._sync_desktop_clock_process()
@@ -3240,7 +3354,7 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.mail_button, "mail", material_icon("mail"), 16)
         self._set_ntfy_button_icon()
         self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 20)
-        self._apply_icon_to_widget(self.study_tracker_button, "school", material_icon("school"), 20)
+        self._run_bar_plugin_hooks("icons")
         self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
         self._apply_icon_to_widget(self.btn_clip, "content_paste", material_icon("content_paste"), 16)
         self._apply_icon_to_widget(self.btn_power, "power_settings_new", material_icon("power_settings_new"), 20)
@@ -3317,9 +3431,9 @@ class CyberBar(QWidget):
         self.game_mode_popup_timer.timeout.connect(self._sync_game_mode_button)
         self.game_mode_popup_timer.start(2000)
 
-        self.study_tracker_popup_timer = QTimer(self)
-        self.study_tracker_popup_timer.timeout.connect(self._sync_study_tracker_button)
-        self.study_tracker_popup_timer.start(2000)
+        self.plugin_poll_timer = QTimer(self)
+        self.plugin_poll_timer.timeout.connect(lambda: self._run_bar_plugin_hooks("poll"))
+        self.plugin_poll_timer.start(2000)
 
         self.weather_popup_timer = QTimer(self)
         self.weather_popup_timer.timeout.connect(self._sync_weather_button)
@@ -3383,7 +3497,7 @@ class CyberBar(QWidget):
         self._poll_mail_state()
         self._poll_obs_state()
         self._sync_game_mode_button()
-        self._sync_study_tracker_button()
+        self._run_bar_plugin_hooks("poll")
 
     def _tree_has_window(self, titles: tuple[str, ...]) -> bool:
         raw = run_cmd(["i3-msg", "-t", "get_tree"])
@@ -3589,7 +3703,7 @@ class CyberBar(QWidget):
         self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
-        self._sync_study_tracker_button_visibility()
+        self._run_bar_plugin_hooks("settings_reloaded")
         self._sync_health_pill_visibility()
         self._sync_weather_visibility()
         self._sync_cap_alert_chip()
@@ -4411,15 +4525,6 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.game_mode_button.setVisible(enabled and show_in_bar)
 
-    def _sync_study_tracker_button_visibility(self) -> None:
-        services = load_service_settings()
-        service = services.get("study_tracker_widget", {})
-        if not isinstance(service, dict):
-            service = {}
-        enabled = bool(service.get("enabled", False))
-        show_in_bar = bool(service.get("show_in_bar", False))
-        self.study_tracker_button.setVisible(enabled and show_in_bar)
-
     def _sync_desktop_clock_process(self, has_real_windows: bool | None = None) -> None:
         service = self.service_settings.get("desktop_clock_widget", {})
         if not isinstance(service, dict):
@@ -4835,17 +4940,6 @@ class CyberBar(QWidget):
         self._toggle_singleton_process("_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin())
         QTimer.singleShot(150, self._sync_game_mode_button)
 
-    def _toggle_study_tracker_popup(self) -> None:
-        if not STUDY_TRACKER_POPUP.exists():
-            self.study_tracker_button.setChecked(False)
-            return
-        active = self._toggle_singleton_process(
-            "_study_tracker_popup_process",
-            STUDY_TRACKER_POPUP,
-            python_bin=self._python_bin(),
-        )
-        self.study_tracker_button.setChecked(active)
-
     def _open_launcher(self) -> None:
         if LAUNCHER_SCRIPT.exists():
             run_bg_detached([str(LAUNCHER_SCRIPT)])
@@ -4944,14 +5038,6 @@ class CyberBar(QWidget):
             tooltip=str(current.get("note", "Game Mode")),
         )
 
-    def _sync_study_tracker_button(self) -> None:
-        self._sync_popup_button(
-            self.study_tracker_button,
-            "_study_tracker_popup_process",
-            STUDY_TRACKER_POPUP,
-            tooltip="Study Tracker",
-        )
-
     def _sync_powermenu_button(self) -> None:
         active = self._singleton_active(self._powermenu_process, POWERMENU_WIDGET)
         if not active:
@@ -5001,8 +5087,7 @@ class CyberBar(QWidget):
             self._ntfy_popup_process.terminate()
         if self._game_mode_popup_process is not None and self._game_mode_popup_process.poll() is None:
             self._game_mode_popup_process.terminate()
-        if self._study_tracker_popup_process is not None and self._study_tracker_popup_process.poll() is None:
-            self._study_tracker_popup_process.terminate()
+        self._run_bar_plugin_hooks("close")
         if self._powermenu_process is not None and self._powermenu_process.poll() is None:
             self._powermenu_process.terminate()
         super().closeEvent(event)
