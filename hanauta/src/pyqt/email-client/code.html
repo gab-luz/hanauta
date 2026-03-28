@@ -129,16 +129,23 @@
     }
 
     .brand-badge {
-      width: 30px;
-      height: 30px;
-      border-radius: 11px;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
       display: grid;
       place-items: center;
-      color: var(--accent-ink);
-      font-size: 18px;
-      font-weight: 750;
-      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-      box-shadow: 0 18px 36px rgba(156, 231, 255, 0.18);
+      padding: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(176, 222, 255, 0.16);
+      box-shadow: 0 14px 30px rgba(8, 17, 31, 0.28);
+      overflow: hidden;
+    }
+
+    .brand-badge img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
     }
 
     .brand-copy {
@@ -271,7 +278,6 @@
       gap: 18px;
     }
 
-    .compose-button,
     .primary-button {
       display: inline-flex;
       align-items: center;
@@ -285,6 +291,43 @@
       font-weight: 700;
       letter-spacing: 0.01em;
       box-shadow: 0 18px 32px rgba(90, 164, 255, 0.22);
+    }
+
+    .compose-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 16px;
+      border-radius: 13px;
+      border: 1px solid rgba(156, 231, 255, 0.38);
+      background:
+        linear-gradient(135deg, rgba(156, 231, 255, 0.24), rgba(227, 156, 255, 0.2)),
+        rgba(18, 29, 46, 0.95);
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: 0.015em;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        0 12px 24px rgba(8, 17, 31, 0.30);
+      transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+    }
+
+    .compose-button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(156, 231, 255, 0.6);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 16px 26px rgba(8, 17, 31, 0.34);
+      filter: saturate(1.06);
+    }
+
+    .compose-button:active {
+      transform: translateY(0);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 8px 16px rgba(8, 17, 31, 0.26);
+      border-color: rgba(156, 231, 255, 0.42);
     }
 
     .section {
@@ -1090,7 +1133,9 @@
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-badge">H</div>
+        <div class="brand-badge">
+          <img src="../../assets/icons/hanauta-mail.png" alt="Hanauta Mail icon" />
+        </div>
         <div class="brand-copy">
           <div class="eyebrow">Mail</div>
           <h1>Hanauta</h1>
