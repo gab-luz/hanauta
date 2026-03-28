@@ -159,6 +159,18 @@ def load_ui_font() -> str:
     return "Rubik"
 
 
+def _is_rubik_font(ui_font: str) -> bool:
+    return "rubik" in (ui_font or "").strip().lower()
+
+
+def _button_qfont_weight(ui_font: str) -> QFont.Weight:
+    return QFont.Weight.Medium if _is_rubik_font(ui_font) else QFont.Weight.DemiBold
+
+
+def _button_css_weight(ui_font: str) -> int:
+    return 500 if _is_rubik_font(ui_font) else 600
+
+
 def load_material_icon_font() -> str:
     font_dir = APP_DIR.parents[1] / "assets" / "fonts"
     for name in (
@@ -268,7 +280,7 @@ class BackendPill(QPushButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(40, 40)
-        self.setFont(QFont(ui_font, 11, QFont.Weight.DemiBold))
+        self.setFont(QFont(ui_font, 11, _button_qfont_weight(ui_font)))
         self.setIcon(_backend_icon(profile.icon_name))
         self.setIconSize(QPixmap(18, 18).size())
         self.setText("")
@@ -651,7 +663,7 @@ class BackendSettingsDialog(QDialog):
                 border: 1px solid {BORDER_SOFT};
                 border-radius: 18px;
                 padding: 0 14px;
-                font-weight: 600;
+                font-weight: {_button_css_weight(ui_font)};
             }}
             QPushButton:hover {{
                 background: {HOVER_BG};
@@ -778,7 +790,7 @@ class BackendSettingsDialog(QDialog):
                 border: 1px solid {ACCENT};
                 border-radius: 18px;
                 padding: 0 14px;
-                font-weight: 700;
+                font-weight: {_button_css_weight(ui_font)};
             }}
             QPushButton:hover {{
                 background: {mix(ACCENT, '#ffffff', 0.08)};
@@ -944,7 +956,7 @@ class AntiAliasButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(36)
         self.setMinimumWidth(88)
-        self.setFont(QFont(ui_font, 11, QFont.Weight.Black))
+        self.setFont(QFont(ui_font, 11, _button_qfont_weight(ui_font)))
         self.setFlat(True)
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
@@ -968,7 +980,7 @@ class AntiAliasButton(QPushButton):
         painter.drawRoundedRect(rect, radius, radius)
 
         painter.setPen(QColor(THEME.active_text))
-        painter.setFont(QFont(self._ui_font, 11, QFont.Weight.Black))
+        painter.setFont(QFont(self._ui_font, 11, _button_qfont_weight(self._ui_font)))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
 
 
@@ -979,7 +991,7 @@ class ActionIcon(QToolButton):
         self.setToolTip(tooltip)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(30, 30)
-        self.setFont(QFont(ui_font, 11, QFont.Weight.Bold))
+        self.setFont(QFont(ui_font, 11, _button_qfont_weight(ui_font)))
         self.setStyleSheet(
             f"""
             QToolButton {{
