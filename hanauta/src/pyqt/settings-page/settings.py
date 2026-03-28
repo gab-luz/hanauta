@@ -1289,6 +1289,24 @@ def load_settings_state() -> dict:
             "enabled": True,
             "timeout_minutes": 2,
         },
+        "lockscreen": {
+            "blur_screenshot": False,
+            "pause_media_on_lock": True,
+            "use_slow_fade": True,
+            "prefer_i3lock_color": True,
+            "show_clock": True,
+            "show_indicator": True,
+            "pass_media_keys": True,
+            "pass_volume_keys": True,
+            "refresh_rate": 1,
+            "ring_radius": 28,
+            "ring_width": 6,
+            "time_format": "%H:%M",
+            "date_format": "%A, %d %B %Y",
+            "greeter_text": "Hanauta locked • Type your password to unlock",
+            "verifying_text": "Verifying...",
+            "wrong_text": "Wrong password",
+        },
         "audio": {
             "default_sink": "",
             "default_source": "",
@@ -1620,6 +1638,32 @@ def load_settings_state() -> dict:
         autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2))))
     except Exception:
         autolock["timeout_minutes"] = 2
+    lockscreen = dict(payload.get("lockscreen", {}))
+    lockscreen["blur_screenshot"] = bool(lockscreen.get("blur_screenshot", False))
+    lockscreen["pause_media_on_lock"] = bool(lockscreen.get("pause_media_on_lock", True))
+    lockscreen["use_slow_fade"] = bool(lockscreen.get("use_slow_fade", True))
+    lockscreen["prefer_i3lock_color"] = bool(lockscreen.get("prefer_i3lock_color", True))
+    lockscreen["show_clock"] = bool(lockscreen.get("show_clock", True))
+    lockscreen["show_indicator"] = bool(lockscreen.get("show_indicator", True))
+    lockscreen["pass_media_keys"] = bool(lockscreen.get("pass_media_keys", True))
+    lockscreen["pass_volume_keys"] = bool(lockscreen.get("pass_volume_keys", True))
+    try:
+        lockscreen["refresh_rate"] = max(0, min(30, int(lockscreen.get("refresh_rate", 1))))
+    except Exception:
+        lockscreen["refresh_rate"] = 1
+    try:
+        lockscreen["ring_radius"] = max(8, min(80, int(lockscreen.get("ring_radius", 28))))
+    except Exception:
+        lockscreen["ring_radius"] = 28
+    try:
+        lockscreen["ring_width"] = max(1, min(24, int(lockscreen.get("ring_width", 6))))
+    except Exception:
+        lockscreen["ring_width"] = 6
+    lockscreen["time_format"] = str(lockscreen.get("time_format", "%H:%M")).strip() or "%H:%M"
+    lockscreen["date_format"] = str(lockscreen.get("date_format", "%A, %d %B %Y")).strip() or "%A, %d %B %Y"
+    lockscreen["greeter_text"] = str(lockscreen.get("greeter_text", "Hanauta locked • Type your password to unlock")).strip() or "Hanauta locked • Type your password to unlock"
+    lockscreen["verifying_text"] = str(lockscreen.get("verifying_text", "Verifying...")).strip() or "Verifying..."
+    lockscreen["wrong_text"] = str(lockscreen.get("wrong_text", "Wrong password")).strip() or "Wrong password"
     audio = dict(payload.get("audio", {}))
     audio["default_sink"] = str(audio.get("default_sink", "")).strip()
     audio["default_source"] = str(audio.get("default_source", "")).strip()
@@ -1737,6 +1781,7 @@ def load_settings_state() -> dict:
         "vps": vps,
         "clock": clock,
         "autolock": autolock,
+        "lockscreen": lockscreen,
         "audio": audio,
         "notifications": notifications,
         "input": input_settings,
@@ -5096,6 +5141,224 @@ class SettingsWindow(QWidget):
                 self.autolock_timeout_input,
             )
         )
+
+        lockscreen = self.settings_state.get("lockscreen", {})
+        self.lockscreen_blur_switch = SwitchButton(bool(lockscreen.get("blur_screenshot", False)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("photo_library"),
+                "Blur screenshot background",
+                "Capture the current screen and blur it before locking. Disable for faster lock entry.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_blur_switch,
+            )
+        )
+
+        self.lockscreen_pause_media_switch = SwitchButton(bool(lockscreen.get("pause_media_on_lock", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("music_note"),
+                "Pause media on lock",
+                "Pause active media players before the lock screen appears.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_pause_media_switch,
+            )
+        )
+
+        self.lockscreen_slow_fade_switch = SwitchButton(bool(lockscreen.get("use_slow_fade", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("opacity"),
+                "Use compositor slow fade",
+                "Temporarily slow compositor fade in/out while locking.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_slow_fade_switch,
+            )
+        )
+
+        self.lockscreen_prefer_color_switch = SwitchButton(bool(lockscreen.get("prefer_i3lock_color", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("palette"),
+                "Prefer i3lock-color",
+                "Use i3lock-color first when available; fall back to plain i3lock otherwise.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_prefer_color_switch,
+            )
+        )
+
+        self.lockscreen_show_clock_switch = SwitchButton(bool(lockscreen.get("show_clock", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Show lock clock",
+                "Render time/date on the lockscreen.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_show_clock_switch,
+            )
+        )
+
+        self.lockscreen_show_indicator_switch = SwitchButton(bool(lockscreen.get("show_indicator", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Show lock indicator ring",
+                "Show the circular indicator for typing/verifying state.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_show_indicator_switch,
+            )
+        )
+
+        self.lockscreen_pass_media_switch = SwitchButton(bool(lockscreen.get("pass_media_keys", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("music_note"),
+                "Pass media keys",
+                "Allow media keys (play/pause/next/prev) while locked.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_pass_media_switch,
+            )
+        )
+
+        self.lockscreen_pass_volume_switch = SwitchButton(bool(lockscreen.get("pass_volume_keys", True)))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("tune"),
+                "Pass volume keys",
+                "Allow volume keys while locked.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_pass_volume_switch,
+            )
+        )
+
+        self.lockscreen_refresh_input = QLineEdit(str(int(lockscreen.get("refresh_rate", 1))))
+        self.lockscreen_refresh_input.setValidator(QIntValidator(0, 30, self))
+        self.lockscreen_refresh_input.setFixedWidth(88)
+        self.lockscreen_refresh_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Refresh rate",
+                "i3lock refresh rate. Lower values are lighter; 0 disables periodic refresh.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_refresh_input,
+            )
+        )
+
+        self.lockscreen_ring_radius_input = QLineEdit(str(int(lockscreen.get("ring_radius", 28))))
+        self.lockscreen_ring_radius_input.setValidator(QIntValidator(8, 80, self))
+        self.lockscreen_ring_radius_input.setFixedWidth(88)
+        self.lockscreen_ring_radius_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Ring radius",
+                "Indicator ring radius in pixels.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_ring_radius_input,
+            )
+        )
+
+        self.lockscreen_ring_width_input = QLineEdit(str(int(lockscreen.get("ring_width", 6))))
+        self.lockscreen_ring_width_input.setValidator(QIntValidator(1, 24, self))
+        self.lockscreen_ring_width_input.setFixedWidth(88)
+        self.lockscreen_ring_width_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Ring width",
+                "Indicator ring thickness in pixels.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_ring_width_input,
+            )
+        )
+
+        self.lockscreen_time_format_input = QLineEdit(str(lockscreen.get("time_format", "%H:%M")))
+        self.lockscreen_time_format_input.setPlaceholderText("%H:%M")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Time format",
+                "strftime format string for lockscreen time.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_time_format_input,
+            )
+        )
+
+        self.lockscreen_date_format_input = QLineEdit(str(lockscreen.get("date_format", "%A, %d %B %Y")))
+        self.lockscreen_date_format_input.setPlaceholderText("%A, %d %B %Y")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("calendar_month"),
+                "Date format",
+                "strftime format string for lockscreen date.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_date_format_input,
+            )
+        )
+
+        self.lockscreen_greeter_text_input = QLineEdit(str(lockscreen.get("greeter_text", "Hanauta locked • Type your password to unlock")))
+        self.lockscreen_greeter_text_input.setPlaceholderText("Hanauta locked • Type your password to unlock")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("description"),
+                "Greeter text",
+                "Main lockscreen message shown before typing.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_greeter_text_input,
+            )
+        )
+
+        self.lockscreen_verifying_text_input = QLineEdit(str(lockscreen.get("verifying_text", "Verifying...")))
+        self.lockscreen_verifying_text_input.setPlaceholderText("Verifying...")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("description"),
+                "Verifying text",
+                "Message shown while password verification is in progress.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_verifying_text_input,
+            )
+        )
+
+        self.lockscreen_wrong_text_input = QLineEdit(str(lockscreen.get("wrong_text", "Wrong password")))
+        self.lockscreen_wrong_text_input.setPlaceholderText("Wrong password")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("description"),
+                "Wrong password text",
+                "Message shown after an incorrect password.",
+                self.icon_font,
+                self.ui_font,
+                self.lockscreen_wrong_text_input,
+            )
+        )
+
+        self.lockscreen_status = QLabel("Lockscreen options are ready.")
+        self.lockscreen_status.setWordWrap(True)
+        self.lockscreen_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.lockscreen_status)
+
+        self.lockscreen_save_button = QPushButton("Save lockscreen settings")
+        self.lockscreen_save_button.setObjectName("primaryButton")
+        self.lockscreen_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.lockscreen_save_button.clicked.connect(self._save_lockscreen_settings)
+        layout.addWidget(self.lockscreen_save_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         brightness_wrap = QWidget()
         brightness_row = QHBoxLayout(brightness_wrap)
@@ -8605,6 +8868,41 @@ class SettingsWindow(QWidget):
             self.audio_source_combo.blockSignals(False)
         if hasattr(self, "audio_status"):
             self.audio_status.setText(f"Detected {len(sinks)} sink(s) and {len(sources)} source(s).")
+
+    def _save_lockscreen_settings(self) -> None:
+        lockscreen = self.settings_state.setdefault("lockscreen", {})
+        lockscreen["blur_screenshot"] = bool(self.lockscreen_blur_switch.isChecked())
+        lockscreen["pause_media_on_lock"] = bool(self.lockscreen_pause_media_switch.isChecked())
+        lockscreen["use_slow_fade"] = bool(self.lockscreen_slow_fade_switch.isChecked())
+        lockscreen["prefer_i3lock_color"] = bool(self.lockscreen_prefer_color_switch.isChecked())
+        lockscreen["show_clock"] = bool(self.lockscreen_show_clock_switch.isChecked())
+        lockscreen["show_indicator"] = bool(self.lockscreen_show_indicator_switch.isChecked())
+        lockscreen["pass_media_keys"] = bool(self.lockscreen_pass_media_switch.isChecked())
+        lockscreen["pass_volume_keys"] = bool(self.lockscreen_pass_volume_switch.isChecked())
+        try:
+            lockscreen["refresh_rate"] = max(0, min(30, int(self.lockscreen_refresh_input.text().strip() or "1")))
+        except Exception:
+            lockscreen["refresh_rate"] = 1
+            self.lockscreen_refresh_input.setText("1")
+        try:
+            lockscreen["ring_radius"] = max(8, min(80, int(self.lockscreen_ring_radius_input.text().strip() or "28")))
+        except Exception:
+            lockscreen["ring_radius"] = 28
+            self.lockscreen_ring_radius_input.setText("28")
+        try:
+            lockscreen["ring_width"] = max(1, min(24, int(self.lockscreen_ring_width_input.text().strip() or "6")))
+        except Exception:
+            lockscreen["ring_width"] = 6
+            self.lockscreen_ring_width_input.setText("6")
+        lockscreen["time_format"] = self.lockscreen_time_format_input.text().strip() or "%H:%M"
+        lockscreen["date_format"] = self.lockscreen_date_format_input.text().strip() or "%A, %d %B %Y"
+        lockscreen["greeter_text"] = self.lockscreen_greeter_text_input.text().strip() or "Hanauta locked • Type your password to unlock"
+        lockscreen["verifying_text"] = self.lockscreen_verifying_text_input.text().strip() or "Verifying..."
+        lockscreen["wrong_text"] = self.lockscreen_wrong_text_input.text().strip() or "Wrong password"
+        save_settings_state(self.settings_state)
+        if hasattr(self, "lockscreen_status"):
+            blur_text = "enabled" if lockscreen["blur_screenshot"] else "disabled"
+            self.lockscreen_status.setText(f"Lockscreen settings saved. Blur is {blur_text}.")
 
     def _save_audio_settings(self) -> None:
         audio = self.settings_state.setdefault("audio", {})
