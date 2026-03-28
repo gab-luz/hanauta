@@ -52,6 +52,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -92,6 +93,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
 NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
+HOST_PLUGIN_API_VERSION = 1
 
 
 def apply_antialias_font(widget: QWidget) -> None:
@@ -6334,6 +6336,39 @@ class SettingsWindow(QWidget):
         self._marketplace_populate_catalog(list(marketplace.get("catalog_cache", [])))
         return card
 
+    def _plugin_api_versions_from_row(self, row: dict[str, object]) -> tuple[int, int]:
+        try:
+            api_min = int(row.get("api_min_version", 1) or 1)
+        except Exception:
+            api_min = 1
+        try:
+            api_target = int(row.get("api_target_version", 1) or 1)
+        except Exception:
+            api_target = 1
+        return max(1, api_min), max(1, api_target)
+
+    def _plugin_permissions_warning(self, row: dict[str, object]) -> str:
+        warnings: list[str] = []
+        permissions = row.get("permissions", {})
+        if isinstance(permissions, dict) and permissions:
+            warnings.append("Declared permissions: " + ", ".join(sorted(str(key).strip() for key in permissions.keys() if str(key).strip())))
+        capabilities = row.get("capabilities", [])
+        capability_list: list[str] = []
+        if isinstance(capabilities, dict):
+            capability_list = [str(key).strip() for key, enabled in capabilities.items() if str(key).strip() and bool(enabled)]
+        elif isinstance(capabilities, list):
+            capability_list = [str(value).strip() for value in capabilities if str(value).strip()]
+        if "polkit" in capability_list:
+            warnings.append("This plugin may request elevated privileges through Polkit (pkexec).")
+        if "fullscreen_alert" in capability_list or "fullscreen_overlay" in capability_list:
+            warnings.append("This plugin may show fullscreen alerts/overlays.")
+        requirements = row.get("requirements", [])
+        if isinstance(requirements, list):
+            req_list = [str(value).strip() for value in requirements if str(value).strip()]
+            if req_list:
+                warnings.append("Runtime requirements: " + ", ".join(req_list))
+        return "\n".join(warnings).strip()
+
     def _marketplace_choose_install_dir(self) -> None:
         initial = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
         selected = QFileDialog.getExistingDirectory(self, "Choose plugin install directory", initial)
@@ -6386,6 +6421,14 @@ class SettingsWindow(QWidget):
             requirements: list[str] = []
             if isinstance(requirements_raw, list):
                 requirements = [str(value).strip() for value in requirements_raw if str(value).strip()]
+            try:
+                api_min_version = int(item.get("api_min_version", 1) or 1)
+            except Exception:
+                api_min_version = 1
+            try:
+                api_target_version = int(item.get("api_target_version", 1) or 1)
+            except Exception:
+                api_target_version = 1
             rows.append(
                 {
                     "id": plugin_id,
@@ -6397,6 +6440,9 @@ class SettingsWindow(QWidget):
                     "entrypoint": str(item.get("entrypoint", "")).strip(),
                     "capabilities": capabilities,
                     "requirements": requirements,
+                    "api_min_version": max(1, api_min_version),
+                    "api_target_version": max(1, api_target_version),
+                    "permissions": item.get("permissions", {}) if isinstance(item.get("permissions", {}), dict) else {},
                 }
             )
         return rows
@@ -6485,6 +6531,11 @@ class SettingsWindow(QWidget):
             req_list = [str(value).strip() for value in requirements if str(value).strip()]
             if req_list:
                 details.append("Requirements: " + ", ".join(req_list))
+        details.append(f"API min: {int(plugin.get('api_min_version', 1) or 1)}")
+        details.append(f"API target: {int(plugin.get('api_target_version', 1) or 1)}")
+        permissions = plugin.get("permissions", {})
+        if isinstance(permissions, dict) and permissions:
+            details.append("Permissions: " + ", ".join(sorted(str(key).strip() for key in permissions.keys() if str(key).strip())))
         self.marketplace_detail_label.setText("\n".join(details))
 
     def _marketplace_install_selected(self) -> None:
@@ -6502,6 +6553,28 @@ class SettingsWindow(QWidget):
         if not repo or not plugin_id:
             self.marketplace_status.setText("Plugin entry is missing a valid id or repo URL.")
             return
+        api_min_version, api_target_version = self._plugin_api_versions_from_row(plugin)
+        if api_min_version > HOST_PLUGIN_API_VERSION:
+            self.marketplace_status.setText(
+                f"{plugin_id} requires plugin API v{api_min_version}, but this Hanauta build supports v{HOST_PLUGIN_API_VERSION}."
+            )
+            return
+        warning_text = self._plugin_permissions_warning(plugin)
+        if warning_text:
+            answer = QMessageBox.question(
+                self,
+                "Plugin Permissions Warning",
+                (
+                    f"{plugin.get('name', plugin_id)} declares elevated/runtime-sensitive capabilities.\n\n"
+                    f"{warning_text}\n\n"
+                    "Do you want to continue installing this plugin?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.marketplace_status.setText(f"Installation cancelled for {plugin_id}.")
+                return
         if shutil.which("git") is None:
             self.marketplace_status.setText("git is required to install marketplace plugins.")
             return
@@ -6545,6 +6618,11 @@ class SettingsWindow(QWidget):
             "repo": repo,
             "branch": branch,
             "install_path": str(target_dir),
+            "capabilities": plugin.get("capabilities", []),
+            "requirements": plugin.get("requirements", []),
+            "api_min_version": api_min_version,
+            "api_target_version": api_target_version,
+            "permissions": plugin.get("permissions", {}) if isinstance(plugin.get("permissions", {}), dict) else {},
             "installed_at_epoch": int(time.time()),
         }
         installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)]
@@ -6585,6 +6663,9 @@ class SettingsWindow(QWidget):
         if isinstance(installed_entries, list):
             for row in installed_entries:
                 if not isinstance(row, dict):
+                    continue
+                api_min_version, _api_target_version = self._plugin_api_versions_from_row(row)
+                if api_min_version > HOST_PLUGIN_API_VERSION:
                     continue
                 plugin_id = str(row.get("id", "")).strip()
                 install_path = str(row.get("install_path", "")).strip()
@@ -6698,6 +6779,9 @@ class SettingsWindow(QWidget):
             except Exception:
                 continue
             if not isinstance(payload, dict):
+                continue
+            api_min_version, _api_target_version = self._plugin_api_versions_from_row(payload)
+            if api_min_version > HOST_PLUGIN_API_VERSION:
                 continue
             sections = payload.get("service_sections", [])
             if not isinstance(sections, list):

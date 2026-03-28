@@ -146,6 +146,7 @@ TRAY_ICON_SIZE = 16
 MAIL_NOTIFICATION_ACTION_KEY = "hanauta-mail-read"
 MAIL_NOTIFICATION_TIMEOUT_MS = 15000
 BAR_PLUGIN_ENTRYPOINT = "hanauta_bar_plugin.py"
+HOST_PLUGIN_API_VERSION = 1
 PLUGIN_DEV_ROOT = Path.home() / "dev"
 HAS_DBUS_NEXT = importlib.util.find_spec("dbus_next") is not None
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -624,6 +625,12 @@ def discover_bar_plugin_entrypoints() -> list[Path]:
     if isinstance(installed, list):
         for row in installed:
             if not isinstance(row, dict):
+                continue
+            try:
+                api_min_version = int(row.get("api_min_version", 1) or 1)
+            except Exception:
+                api_min_version = 1
+            if max(1, api_min_version) > HOST_PLUGIN_API_VERSION:
                 continue
             install_path = str(row.get("install_path", "")).strip()
             if not install_path:
