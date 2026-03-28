@@ -252,6 +252,7 @@ BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark.svg"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+STUDY_TRACKER_APP = APP_DIR / "pyqt" / "study-tracker" / "study_tracker.py"
 MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
 MAIL_DB_PATH = MAIL_STATE_DIR / "mail.sqlite3"
 MAIL_DESKTOP_ID = "hanauta-mail.desktop"
@@ -678,6 +679,11 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": True,
         "show_in_bar": False,
     },
+    "study_tracker_widget": {
+        "enabled": False,
+        "show_in_notification_center": True,
+        "show_in_bar": False,
+    },
     "mail": {
         "enabled": True,
         "show_in_notification_center": False,
@@ -792,7 +798,7 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
-        elif key in {"rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
+        elif key in {"rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts", "study_tracker_widget"}:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
@@ -6136,6 +6142,7 @@ class SettingsWindow(QWidget):
             ("vps_widget", self._build_vps_service_section()),
             ("desktop_clock_widget", self._build_desktop_clock_service_section()),
             ("game_mode", self._build_game_mode_service_section()),
+            ("study_tracker_widget", self._build_study_tracker_service_section()),
             ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
@@ -8250,6 +8257,66 @@ class SettingsWindow(QWidget):
         self.service_sections["game_mode"] = section
         return section
 
+    def _build_study_tracker_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.study_tracker_bar_switch = SwitchButton(
+            bool(self.settings_state["services"]["study_tracker_widget"].get("show_in_bar", False))
+        )
+        self.study_tracker_bar_switch.toggledValue.connect(
+            lambda enabled: self._set_service_bar_visibility("study_tracker_widget", enabled)
+        )
+        self.service_display_switches["study_tracker_widget"] = self.study_tracker_bar_switch
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Show on bar",
+                "Display a Study Tracker icon in the bar that opens a live progress popup.",
+                self.icon_font,
+                self.ui_font,
+                self.study_tracker_bar_switch,
+            )
+        )
+
+        open_button = QPushButton("Open Study Tracker")
+        open_button.setObjectName("secondaryButton")
+        open_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        open_button.clicked.connect(self._open_study_tracker_app)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("open_in_new"),
+                "Open full app",
+                "Launches the full Study Tracker app to manage tasks, resources, schedules, and sessions.",
+                self.icon_font,
+                self.ui_font,
+                open_button,
+            )
+        )
+
+        self.study_tracker_status = QLabel(
+            "Disabled by default. Enable this service to add a realistic Study Tracker stats popup to the bar."
+        )
+        self.study_tracker_status.setWordWrap(True)
+        self.study_tracker_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.study_tracker_status)
+
+        section = ExpandableServiceSection(
+            "study_tracker_widget",
+            "Study Tracker",
+            "Shows today minutes, streak, task completion, active focus target, and upcoming study blocks in a compact popup.",
+            material_icon("school"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("study_tracker_widget"),
+            lambda enabled: self._set_service_enabled("study_tracker_widget", enabled),
+        )
+        self.service_sections["study_tracker_widget"] = section
+        return section
+
     def _build_ntfy_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -8657,7 +8724,7 @@ class SettingsWindow(QWidget):
                 service["water_reminder_notifications"] = False
                 service["stand_up_reminder_notifications"] = False
                 service["movement_reminder_notifications"] = False
-            if key in {"home_assistant", "reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts"}:
+            if key in {"home_assistant", "reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts", "study_tracker_widget"}:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -8766,6 +8833,11 @@ class SettingsWindow(QWidget):
             if test_switch is not None:
                 test_switch.setChecked(bool(service.get("test_mode", False)))
                 test_switch._apply_state()
+        if key == "study_tracker_widget":
+            switch = getattr(self, "study_tracker_bar_switch", None)
+            if switch is not None:
+                switch.setChecked(bool(service.get("show_in_bar", False)))
+                switch._apply_state()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -8805,6 +8877,20 @@ class SettingsWindow(QWidget):
         except OSError:
             return
         run_bg(["xdg-open", str(BAR_ICON_CONFIG_FILE)])
+
+    def _open_study_tracker_app(self) -> None:
+        if not STUDY_TRACKER_APP.exists():
+            if hasattr(self, "study_tracker_status"):
+                self.study_tracker_status.setText("Study Tracker app is unavailable.")
+            return
+        command = entry_command(STUDY_TRACKER_APP)
+        if not command:
+            if hasattr(self, "study_tracker_status"):
+                self.study_tracker_status.setText("Study Tracker launch command is unavailable.")
+            return
+        run_bg(command)
+        if hasattr(self, "study_tracker_status"):
+            self.study_tracker_status.setText("Study Tracker launched.")
 
     def _refresh_audio_devices(self) -> None:
         sinks = list_audio_devices("sinks")
