@@ -51,11 +51,11 @@ gaps top 5
 
 # Colors
 # format: client.<state> border background text indicator child_border
-client.focused          #82d3e0 #82d3e0 #dee3e5 #82d3e0 #82d3e0
-client.focused_inactive #899294 #899294 #dee3e5 #899294 #899294
-client.unfocused        #899294 #899294 #dee3e5 #899294 #899294
+client.focused          #80d4db #80d4db #dde4e4 #80d4db #80d4db
+client.focused_inactive #899393 #899393 #dde4e4 #899393 #899393
+client.unfocused        #899393 #899393 #dde4e4 #899393 #899393
 client.urgent           #ffb4ab #ffb4ab #0e1415 #ffb4ab #ffb4ab
-client.placeholder      #899294 #899294 #dee3e5 #899294 #899294
+client.placeholder      #899393 #899393 #dde4e4 #899393 #899393
 client.background       #0e1415
 
 # Startup (from bspwmrc)
