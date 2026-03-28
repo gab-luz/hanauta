@@ -108,6 +108,104 @@ Notes:
     - `fullscreen_alert`
   - `requirements`: list of runtime requirements (examples: `pkexec`, `wireguard-tools`)
 
+## Catalog Schema Proposal (v3 Draft)
+
+The catalog at `hanauta-plugins/plugins.json` now contains a concrete draft proposal under:
+
+- `standards.version = 3`
+- `standards.status = "draft-proposal"`
+
+### Exact Plugin Field Names
+
+Required per plugin object:
+
+- `id: str`
+- `name: str`
+- `repo: str`
+
+Optional per plugin object:
+
+- `description: str`
+- `branch: str`
+- `path: str`
+- `entrypoint: str`
+- `capabilities: list[str] | dict[str, bool]`
+- `requirements: list[str]`
+- `api_min_version: int`
+- `api_target_version: int`
+- `permissions: dict[str, object]`
+- `compatibility: dict[str, object]`
+- `x-<vendor-field>: any` (custom plugin-side metadata)
+
+### Capability IDs (Proposed)
+
+- `notifications`
+- `popup_host`
+- `quick_settings`
+- `launcher_commands`
+- `status_chips`
+- `workspace_events`
+- `window_events`
+- `theme_tokens`
+- `theme_reactive`
+- `polkit`
+- `fullscreen_alert`
+- `fullscreen_overlay`
+- `task_scheduler`
+- `state_store`
+- `secret_store`
+- `dbus`
+- `system_metrics`
+- `media_controls`
+- `context_menu`
+- `permissions_manifest`
+- `plugin_health`
+
+### Compatibility Rules
+
+- Unknown top-level fields and unknown plugin fields must be ignored by Hanauta loaders.
+- Unknown capability keys and permission keys must be ignored, not treated as hard errors.
+- `api_min_version` defaults to `1` when omitted.
+- `api_target_version` defaults to `1` when omitted.
+- If `host_api_version < api_min_version`: mark plugin as incompatible and do not load.
+- If `api_target_version > host_api_version` and `api_min_version` is satisfied: plugin may load in compatibility mode.
+- New fields must be additive first; removals require deprecation cycle.
+- Deprecation policy target:
+  - announce at least 2 releases before removal
+  - keep at least 60 days notice
+  - actual removal only in a major API version bump
+
+Current enforcement in Hanauta:
+
+- Marketplace blocks install when `api_min_version` is higher than host plugin API version (`1` right now).
+- Marketplace shows a confirmation warning before install when plugin metadata declares sensitive permissions/capabilities.
+- Settings and Bar plugin loaders skip installed plugins whose `api_min_version` exceeds host support.
+
+### Proposed Extended API Helper Surface
+
+Draft helper keys intended for progressive rollout:
+
+- `notify`
+- `open_popup`
+- `register_quick_setting_tile`
+- `register_launcher_command`
+- `add_status_chip`
+- `workspace_event_stream`
+- `window_event_stream`
+- `theme_tokens`
+- `on_theme_changed`
+- `privileged_task`
+- `fullscreen_overlay`
+- `background_task_scheduler`
+- `state_store`
+- `secure_secret_store`
+- `dbus_bridge`
+- `system_metrics_feed`
+- `media_controls_api`
+- `context_menu_api`
+- `permissions_manifest`
+- `plugin_health_panel`
+
 ## Independence Rules (Core vs Plugins)
 
 Core Hanauta must:
