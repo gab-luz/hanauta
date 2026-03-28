@@ -68,6 +68,7 @@ if str(APP_DIR) not in sys.path:
 from pyqt.shared.runtime import entry_command
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.button_helpers import create_close_button
+from pyqt.shared.plugin_bridge import build_polkit_command, polkit_available, run_with_polkit, trigger_fullscreen_alert
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
 from pyqt.shared.home_assistant import entity_friendly_name, entity_icon_name, entity_secondary_text, prefetch_entity_icons
@@ -6361,8 +6362,8 @@ class SettingsWindow(QWidget):
                 return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{manifest_path}"
         return repo_url.rstrip("/") + "/" + manifest_path
 
-    def _marketplace_normalize_catalog(self, payload: object) -> list[dict[str, str]]:
-        rows: list[dict[str, str]] = []
+    def _marketplace_normalize_catalog(self, payload: object) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
         plugins: object = payload
         if isinstance(payload, dict):
             plugins = payload.get("plugins", [])
@@ -6375,6 +6376,16 @@ class SettingsWindow(QWidget):
             repo = str(item.get("repo", "")).strip() or str(item.get("repository", "")).strip()
             if not plugin_id or not repo:
                 continue
+            capabilities_raw = item.get("capabilities", [])
+            capabilities: list[str] = []
+            if isinstance(capabilities_raw, dict):
+                capabilities = [str(key).strip() for key, enabled in capabilities_raw.items() if str(key).strip() and bool(enabled)]
+            elif isinstance(capabilities_raw, list):
+                capabilities = [str(value).strip() for value in capabilities_raw if str(value).strip()]
+            requirements_raw = item.get("requirements", [])
+            requirements: list[str] = []
+            if isinstance(requirements_raw, list):
+                requirements = [str(value).strip() for value in requirements_raw if str(value).strip()]
             rows.append(
                 {
                     "id": plugin_id,
@@ -6384,6 +6395,8 @@ class SettingsWindow(QWidget):
                     "branch": str(item.get("branch", "main")).strip() or "main",
                     "path": str(item.get("path", "")).strip(),
                     "entrypoint": str(item.get("entrypoint", "")).strip(),
+                    "capabilities": capabilities,
+                    "requirements": requirements,
                 }
             )
         return rows
@@ -6408,7 +6421,7 @@ class SettingsWindow(QWidget):
         self._marketplace_populate_catalog(catalog)
         self.marketplace_status.setText(f"Catalog refreshed: {len(catalog)} plugin(s) available.")
 
-    def _marketplace_populate_catalog(self, catalog: list[dict[str, str]]) -> None:
+    def _marketplace_populate_catalog(self, catalog: list[dict[str, object]]) -> None:
         installed_ids = {
             str(entry.get("id", "")).strip()
             for entry in self.settings_state.get("marketplace", {}).get("installed_plugins", [])
@@ -6462,6 +6475,16 @@ class SettingsWindow(QWidget):
         description = str(plugin.get("description", "")).strip()
         if description:
             details.append(f"Description: {description}")
+        capabilities = plugin.get("capabilities", [])
+        if isinstance(capabilities, list):
+            cap_list = [str(value).strip() for value in capabilities if str(value).strip()]
+            if cap_list:
+                details.append("Capabilities: " + ", ".join(cap_list))
+        requirements = plugin.get("requirements", [])
+        if isinstance(requirements, list):
+            req_list = [str(value).strip() for value in requirements if str(value).strip()]
+            if req_list:
+                details.append("Requirements: " + ", ".join(req_list))
         self.marketplace_detail_label.setText("\n".join(details))
 
     def _marketplace_install_selected(self) -> None:
@@ -6649,6 +6672,10 @@ class SettingsWindow(QWidget):
             "plugin_icon_path": self._plugin_root_icon_path(plugin_dir),
             "icon_font": self.icon_font,
             "ui_font": self.ui_font,
+            "polkit_available": polkit_available,
+            "build_polkit_command": build_polkit_command,
+            "run_with_polkit": run_with_polkit,
+            "trigger_fullscreen_alert": trigger_fullscreen_alert,
         }
 
     def _load_plugin_service_builders(self) -> dict[str, dict[str, object]]:
