@@ -51,6 +51,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, fonts_root, hanauta_root, project_root, python_executable, scripts_root, source_root
+from pyqt.shared.plugin_bridge import build_polkit_command, polkit_available, run_with_polkit, trigger_fullscreen_alert
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
@@ -2612,6 +2613,10 @@ class CyberBar(QWidget):
             "python_bin": self._python_bin,
             "register_hook": self._register_bar_plugin_hook,
             "add_status_button": self._add_status_plugin_button,
+            "polkit_available": polkit_available,
+            "build_polkit_command": build_polkit_command,
+            "run_with_polkit": run_with_polkit,
+            "trigger_fullscreen_alert": trigger_fullscreen_alert,
         }
 
     def _load_bar_plugins(self) -> None:

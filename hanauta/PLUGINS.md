@@ -68,6 +68,21 @@ def register_hanauta_plugin() -> dict[str, object]:
 
 `api` provides shared classes/helpers (`SettingsRow`, `SwitchButton`, `ExpandableServiceSection`, `material_icon`, `entry_command`, `run_bg`).
 
+### New Plugin Runtime Helpers
+
+To keep plugin behavior consistent with Hanauta internals, plugin APIs now also expose:
+
+- `polkit_available() -> bool`
+- `build_polkit_command(command: list[str]) -> list[str]`
+- `run_with_polkit(command: list[str], detached: bool = True, env: dict[str, str] | None = None, timeout: float | None = None) -> bool`
+- `trigger_fullscreen_alert(title: str, body: str, severity: str = "discrete") -> bool`
+
+Notes:
+
+- `run_with_polkit(...)` uses the same `pkexec` + polkit path already used by Hanauta widgets.
+- `trigger_fullscreen_alert(...)` uses the native PyQt reminder fullscreen alert (`widget-reminders/reminder_alert.py`), not the regular toast daemon.
+- These keys are additive and optional; existing plugins continue to work unchanged.
+
 ## Service Visibility Rules
 
 - Plugin service sections are shown only when plugin entrypoint is discoverable.
@@ -87,6 +102,11 @@ def register_hanauta_plugin() -> dict[str, object]:
 - Catalog JSON defines plugin ids/repos/branches.
 - Installing a plugin clones it into `install_dir/<plugin_id>`.
 - Marketplace should not require bundling all plugins in core repository.
+- Optional metadata for plugin capability/requirement disclosure:
+  - `capabilities`: list (or boolean map) of feature flags such as:
+    - `polkit`
+    - `fullscreen_alert`
+  - `requirements`: list of runtime requirements (examples: `pkexec`, `wireguard-tools`)
 
 ## Independence Rules (Core vs Plugins)
 
