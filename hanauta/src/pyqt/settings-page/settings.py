@@ -10,6 +10,7 @@ import argparse
 import base64
 import configparser
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -33,7 +34,7 @@ except Exception:  # pragma: no cover
     tomllib = None
 
 from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QImage, QIntValidator, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QIcon, QImage, QIntValidator, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets import (
     QApplication,
@@ -253,6 +254,8 @@ HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
 STUDY_TRACKER_APP = APP_DIR / "pyqt" / "study-tracker" / "study_tracker.py"
+PLUGIN_ENTRYPOINT = "hanauta_plugin.py"
+PLUGIN_DEV_ROOT = Path.home() / "dev"
 MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
 MAIL_DB_PATH = MAIL_STATE_DIR / "mail.sqlite3"
 MAIL_DESKTOP_ID = "hanauta-mail.desktop"
@@ -834,6 +837,18 @@ def detect_font(*families: str) -> str:
         if family and QFont(family).exactMatch():
             return family
     return "Sans Serif"
+
+
+def _is_rubik_font(font_name: str) -> bool:
+    return "rubik" in (font_name or "").strip().lower()
+
+
+def _button_qfont_weight(font_name: str) -> QFont.Weight:
+    return QFont.Weight.Medium if _is_rubik_font(font_name) else QFont.Weight.DemiBold
+
+
+def _button_css_weight(font_name: str) -> int:
+    return 500 if _is_rubik_font(font_name) else 600
 
 
 def run_bg(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
@@ -2993,10 +3008,14 @@ class NavPillButton(QPushButton):
         self.icon_label.setFixedWidth(22)
 
         self.text_label = QLabel(text)
+        self.text_label.setObjectName("navPillText")
+        self.text_label.setProperty("iconRole", False)
         self.text_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.text_label.setWordWrap(False)
-        self.text_label.setFont(QFont(text_font, 9))
-        self.text_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        nav_font = QFont(text_font, 10, QFont.Weight.DemiBold)
+        nav_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        self.text_label.setFont(nav_font)
+        self.text_label.setStyleSheet("color: rgba(246,235,247,0.92); background: transparent;")
 
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.text_label, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -3437,6 +3456,7 @@ class ExpandableServiceSection(QFrame):
         content: QWidget,
         enabled: bool,
         on_toggle_enabled,
+        icon_path: str = "",
     ) -> None:
         super().__init__()
         self.key = key
@@ -3468,6 +3488,12 @@ class ExpandableServiceSection(QFrame):
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setFont(QFont(icon_font, 16))
         self.icon_label.setProperty("iconRole", True)
+        icon_file = Path(str(icon_path or "")).expanduser() if icon_path else None
+        if icon_file is not None and icon_file.exists():
+            icon_pixmap = QIcon(str(icon_file)).pixmap(20, 20)
+            if not icon_pixmap.isNull():
+                self.icon_label.setPixmap(icon_pixmap)
+                self.icon_label.setText("")
         icon_layout.addWidget(self.icon_label)
 
         text_wrap = QVBoxLayout()
@@ -3568,6 +3594,7 @@ class SettingsWindow(QWidget):
         )
 
         self.settings_state = load_settings_state()
+        self.plugin_service_builders = self._load_plugin_service_builders()
         self.mail_account_store = MailAccountStore(Path(load_mail_storage_config()["db_path"]).expanduser())
         self.notification_rules_state = load_notification_rules_state()
         self._weather_city_map: dict[str, WeatherCity] = {}
@@ -6248,21 +6275,60 @@ class SettingsWindow(QWidget):
         actions.addStretch(1)
         layout.addLayout(actions)
 
+        marketplace_body = QHBoxLayout()
+        marketplace_body.setSpacing(10)
+
+        catalog_card = QFrame()
+        catalog_card.setObjectName("marketplaceCatalogCard")
+        catalog_layout = QVBoxLayout(catalog_card)
+        catalog_layout.setContentsMargins(12, 12, 12, 12)
+        catalog_layout.setSpacing(8)
+        catalog_title = QLabel("Plugin catalog")
+        catalog_title.setObjectName("marketplacePanelTitle")
+        catalog_subtitle = QLabel("Install only the modules each user actually wants.")
+        catalog_subtitle.setObjectName("marketplacePanelSubtitle")
+        catalog_subtitle.setWordWrap(True)
+        catalog_layout.addWidget(catalog_title)
+        catalog_layout.addWidget(catalog_subtitle)
+        self.marketplace_search_input = QLineEdit()
+        self.marketplace_search_input.setPlaceholderText("Search plugins by name, id, or description")
+        self.marketplace_search_input.textChanged.connect(self._marketplace_filter_catalog)
+        catalog_layout.addWidget(self.marketplace_search_input)
+
         self.marketplace_plugin_list = QListWidget()
-        self.marketplace_plugin_list.setObjectName("settingsList")
+        self.marketplace_plugin_list.setObjectName("marketplacePluginList")
         self.marketplace_plugin_list.currentItemChanged.connect(self._marketplace_update_details)
-        self.marketplace_plugin_list.setMinimumHeight(220)
-        layout.addWidget(self.marketplace_plugin_list)
+        self.marketplace_plugin_list.setMinimumHeight(250)
+        self.marketplace_plugin_list.setAlternatingRowColors(False)
+        self.marketplace_plugin_list.setUniformItemSizes(False)
+        catalog_layout.addWidget(self.marketplace_plugin_list, 1)
+        marketplace_body.addWidget(catalog_card, 3)
+
+        detail_card = QFrame()
+        detail_card.setObjectName("marketplaceDetailCard")
+        detail_layout = QVBoxLayout(detail_card)
+        detail_layout.setContentsMargins(14, 14, 14, 14)
+        detail_layout.setSpacing(8)
+        detail_title = QLabel("Plugin details")
+        detail_title.setObjectName("marketplacePanelTitle")
+        detail_layout.addWidget(detail_title)
 
         self.marketplace_detail_label = QLabel("Select a plugin from the catalog to inspect installation details.")
+        self.marketplace_detail_label.setObjectName("marketplaceDetailText")
         self.marketplace_detail_label.setWordWrap(True)
-        self.marketplace_detail_label.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(self.marketplace_detail_label)
+        detail_layout.addWidget(self.marketplace_detail_label)
+
+        status_title = QLabel("Marketplace status")
+        status_title.setObjectName("marketplacePanelTitle")
+        detail_layout.addWidget(status_title)
 
         self.marketplace_status = QLabel("Marketplace is ready.")
+        self.marketplace_status.setObjectName("marketplaceStatusText")
         self.marketplace_status.setWordWrap(True)
-        self.marketplace_status.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(self.marketplace_status)
+        detail_layout.addWidget(self.marketplace_status)
+        detail_layout.addStretch(1)
+        marketplace_body.addWidget(detail_card, 2)
+        layout.addLayout(marketplace_body)
 
         self._marketplace_populate_catalog(list(marketplace.get("catalog_cache", [])))
         return card
@@ -6343,18 +6409,35 @@ class SettingsWindow(QWidget):
         self.marketplace_status.setText(f"Catalog refreshed: {len(catalog)} plugin(s) available.")
 
     def _marketplace_populate_catalog(self, catalog: list[dict[str, str]]) -> None:
+        installed_ids = {
+            str(entry.get("id", "")).strip()
+            for entry in self.settings_state.get("marketplace", {}).get("installed_plugins", [])
+            if isinstance(entry, dict)
+        }
         self.marketplace_plugin_list.clear()
         for plugin in catalog:
             name = str(plugin.get("name", "")).strip() or str(plugin.get("id", "plugin")).strip()
             description = str(plugin.get("description", "")).strip()
-            label = f"{name} — {description}" if description else name
+            plugin_id = str(plugin.get("id", "")).strip()
+            badge = "Installed • " if plugin_id in installed_ids else ""
+            secondary = description or f"Plugin id: {plugin_id}"
+            label = f"{name}\n{badge}{secondary}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, plugin)
+            item.setData(Qt.ItemDataRole.UserRole + 1, f"{name} {plugin_id} {description}".lower())
+            item.setToolTip(str(plugin.get("repo", "")).strip())
             self.marketplace_plugin_list.addItem(item)
         if self.marketplace_plugin_list.count() > 0:
             self.marketplace_plugin_list.setCurrentRow(0)
         else:
             self.marketplace_detail_label.setText("No plugins in the cached catalog yet. Use Refresh catalog.")
+
+    def _marketplace_filter_catalog(self, value: str) -> None:
+        needle = value.strip().lower()
+        for index in range(self.marketplace_plugin_list.count()):
+            item = self.marketplace_plugin_list.item(index)
+            haystack = str(item.data(Qt.ItemDataRole.UserRole + 1) or "").lower()
+            item.setHidden(bool(needle) and needle not in haystack)
 
     def _marketplace_update_details(self) -> None:
         item = self.marketplace_plugin_list.currentItem()
@@ -6453,6 +6536,141 @@ class SettingsWindow(QWidget):
         install_dir.mkdir(parents=True, exist_ok=True)
         run_bg(["xdg-open", str(install_dir)])
 
+    def _plugin_search_roots(self) -> list[Path]:
+        marketplace = self.settings_state.get("marketplace", {})
+        configured_root = Path(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))).expanduser()
+        candidates = [
+            configured_root,
+            ROOT / "hanauta" / "plugins",
+        ]
+        roots: list[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate.resolve()) if candidate.exists() else str(candidate.expanduser())
+            if key in seen:
+                continue
+            seen.add(key)
+            roots.append(candidate)
+        return roots
+
+    def _discover_plugin_dirs(self) -> list[Path]:
+        marketplace = self.settings_state.get("marketplace", {})
+        installed_entries = marketplace.get("installed_plugins", [])
+        dirs: list[Path] = []
+        seen: set[str] = set()
+
+        if isinstance(installed_entries, list):
+            for row in installed_entries:
+                if not isinstance(row, dict):
+                    continue
+                plugin_id = str(row.get("id", "")).strip()
+                install_path = str(row.get("install_path", "")).strip()
+                if not install_path:
+                    continue
+                plugin_dir = Path(install_path).expanduser()
+                if not plugin_dir.exists():
+                    continue
+                preferred = plugin_dir
+                candidate_names: list[str] = []
+                if plugin_id:
+                    candidate_names.append(plugin_id)
+                candidate_names.append(plugin_dir.name)
+                repo_url = str(row.get("repo", "")).strip()
+                if repo_url:
+                    repo_name = Path(parse.urlparse(repo_url).path).name
+                    if repo_name.endswith(".git"):
+                        repo_name = repo_name[:-4]
+                    if repo_name:
+                        candidate_names.append(repo_name)
+                for candidate_name in candidate_names:
+                    dev_dir = (PLUGIN_DEV_ROOT / candidate_name).expanduser()
+                    if (dev_dir / PLUGIN_ENTRYPOINT).exists():
+                        preferred = dev_dir
+                        break
+                resolved = str(preferred.resolve())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                dirs.append(preferred)
+
+        for root in self._plugin_search_roots():
+            if not root.exists() or not root.is_dir():
+                continue
+            try:
+                children = sorted(root.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                if not child.is_dir():
+                    continue
+                if not (child / PLUGIN_ENTRYPOINT).exists():
+                    continue
+                resolved = str(child.resolve())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                dirs.append(child)
+        return dirs
+
+    def _plugin_root_icon_path(self, plugin_dir: Path | None) -> str:
+        if plugin_dir is None:
+            return ""
+        for name in ("icon.svg", "icon.png"):
+            candidate = plugin_dir / name
+            if candidate.exists():
+                return str(candidate)
+        return ""
+
+    def _plugin_api(self, plugin_dir: Path | None = None) -> dict[str, object]:
+        return {
+            "SettingsRow": SettingsRow,
+            "SwitchButton": SwitchButton,
+            "ExpandableServiceSection": ExpandableServiceSection,
+            "material_icon": material_icon,
+            "entry_command": entry_command,
+            "run_bg": run_bg,
+            "plugin_icon_path": self._plugin_root_icon_path(plugin_dir),
+            "icon_font": self.icon_font,
+            "ui_font": self.ui_font,
+        }
+
+    def _load_plugin_service_builders(self) -> dict[str, dict[str, object]]:
+        builders: dict[str, dict[str, object]] = {}
+        for plugin_dir in self._discover_plugin_dirs():
+            entrypoint = plugin_dir / PLUGIN_ENTRYPOINT
+            if not entrypoint.exists():
+                continue
+            module_name = f"hanauta_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
+            try:
+                spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                register = getattr(module, "register_hanauta_plugin", None)
+                if not callable(register):
+                    continue
+                payload = register()
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            sections = payload.get("service_sections", [])
+            if not isinstance(sections, list):
+                continue
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                key = str(section.get("key", "")).strip()
+                builder = section.get("builder")
+                if not key or not callable(builder):
+                    continue
+                builders[key] = {
+                    "builder": builder,
+                    "plugin_dir": plugin_dir,
+                }
+        return builders
+
     def _build_services_card(self) -> QWidget:
         card = QFrame()
         card.setObjectName("contentCard")
@@ -6490,11 +6708,22 @@ class SettingsWindow(QWidget):
             ("vps_widget", self._build_vps_service_section()),
             ("desktop_clock_widget", self._build_desktop_clock_service_section()),
             ("game_mode", self._build_game_mode_service_section()),
-            ("study_tracker_widget", self._build_study_tracker_service_section()),
             ("weather", self._build_weather_section()),
             ("ntfy", self._build_ntfy_section()),
         ):
             layout.addWidget(widget)
+        for key in sorted(self.plugin_service_builders.keys()):
+            section_meta = self.plugin_service_builders.get(key, {})
+            builder = section_meta.get("builder")
+            plugin_dir = section_meta.get("plugin_dir")
+            if not callable(builder):
+                continue
+            try:
+                widget = builder(self, self._plugin_api(plugin_dir if isinstance(plugin_dir, Path) else None))
+            except Exception:
+                continue
+            if isinstance(widget, QWidget):
+                layout.addWidget(widget)
         return card
 
     def _focus_service_section(self, key: str) -> None:
@@ -11246,9 +11475,8 @@ class SettingsWindow(QWidget):
             QPushButton#navPill QLabel[iconRole="true"] {{
                 font-family: "{self.icon_font}";
             }}
-            QPushButton#navPill QLabel[iconRole="false"] {{
-                font-family: "{self.main_font}";
-                font-size: 10px;
+            QPushButton#navPill QLabel#navPillText {{
+                background: transparent;
             }}
             QPushButton#actionCard {{
                 background: {rgba(theme.surface_container_high, 0.88)};
@@ -11360,6 +11588,63 @@ class SettingsWindow(QWidget):
                 selection-background-color: {theme.accent_soft};
             }}
             QLineEdit:focus {{
+                border-color: {theme.app_focused_border};
+            }}
+            QFrame#marketplaceCatalogCard, QFrame#marketplaceDetailCard {{
+                background: {rgba(theme.surface_container, 0.92)};
+                border: 1px solid {rgba(theme.outline, 0.18)};
+                border-radius: 16px;
+            }}
+            QLabel#marketplacePanelTitle {{
+                color: {theme.text};
+                font-family: "{self.title_font}";
+                font-size: 11px;
+                letter-spacing: 0.4px;
+            }}
+            QLabel#marketplacePanelSubtitle {{
+                color: {theme.text_muted};
+                font-family: "{self.main_font}";
+                font-size: 10px;
+            }}
+            QLabel#marketplaceDetailText {{
+                color: {theme.text};
+                font-family: "{self.main_font}";
+                font-size: 10px;
+                padding: 10px 12px;
+                background: {rgba(theme.surface_container_high, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.18)};
+                border-radius: 12px;
+            }}
+            QLabel#marketplaceStatusText {{
+                color: {theme.text_muted};
+                font-family: "{self.main_font}";
+                font-size: 10px;
+                padding: 10px 12px;
+                background: {rgba(theme.surface_container_high, 0.80)};
+                border: 1px solid {rgba(theme.outline, 0.14)};
+                border-radius: 12px;
+            }}
+            QListWidget#marketplacePluginList {{
+                background: transparent;
+                border: none;
+                outline: none;
+                padding: 2px 0;
+            }}
+            QListWidget#marketplacePluginList::item {{
+                color: {theme.text};
+                background: {rgba(theme.surface_container_high, 0.72)};
+                border: 1px solid {rgba(theme.outline, 0.14)};
+                border-radius: 12px;
+                margin: 3px 0;
+                padding: 10px 11px;
+            }}
+            QListWidget#marketplacePluginList::item:hover {{
+                background: {theme.hover_bg};
+                border-color: {rgba(theme.outline, 0.22)};
+            }}
+            QListWidget#marketplacePluginList::item:selected {{
+                background: {rgba(theme.primary, 0.20)};
+                color: {theme.text};
                 border-color: {theme.app_focused_border};
             }}
             QPushButton#primaryButton, QPushButton#secondaryButton, QPushButton#dangerButton {{
