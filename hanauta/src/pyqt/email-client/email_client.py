@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import QObject, Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import QApplication, QFileDialog, QVBoxLayout, QWidget
 from pyqt.shared.runtime import entry_command
 from pyqt.shared.theme import ThemePalette, load_theme_palette, palette_mtime
@@ -76,6 +76,7 @@ STORAGE_CONFIG_PATH = STATE_DIR / "storage.json"
 KEY_PATH = STATE_DIR / "storage.key"
 HTML_PATH = HERE / "code.html"
 APP_NAME = "Hanauta Mail"
+APP_ICON_PATH = ROOT / "assets" / "icons" / "hanauta-mail.png"
 DEFAULT_SOUND_PATHS = (
     Path("/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"),
     Path("/usr/share/sounds/freedesktop/stereo/message.oga"),
@@ -1303,6 +1304,8 @@ class EmailClientWindow(QWidget):
         self.fragment_server = FragmentServer(self)
 
         self.setWindowTitle(APP_NAME)
+        if APP_ICON_PATH.exists():
+            self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.resize(1580, 980)
         self.setMinimumSize(1220, 760)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -2543,6 +2546,10 @@ def main() -> int:
         raise RuntimeError(f"QtWebEngine is unavailable: {WEBENGINE_ERROR}")
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
+    app.setApplicationName("hanauta-mail")
+    app.setDesktopFileName("hanauta-mail")
+    if APP_ICON_PATH.exists():
+        app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     window = EmailClientWindow(sys.argv[1:])
     window.show()
     return app.exec()

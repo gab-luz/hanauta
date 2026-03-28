@@ -70,6 +70,7 @@ ICON_CACHE_PATH = CACHE_DIR / "icon_cache.json"
 STATE_PATH = CACHE_DIR / "state.json"
 LOCK_PATH = CACHE_DIR / "dock.lock"
 DESKTOP_DIRS = [
+    ROOT / "hanauta" / "config" / "applications",
     Path.home() / ".local/share/applications",
     Path("/usr/local/share/applications"),
     Path("/usr/share/applications"),
@@ -81,6 +82,8 @@ ICON_DIRS = [
     Path("/usr/share/pixmaps"),
 ]
 FALLBACK_ICON_NAMES = ["application-x-executable", "applications-other", "application-default-icon"]
+DOCK_INTERNAL_WM_CLASSES = {"dock.py", "hanauta-dock"}
+DOCK_INTERNAL_WINDOW_TITLES = {"CyberDock", "Dock Settings"}
 MATERIAL_ICONS = {
     "apps": "\ue5c3",
     "settings": "\ue8b8",
@@ -360,6 +363,8 @@ def get_open_windows() -> list[WindowEntry]:
         if not wm_class:
             continue
         title = (node.get("name") or properties.get("title") or "").strip()
+        if wm_class in DOCK_INTERNAL_WM_CLASSES or title in DOCK_INTERNAL_WINDOW_TITLES:
+            continue
         con_id = int(node.get("id") or 0)
         if not con_id:
             continue
