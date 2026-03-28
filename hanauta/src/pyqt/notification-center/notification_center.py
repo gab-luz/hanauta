@@ -578,8 +578,42 @@ def post_home_assistant_json(base_url: str, token: str, path: str, payload: dict
 
 
 def load_notification_history(limit: int = 3) -> list[dict]:
+    def _decode_octal_runs(raw_text: str) -> str:
+        pattern = re.compile(r"(?:\\[0-7]{3})+")
+
+        def _replace(match: re.Match[str]) -> str:
+            run = match.group(0)
+            octets = re.findall(r"\\([0-7]{3})", run)
+            data = bytes(int(value, 8) for value in octets)
+            try:
+                return data.decode("utf-8")
+            except UnicodeDecodeError:
+                return data.decode("latin-1", errors="replace")
+
+        return pattern.sub(_replace, raw_text)
+
+    def _load_payload() -> object:
+        try:
+            raw = NOTIFICATION_HISTORY_FILE.read_text(encoding="utf-8")
+        except Exception:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:
+            try:
+                return json.loads(_decode_octal_runs(raw))
+            except Exception:
+                return None
+
+    def _value(raw_value: object) -> object:
+        if isinstance(raw_value, dict):
+            for key in ("data", "value", "id"):
+                if key in raw_value:
+                    return raw_value.get(key)
+        return raw_value
+
     try:
-        payload = json.loads(NOTIFICATION_HISTORY_FILE.read_text(encoding="utf-8"))
+        payload = _load_payload()
     except Exception:
         payload = None
     history: list[dict] = []
@@ -605,13 +639,13 @@ def load_notification_history(limit: int = 3) -> list[dict]:
                     continue
                 history.append(
                     {
-                        "id": item.get("id", 0),
-                        "app_name": str(item.get("app_name", {}).get("data", "")) if isinstance(item.get("app_name"), dict) else str(item.get("app_name", "")),
-                        "summary": str(item.get("summary", {}).get("data", "")) if isinstance(item.get("summary"), dict) else str(item.get("summary", "")),
-                        "body": str(item.get("body", {}).get("data", "")) if isinstance(item.get("body"), dict) else str(item.get("body", "")),
-                        "icon": str(item.get("app_icon", {}).get("data", "")) if isinstance(item.get("app_icon"), dict) else str(item.get("app_icon", "")),
-                        "desktop_entry": str(item.get("desktop_entry", {}).get("data", "")) if isinstance(item.get("desktop_entry"), dict) else str(item.get("desktop_entry", "")),
-                        "timestamp": item.get("timestamp", 0),
+                        "id": _value(item.get("id", 0)),
+                        "app_name": str(_value(item.get("app_name", item.get("appname", ""))) or ""),
+                        "summary": str(_value(item.get("summary", "")) or ""),
+                        "body": str(_value(item.get("body", "")) or ""),
+                        "icon": str(_value(item.get("app_icon", item.get("icon", ""))) or ""),
+                        "desktop_entry": str(_value(item.get("desktop_entry", "")) or ""),
+                        "timestamp": _value(item.get("timestamp", 0)),
                     }
                 )
     history = [item for item in history if item.get("summary") or item.get("body")]
@@ -2900,7 +2934,7 @@ class NotificationCenter(QWidget):
     def _history_item_id(self, payload: dict) -> int:
         raw = payload.get("id", 0)
         if isinstance(raw, dict):
-            raw = raw.get("id", raw.get("value", 0))
+            raw = raw.get("id", raw.get("value", raw.get("data", 0)))
         try:
             return int(raw or 0)
         except (TypeError, ValueError):
