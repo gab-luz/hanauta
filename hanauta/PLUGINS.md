@@ -280,6 +280,17 @@ Study Tracker is now plugin-powered for Services tab integration.
 
 The Services tab section is created via plugin builder, not hardcoded core section assembly.
 
+## RSS Widget Plugin (Current)
+
+RSS widget shell files were decoupled from core and moved to a plugin repository.
+
+- Plugin repo: `/home/gabi/dev/hanauta-plugin-rss`
+- Catalog id: `rss_widget`
+- Runtime files now live in plugin root:
+  - `rss_widget.py`
+  - `rss_widget.qml`
+  - `rss_settings.qml`
+
 ## Recommended Workflow for New Plugins
 
 1. Create repo `hanauta-plugin-<name>`.
