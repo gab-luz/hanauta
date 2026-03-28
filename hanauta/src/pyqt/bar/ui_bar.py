@@ -685,6 +685,28 @@ def discover_bar_plugin_entrypoints() -> list[Path]:
     return entrypoints
 
 
+def resolve_rss_widget_script() -> Path:
+    if RSS_WIDGET.exists():
+        return RSS_WIDGET
+    settings = load_runtime_settings()
+    marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
+    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+    if isinstance(installed, list):
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if plugin_id != "rss_widget":
+                continue
+            install_path = str(row.get("install_path", "")).strip()
+            if not install_path:
+                continue
+            candidate = Path(install_path).expanduser() / "rss_widget.py"
+            if candidate.exists():
+                return candidate
+    return RSS_WIDGET
+
+
 def load_runtime_settings() -> dict[str, object]:
     try:
         raw = SETTINGS_FILE.read_text(encoding="utf-8")
@@ -4519,7 +4541,8 @@ class CyberBar(QWidget):
             service = {}
         enabled = bool(service.get("enabled", True))
         show_in_bar = bool(service.get("show_in_bar", False))
-        self.rss_button.setVisible(enabled and show_in_bar)
+        has_script = resolve_rss_widget_script().exists()
+        self.rss_button.setVisible(enabled and show_in_bar and has_script)
 
     def _sync_obs_button_visibility(self) -> None:
         services = load_service_settings()
@@ -4933,9 +4956,10 @@ class CyberBar(QWidget):
         self._toggle_singleton_process("_pomodoro_widget_process", POMODORO_WIDGET)
 
     def _open_rss_widget(self) -> None:
-        if not RSS_WIDGET.exists():
+        rss_widget_script = resolve_rss_widget_script()
+        if not rss_widget_script.exists():
             return
-        self._toggle_singleton_process("_rss_widget_process", RSS_WIDGET, python_bin=self._python_bin())
+        self._toggle_singleton_process("_rss_widget_process", rss_widget_script, python_bin=self._python_bin())
 
     def _open_obs_widget(self) -> None:
         if not OBS_WIDGET.exists():

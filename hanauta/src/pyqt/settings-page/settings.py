@@ -73,7 +73,6 @@ from pyqt.shared.plugin_bridge import build_polkit_command, polkit_available, ru
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
 from pyqt.shared.home_assistant import entity_friendly_name, entity_icon_name, entity_secondary_text, prefetch_entity_icons
-from pyqt.shared.rss_settings_bridge import create_rss_settings_widget
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
@@ -659,8 +658,8 @@ DEFAULT_SERVICE_SETTINGS = {
         "test_mode": False,
     },
     "rss_widget": {
-        "enabled": True,
-        "show_in_notification_center": True,
+        "enabled": False,
+        "show_in_notification_center": False,
         "show_in_bar": False,
     },
     "obs_widget": {
@@ -6830,7 +6829,6 @@ class SettingsWindow(QWidget):
             ("reminders_widget", self._build_reminders_service_section()),
             ("pomodoro_widget", self._build_pomodoro_service_section()),
             ("cap_alerts", self._build_cap_alerts_service_section()),
-            ("rss_widget", self._build_rss_service_section()),
             ("obs_widget", self._build_obs_service_section()),
             ("crypto_widget", self._build_crypto_service_section()),
             ("vps_widget", self._build_vps_service_section()),

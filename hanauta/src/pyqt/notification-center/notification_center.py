@@ -164,8 +164,8 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": True,
     },
     "rss_widget": {
-        "enabled": True,
-        "show_in_notification_center": True,
+        "enabled": False,
+        "show_in_notification_center": False,
     },
     "obs_widget": {
         "enabled": True,
@@ -651,6 +651,28 @@ def load_notification_history(limit: int = 3) -> list[dict]:
     history = [item for item in history if item.get("summary") or item.get("body")]
     history.reverse()
     return history[:limit]
+
+
+def resolve_rss_widget_script(settings_state: dict | None = None) -> Path:
+    if RSS_WIDGET_SCRIPT.exists():
+        return RSS_WIDGET_SCRIPT
+    state = settings_state if isinstance(settings_state, dict) else {}
+    marketplace = state.get("marketplace", {}) if isinstance(state, dict) else {}
+    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+    if isinstance(installed, list):
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if plugin_id != "rss_widget":
+                continue
+            install_path = str(row.get("install_path", "")).strip()
+            if not install_path:
+                continue
+            candidate = Path(install_path).expanduser() / "rss_widget.py"
+            if candidate.exists():
+                return candidate
+    return RSS_WIDGET_SCRIPT
 
 
 def load_calendar_events(limit: int = 2) -> list[dict]:
@@ -2229,9 +2251,10 @@ class NotificationCenter(QWidget):
         run_bg_singleton(POMODORO_WIDGET_SCRIPT)
 
     def _open_rss_widget(self) -> None:
-        if not self._service_enabled("rss_widget") or not RSS_WIDGET_SCRIPT.exists():
+        rss_widget_script = resolve_rss_widget_script(self.settings_state)
+        if not self._service_enabled("rss_widget") or not rss_widget_script.exists():
             return
-        run_bg_singleton(RSS_WIDGET_SCRIPT)
+        run_bg_singleton(rss_widget_script)
 
     def _open_obs_widget(self) -> None:
         if not self._service_enabled("obs_widget") or not OBS_WIDGET_SCRIPT.exists():

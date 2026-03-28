@@ -10,7 +10,15 @@ from PyQt6.QtWidgets import QWidget
 from pyqt.shared.theme import blend, load_theme_palette, rgba
 
 
-QML_FILE = Path(__file__).resolve().parents[1] / "widget-rss" / "rss_settings.qml"
+LEGACY_QML_FILE = Path(__file__).resolve().parents[1] / "widget-rss" / "rss_settings.qml"
+PLUGIN_INSTALL_QML_FILE = Path.home() / ".config" / "i3" / "hanauta" / "plugins" / "rss_widget" / "rss_settings.qml"
+
+
+def _rss_settings_qml_file() -> Path:
+    for candidate in (LEGACY_QML_FILE, PLUGIN_INSTALL_QML_FILE):
+        if candidate.exists():
+            return candidate
+    return LEGACY_QML_FILE
 
 
 class RssSettingsBridge(QObject):
@@ -241,6 +249,6 @@ def create_rss_settings_widget(parent: QWidget, settings_state: dict, save_callb
     }
     widget.rootContext().setContextProperty("rssSettings", bridge)
     widget.rootContext().setContextProperty("rssTheme", theme_map)
-    widget.setSource(QUrl.fromLocalFile(str(QML_FILE)))
+    widget.setSource(QUrl.fromLocalFile(str(_rss_settings_qml_file())))
     widget.setMinimumHeight(920)
     return widget, bridge
