@@ -6,6 +6,7 @@ This folder now contains the active native C background stack for Hanauta:
   - GLib main-loop service for background weather and crypto refreshes.
   - Watches `~/.local/state/hanauta/notification-center/settings.json`.
   - Writes cache files to `~/.local/state/hanauta/service/`.
+  - Also runs plugin background tasks from `hanauta-service-plugin.json` manifests.
 - `hanauta-notifyd.c`
   - GTK/GLib notification daemon.
   - Owns `org.freedesktop.Notifications` on the session bus.
@@ -36,3 +37,19 @@ That produces:
 `startup.sh` prefers the native notification daemon when the binary exists, and still falls back to the older Python daemon if it does not.
 
 The top-level wrapper at `bin/hanauta-notifyctl` forwards to the native binary, so the existing PyQt and Eww callers keep working without code changes.
+
+## Plugin Background Tasks
+
+`hanauta-service` now supports a generic plugin bridge:
+
+- Plugin manifest file name: `hanauta-service-plugin.json`
+- Discovery roots:
+  - `~/.config/i3/hanauta/plugins/*`
+  - `~/dev/hanauta-plugin-*`
+- Token expansion in manifest fields:
+  - `${PLUGIN_DIR}`
+  - `${HOME}`
+
+Plugin tasks should write outputs/caches into:
+
+- `~/.local/state/hanauta/service/plugins/`

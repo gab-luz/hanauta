@@ -6610,6 +6610,23 @@ class SettingsWindow(QWidget):
                     continue
                 seen.add(resolved)
                 dirs.append(child)
+        if PLUGIN_DEV_ROOT.exists() and PLUGIN_DEV_ROOT.is_dir():
+            try:
+                dev_children = sorted(PLUGIN_DEV_ROOT.iterdir())
+            except OSError:
+                dev_children = []
+            for child in dev_children:
+                if not child.is_dir():
+                    continue
+                if not child.name.startswith("hanauta-plugin-"):
+                    continue
+                if not (child / PLUGIN_ENTRYPOINT).exists():
+                    continue
+                resolved = str(child.resolve())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                dirs.append(child)
         return dirs
 
     def _plugin_root_icon_path(self, plugin_dir: Path | None) -> str:

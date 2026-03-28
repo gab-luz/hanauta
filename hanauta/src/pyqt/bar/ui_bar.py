@@ -145,6 +145,7 @@ TRAY_ICON_SIZE = 16
 MAIL_NOTIFICATION_ACTION_KEY = "hanauta-mail-read"
 MAIL_NOTIFICATION_TIMEOUT_MS = 15000
 BAR_PLUGIN_ENTRYPOINT = "hanauta_bar_plugin.py"
+PLUGIN_DEV_ROOT = Path.home() / "dev"
 HAS_DBUS_NEXT = importlib.util.find_spec("dbus_next") is not None
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -646,6 +647,24 @@ def discover_bar_plugin_entrypoints() -> list[Path]:
             continue
         for child in children:
             if not child.is_dir():
+                continue
+            entrypoint = child / BAR_PLUGIN_ENTRYPOINT
+            if not entrypoint.exists():
+                continue
+            key = str(entrypoint.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            entrypoints.append(entrypoint)
+    if PLUGIN_DEV_ROOT.exists() and PLUGIN_DEV_ROOT.is_dir():
+        try:
+            dev_children = sorted(PLUGIN_DEV_ROOT.iterdir())
+        except OSError:
+            dev_children = []
+        for child in dev_children:
+            if not child.is_dir():
+                continue
+            if not child.name.startswith("hanauta-plugin-"):
                 continue
             entrypoint = child / BAR_PLUGIN_ENTRYPOINT
             if not entrypoint.exists():
