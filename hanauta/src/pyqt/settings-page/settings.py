@@ -469,6 +469,7 @@ MATERIAL_ICONS = {
     "push_pin": "\uef3e",
     "push_pin_outline": "\uf10f",
     "visibility_off": "\ue8f5",
+    "storefront": "\ue8d1",
 }
 
 
@@ -1383,6 +1384,14 @@ def load_settings_state() -> dict:
             "play_notification_sound": False,
             "hide_notification_content": False,
         },
+        "marketplace": {
+            "catalog_repo_url": "https://github.com/gab-luz/hanauta-plugins",
+            "catalog_branch": "main",
+            "catalog_manifest_path": "plugins.json",
+            "install_dir": str(ROOT / "hanauta" / "plugins"),
+            "catalog_cache": [],
+            "installed_plugins": [],
+        },
     "region": {
         "locale_code": "",
         "use_24_hour": False,
@@ -1466,6 +1475,15 @@ def load_settings_state() -> dict:
     mail["notify_new_messages"] = bool(mail.get("notify_new_messages", True))
     mail["play_notification_sound"] = bool(mail.get("play_notification_sound", False))
     mail["hide_notification_content"] = bool(mail.get("hide_notification_content", False))
+    marketplace = dict(payload.get("marketplace", {}))
+    marketplace["catalog_repo_url"] = str(marketplace.get("catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins")).strip() or "https://github.com/gab-luz/hanauta-plugins"
+    marketplace["catalog_branch"] = str(marketplace.get("catalog_branch", "main")).strip() or "main"
+    marketplace["catalog_manifest_path"] = str(marketplace.get("catalog_manifest_path", "plugins.json")).strip() or "plugins.json"
+    marketplace["install_dir"] = str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))).strip() or str(ROOT / "hanauta" / "plugins")
+    catalog_cache = marketplace.get("catalog_cache", [])
+    marketplace["catalog_cache"] = catalog_cache if isinstance(catalog_cache, list) else []
+    installed_plugins = marketplace.get("installed_plugins", [])
+    marketplace["installed_plugins"] = installed_plugins if isinstance(installed_plugins, list) else []
     weather = dict(payload.get("weather", {}))
     weather.setdefault("enabled", False)
     weather.setdefault("name", "")
@@ -1798,6 +1816,7 @@ def load_settings_state() -> dict:
         "health": health,
         "display": display,
         "mail": mail,
+        "marketplace": marketplace,
         "region": region,
         "bar": bar,
         "services": services,
@@ -3755,6 +3774,7 @@ class SettingsWindow(QWidget):
         items = [
             ("overview", material_icon("grid_view"), "Overview", False),
             ("appearance", material_icon("palette"), "Looks", True),
+            ("marketplace", material_icon("storefront"), "Marketplace", False),
             ("display", material_icon("desktop_windows"), "Display", False),
             ("energy", material_icon("bolt"), "Energy", False),
             ("audio", material_icon("music_note"), "Audio", False),
@@ -3786,6 +3806,7 @@ class SettingsWindow(QWidget):
         self.page_stack = QStackedWidget()
         self.page_stack.addWidget(self._build_overview_page())
         self.page_stack.addWidget(self._build_appearance_page())
+        self.page_stack.addWidget(self._build_marketplace_page())
         self.page_stack.addWidget(self._build_display_page())
         self.page_stack.addWidget(self._build_energy_page())
         self.page_stack.addWidget(self._build_audio_page())
@@ -3841,6 +3862,9 @@ class SettingsWindow(QWidget):
     def _build_bar_page(self) -> QWidget:
         return self._scroll_page(self._build_bar_screen_card())
 
+    def _build_marketplace_page(self) -> QWidget:
+        return self._scroll_page(self._build_marketplace_card())
+
     def _build_energy_page(self) -> QWidget:
         return self._scroll_page(self._build_energy_card())
 
@@ -3881,19 +3905,20 @@ class SettingsWindow(QWidget):
         order = {
             "overview": 0,
             "appearance": 1,
-            "display": 2,
-            "energy": 3,
-            "audio": 4,
-            "notifications": 5,
-            "input": 6,
-            "startup": 7,
-            "privacy": 8,
-            "networking": 9,
-            "storage": 10,
-            "region": 11,
-            "bar": 12,
-            "services": 13,
-            "picom": 14,
+            "marketplace": 2,
+            "display": 3,
+            "energy": 4,
+            "audio": 5,
+            "notifications": 6,
+            "input": 7,
+            "startup": 8,
+            "privacy": 9,
+            "networking": 10,
+            "storage": 11,
+            "region": 12,
+            "bar": 13,
+            "services": 14,
+            "picom": 15,
         }
         resolved = key if key in order else "appearance"
         self.current_page = resolved
@@ -6104,6 +6129,329 @@ class SettingsWindow(QWidget):
         save_button.clicked.connect(self._save_region_settings)
         layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
         return card
+
+    def _build_marketplace_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("storefront"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Marketplace")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel("Discover modular Hanauta services from GitHub catalogs so users can install only what they actually want.")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle.setWordWrap(True)
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        marketplace = self.settings_state.setdefault("marketplace", {})
+        self.marketplace_repo_input = QLineEdit(str(marketplace.get("catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins")))
+        self.marketplace_repo_input.setPlaceholderText("https://github.com/gab-luz/hanauta-plugins")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "Catalog repo URL",
+                "GitHub repository that hosts your plugin catalog manifest and plugin repositories.",
+                self.icon_font,
+                self.ui_font,
+                self.marketplace_repo_input,
+            )
+        )
+
+        self.marketplace_branch_input = QLineEdit(str(marketplace.get("catalog_branch", "main")))
+        self.marketplace_branch_input.setPlaceholderText("main")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("settings"),
+                "Catalog branch",
+                "Branch used when fetching the marketplace catalog.",
+                self.icon_font,
+                self.ui_font,
+                self.marketplace_branch_input,
+            )
+        )
+
+        self.marketplace_manifest_input = QLineEdit(str(marketplace.get("catalog_manifest_path", "plugins.json")))
+        self.marketplace_manifest_input.setPlaceholderText("plugins.json")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("description"),
+                "Manifest path",
+                "Path in the repo that returns plugin metadata as JSON.",
+                self.icon_font,
+                self.ui_font,
+                self.marketplace_manifest_input,
+            )
+        )
+
+        self.marketplace_install_dir_input = QLineEdit(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))))
+        self.marketplace_install_dir_input.setPlaceholderText(str(ROOT / "hanauta" / "plugins"))
+        install_dir_row = QWidget()
+        install_dir_layout = QHBoxLayout(install_dir_row)
+        install_dir_layout.setContentsMargins(0, 0, 0, 0)
+        install_dir_layout.setSpacing(8)
+        install_dir_layout.addWidget(self.marketplace_install_dir_input, 1)
+        self.marketplace_choose_dir_button = QPushButton("Choose")
+        self.marketplace_choose_dir_button.setObjectName("secondaryButton")
+        self.marketplace_choose_dir_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.marketplace_choose_dir_button.clicked.connect(self._marketplace_choose_install_dir)
+        install_dir_layout.addWidget(self.marketplace_choose_dir_button)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("folder_open"),
+                "Install directory",
+                "Plugins are cloned here and can be wired into Hanauta services.",
+                self.icon_font,
+                self.ui_font,
+                install_dir_row,
+            )
+        )
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.marketplace_save_button = QPushButton("Save marketplace config")
+        self.marketplace_save_button.setObjectName("primaryButton")
+        self.marketplace_refresh_button = QPushButton("Refresh catalog")
+        self.marketplace_refresh_button.setObjectName("secondaryButton")
+        self.marketplace_install_button = QPushButton("Install selected")
+        self.marketplace_install_button.setObjectName("secondaryButton")
+        self.marketplace_open_dir_button = QPushButton("Open plugin folder")
+        self.marketplace_open_dir_button.setObjectName("secondaryButton")
+        for button in (
+            self.marketplace_save_button,
+            self.marketplace_refresh_button,
+            self.marketplace_install_button,
+            self.marketplace_open_dir_button,
+        ):
+            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.marketplace_save_button.clicked.connect(self._marketplace_save_settings)
+        self.marketplace_refresh_button.clicked.connect(self._marketplace_refresh_catalog)
+        self.marketplace_install_button.clicked.connect(self._marketplace_install_selected)
+        self.marketplace_open_dir_button.clicked.connect(self._marketplace_open_install_dir)
+        actions.addWidget(self.marketplace_save_button)
+        actions.addWidget(self.marketplace_refresh_button)
+        actions.addWidget(self.marketplace_install_button)
+        actions.addWidget(self.marketplace_open_dir_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        self.marketplace_plugin_list = QListWidget()
+        self.marketplace_plugin_list.setObjectName("settingsList")
+        self.marketplace_plugin_list.currentItemChanged.connect(self._marketplace_update_details)
+        self.marketplace_plugin_list.setMinimumHeight(220)
+        layout.addWidget(self.marketplace_plugin_list)
+
+        self.marketplace_detail_label = QLabel("Select a plugin from the catalog to inspect installation details.")
+        self.marketplace_detail_label.setWordWrap(True)
+        self.marketplace_detail_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.marketplace_detail_label)
+
+        self.marketplace_status = QLabel("Marketplace is ready.")
+        self.marketplace_status.setWordWrap(True)
+        self.marketplace_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.marketplace_status)
+
+        self._marketplace_populate_catalog(list(marketplace.get("catalog_cache", [])))
+        return card
+
+    def _marketplace_choose_install_dir(self) -> None:
+        initial = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
+        selected = QFileDialog.getExistingDirectory(self, "Choose plugin install directory", initial)
+        if selected:
+            self.marketplace_install_dir_input.setText(selected)
+
+    def _marketplace_save_settings(self) -> None:
+        marketplace = self.settings_state.setdefault("marketplace", {})
+        marketplace["catalog_repo_url"] = self.marketplace_repo_input.text().strip()
+        marketplace["catalog_branch"] = self.marketplace_branch_input.text().strip() or "main"
+        marketplace["catalog_manifest_path"] = self.marketplace_manifest_input.text().strip() or "plugins.json"
+        marketplace["install_dir"] = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
+        save_settings_state(self.settings_state)
+        self.marketplace_status.setText("Marketplace configuration saved.")
+
+    def _marketplace_manifest_url(self) -> str:
+        repo_url = self.marketplace_repo_input.text().strip()
+        branch = self.marketplace_branch_input.text().strip() or "main"
+        manifest_path = self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json"
+        parsed = parse.urlparse(repo_url)
+        if parsed.netloc.lower() == "github.com":
+            parts = [part for part in parsed.path.split("/") if part]
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo = parts[1].removesuffix(".git")
+                return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{manifest_path}"
+        return repo_url.rstrip("/") + "/" + manifest_path
+
+    def _marketplace_normalize_catalog(self, payload: object) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        plugins: object = payload
+        if isinstance(payload, dict):
+            plugins = payload.get("plugins", [])
+        if not isinstance(plugins, list):
+            return rows
+        for item in plugins:
+            if not isinstance(item, dict):
+                continue
+            plugin_id = str(item.get("id", "")).strip() or str(item.get("name", "")).strip().lower().replace(" ", "_")
+            repo = str(item.get("repo", "")).strip() or str(item.get("repository", "")).strip()
+            if not plugin_id or not repo:
+                continue
+            rows.append(
+                {
+                    "id": plugin_id,
+                    "name": str(item.get("name", plugin_id)).strip() or plugin_id,
+                    "description": str(item.get("description", "")).strip(),
+                    "repo": repo,
+                    "branch": str(item.get("branch", "main")).strip() or "main",
+                    "path": str(item.get("path", "")).strip(),
+                    "entrypoint": str(item.get("entrypoint", "")).strip(),
+                }
+            )
+        return rows
+
+    def _marketplace_refresh_catalog(self) -> None:
+        self._marketplace_save_settings()
+        manifest_url = self._marketplace_manifest_url()
+        try:
+            req = request.Request(manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"})
+            with request.urlopen(req, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            self.marketplace_status.setText(f"Failed to refresh catalog: {exc}")
+            return
+        catalog = self._marketplace_normalize_catalog(payload)
+        if not catalog:
+            self.marketplace_status.setText("Catalog loaded but no valid plugins were found in the manifest.")
+            return
+        marketplace = self.settings_state.setdefault("marketplace", {})
+        marketplace["catalog_cache"] = catalog
+        save_settings_state(self.settings_state)
+        self._marketplace_populate_catalog(catalog)
+        self.marketplace_status.setText(f"Catalog refreshed: {len(catalog)} plugin(s) available.")
+
+    def _marketplace_populate_catalog(self, catalog: list[dict[str, str]]) -> None:
+        self.marketplace_plugin_list.clear()
+        for plugin in catalog:
+            name = str(plugin.get("name", "")).strip() or str(plugin.get("id", "plugin")).strip()
+            description = str(plugin.get("description", "")).strip()
+            label = f"{name} — {description}" if description else name
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, plugin)
+            self.marketplace_plugin_list.addItem(item)
+        if self.marketplace_plugin_list.count() > 0:
+            self.marketplace_plugin_list.setCurrentRow(0)
+        else:
+            self.marketplace_detail_label.setText("No plugins in the cached catalog yet. Use Refresh catalog.")
+
+    def _marketplace_update_details(self) -> None:
+        item = self.marketplace_plugin_list.currentItem()
+        if item is None:
+            self.marketplace_detail_label.setText("Select a plugin from the catalog to inspect installation details.")
+            return
+        plugin = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(plugin, dict):
+            self.marketplace_detail_label.setText("Plugin metadata is unavailable for this row.")
+            return
+        details = [
+            f"Name: {str(plugin.get('name', plugin.get('id', 'plugin')))}",
+            f"Repo: {str(plugin.get('repo', ''))}",
+            f"Branch: {str(plugin.get('branch', 'main'))}",
+        ]
+        rel_path = str(plugin.get("path", "")).strip()
+        if rel_path:
+            details.append(f"Path: {rel_path}")
+        entrypoint = str(plugin.get("entrypoint", "")).strip()
+        if entrypoint:
+            details.append(f"Entrypoint: {entrypoint}")
+        description = str(plugin.get("description", "")).strip()
+        if description:
+            details.append(f"Description: {description}")
+        self.marketplace_detail_label.setText("\n".join(details))
+
+    def _marketplace_install_selected(self) -> None:
+        item = self.marketplace_plugin_list.currentItem()
+        if item is None:
+            self.marketplace_status.setText("Select a plugin from the catalog before installing.")
+            return
+        plugin = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(plugin, dict):
+            self.marketplace_status.setText("Plugin metadata is invalid.")
+            return
+        repo = str(plugin.get("repo", "")).strip()
+        plugin_id = str(plugin.get("id", "")).strip()
+        branch = str(plugin.get("branch", "main")).strip() or "main"
+        if not repo or not plugin_id:
+            self.marketplace_status.setText("Plugin entry is missing a valid id or repo URL.")
+            return
+        if shutil.which("git") is None:
+            self.marketplace_status.setText("git is required to install marketplace plugins.")
+            return
+
+        install_root = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
+        install_root.mkdir(parents=True, exist_ok=True)
+        target_dir = install_root / plugin_id
+
+        try:
+            if (target_dir / ".git").exists():
+                result = subprocess.run(
+                    ["git", "-C", str(target_dir), "pull", "--ff-only", "origin", branch],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            else:
+                result = subprocess.run(
+                    ["git", "clone", "--depth", "1", "--branch", branch, repo, str(target_dir)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+        except Exception as exc:
+            self.marketplace_status.setText(f"Failed to install {plugin_id}: {exc}")
+            return
+
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            self.marketplace_status.setText(f"Install failed for {plugin_id}: {stderr or 'git returned an error.'}")
+            return
+
+        marketplace = self.settings_state.setdefault("marketplace", {})
+        installed = marketplace.setdefault("installed_plugins", [])
+        if not isinstance(installed, list):
+            installed = []
+            marketplace["installed_plugins"] = installed
+        record = {
+            "id": plugin_id,
+            "name": str(plugin.get("name", plugin_id)),
+            "repo": repo,
+            "branch": branch,
+            "install_path": str(target_dir),
+            "installed_at_epoch": int(time.time()),
+        }
+        installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)]
+        installed.append(record)
+        marketplace["installed_plugins"] = installed
+        marketplace["install_dir"] = str(install_root)
+        save_settings_state(self.settings_state)
+        self.marketplace_status.setText(f"Installed {plugin_id} into {target_dir}.")
+
+    def _marketplace_open_install_dir(self) -> None:
+        install_dir = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
+        install_dir.mkdir(parents=True, exist_ok=True)
+        run_bg(["xdg-open", str(install_dir)])
 
     def _build_services_card(self) -> QWidget:
         card = QFrame()
@@ -11070,7 +11418,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "--page",
-        choices=("overview", "appearance", "display", "energy", "audio", "notifications", "input", "startup", "privacy", "networking", "storage", "region", "bar", "services", "picom"),
+        choices=("overview", "appearance", "marketplace", "display", "energy", "audio", "notifications", "input", "startup", "privacy", "networking", "storage", "region", "bar", "services", "picom"),
         default="appearance",
     )
     parser.add_argument("--service-section", default="")
