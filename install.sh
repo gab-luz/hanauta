@@ -834,6 +834,7 @@ install_pacman_group() {
 install_packages_debian() {
   local -a core_pkgs=(
     git
+    xorg xinit
     i3-wm rofi feh picom
     x11-xserver-utils x11-utils xdotool xclip
     jq curl ffmpeg rsync
@@ -860,6 +861,7 @@ install_packages_debian() {
     xcursorgen
     xdg-user-dirs
     libgtk-3-bin
+    dbus-x11
   )
   local -a optional_pkgs=(
     copyq clipit plank ukui-window-switch
@@ -877,8 +879,9 @@ install_packages_debian() {
 install_packages_arch() {
   local -a core_pkgs=(
     git
+    xorg-server xorg-xinit
     i3-wm rofi feh picom
-    xorg-xrandr xorg-xsetroot xorg-xwininfo xorg-xev xdotool xclip
+    xorg-xrandr xorg-xsetroot xorg-xwininfo xorg-xev xorg-xrdb xdotool xclip
     jq curl ffmpeg rsync
     flameshot scrot maim
     playerctl brightnessctl
