@@ -15,6 +15,7 @@ INSTALL_VSCODIUM_ONLY=false
 INSTALL_NOTIFICATION_DAEMON_ONLY=false
 INSTALL_QUICKSHELL_ONLY=false
 INSTALL_WIREGUARD_SYSTEMD_ONLY=false
+INSTALL_SDDM_ONLY=false
 INSTALL_CUSTOM_THEMES=false
 CUSTOM_THEMES_SELECTION=""
 INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
@@ -132,6 +133,7 @@ Options:
   --notification-daemon         Install only Hanauta notification daemon components
   --quickshell                  Install only Quickshell runtime dependencies
   --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
+  --sddm                        Install and configure SilentSDDM only
   --custom-themes               Install all vendored custom themes (retrowave + dracula)
   --custom-themes=NAME          Install custom themes by selection: retrowave, dracula, all
   --custom-themes-system        Force custom themes installation into /usr/share/themes too
@@ -204,6 +206,9 @@ parse_args() {
         ;;
       --wireguard-systemd)
         INSTALL_WIREGUARD_SYSTEMD_ONLY=true
+        ;;
+      --sddm)
+        INSTALL_SDDM_ONLY=true
         ;;
       --custom-themes)
         INSTALL_CUSTOM_THEMES=true
@@ -394,6 +399,327 @@ offer_wireguard_systemd_setup() {
   fi
 
   setup_wireguard_systemd "$iface"
+}
+
+pick_first_available_apt_package() {
+  local pkg=""
+  for pkg in "$@"; do
+    if apt_has_package "$pkg"; then
+      printf '%s\n' "$pkg"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_sddm_packages_debian() {
+  local svg_pkg=""
+  local vkb_pkg=""
+  local mm_pkg=""
+
+  echo -e "${CYAN}[*]${NC} Updating package lists..."
+  sudo apt-get update -qq
+
+  install_apt_group "SilentSDDM base" sddm
+
+  svg_pkg="$(pick_first_available_apt_package libqt6svg6 qt6-svg-dev)" || true
+  vkb_pkg="$(pick_first_available_apt_package qml6-module-qtquick-virtualkeyboard qt6-virtualkeyboard-dev)" || true
+  mm_pkg="$(pick_first_available_apt_package qml6-module-qtmultimedia qt6-multimedia-dev)" || true
+
+  if [ -n "$svg_pkg" ]; then
+    install_apt_group "SilentSDDM Qt SVG runtime" "$svg_pkg"
+  else
+    warn "No Debian package found for Qt6 SVG runtime (needed by SilentSDDM)."
+  fi
+
+  if [ -n "$vkb_pkg" ]; then
+    install_apt_group "SilentSDDM virtual keyboard runtime" "$vkb_pkg"
+  else
+    warn "No Debian package found for Qt6 virtual keyboard runtime (needed by SilentSDDM)."
+  fi
+
+  if [ -n "$mm_pkg" ]; then
+    install_apt_group "SilentSDDM multimedia runtime" "$mm_pkg"
+  else
+    warn "No Debian package found for Qt6 multimedia runtime (needed by SilentSDDM)."
+  fi
+}
+
+install_sddm_packages_arch() {
+  install_pacman_group "SilentSDDM dependencies" \
+    sddm qt6-svg qt6-virtualkeyboard qt6-multimedia-ffmpeg
+}
+
+check_sddm_version_requirement() {
+  local detected=""
+  local major=0
+  local minor=0
+
+  if ! need_cmd sddm; then
+    warn "SDDM command not found after package installation."
+    return 0
+  fi
+
+  detected="$(sddm --version 2>/dev/null | head -n 1 | grep -Eo '[0-9]+(\.[0-9]+){1,2}' | head -n 1 || true)"
+  if [ -z "$detected" ]; then
+    warn "Could not detect SDDM version. SilentSDDM requires SDDM >= 0.21.0."
+    return 0
+  fi
+
+  major="${detected%%.*}"
+  minor="$(printf '%s' "$detected" | cut -d. -f2)"
+  minor="${minor:-0}"
+  if [ "$major" -eq 0 ] && [ "$minor" -lt 21 ]; then
+    warn "Detected SDDM $detected. SilentSDDM requires SDDM >= 0.21.0."
+  else
+    info "Detected SDDM version $detected (meets SilentSDDM requirement >= 0.21.0)."
+  fi
+}
+
+set_ini_key() {
+  local file_path="$1"
+  local section="$2"
+  local key="$3"
+  local value="$4"
+  local temp_file=""
+
+  temp_file="$(mktemp)"
+  awk -v section="$section" -v key="$key" -v value="$value" '
+    BEGIN {
+      in_section = 0
+      section_found = 0
+      key_written = 0
+    }
+    function print_key() {
+      print key "=" value
+    }
+    /^\[.*\]$/ {
+      if (in_section && !key_written) {
+        print_key()
+        key_written = 1
+      }
+      if ($0 == "[" section "]") {
+        in_section = 1
+        section_found = 1
+        key_written = 0
+      } else {
+        in_section = 0
+      }
+      print
+      next
+    }
+    {
+      if (in_section && $0 ~ "^[[:space:]]*" key "[[:space:]]*=") {
+        if (!key_written) {
+          print_key()
+          key_written = 1
+        }
+        next
+      }
+      print
+    }
+    END {
+      if (!section_found) {
+        print ""
+        print "[" section "]"
+        print_key()
+      } else if (in_section && !key_written) {
+        print_key()
+      }
+    }
+  ' "$file_path" > "$temp_file"
+
+  cat "$temp_file" > "$file_path"
+  rm -f "$temp_file"
+}
+
+configure_sddm_for_silent_theme() {
+  local conf_file="/etc/sddm.conf"
+  local tmp_conf=""
+  local backup_file=""
+
+  if ! need_cmd sudo; then
+    error "sudo is required to configure SDDM."
+    return 1
+  fi
+
+  tmp_conf="$(mktemp)"
+  if [ -f "$conf_file" ]; then
+    sudo cp "$conf_file" "$tmp_conf"
+    backup_file="/etc/sddm.conf.backup-$(date +%Y%m%d-%H%M%S)"
+    sudo cp "$conf_file" "$backup_file"
+    info "Backed up existing SDDM config to $backup_file"
+  else
+    : > "$tmp_conf"
+  fi
+
+  set_ini_key "$tmp_conf" "Theme" "Current" "silent"
+  set_ini_key "$tmp_conf" "General" "InputMethod" "qtvirtualkeyboard"
+  set_ini_key "$tmp_conf" "General" "GreeterEnvironment" "QML2_IMPORT_PATH=/usr/share/sddm/themes/silent/components/,QT_IM_MODULE=qtvirtualkeyboard"
+
+  sudo mkdir -p /etc
+  sudo cp "$tmp_conf" "$conf_file"
+  rm -f "$tmp_conf"
+  success "Configured /etc/sddm.conf for SilentSDDM"
+}
+
+install_silent_sddm_theme_files() {
+  local tmp_root=""
+  local repo_root=""
+  local theme_dst="/usr/share/sddm/themes/silent"
+  local fonts_src=""
+
+  if ! need_cmd git; then
+    error "git is required to install SilentSDDM."
+    return 1
+  fi
+  if ! need_cmd sudo; then
+    error "sudo is required to install SilentSDDM files."
+    return 1
+  fi
+
+  tmp_root="$(mktemp -d)"
+  repo_root="$tmp_root/SilentSDDM"
+  info "Cloning SilentSDDM..."
+  if ! git clone --depth 1 --branch main https://github.com/uiriansan/SilentSDDM "$repo_root" >/dev/null 2>&1; then
+    rm -rf "$tmp_root"
+    error "Failed to clone SilentSDDM repository."
+    return 1
+  fi
+
+  info "Installing SilentSDDM theme files to $theme_dst..."
+  sudo mkdir -p "$theme_dst"
+  sudo rsync -a --delete --exclude '.git' "$repo_root/" "$theme_dst/"
+  success "SilentSDDM theme files installed"
+
+  fonts_src="$theme_dst/fonts"
+  if [ -d "$fonts_src" ]; then
+    info "Installing SilentSDDM bundled fonts..."
+    sudo mkdir -p /usr/share/fonts
+    sudo rsync -a "$fonts_src/" /usr/share/fonts/
+    if need_cmd fc-cache; then
+      sudo fc-cache -f /usr/share/fonts >/dev/null 2>&1 || sudo fc-cache -f >/dev/null 2>&1 || true
+    fi
+    success "SilentSDDM fonts installed"
+  else
+    warn "No fonts directory found in SilentSDDM theme."
+  fi
+
+  rm -rf "$tmp_root"
+}
+
+offer_sddm_service_enable() {
+  if ! need_cmd systemctl; then
+    warn "systemctl not found; skipping SDDM service enable/start."
+    return 0
+  fi
+  if ! need_cmd sudo; then
+    warn "sudo not found; skipping SDDM service enable/start."
+    return 0
+  fi
+
+  disable_conflicting_display_managers
+
+  if confirm_default_yes "Enable SDDM at boot with systemd now?"; then
+    sudo systemctl enable sddm.service
+    success "Enabled sddm.service"
+  else
+    info "Skipped enabling sddm.service."
+  fi
+
+  if confirm_yes "Start SDDM right now? (This may interrupt your current graphical session)"; then
+    sudo systemctl restart sddm.service
+    success "SDDM restarted"
+  else
+    info "Skipped starting SDDM right now."
+  fi
+}
+
+disable_conflicting_display_managers() {
+  local -a dms=(lightdm gdm gdm3 lxdm xdm ly)
+  local dm=""
+  local had_conflicts=false
+  local -a active_conflicts=()
+
+  if ! need_cmd systemctl; then
+    return 0
+  fi
+
+  for dm in "${dms[@]}"; do
+    if ! systemctl list-unit-files --type=service | awk '{print $1}' | grep -qx "${dm}.service"; then
+      continue
+    fi
+
+    if systemctl is-enabled "${dm}.service" >/dev/null 2>&1 || systemctl is-active "${dm}.service" >/dev/null 2>&1; then
+      had_conflicts=true
+      warn "Disabling conflicting display manager: ${dm}.service"
+      sudo systemctl disable "${dm}.service" >/dev/null 2>&1 || true
+      success "Conflicting display manager disabled: ${dm}.service"
+
+      if systemctl is-active "${dm}.service" >/dev/null 2>&1; then
+        active_conflicts+=("${dm}.service")
+      fi
+    fi
+  done
+
+  if [ "$had_conflicts" = true ]; then
+    info "Conflicting display managers were disabled so only SDDM starts at boot."
+  fi
+
+  if [ ${#active_conflicts[@]} -gt 0 ]; then
+    warn "These display managers are still running in the current session: ${active_conflicts[*]}"
+    warn "Stopping them now can immediately close your graphical session and lose unsaved work."
+    if confirm_yes "Stop active conflicting display managers now anyway?"; then
+      for dm in "${active_conflicts[@]}"; do
+        sudo systemctl stop "$dm" >/dev/null 2>&1 || true
+        success "Stopped $dm"
+      done
+    else
+      info "Keeping current display manager process running. Changes will apply cleanly on next reboot."
+    fi
+  fi
+}
+
+install_silent_sddm() {
+  if ! need_cmd sudo; then
+    error "sudo is required for SilentSDDM installation."
+    return 1
+  fi
+
+  if detect_debian_like; then
+    info "Installing SilentSDDM dependencies for Debian-based distro..."
+    install_sddm_packages_debian
+  elif detect_arch; then
+    info "Installing SilentSDDM dependencies for Arch Linux..."
+    install_sddm_packages_arch
+  else
+    warn "Unknown distro; skipping dependency install. Theme files and config will still be applied."
+  fi
+
+  check_sddm_version_requirement
+  install_silent_sddm_theme_files
+  configure_sddm_for_silent_theme
+  offer_sddm_service_enable
+  success "SilentSDDM installation and configuration finished"
+}
+
+offer_silent_sddm_install() {
+  echo ""
+  echo -e "${MAGENTA}${BOLD}Optional SDDM Setup (SilentSDDM)${NC}"
+  echo -e "Install and configure ${BOLD}SDDM + SilentSDDM${NC} as your login manager."
+  echo -e "This is a ${BOLD}system-level change${NC} and may affect login behavior."
+  echo ""
+
+  if ! confirm_yes "Do you want to install and configure SilentSDDM now?"; then
+    info "Skipping SilentSDDM installation."
+    return 0
+  fi
+  if ! confirm_yes "Are you absolutely sure you want to apply this SDDM login manager setup?"; then
+    info "Second confirmation declined. Skipping SilentSDDM installation."
+    return 0
+  fi
+
+  install_silent_sddm
 }
 
 print_banner() {
@@ -1262,6 +1588,27 @@ post_notes() {
 main() {
   parse_args "$@"
 
+  if [ "$INSTALL_SDDM_ONLY" = true ] && \
+     { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \
+       [ "$INSTALL_CURSOR_ONLY" = true ] || \
+       [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
+       [ "$INSTALL_VSCODE_ONLY" = true ] || \
+       [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
+       [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
+       [ "$INSTALL_QUICKSHELL_ONLY" = true ]; }; then
+    error "--sddm must be used by itself."
+    return 1
+  fi
+
+  if [ "$INSTALL_SDDM_ONLY" = true ]; then
+    print_banner
+    install_silent_sddm
+    info "Done!"
+    return 0
+  fi
+
   if [ "$INSTALL_GTK_THEME_ONLY" = true ]; then
     GTK_THEME_SELECTION="$(normalize_gtk_theme_selection "$GTK_THEME_SELECTION")" || {
       error "Unsupported GTK theme selection: $GTK_THEME_SELECTION"
@@ -1378,6 +1725,7 @@ main() {
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     offer_mail_desktop_setup
     offer_custom_theme_install
+    offer_silent_sddm_install
   fi
 
   offer_wireguard_systemd_setup

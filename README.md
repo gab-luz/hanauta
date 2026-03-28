@@ -1,3 +1,5 @@
+NOT READY FOR DAILY USE. YOU'VE BEEN WARNED.
+
 # ♪ Hanauta
 
 > A wallpaper-reactive personal desktop theme and workflow layer for **i3** on X11, open to anyone who wants a calmer, more supportive Linux desktop
