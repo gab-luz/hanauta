@@ -78,3 +78,6 @@ hanauta/vendor/wallpaper-sources/
 *.db
 *.db-*
 hanauta-life-sync/data/
+
+# Marketplace plugin clones (separate repos)
+hanauta/plugins/
