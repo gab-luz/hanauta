@@ -8,6 +8,100 @@ date=7aa2f7
 verify=9ece6a
 layout=bb9af7
 dim_text=a9b1d6
+settings_file="${HANAUTA_SETTINGS_FILE:-$HOME/.local/state/hanauta/notification-center/settings.json}"
+lock_blur=0
+pause_media_on_lock=1
+use_slow_fade=1
+prefer_i3lock_color=1
+show_clock=1
+show_indicator=1
+pass_media_keys=1
+pass_volume_keys=1
+refresh_rate=1
+ring_radius=28
+ring_width=6
+time_format="%H:%M"
+date_format="%A, %d %B %Y"
+greeter_text="Hanauta locked • Type your password to unlock"
+verifying_text="Verifying..."
+wrong_text="Wrong password"
+
+run_quick() {
+    # Keep pre-lock probes from stalling the lock path (notably mpc when MPD is down).
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 0.35s "$@"
+    else
+        "$@"
+    fi
+}
+
+load_lock_settings() {
+    [[ -f "$settings_file" ]] || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    while IFS='=' read -r key value; do
+        case "$key" in
+            blur_screenshot) lock_blur="$value" ;;
+            pause_media_on_lock) pause_media_on_lock="$value" ;;
+            use_slow_fade) use_slow_fade="$value" ;;
+            prefer_i3lock_color) prefer_i3lock_color="$value" ;;
+            show_clock) show_clock="$value" ;;
+            show_indicator) show_indicator="$value" ;;
+            pass_media_keys) pass_media_keys="$value" ;;
+            pass_volume_keys) pass_volume_keys="$value" ;;
+            refresh_rate) refresh_rate="$value" ;;
+            ring_radius) ring_radius="$value" ;;
+            ring_width) ring_width="$value" ;;
+            time_format) time_format="$value" ;;
+            date_format) date_format="$value" ;;
+            greeter_text) greeter_text="$value" ;;
+            verifying_text) verifying_text="$value" ;;
+            wrong_text) wrong_text="$value" ;;
+        esac
+    done < <(
+        python3 - "$settings_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+lock = payload.get("lockscreen", {})
+defaults = {
+    "blur_screenshot": False,
+    "pause_media_on_lock": True,
+    "use_slow_fade": True,
+    "prefer_i3lock_color": True,
+    "show_clock": True,
+    "show_indicator": True,
+    "pass_media_keys": True,
+    "pass_volume_keys": True,
+    "refresh_rate": 1,
+    "ring_radius": 28,
+    "ring_width": 6,
+    "time_format": "%H:%M",
+    "date_format": "%A, %d %B %Y",
+    "greeter_text": "Hanauta locked • Type your password to unlock",
+    "verifying_text": "Verifying...",
+    "wrong_text": "Wrong password",
+}
+for key, default in defaults.items():
+    value = lock.get(key, default)
+    if isinstance(default, bool):
+        out = "1" if bool(value) else "0"
+    elif isinstance(default, int):
+        try:
+            out = str(int(value))
+        except Exception:
+            out = str(default)
+    else:
+        out = str(value).replace("\n", " ")
+    print(f"{key}={out}")
+PY
+    )
+}
 
 slowfade () {
     dis=$(echo -n "$DISPLAY" | tr -c '[:alnum:]' _)
@@ -26,9 +120,29 @@ slowfade () {
     fi
 }
 
-slowfade start
-if command -v mpc >/dev/null 2>&1 && mpc status >/dev/null 2>&1; then
-    mpc pause >/dev/null 2>&1
+load_lock_settings
+
+if [[ "$refresh_rate" =~ ^[0-9]+$ ]]; then
+    refresh_rate=$(( refresh_rate < 0 ? 0 : (refresh_rate > 30 ? 30 : refresh_rate) ))
+else
+    refresh_rate=1
+fi
+if [[ "$ring_radius" =~ ^[0-9]+$ ]]; then
+    ring_radius=$(( ring_radius < 8 ? 8 : (ring_radius > 80 ? 80 : ring_radius) ))
+else
+    ring_radius=28
+fi
+if [[ "$ring_width" =~ ^[0-9]+$ ]]; then
+    ring_width=$(( ring_width < 1 ? 1 : (ring_width > 24 ? 24 : ring_width) ))
+else
+    ring_width=6
+fi
+
+if [[ "$use_slow_fade" == "1" ]]; then
+    slowfade start
+fi
+if [[ "$pause_media_on_lock" == "1" ]] && command -v mpc >/dev/null 2>&1 && run_quick mpc status >/dev/null 2>&1; then
+    run_quick mpc pause >/dev/null 2>&1 || true
 fi
 
 tmp_raw=""
@@ -36,6 +150,9 @@ tmp_lock=""
 cleanup() {
     [[ -n "$tmp_raw" && -f "$tmp_raw" ]] && rm -f "$tmp_raw"
     [[ -n "$tmp_lock" && -f "$tmp_lock" ]] && rm -f "$tmp_lock"
+    if [[ "$use_slow_fade" == "1" ]]; then
+        slowfade end || true
+    fi
 }
 trap cleanup EXIT
 
@@ -65,11 +182,12 @@ if [[ -z "$wallpaper" ]]; then
 fi
 
 lock_image="$wallpaper"
-if command -v maim >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
+blur_enabled="${LOCK_SCREENSHOT_BLUR:-$lock_blur}"
+if [[ "$blur_enabled" == "1" ]] && command -v maim >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
     tmp_raw="$(mktemp --suffix=.png)"
     tmp_lock="$(mktemp --suffix=.png)"
-    if maim "$tmp_raw" >/dev/null 2>&1; then
-        if magick "$tmp_raw" -blur 0x8 "$tmp_lock" >/dev/null 2>&1; then
+    if run_quick maim "$tmp_raw" >/dev/null 2>&1; then
+        if run_quick magick "$tmp_raw" -blur 0x8 "$tmp_lock" >/dev/null 2>&1; then
             lock_image="$tmp_lock"
         fi
     fi
@@ -84,69 +202,103 @@ status_pos="x+w/2:y+h/2+120"
 
 locker="$HOME/.config/i3/bin/i3lock"
 if ! "$locker" --help >/dev/null 2>&1; then
-    locker="$(command -v i3lock)"
+    locker="$(command -v i3lock || true)"
 fi
 
-# Prefer local i3lock-color only if it is actually runnable on this system.
-if [[ -x "$local_i3lock_color" ]] && "$local_i3lock_color" -v >/dev/null 2>&1; then
-    "$local_i3lock_color" -n --force-clock -i "$lock_image" -e \
-        --indicator \
-        --radius=28 \
-        --ring-width=6 \
-        --line-uses-inside \
-        --inside-color=00000000 \
-        --ring-color=${fg}dd \
-        --separator-color=00000000 \
-        --insidever-color=00000000 \
-        --ringver-color=${verify}ff \
-        --insidewrong-color=00000000 \
-        --ringwrong-color=${wrong}ff \
-        --keyhl-color=${verify}ff \
-        --bshl-color=${wrong}ff \
-        --time-str="%H:%M" \
-        --time-size=88 \
-        --time-font="Roboto:style=Bold" \
-        --time-color=${fg}ff \
-        --time-align=1 \
-        --time-pos="${time_pos}" \
-        --date-str="%A, %d %B %Y" \
-        --date-size=24 \
-        --date-font="Roboto" \
-        --date-color=${date}ff \
-        --date-align=1 \
-        --date-pos="${date_pos}" \
-        --greeter-text="Hanauta locked • Type your password to unlock" \
-        --greeter-size=18 \
-        --greeter-font="Roboto" \
-        --greeter-color=${dim_text}ff \
-        --greeter-align=1 \
-        --greeter-pos="${greeter_pos}" \
-        --layout-color=${layout}ff \
-        --layout-size=16 \
-        --layout-font="Roboto" \
-        --layout-align=1 \
-        --layout-pos="${layout_pos}" \
-        --verif-text="Verifying..." \
-        --verif-size=16 \
-        --verif-font="Roboto" \
-        --verif-color=${verify}ff \
-        --verif-align=1 \
-        --verif-pos="${status_pos}" \
-        --wrong-text="Wrong password" \
-        --wrong-size=16 \
-        --wrong-font="Roboto" \
-        --wrong-color=${wrong}ff \
-        --wrong-align=1 \
-        --wrong-pos="${status_pos}" \
-        --noinput-text="" \
-        --ind-pos="${ind_pos}" \
-        --pointer=default \
-        --refresh-rate=1 \
-        --pass-media-keys \
-        --pass-volume-keys
-elif [[ "$locker" == "$HOME/.config/i3/bin/i3lock" ]]; then
-    "$locker" -n --force-clock -i "$lock_image" -e --indicator --radius=20 --ring-width=40 --inside-color=$fg --ring-color=$fg --insidever-color=$verify --ringver-color=$verify --insidewrong-color=$wrong --ringwrong-color=$wrong --line-uses-inside --keyhl-color=$verify --separator-color=$verify --bshl-color=$verify --time-str="%H:%M" --time-size=100 --date-str="%a, %d %b" --date-size=40 --verif-text="Verifying Password..." --wrong-text="Wrong Password!" --noinput-text="" --greeter-text="Type the password to Unlock" --ind-pos="160:600" --time-font="Roboto:style=Bold" --date-font="Roboto" --verif-font="Roboto" --greeter-font="Roboto" --wrong-font="Roboto" --verif-size=16 --greeter-size=16 --wrong-size=16 --time-pos="160:190" --date-pos="160:250" --greeter-pos="160:400" --wrong-pos="160:500" --verif-pos="160:450" --date-color=$date --time-color=$date --greeter-color=$fg --wrong-color=$wrong --verif-color=$verify --verif-pos="160:470" --pointer=default --refresh-rate=0 --pass-media-keys --pass-volume-keys
+# Prefer local i3lock-color only when configured and runnable.
+if [[ "$prefer_i3lock_color" == "1" ]] && [[ -x "$local_i3lock_color" ]] && "$local_i3lock_color" -v >/dev/null 2>&1; then
+    color_cmd=("$local_i3lock_color" "-n" "-i" "$lock_image" "-e")
+    if [[ "$show_clock" == "1" ]]; then
+        color_cmd+=("--force-clock")
+    fi
+    if [[ "$show_indicator" == "1" ]]; then
+        color_cmd+=("--indicator")
+    fi
+    color_cmd+=(
+        "--radius=${ring_radius}"
+        "--ring-width=${ring_width}"
+        "--line-uses-inside"
+        "--inside-color=00000000"
+        "--ring-color=${fg}dd"
+        "--separator-color=00000000"
+        "--insidever-color=00000000"
+        "--ringver-color=${verify}ff"
+        "--insidewrong-color=00000000"
+        "--ringwrong-color=${wrong}ff"
+        "--keyhl-color=${verify}ff"
+        "--bshl-color=${wrong}ff"
+        "--time-str=${time_format}"
+        "--time-size=88"
+        "--time-font=Roboto:style=Bold"
+        "--time-color=${fg}ff"
+        "--time-align=1"
+        "--time-pos=${time_pos}"
+        "--date-str=${date_format}"
+        "--date-size=24"
+        "--date-font=Roboto"
+        "--date-color=${date}ff"
+        "--date-align=1"
+        "--date-pos=${date_pos}"
+        "--greeter-text=${greeter_text}"
+        "--greeter-size=18"
+        "--greeter-font=Roboto"
+        "--greeter-color=${dim_text}ff"
+        "--greeter-align=1"
+        "--greeter-pos=${greeter_pos}"
+        "--layout-color=${layout}ff"
+        "--layout-size=16"
+        "--layout-font=Roboto"
+        "--layout-align=1"
+        "--layout-pos=${layout_pos}"
+        "--verif-text=${verifying_text}"
+        "--verif-size=16"
+        "--verif-font=Roboto"
+        "--verif-color=${verify}ff"
+        "--verif-align=1"
+        "--verif-pos=${status_pos}"
+        "--wrong-text=${wrong_text}"
+        "--wrong-size=16"
+        "--wrong-font=Roboto"
+        "--wrong-color=${wrong}ff"
+        "--wrong-align=1"
+        "--wrong-pos=${status_pos}"
+        "--noinput-text="
+        "--ind-pos=${ind_pos}"
+        "--pointer=default"
+        "--refresh-rate=${refresh_rate}"
+    )
+    if [[ "$pass_media_keys" == "1" ]]; then
+        color_cmd+=("--pass-media-keys")
+    fi
+    if [[ "$pass_volume_keys" == "1" ]]; then
+        color_cmd+=("--pass-volume-keys")
+    fi
+    "${color_cmd[@]}"
+elif [[ -n "$locker" ]]; then
+    plain_cmd=("$locker" "-n" "-e" "-i" "$lock_image" "-p" "default")
+    if [[ "$show_clock" == "1" ]]; then
+        plain_cmd+=("--force-clock")
+    fi
+    if [[ "$show_indicator" == "1" ]]; then
+        plain_cmd+=("--indicator")
+    fi
+    plain_cmd+=(
+        "--radius=${ring_radius}"
+        "--ring-width=${ring_width}"
+        "--time-str=${time_format}"
+        "--date-str=${date_format}"
+        "--greeter-text=${greeter_text}"
+        "--verif-text=${verifying_text}"
+        "--wrong-text=${wrong_text}"
+        "--refresh-rate=${refresh_rate}"
+    )
+    if [[ "$pass_media_keys" == "1" ]]; then
+        plain_cmd+=("--pass-media-keys")
+    fi
+    if [[ "$pass_volume_keys" == "1" ]]; then
+        plain_cmd+=("--pass-volume-keys")
+    fi
+    "${plain_cmd[@]}"
 else
-    "$locker" -n -e -i "$lock_image" -p default
+    exit 1
 fi
-slowfade end 
