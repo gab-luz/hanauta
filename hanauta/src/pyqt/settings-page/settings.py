@@ -4091,42 +4091,6 @@ class SettingsWindow(QWidget):
         hero.addWidget(actions_wrap, 8)
         layout.addWidget(hero_wrap)
 
-        chips_frame = QFrame()
-        chips_frame.setObjectName("appearanceAccentFrame")
-        chips_outer = QVBoxLayout(chips_frame)
-        chips_outer.setContentsMargins(14, 14, 14, 14)
-        chips_outer.setSpacing(10)
-
-        chips_heading = QLabel("Accent palette")
-        chips_heading.setObjectName("appearanceSectionLabel")
-        chips_heading.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
-        chips_outer.addWidget(chips_heading)
-
-        chips = QWidget()
-        chips_layout = QGridLayout(chips)
-        chips_layout.setContentsMargins(0, 0, 0, 0)
-        chips_layout.setHorizontalSpacing(8)
-        chips_layout.setVerticalSpacing(8)
-
-        labels = [
-            "Auto",
-            "Orchid",
-            "Mint",
-            "Sunset",
-        ]
-        self.chip_group = QButtonGroup(self)
-        self.chip_group.setExclusive(True)
-        self.accent_chips: dict[str, SegmentedChip] = {}
-        for index, label in enumerate(labels):
-            chip = SegmentedChip(label, checked=False)
-            self.chip_group.addButton(chip)
-            key = label.lower()
-            self.accent_chips[key] = chip
-            chip.clicked.connect(lambda checked=False, current=key: self._set_accent(current))
-            chips_layout.addWidget(chip, index // 6, index % 6)
-        chips_outer.addWidget(chips)
-        layout.addWidget(chips_frame)
-
         self.appearance_status = QLabel(
             "Built-in wallpaper import can pull from your Caelestia and End-4 wallpaper folders, including nested downloads."
         )
@@ -10803,6 +10767,9 @@ class SettingsWindow(QWidget):
             QLabel#appearanceSectionLabel {{
                 color: {theme.primary};
                 letter-spacing: 1px;
+            }}
+            QLabel#settingsStatus {{
+                color: {theme.text_muted};
             }}
             QProgressBar#settingsProgressBar {{
                 min-height: 8px;
