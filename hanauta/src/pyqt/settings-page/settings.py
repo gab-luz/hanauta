@@ -4792,6 +4792,57 @@ class SettingsWindow(QWidget):
                 self.search_results_layout.count() - 1, result_card
             )
 
+    def _derive_section(self, keyword: str, page: str) -> str:
+        keyword_lower = keyword.lower()
+        if page == "appearance":
+            if "opacity" in keyword_lower or "toast" in keyword_lower:
+                return "Transparency"
+            if "matugen" in keyword_lower:
+                return "Matugen"
+            if "wallpaper" in keyword_lower:
+                return "Wallpaper"
+            if (
+                "theme" in keyword_lower
+                or "color" in keyword_lower
+                or "accent" in keyword_lower
+            ):
+                return "Theme"
+        elif page == "display":
+            if (
+                "picom" in keyword_lower
+                or "shadow" in keyword_lower
+                or "opacity" in keyword_lower
+                or "corner" in keyword_lower
+                or "vsync" in keyword_lower
+                or "fading" in keyword_lower
+            ):
+                return "Picom"
+            return "Monitors"
+        elif page == "input":
+            if (
+                "keyboard" in keyword_lower
+                or "layout" in keyword_lower
+                or "language" in keyword_lower
+                or "repeat" in keyword_lower
+            ):
+                return "Keyboard"
+            return "Mouse"
+        elif page == "startup":
+            if "app" in keyword_lower:
+                return "Startup Apps"
+            if "launch" in keyword_lower:
+                return "Launch Bar"
+        elif page == "bar":
+            if "tray" in keyword_lower:
+                return "System Tray"
+            if "workspace" in keyword_lower:
+                return "Workspaces"
+            if "offset" in keyword_lower:
+                return "Offsets"
+            if "polybar" in keyword_lower or "widget" in keyword_lower:
+                return "Polybar"
+        return page.title()
+
     def _create_search_result_card(
         self, keyword: str, page: str, setting_name: str
     ) -> QWidget:
@@ -4812,7 +4863,9 @@ class SettingsWindow(QWidget):
         setting_label.setFont(QFont(self.ui_font, 12, QFont.Weight.Medium))
         setting_label.setStyleSheet("color: rgba(246,235,247,0.92);")
         text_layout.addWidget(setting_label)
-        page_label = QLabel(f"in {page.title()}")
+
+        section = self._derive_section(keyword, page)
+        page_label = QLabel(f"{section} → {page.title()}")
         page_label.setFont(QFont(self.ui_font, 10))
         page_label.setStyleSheet("color: rgba(246,235,247,0.56);")
         text_layout.addWidget(page_label)
@@ -4821,11 +4874,15 @@ class SettingsWindow(QWidget):
         go_button = QPushButton("Go")
         go_button.setObjectName("searchGoButton")
         go_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        go_button.clicked.connect(lambda: self._navigate_to_setting(page, setting_name))
+        go_button.clicked.connect(
+            lambda _=None, p=page, s=setting_name: self._navigate_to_setting(p, s)
+        )
         layout.addWidget(go_button)
 
         card.setCursor(Qt.CursorShape.PointingHandCursor)
-        card.mousePressEvent = lambda e: self._navigate_to_setting(page, setting_name)
+        card.mousePressEvent = lambda e, p=page, s=setting_name: (
+            self._navigate_to_setting(p, s)
+        )
         return card
 
     def _navigate_to_setting(self, page: str, setting_name: str) -> None:
@@ -4834,7 +4891,101 @@ class SettingsWindow(QWidget):
         self._clear_search_results()
         if hasattr(self, "search_container"):
             self.search_container.setVisible(False)
-            self.page_stack.setCurrentIndex(self._last_page_index)
+        QTimer.singleShot(50, lambda: self._scroll_to_setting(page, setting_name))
+
+    def _scroll_to_setting(self, page: str, setting_name: str) -> None:
+        order = {
+            "overview": 0,
+            "appearance": 1,
+            "marketplace": 2,
+            "display": 3,
+            "energy": 4,
+            "audio": 5,
+            "notifications": 6,
+            "input": 7,
+            "startup": 8,
+            "privacy": 9,
+            "networking": 10,
+            "storage": 11,
+            "region": 12,
+            "bar": 13,
+            "services": 14,
+        }
+        page_index = order.get(page, 1)
+        if page_index >= self.page_stack.count():
+            return
+        scroll_area = self.page_stack.widget(page_index)
+        if scroll_area is None:
+            return
+        scroll_area = scroll_area.findChild(QScrollArea)
+        if scroll_area is None:
+            return
+        scroll = scroll_area.verticalScrollBar()
+
+        setting_lower = setting_name.lower()
+        y_position = 0
+
+        if page == "display":
+            if (
+                "picom" in setting_lower
+                or "shadow" in setting_lower
+                or "opacity" in setting_lower
+                or "corner" in setting_lower
+                or "vsync" in setting_lower
+                or "fading" in setting_lower
+                or "backend" in setting_lower
+            ):
+                y_position = 400
+            else:
+                y_position = 0
+        elif page == "appearance":
+            if "wallpaper" in setting_lower:
+                y_position = 0
+            elif (
+                "theme" in setting_lower
+                or "color" in setting_lower
+                or "accent" in setting_lower
+            ):
+                y_position = 200
+            elif (
+                "transparency" in setting_lower
+                or "opacity" in setting_lower
+                or "toast" in setting_lower
+                or "matugen" in setting_lower
+            ):
+                y_position = 400
+        elif page == "input":
+            if (
+                "keyboard" in setting_lower
+                or "layout" in setting_lower
+                or "language" in setting_lower
+                or "repeat" in setting_lower
+            ):
+                y_position = 0
+            else:
+                y_position = 300
+        elif page == "startup":
+            if "app" in setting_lower:
+                y_position = 200
+            elif "launch" in setting_lower:
+                y_position = 400
+            else:
+                y_position = 0
+        elif page == "bar":
+            if "tray" in setting_lower:
+                y_position = 600
+            elif "workspace" in setting_lower:
+                y_position = 300
+            elif (
+                "offset" in setting_lower
+                or "polybar" in setting_lower
+                or "widget" in setting_lower
+            ):
+                y_position = 400
+            else:
+                y_position = 0
+
+        scroll.setValue(min(y_position, scroll.maximum()))
 
     def _scroll_page(self, *widgets: QWidget) -> QWidget:
         scroll = QScrollArea()
