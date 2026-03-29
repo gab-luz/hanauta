@@ -565,6 +565,7 @@ DEFAULT_BAR_SETTINGS = {
     "media_offset": 0,
     "status_offset": 0,
     "tray_offset": 0,
+    "status_icon_limit": 14,
     "bar_height": 45,
     "chip_radius": 0,
     "tray_tint_with_matugen": True,
@@ -621,6 +622,8 @@ def merged_bar_settings(payload: object) -> dict[str, object]:
             merged[key] = max(-8, min(8, int(merged[key])))
         elif key == "workspace_count":
             merged[key] = max(1, min(10, int(merged[key])))
+        elif key == "status_icon_limit":
+            merged[key] = max(4, min(48, int(merged[key])))
         elif key == "bar_height":
             merged[key] = max(32, min(72, int(merged[key])))
         elif key in radius_keys:
@@ -4477,6 +4480,7 @@ class SettingsWindow(QWidget):
             ("storage", material_icon("storage"), "Storage", False),
             ("region", material_icon("public"), "Region", False),
             ("bar", material_icon("crop_square"), "Bar", False),
+            ("services", material_icon("widgets"), "Services", False),
         ]
 
         for key, glyph, label, checked in items:
@@ -6352,6 +6356,16 @@ class SettingsWindow(QWidget):
         self.bar_tray_offset_slider.setFixedWidth(164)
         self.bar_tray_offset_slider.valueChanged.connect(self._set_bar_tray_offset)
 
+        self.bar_status_icon_limit_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_status_icon_limit_slider.setRange(4, 48)
+        self.bar_status_icon_limit_slider.setValue(
+            int(self.settings_state["bar"].get("status_icon_limit", 14))
+        )
+        self.bar_status_icon_limit_slider.setFixedWidth(164)
+        self.bar_status_icon_limit_slider.valueChanged.connect(
+            self._set_bar_status_icon_limit
+        )
+
         self.bar_height_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_height_slider.setRange(32, 72)
         self.bar_height_slider.setValue(
@@ -6504,6 +6518,16 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_tray_tint_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Visible status icon limit",
+                "How many status/tray widgets stay on the bar before extra icons move into the overflow dropdown.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_status_icon_limit_slider,
             )
         )
         layout.addWidget(
@@ -15618,6 +15642,10 @@ class SettingsWindow(QWidget):
 
     def _set_bar_tray_offset(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["tray_offset"] = int(value)
+        self._save_bar_settings()
+
+    def _set_bar_status_icon_limit(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["status_icon_limit"] = int(value)
         self._save_bar_settings()
 
     def _set_bar_height(self, value: int) -> None:

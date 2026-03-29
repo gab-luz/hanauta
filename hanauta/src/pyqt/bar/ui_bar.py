@@ -35,7 +35,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QImage, QPainter, QPalette, QPixmap, QRegion
+from PyQt6.QtGui import QAction, QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QImage, QPainter, QPalette, QPixmap, QRegion
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -48,6 +48,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QMenu,
 )
 
 from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, fonts_root, hanauta_root, project_root, python_executable, scripts_root, source_root
@@ -192,6 +193,8 @@ MATERIAL_ICONS = {
     "wifi_off": "\ue648",
     "sports_esports": "\uea28",
     "school": "\ue80c",
+    "expand_more": "\ue5cf",
+    "expand_less": "\ue5ce",
 }
 MONITOR_MODE_PRIMARY = "primary"
 MONITOR_MODE_FOLLOW_MOUSE = "follow_mouse"
@@ -209,6 +212,7 @@ DEFAULT_BAR_SETTINGS = {
     "media_offset": 0,
     "status_offset": 0,
     "tray_offset": 0,
+    "status_icon_limit": 14,
     "bar_height": 45,
     "chip_radius": 0,
     "tray_tint_with_matugen": True,
@@ -756,6 +760,8 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, int | bool | s
             merged[key] = max(-8, min(8, int(merged[key])))
         elif key == "workspace_count":
             merged[key] = max(1, min(10, int(merged[key])))
+        elif key == "status_icon_limit":
+            merged[key] = max(4, min(48, int(merged[key])))
         elif key == "bar_height":
             merged[key] = max(32, min(72, int(merged[key])))
         else:
@@ -2162,7 +2168,15 @@ class CyberBar(QWidget):
             "icons": [],
             "close": [],
         }
+        self._loaded_bar_plugin_paths: set[str] = set()
+        self._loaded_bar_plugin_ids: set[str] = set()
         self._bar_plugin_buttons: dict[str, QPushButton] = {}
+        self._status_manual_overflow: set[str] = set()
+        self._status_managed_widgets: list[QWidget] = []
+        self._status_overflow_popup: QFrame | None = None
+        self._status_overflow_layout: QVBoxLayout | None = None
+        self._status_overflow_button: QPushButton | None = None
+        self._status_overflow_open = False
         self._setup_window()
         self._build_ui()
         self._load_bar_plugins()
@@ -2548,8 +2562,18 @@ class CyberBar(QWidget):
         self.tray_host.setProperty("embedded", True)
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.tray_wrap = self._wrap_movable(self.tray_host)
+        self._create_status_overflow()
+        self.status_overflow_button = self._icon_button("expand_less")
+        self.status_overflow_button.setObjectName("statusIconButton")
+        self.status_overflow_button.setCheckable(True)
+        self.status_overflow_button.setVisible(False)
+        self.status_overflow_button.clicked.connect(self._toggle_status_overflow)
+        self.status_overflow_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.status_overflow_button.customContextMenuRequested.connect(self._show_overflow_button_menu)
+        self._status_overflow_button = self.status_overflow_button
         self.status_layout.addWidget(self.btn_clip)
         self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.status_layout.addWidget(self.status_overflow_button)
         self.status_layout.addWidget(self.btn_power)
         self.status_wrap = self._wrap_movable(self.status_chip)
         self.right_layout.addWidget(self.cap_alert_chip)
@@ -2574,7 +2598,26 @@ class CyberBar(QWidget):
         self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
+        self._register_status_widget(self.net_icon, "net_icon")
+        self._register_status_widget(self.vpn_icon, "vpn_icon")
+        self._register_status_widget(self.christian_button, "christian_widget")
+        self._register_status_widget(self.home_assistant_button, "home_assistant")
+        self._register_status_widget(self.reminders_button, "reminders_widget")
+        self._register_status_widget(self.caps_lock_button, "caps_lock")
+        self._register_status_widget(self.num_lock_button, "num_lock")
+        self._register_status_widget(self.pomodoro_button, "pomodoro_widget")
+        self._register_status_widget(self.rss_button, "rss_widget")
+        self._register_status_widget(self.obs_button, "obs_widget")
+        self._register_status_widget(self.crypto_button, "crypto_widget")
+        self._register_status_widget(self.ntfy_button, "ntfy")
+        self._register_status_widget(self.game_mode_button, "game_mode")
+        self._register_status_widget(self.caffeine_icon, "caffeine")
+        self._register_status_widget(self.battery_icon, "battery_icon")
+        self._register_status_widget(self.battery_value, "battery_value")
+        self._register_status_widget(self.tray_wrap, "tray_wrap")
+        self._status_manual_overflow.add("tray_wrap")
         self._run_bar_plugin_hooks("settings_reloaded")
+        self._sync_status_overflow()
         self._sync_cap_alert_chip()
         self._apply_bar_settings()
         self._install_debug_tooltips()
@@ -2614,11 +2657,15 @@ class CyberBar(QWidget):
         on_click: Callable[[], None] | None = None,
         font_size: int = 16,
     ) -> QPushButton:
+        existing = self._bar_plugin_buttons.get(key)
+        if existing is not None:
+            return existing
         button = QPushButton(glyph)
         button.setObjectName("statusIconButton")
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setCheckable(checkable)
         button.setFont(QFont(self.material_font, font_size))
+        button.setProperty("statusKey", f"plugin:{key}")
         if tooltip:
             button.setToolTip(tooltip)
         if on_click is not None:
@@ -2629,7 +2676,147 @@ class CyberBar(QWidget):
         else:
             self.status_layout.addWidget(button)
         self._bar_plugin_buttons[key] = button
+        self._register_status_widget(button, str(button.property("statusKey")))
+        self._sync_status_overflow()
         return button
+
+    def _register_status_widget(self, widget: QWidget, key: str) -> None:
+        if widget is None:
+            return
+        resolved_key = str(key or "").strip() or f"widget:{id(widget)}"
+        widget.setProperty("statusKey", resolved_key)
+        if widget not in self._status_managed_widgets:
+            self._status_managed_widgets.append(widget)
+        if resolved_key == "tray_wrap":
+            # Preserve tray item native right-click behavior (ContextMenu on each app).
+            return
+        if widget.property("statusMenuHooked") != True:
+            widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            widget.customContextMenuRequested.connect(
+                lambda point, current=widget: self._show_status_context_menu(current, point)
+            )
+            widget.setProperty("statusMenuHooked", True)
+
+    def _show_overflow_button_menu(self, point: QPoint) -> None:
+        if self._status_overflow_button is None:
+            return
+        menu = QMenu(self)
+        tray_in_overflow = "tray_wrap" in self._status_manual_overflow
+        tray_action = QAction("Move tray to bar" if tray_in_overflow else "Move tray to dropdown", menu)
+        menu.addAction(tray_action)
+        selected = menu.exec(self._status_overflow_button.mapToGlobal(point))
+        if selected != tray_action:
+            return
+        if tray_in_overflow:
+            self._status_manual_overflow.discard("tray_wrap")
+        else:
+            self._status_manual_overflow.add("tray_wrap")
+        self._sync_status_overflow()
+
+    def _show_status_context_menu(self, widget: QWidget, point: QPoint) -> None:
+        key = str(widget.property("statusKey") or "").strip()
+        if not key:
+            return
+        in_overflow = (
+            self._status_overflow_layout is not None
+            and self._status_overflow_layout.indexOf(widget) >= 0
+        )
+        menu = QMenu(self)
+        move_action = QAction("Move to bar" if in_overflow else "Move to overflow", menu)
+        menu.addAction(move_action)
+        selected = menu.exec(widget.mapToGlobal(point))
+        if selected != move_action:
+            return
+        if in_overflow:
+            self._status_manual_overflow.discard(key)
+        else:
+            self._status_manual_overflow.add(key)
+        self._sync_status_overflow()
+
+    def _create_status_overflow(self) -> None:
+        if self._status_overflow_popup is not None:
+            return
+        popup = QFrame(None, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        popup.setObjectName("statusOverflowPopup")
+        popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        shadow = QGraphicsDropShadowEffect(popup)
+        shadow.setBlurRadius(26)
+        shadow.setOffset(0, 10)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        popup.setGraphicsEffect(shadow)
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        self._status_overflow_popup = popup
+        self._status_overflow_layout = layout
+
+    def _toggle_status_overflow(self) -> None:
+        if self._status_overflow_popup is None or self._status_overflow_button is None:
+            return
+        if self._status_overflow_layout is None or self._status_overflow_layout.count() == 0:
+            return
+        if self._status_overflow_open:
+            self._status_overflow_popup.hide()
+            self._status_overflow_open = False
+        else:
+            self._sync_status_overflow()
+            anchor = self._status_overflow_button.mapToGlobal(
+                self._status_overflow_button.rect().bottomLeft()
+            )
+            width = max(140, self._status_overflow_popup.sizeHint().width())
+            x = anchor.x()
+            y = anchor.y() + 8
+            self._status_overflow_popup.adjustSize()
+            self._status_overflow_popup.move(x, y)
+            self._status_overflow_popup.show()
+            self._status_overflow_open = True
+        self._status_overflow_button.setChecked(self._status_overflow_open)
+        icon_name = "expand_more" if self._status_overflow_open else "expand_less"
+        self._status_overflow_button.setText(self._icon_text(icon_name))
+
+    def _sync_status_overflow(self) -> None:
+        if self._status_overflow_layout is None or self._status_overflow_button is None:
+            return
+        limit = int(self.bar_settings.get("status_icon_limit", 14) or 14)
+        limit = max(4, min(48, limit))
+        overflow_manual: list[QWidget] = []
+        visible_candidates: list[QWidget] = []
+        for widget in self._status_managed_widgets:
+            if widget is None:
+                continue
+            key = str(widget.property("statusKey") or "").strip()
+            if widget.isHidden():
+                continue
+            if key and key in self._status_manual_overflow:
+                overflow_manual.append(widget)
+            else:
+                visible_candidates.append(widget)
+
+        main_widgets = visible_candidates[:limit]
+        overflow_widgets = overflow_manual + visible_candidates[limit:]
+
+        insert_anchor = self.btn_clip if hasattr(self, "btn_clip") else self._status_overflow_button
+        for widget in main_widgets:
+            anchor_index = self.status_layout.indexOf(insert_anchor)
+            if anchor_index < 0:
+                anchor_index = max(0, self.status_layout.indexOf(self._status_overflow_button))
+            self.status_layout.insertWidget(
+                max(0, anchor_index),
+                widget,
+            )
+            widget.show()
+        for widget in overflow_widgets:
+            self._status_overflow_layout.addWidget(widget)
+            widget.show()
+
+        has_overflow = len(overflow_widgets) > 0
+        self._status_overflow_button.setVisible(True)
+        if not has_overflow and self._status_overflow_open:
+            self._status_overflow_popup.hide()
+            self._status_overflow_open = False
+        self._status_overflow_button.setEnabled(has_overflow)
+        icon_name = "expand_more" if self._status_overflow_open else "expand_less"
+        self._status_overflow_button.setText(self._icon_text(icon_name))
 
     def _bar_plugin_api(self, plugin_dir: Path) -> dict[str, object]:
         return {
@@ -2650,6 +2837,9 @@ class CyberBar(QWidget):
 
     def _load_bar_plugins(self) -> None:
         for entrypoint in discover_bar_plugin_entrypoints():
+            path_key = str(entrypoint.resolve())
+            if path_key in self._loaded_bar_plugin_paths:
+                continue
             module_name = f"hanauta_bar_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
             try:
                 spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
@@ -2657,10 +2847,16 @@ class CyberBar(QWidget):
                     continue
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
+                plugin_key = str(getattr(module, "SERVICE_KEY", "")).strip().lower()
+                if plugin_key and plugin_key in self._loaded_bar_plugin_ids:
+                    continue
                 register = getattr(module, "register_hanauta_bar_plugin", None)
                 if not callable(register):
                     continue
                 register(self, self._bar_plugin_api(entrypoint.parent))
+                self._loaded_bar_plugin_paths.add(path_key)
+                if plugin_key:
+                    self._loaded_bar_plugin_ids.add(plugin_key)
             except Exception:
                 continue
 
@@ -2903,6 +3099,7 @@ class CyberBar(QWidget):
         self._apply_vertical_offset(self.media_wrap, self.bar_settings.get("media_offset", 0))
         self._apply_vertical_offset(self.status_wrap, self.bar_settings.get("status_offset", 0))
         self._apply_vertical_offset(self.tray_wrap, self.bar_settings.get("tray_offset", 0))
+        self._sync_status_overflow()
 
     def _rebuild_workspace_buttons(self) -> None:
         if not hasattr(self, "dots_layout"):
@@ -3242,6 +3439,11 @@ class CyberBar(QWidget):
                 border: none;
                 border-radius: 0;
             }}
+            QFrame#statusOverflowPopup {{
+                background: {rgba(theme.surface_container_high, 0.96)};
+                border: 1px solid {rgba(theme.outline, 0.34)};
+                border-radius: 12px;
+            }}
             QPushButton#trayButton {{
                 background: transparent;
                 border: none;
@@ -3377,9 +3579,11 @@ class CyberBar(QWidget):
         self.region_settings = load_region_settings()
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
         self.autolock_settings = load_autolock_settings_from_payload(self.runtime_settings)
+        self._load_bar_plugins()
         self._apply_bar_settings()
         self._apply_bar_icon_overrides()
         self._apply_styles()
+        self._run_bar_plugin_hooks("settings_reloaded")
         self._sync_christian_button_visibility()
         self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
@@ -3390,6 +3594,7 @@ class CyberBar(QWidget):
         self._sync_mail_button_visibility()
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
+        self._sync_status_overflow()
         self._sync_cap_alert_chip()
         self._poll_cap_alerts()
         self._sync_desktop_clock_process()
@@ -3551,6 +3756,7 @@ class CyberBar(QWidget):
         self._poll_obs_state()
         self._sync_game_mode_button()
         self._run_bar_plugin_hooks("poll")
+        self._sync_status_overflow()
 
     def _tree_has_window(self, titles: tuple[str, ...]) -> bool:
         raw = run_cmd(["i3-msg", "-t", "get_tree"])
@@ -5101,6 +5307,8 @@ class CyberBar(QWidget):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._closing = True
+        if self._status_overflow_popup is not None:
+            self._status_overflow_popup.hide()
         if self._cava_worker is not None:
             self._cava_worker.stop()
             self._cava_worker.wait(500)
