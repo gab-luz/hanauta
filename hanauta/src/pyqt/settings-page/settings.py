@@ -34,8 +34,31 @@ try:
 except Exception:  # pragma: no cover
     tomllib = None
 
-from PyQt6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, QRect, Qt, QThread, QTimer, QStringListModel, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QIcon, QImage, QIntValidator, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
+    QRect,
+    Qt,
+    QThread,
+    QTimer,
+    QStringListModel,
+    pyqtSignal,
+)
+from PyQt6.QtGui import (
+    QColor,
+    QCursor,
+    QFont,
+    QFontDatabase,
+    QGuiApplication,
+    QIcon,
+    QImage,
+    QIntValidator,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets import (
     QApplication,
@@ -69,13 +92,23 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.runtime import entry_command
+from pyqt.shared.runtime import entry_command, entry_patterns
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.button_helpers import create_close_button
-from pyqt.shared.plugin_bridge import build_polkit_command, polkit_available, run_with_polkit, trigger_fullscreen_alert
+from pyqt.shared.plugin_bridge import (
+    build_polkit_command,
+    polkit_available,
+    run_with_polkit,
+    trigger_fullscreen_alert,
+)
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
-from pyqt.shared.home_assistant import entity_friendly_name, entity_icon_name, entity_secondary_text, prefetch_entity_icons
+from pyqt.shared.home_assistant import (
+    entity_friendly_name,
+    entity_icon_name,
+    entity_secondary_text,
+    prefetch_entity_icons,
+)
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
@@ -83,8 +116,12 @@ ASSETS_DIR = APP_DIR / "assets"
 WALLS_DIR = ROOT / "hanauta" / "walls"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
-PLUGIN_INSTALL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "plugins" / "install-state"
-NOTIFICATION_RULES_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-rules.ini"
+PLUGIN_INSTALL_STATE_DIR = (
+    Path.home() / ".local" / "state" / "hanauta" / "plugins" / "install-state"
+)
+NOTIFICATION_RULES_FILE = (
+    Path.home() / ".local" / "state" / "hanauta" / "notification-rules.ini"
+)
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "hanauta" / "scripts" / "run_matugen.sh"
@@ -122,20 +159,28 @@ def load_mail_storage_config() -> dict[str, str]:
         "attachments_dir": str(MAIL_STATE_DIR / "cache"),
     }
     try:
-        payload = json.loads((MAIL_STATE_DIR / "storage.json").read_text(encoding="utf-8"))
+        payload = json.loads(
+            (MAIL_STATE_DIR / "storage.json").read_text(encoding="utf-8")
+        )
         if not isinstance(payload, dict):
             raise ValueError("invalid storage config")
     except Exception:
         return default
     return {
-        "db_path": str(payload.get("db_path", default["db_path"])).strip() or default["db_path"],
-        "attachments_dir": str(payload.get("attachments_dir", default["attachments_dir"])).strip() or default["attachments_dir"],
+        "db_path": str(payload.get("db_path", default["db_path"])).strip()
+        or default["db_path"],
+        "attachments_dir": str(
+            payload.get("attachments_dir", default["attachments_dir"])
+        ).strip()
+        or default["attachments_dir"],
     }
 
 
 def save_mail_storage_config(config: dict[str, str]) -> None:
     MAIL_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    (MAIL_STATE_DIR / "storage.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    (MAIL_STATE_DIR / "storage.json").write_text(
+        json.dumps(config, indent=2), encoding="utf-8"
+    )
 
 
 class MailAccountStore:
@@ -174,23 +219,33 @@ class MailAccountStore:
             )
             """
         )
-        columns = {str(row["name"]) for row in self.conn.execute("PRAGMA table_info(accounts)").fetchall()}
+        columns = {
+            str(row["name"])
+            for row in self.conn.execute("PRAGMA table_info(accounts)").fetchall()
+        }
         if "avatar_path" not in columns:
-            self.conn.execute("ALTER TABLE accounts ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
+            self.conn.execute(
+                "ALTER TABLE accounts ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''"
+            )
         self.conn.commit()
 
     def list_accounts(self) -> list[dict]:
-        rows = self.conn.execute("SELECT * FROM accounts ORDER BY lower(label), lower(email_address)").fetchall()
+        rows = self.conn.execute(
+            "SELECT * FROM accounts ORDER BY lower(label), lower(email_address)"
+        ).fetchall()
         return [dict(row) for row in rows]
 
     def get_account(self, account_id: int) -> dict | None:
-        row = self.conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        row = self.conn.execute(
+            "SELECT * FROM accounts WHERE id = ?", (account_id,)
+        ).fetchone()
         return dict(row) if row else None
 
     def save_account(self, payload: dict) -> int:
         now = mail_now_iso()
         values = (
-            str(payload.get("label", "")).strip() or str(payload.get("email_address", "")).strip(),
+            str(payload.get("label", "")).strip()
+            or str(payload.get("email_address", "")).strip(),
             str(payload.get("email_address", "")).strip(),
             str(payload.get("display_name", "")).strip(),
             str(payload.get("avatar_path", "")).strip(),
@@ -235,14 +290,18 @@ class MailAccountStore:
                 """,
                 (*values, now),
             )
-            account_id = int(self.conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+            account_id = int(
+                self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            )
         self.conn.commit()
         return account_id
 
     def delete_account(self, account_id: int) -> None:
         self.conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
         try:
-            self.conn.execute("DELETE FROM messages WHERE account_id = ?", (account_id,))
+            self.conn.execute(
+                "DELETE FROM messages WHERE account_id = ?", (account_id,)
+            )
         except Exception:
             pass
         self.conn.commit()
@@ -259,8 +318,13 @@ BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
 BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark.svg"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
-DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+DESKTOP_CLOCK_WIDGET = (
+    APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+)
 STUDY_TRACKER_APP = APP_DIR / "pyqt" / "study-tracker" / "study_tracker.py"
+VIRTUALIZATION_DAEMON_SCRIPT = (
+    APP_DIR / "pyqt" / "widget-virtualization" / "virtualization_daemon.py"
+)
 PLUGIN_ENTRYPOINT = "hanauta_plugin.py"
 PLUGIN_DEV_ROOT = Path.home() / "dev"
 MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
@@ -270,7 +334,10 @@ MAIL_DESKTOP_SOURCE = ROOT / "hanauta" / "config" / "applications" / MAIL_DESKTO
 MAIL_DESKTOP_LOCAL = Path.home() / ".local" / "share" / "applications" / MAIL_DESKTOP_ID
 MAIL_DESKTOP_SYSTEM = Path("/usr/local/share/applications") / MAIL_DESKTOP_ID
 MAIL_DESKTOP_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_mail_desktop.sh"
-MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT = ROOT / "hanauta" / "scripts" / "install_mail_desktop_system.sh"
+MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT = (
+    ROOT / "hanauta" / "scripts" / "install_mail_desktop_system.sh"
+)
+SERVICE_CACHE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
 PICOM_DEFAULT_TEMPLATE = """backend = "glx";
 vsync = true;
@@ -509,17 +576,36 @@ DEFAULT_BAR_SETTINGS = {
 def merged_bar_settings(payload: object) -> dict[str, int | bool | str]:
     current = payload if isinstance(payload, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
-    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
+    offset_keys = {
+        "launcher_offset",
+        "workspace_offset",
+        "datetime_offset",
+        "media_offset",
+        "status_offset",
+        "tray_offset",
+    }
     radius_keys = {"chip_radius", "full_bar_radius"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
         if isinstance(default, str):
-            merged[key] = str(current.get(key, default)).strip() if isinstance(current, dict) else str(default)
+            merged[key] = (
+                str(current.get(key, default)).strip()
+                if isinstance(current, dict)
+                else str(default)
+            )
             continue
         if isinstance(default, bool):
-            merged[key] = bool(current.get(key, default)) if isinstance(current, dict) else bool(default)
+            merged[key] = (
+                bool(current.get(key, default))
+                if isinstance(current, dict)
+                else bool(default)
+            )
             continue
         try:
-            merged[key] = int(current.get(key, default)) if isinstance(current, dict) else int(default)
+            merged[key] = (
+                int(current.get(key, default))
+                if isinstance(current, dict)
+                else int(default)
+            )
         except Exception:
             merged[key] = int(default)
         if key in offset_keys:
@@ -531,7 +617,11 @@ def merged_bar_settings(payload: object) -> dict[str, int | bool | str]:
         elif key in radius_keys:
             merged[key] = max(0, min(32, int(merged[key])))
     monitor_mode = str(merged.get("monitor_mode", "primary")).strip().lower()
-    merged["monitor_mode"] = monitor_mode if monitor_mode in {"primary", "follow_mouse", "named"} else "primary"
+    merged["monitor_mode"] = (
+        monitor_mode
+        if monitor_mode in {"primary", "follow_mouse", "named"}
+        else "primary"
+    )
     merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
     return merged
 
@@ -562,11 +652,17 @@ def load_dock_settings_state() -> dict:
     for key, value in defaults["dock"].items():
         dock_cfg.setdefault(key, value)
     monitor_mode = str(dock_cfg.get("monitor_mode", "primary")).strip().lower()
-    dock_cfg["monitor_mode"] = monitor_mode if monitor_mode in {"primary", "follow_mouse", "named"} else "primary"
+    dock_cfg["monitor_mode"] = (
+        monitor_mode
+        if monitor_mode in {"primary", "follow_mouse", "named"}
+        else "primary"
+    )
     dock_cfg["monitor_name"] = str(dock_cfg.get("monitor_name", "")).strip()
     config["dock"] = dock_cfg
     config.setdefault("pinned", {"apps": []})
-    config.setdefault("blacklist", {"wm_class": [], "desktop_id": [], "window_name": []})
+    config.setdefault(
+        "blacklist", {"wm_class": [], "desktop_id": [], "window_name": []}
+    )
     blacklist_cfg = dict(config.get("blacklist", {}))
     blacklist_cfg.setdefault("wm_class", [])
     blacklist_cfg.setdefault("desktop_id", [])
@@ -606,6 +702,15 @@ def save_dock_settings_state(config: dict) -> None:
         f"window_name = {write_list(list(blacklist.get('window_name', [])))}\n"
     )
     DOCK_CONFIG.write_text(body, encoding="utf-8")
+
+
+def load_service_cache_json(name: str) -> dict:
+    path = SERVICE_CACHE_DIR / name
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 DEFAULT_SERVICE_SETTINGS = {
@@ -690,6 +795,21 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": True,
         "show_in_bar": False,
     },
+    "virtualization": {
+        "enabled": False,
+        "show_in_notification_center": False,
+        "virtualbox_manager_to_next_workspace": True,
+        "virtualbox_guest_fullscreen": False,
+        "virtualbox_guest_keep_current_workspace": True,
+        "emulator_prompt_once_per_ide": True,
+        "emulator_move_target": "next_on_output",
+        "ide_actions": {
+            "vscode": "ask",
+            "vscodium": "ask",
+            "android_studio": "ask",
+            "jetbrains": "ask",
+        },
+    },
     "study_tracker_widget": {
         "enabled": False,
         "show_in_notification_center": True,
@@ -700,6 +820,12 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_notification_center": False,
     },
 }
+
+_SETTINGS_LANG_FILE = Path(__file__).parent / "settings_languages.py"
+if _SETTINGS_LANG_FILE.exists():
+    from settings_languages import KEYBOARD_LAYOUT_PRESETS
+else:
+    KEYBOARD_LAYOUT_PRESETS = []
 
 DEFAULT_NOTIFICATION_RULES = {
     "version": 1,
@@ -734,10 +860,20 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             try:
                 merged[key]["low_battery_threshold"] = max(
                     1,
-                    min(100, int(current.get("low_battery_threshold", defaults.get("low_battery_threshold", 20)))),
+                    min(
+                        100,
+                        int(
+                            current.get(
+                                "low_battery_threshold",
+                                defaults.get("low_battery_threshold", 20),
+                            )
+                        ),
+                    ),
                 )
             except Exception:
-                merged[key]["low_battery_threshold"] = int(defaults.get("low_battery_threshold", 20))
+                merged[key]["low_battery_threshold"] = int(
+                    defaults.get("low_battery_threshold", 20)
+                )
             merged[key]["low_battery_fullscreen_notification"] = bool(
                 current.get(
                     "low_battery_fullscreen_notification",
@@ -790,12 +926,18 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             )
         elif key == "vpn_control":
             merged[key]["reconnect_on_login"] = bool(
-                current.get("reconnect_on_login", defaults.get("reconnect_on_login", False))
+                current.get(
+                    "reconnect_on_login", defaults.get("reconnect_on_login", False)
+                )
             )
             merged[key]["preferred_interface"] = str(
-                current.get("preferred_interface", defaults.get("preferred_interface", ""))
+                current.get(
+                    "preferred_interface", defaults.get("preferred_interface", "")
+                )
             ).strip()
-            apps = current.get("split_tunnel_apps", defaults.get("split_tunnel_apps", []))
+            apps = current.get(
+                "split_tunnel_apps", defaults.get("split_tunnel_apps", [])
+            )
             merged[key]["split_tunnel_apps"] = apps if isinstance(apps, list) else []
         elif key == "home_assistant":
             merged[key]["show_in_bar"] = bool(
@@ -809,10 +951,73 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
-        elif key in {"rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts", "study_tracker_widget"}:
+        elif key in {
+            "rss_widget",
+            "obs_widget",
+            "crypto_widget",
+            "game_mode",
+            "cap_alerts",
+            "study_tracker_widget",
+        }:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
+        elif key == "virtualization":
+            merged[key]["virtualbox_manager_to_next_workspace"] = bool(
+                current.get(
+                    "virtualbox_manager_to_next_workspace",
+                    defaults.get("virtualbox_manager_to_next_workspace", True),
+                )
+            )
+            merged[key]["virtualbox_guest_fullscreen"] = bool(
+                current.get(
+                    "virtualbox_guest_fullscreen",
+                    defaults.get("virtualbox_guest_fullscreen", False),
+                )
+            )
+            merged[key]["virtualbox_guest_keep_current_workspace"] = bool(
+                current.get(
+                    "virtualbox_guest_keep_current_workspace",
+                    defaults.get("virtualbox_guest_keep_current_workspace", True),
+                )
+            )
+            merged[key]["emulator_prompt_once_per_ide"] = bool(
+                current.get(
+                    "emulator_prompt_once_per_ide",
+                    defaults.get("emulator_prompt_once_per_ide", True),
+                )
+            )
+            move_target = (
+                str(
+                    current.get(
+                        "emulator_move_target",
+                        defaults.get("emulator_move_target", "next_on_output"),
+                    )
+                )
+                .strip()
+                .lower()
+            )
+            if move_target not in {"next", "next_on_output"}:
+                move_target = "next_on_output"
+            merged[key]["emulator_move_target"] = move_target
+            actions = current.get("ide_actions", defaults.get("ide_actions", {}))
+            if not isinstance(actions, dict):
+                actions = {}
+            ide_actions: dict[str, str] = {}
+            for ide_key in ("vscode", "vscodium", "android_studio", "jetbrains"):
+                value = (
+                    str(
+                        actions.get(
+                            ide_key, defaults.get("ide_actions", {}).get(ide_key, "ask")
+                        )
+                    )
+                    .strip()
+                    .lower()
+                )
+                if value not in {"ask", "split", "move_workspace"}:
+                    value = "ask"
+                ide_actions[ide_key] = value
+            merged[key]["ide_actions"] = ide_actions
     return merged
 
 
@@ -860,7 +1065,9 @@ def _button_css_weight(font_name: str) -> int:
 
 def run_bg(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
     try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
+        )
     except Exception:
         pass
 
@@ -882,7 +1089,10 @@ def detect_battery_base() -> Path | None:
             continue
         type_path = candidate / "type"
         try:
-            if not type_path.exists() or type_path.read_text(encoding="utf-8").strip().lower() == "battery":
+            if (
+                not type_path.exists()
+                or type_path.read_text(encoding="utf-8").strip().lower() == "battery"
+            ):
                 return candidate
         except OSError:
             continue
@@ -925,11 +1135,15 @@ def read_battery_snapshot() -> dict[str, object] | None:
     model_name = _read_text_file(base / "model_name")
     cycle_count = _read_int_file(base / "cycle_count")
     full_now = _first_available_int(base, ("energy_full", "charge_full"))
-    full_design = _first_available_int(base, ("energy_full_design", "charge_full_design"))
+    full_design = _first_available_int(
+        base, ("energy_full_design", "charge_full_design")
+    )
     health_percent: int | None = None
     if full_now is not None and full_design and full_design > 0:
         try:
-            health_percent = max(1, min(100, int(round((full_now / full_design) * 100))))
+            health_percent = max(
+                1, min(100, int(round((full_now / full_design) * 100)))
+            )
         except Exception:
             health_percent = None
     return {
@@ -981,7 +1195,11 @@ def list_wireguard_interfaces() -> list[str]:
     vpn_script = ROOT / "hanauta" / "scripts" / "vpn.sh"
     if not vpn_script.exists():
         return []
-    return [line.strip() for line in run_text([str(vpn_script), "--interfaces"]).splitlines() if line.strip()]
+    return [
+        line.strip()
+        for line in run_text([str(vpn_script), "--interfaces"]).splitlines()
+        if line.strip()
+    ]
 
 
 def directory_size_bytes(path: Path) -> int:
@@ -1015,7 +1233,11 @@ def startup_exec_lines() -> list[str]:
         lines = startup_file.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
-    return [line.strip() for line in lines if line.strip().startswith(("exec", "python3", "bash", "setsid"))]
+    return [
+        line.strip()
+        for line in lines
+        if line.strip().startswith(("exec", "python3", "bash", "setsid"))
+    ]
 
 
 def hanauta_mail_desktop_installed() -> bool:
@@ -1031,7 +1253,9 @@ def current_mailto_handler() -> str:
 def current_favorite_mail_handler() -> str:
     if shutil.which("xdg-settings") is None:
         return ""
-    return run_text(["xdg-settings", "get", "default-url-scheme-handler", "mailto"]).strip()
+    return run_text(
+        ["xdg-settings", "get", "default-url-scheme-handler", "mailto"]
+    ).strip()
 
 
 def _picom_rule_files() -> dict[str, Path]:
@@ -1059,7 +1283,9 @@ def _parse_picom_matcher(text: str) -> str:
     stripped = text.strip()
     lowered = stripped.lower()
     prefixes = {
-        "window_name_contains:": lambda value: f"name *= '{_escape_picom_string(value)}'",
+        "window_name_contains:": lambda value: (
+            f"name *= '{_escape_picom_string(value)}'"
+        ),
         "window_name:": lambda value: f"name = '{_escape_picom_string(value)}'",
         "class:": lambda value: f"class_g = '{_escape_picom_string(value)}'",
         "window_type:": lambda value: f"window_type = '{_escape_picom_string(value)}'",
@@ -1067,7 +1293,7 @@ def _parse_picom_matcher(text: str) -> str:
     }
     for prefix, builder in prefixes.items():
         if lowered.startswith(prefix):
-            return builder(stripped[len(prefix):].strip())
+            return builder(stripped[len(prefix) :].strip())
     return stripped
 
 
@@ -1099,7 +1325,7 @@ def _load_picom_opacity_rules(path: Path) -> list[str]:
             continue
         lowered = stripped.lower()
         if lowered.startswith("opacity "):
-            payload = stripped[len("opacity "):].strip()
+            payload = stripped[len("opacity ") :].strip()
             amount_text, separator, matcher_text = payload.partition(":")
             if not separator:
                 continue
@@ -1116,7 +1342,7 @@ def _load_picom_opacity_rules(path: Path) -> list[str]:
 
 
 def _format_picom_rule_block(key: str, entries: list[str]) -> str:
-    lines = [f'{key} = [']
+    lines = [f"{key} = ["]
     lines.extend(f'  "{entry}",' for entry in entries)
     lines.append("];")
     return "\n".join(lines)
@@ -1125,10 +1351,18 @@ def _format_picom_rule_block(key: str, entries: list[str]) -> str:
 def render_picom_rule_blocks() -> str:
     ensure_picom_rule_files()
     blocks = [
-        _format_picom_rule_block("shadow-exclude", _load_picom_rule_list(PICOM_SHADOW_EXCLUDE_FILE)),
-        _format_picom_rule_block("rounded-corners-exclude", _load_picom_rule_list(PICOM_ROUNDED_EXCLUDE_FILE)),
-        _format_picom_rule_block("opacity-rule", _load_picom_opacity_rules(PICOM_OPACITY_RULE_FILE)),
-        _format_picom_rule_block("fade-exclude", _load_picom_rule_list(PICOM_FADE_EXCLUDE_FILE)),
+        _format_picom_rule_block(
+            "shadow-exclude", _load_picom_rule_list(PICOM_SHADOW_EXCLUDE_FILE)
+        ),
+        _format_picom_rule_block(
+            "rounded-corners-exclude", _load_picom_rule_list(PICOM_ROUNDED_EXCLUDE_FILE)
+        ),
+        _format_picom_rule_block(
+            "opacity-rule", _load_picom_opacity_rules(PICOM_OPACITY_RULE_FILE)
+        ),
+        _format_picom_rule_block(
+            "fade-exclude", _load_picom_rule_list(PICOM_FADE_EXCLUDE_FILE)
+        ),
     ]
     return "\n\n".join(blocks)
 
@@ -1141,7 +1375,11 @@ def sync_picom_rule_blocks(text: str) -> str:
     ensure_picom_rule_files()
     updated = text
     for key, path in _picom_rule_files().items():
-        entries = _load_picom_opacity_rules(path) if key == "opacity-rule" else _load_picom_rule_list(path)
+        entries = (
+            _load_picom_opacity_rules(path)
+            if key == "opacity-rule"
+            else _load_picom_rule_list(path)
+        )
         block = _format_picom_rule_block(key, entries)
         pattern = re.compile(rf"(?ms)^\s*{re.escape(key)}\s*=\s*\[.*?^\s*\];")
         if pattern.search(updated):
@@ -1421,14 +1659,14 @@ def load_settings_state() -> dict:
             "catalog_cache": [],
             "installed_plugins": [],
         },
-    "region": {
-        "locale_code": "",
-        "use_24_hour": False,
-        "date_style": "us",
-        "temperature_unit": "c",
-    },
-    "bar": dict(DEFAULT_BAR_SETTINGS),
-    "services": merged_service_settings({}),
+        "region": {
+            "locale_code": "",
+            "use_24_hour": False,
+            "date_style": "us",
+            "temperature_unit": "c",
+        },
+        "bar": dict(DEFAULT_BAR_SETTINGS),
+        "services": merged_service_settings({}),
     }
     try:
         raw = SETTINGS_FILE.read_text(encoding="utf-8")
@@ -1478,12 +1716,20 @@ def load_settings_state() -> dict:
     appearance.setdefault("matugen_notifications_enabled", False)
     theme_choice = str(appearance.get("theme_choice", "")).strip().lower()
     if theme_choice not in THEME_CHOICES:
-        theme_choice = "wallpaper_aware" if appearance.get("use_matugen_palette", False) else str(appearance.get("theme_mode", "dark")).strip().lower()
+        theme_choice = (
+            "wallpaper_aware"
+            if appearance.get("use_matugen_palette", False)
+            else str(appearance.get("theme_mode", "dark")).strip().lower()
+        )
     if theme_choice not in THEME_CHOICES:
         theme_choice = "dark"
     appearance["theme_choice"] = theme_choice
-    custom_theme_id = str(appearance.get("custom_theme_id", "retrowave")).strip().lower()
-    appearance["custom_theme_id"] = custom_theme_id if custom_theme_id in CUSTOM_THEME_KEYS else "retrowave"
+    custom_theme_id = (
+        str(appearance.get("custom_theme_id", "retrowave")).strip().lower()
+    )
+    appearance["custom_theme_id"] = (
+        custom_theme_id if custom_theme_id in CUSTOM_THEME_KEYS else "retrowave"
+    )
     home_assistant = dict(payload.get("home_assistant", {}))
     home_assistant.setdefault("url", "")
     home_assistant.setdefault("token", "")
@@ -1499,15 +1745,31 @@ def load_settings_state() -> dict:
     ntfy.setdefault("auth_mode", "token")
     ntfy.setdefault("topics", [])
     ntfy.setdefault("all_topics", False)
-    ntfy["hide_notification_content"] = bool(ntfy.get("hide_notification_content", False))
+    ntfy["hide_notification_content"] = bool(
+        ntfy.get("hide_notification_content", False)
+    )
     mail = dict(payload.get("mail", {}))
     mail["notify_new_messages"] = bool(mail.get("notify_new_messages", True))
     mail["play_notification_sound"] = bool(mail.get("play_notification_sound", False))
-    mail["hide_notification_content"] = bool(mail.get("hide_notification_content", False))
+    mail["hide_notification_content"] = bool(
+        mail.get("hide_notification_content", False)
+    )
     marketplace = dict(payload.get("marketplace", {}))
-    marketplace["catalog_repo_url"] = str(marketplace.get("catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins")).strip() or "https://github.com/gab-luz/hanauta-plugins"
-    marketplace["catalog_branch"] = str(marketplace.get("catalog_branch", "main")).strip() or "main"
-    marketplace["catalog_manifest_path"] = str(marketplace.get("catalog_manifest_path", "plugins.json")).strip() or "plugins.json"
+    marketplace["catalog_repo_url"] = (
+        str(
+            marketplace.get(
+                "catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins"
+            )
+        ).strip()
+        or "https://github.com/gab-luz/hanauta-plugins"
+    )
+    marketplace["catalog_branch"] = (
+        str(marketplace.get("catalog_branch", "main")).strip() or "main"
+    )
+    marketplace["catalog_manifest_path"] = (
+        str(marketplace.get("catalog_manifest_path", "plugins.json")).strip()
+        or "plugins.json"
+    )
     sources = marketplace.get("catalog_sources", [])
     normalized_sources: list[dict[str, str]] = []
     if isinstance(sources, list):
@@ -1521,7 +1783,15 @@ def load_settings_state() -> dict:
                 {
                     "repo_url": repo_url,
                     "branch": str(row.get("branch", "main")).strip() or "main",
-                    "manifest_path": str(row.get("manifest_path", row.get("catalog_manifest_path", "plugins.json"))).strip().lstrip("/") or "plugins.json",
+                    "manifest_path": str(
+                        row.get(
+                            "manifest_path",
+                            row.get("catalog_manifest_path", "plugins.json"),
+                        )
+                    )
+                    .strip()
+                    .lstrip("/")
+                    or "plugins.json",
                 }
             )
     if not normalized_sources:
@@ -1533,11 +1803,17 @@ def load_settings_state() -> dict:
             }
         ]
     marketplace["catalog_sources"] = normalized_sources
-    marketplace["install_dir"] = str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))).strip() or str(ROOT / "hanauta" / "plugins")
+    marketplace["install_dir"] = str(
+        marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))
+    ).strip() or str(ROOT / "hanauta" / "plugins")
     catalog_cache = marketplace.get("catalog_cache", [])
-    marketplace["catalog_cache"] = catalog_cache if isinstance(catalog_cache, list) else []
+    marketplace["catalog_cache"] = (
+        catalog_cache if isinstance(catalog_cache, list) else []
+    )
     installed_plugins = marketplace.get("installed_plugins", [])
-    marketplace["installed_plugins"] = installed_plugins if isinstance(installed_plugins, list) else []
+    marketplace["installed_plugins"] = (
+        installed_plugins if isinstance(installed_plugins, list) else []
+    )
     weather = dict(payload.get("weather", {}))
     weather.setdefault("enabled", False)
     weather.setdefault("name", "")
@@ -1550,7 +1826,9 @@ def load_settings_state() -> dict:
     calendar.setdefault("show_week_numbers", False)
     calendar.setdefault("show_other_month_days", True)
     first_day = str(calendar.get("first_day_of_week", "monday")).strip().lower()
-    calendar["first_day_of_week"] = first_day if first_day in {"monday", "sunday"} else "monday"
+    calendar["first_day_of_week"] = (
+        first_day if first_day in {"monday", "sunday"} else "monday"
+    )
     calendar.setdefault("caldav_url", "")
     calendar.setdefault("caldav_username", "")
     calendar.setdefault("caldav_password", "")
@@ -1558,14 +1836,24 @@ def load_settings_state() -> dict:
     calendar.setdefault("connected", False)
     reminders = dict(payload.get("reminders", {}))
     try:
-        reminders["default_lead_minutes"] = max(0, min(240, int(reminders.get("default_lead_minutes", 20))))
+        reminders["default_lead_minutes"] = max(
+            0, min(240, int(reminders.get("default_lead_minutes", 20)))
+        )
     except Exception:
         reminders["default_lead_minutes"] = 20
-    default_intensity = str(reminders.get("default_intensity", "discrete")).strip().lower()
-    reminders["default_intensity"] = default_intensity if default_intensity in {"quiet", "discrete", "disturbing"} else "discrete"
+    default_intensity = (
+        str(reminders.get("default_intensity", "discrete")).strip().lower()
+    )
+    reminders["default_intensity"] = (
+        default_intensity
+        if default_intensity in {"quiet", "discrete", "disturbing"}
+        else "discrete"
+    )
     reminders["tea_label"] = str(reminders.get("tea_label", "Tea")).strip() or "Tea"
     try:
-        reminders["tea_minutes"] = max(1, min(180, int(reminders.get("tea_minutes", 5))))
+        reminders["tea_minutes"] = max(
+            1, min(180, int(reminders.get("tea_minutes", 5)))
+        )
     except Exception:
         reminders["tea_minutes"] = 5
     tracked = reminders.get("tracked_events", [])
@@ -1580,10 +1868,18 @@ def load_settings_state() -> dict:
         if not title or not start:
             continue
         try:
-            lead_minutes = max(0, min(240, int(item.get("lead_minutes", reminders["default_lead_minutes"]))))
+            lead_minutes = max(
+                0,
+                min(
+                    240,
+                    int(item.get("lead_minutes", reminders["default_lead_minutes"])),
+                ),
+            )
         except Exception:
             lead_minutes = reminders["default_lead_minutes"]
-        severity = str(item.get("severity", reminders["default_intensity"])).strip().lower()
+        severity = (
+            str(item.get("severity", reminders["default_intensity"])).strip().lower()
+        )
         if severity not in {"quiet", "discrete", "disturbing"}:
             severity = reminders["default_intensity"]
         sanitized_tracked.append(
@@ -1592,26 +1888,36 @@ def load_settings_state() -> dict:
                 "start": start,
                 "lead_minutes": lead_minutes,
                 "severity": severity,
-                "calendar_index": int(item.get("calendar_index", -1)) if str(item.get("calendar_index", "")).strip() else -1,
+                "calendar_index": int(item.get("calendar_index", -1))
+                if str(item.get("calendar_index", "")).strip()
+                else -1,
                 "filename": str(item.get("filename", "")).strip(),
             }
         )
     reminders["tracked_events"] = sanitized_tracked
     pomodoro = dict(payload.get("pomodoro", {}))
     try:
-        pomodoro["work_minutes"] = max(5, min(90, int(pomodoro.get("work_minutes", 25))))
+        pomodoro["work_minutes"] = max(
+            5, min(90, int(pomodoro.get("work_minutes", 25)))
+        )
     except Exception:
         pomodoro["work_minutes"] = 25
     try:
-        pomodoro["short_break_minutes"] = max(1, min(30, int(pomodoro.get("short_break_minutes", 5))))
+        pomodoro["short_break_minutes"] = max(
+            1, min(30, int(pomodoro.get("short_break_minutes", 5)))
+        )
     except Exception:
         pomodoro["short_break_minutes"] = 5
     try:
-        pomodoro["long_break_minutes"] = max(5, min(60, int(pomodoro.get("long_break_minutes", 15))))
+        pomodoro["long_break_minutes"] = max(
+            5, min(60, int(pomodoro.get("long_break_minutes", 15)))
+        )
     except Exception:
         pomodoro["long_break_minutes"] = 15
     try:
-        pomodoro["long_break_every"] = max(2, min(8, int(pomodoro.get("long_break_every", 4))))
+        pomodoro["long_break_every"] = max(
+            2, min(8, int(pomodoro.get("long_break_every", 4)))
+        )
     except Exception:
         pomodoro["long_break_every"] = 4
     pomodoro["auto_start_breaks"] = bool(pomodoro.get("auto_start_breaks", False))
@@ -1627,7 +1933,9 @@ def load_settings_state() -> dict:
         url = str(item.get("url", "")).strip()
         if not url:
             continue
-        normalized_feeds.append({"name": str(item.get("name", "")).strip() or url, "url": url})
+        normalized_feeds.append(
+            {"name": str(item.get("name", "")).strip() or url, "url": url}
+        )
     rss["feeds"] = normalized_feeds
     rss["feed_urls"] = str(rss.get("feed_urls", "")).strip()
     rss["opml_source"] = str(rss.get("opml_source", "")).strip()
@@ -1638,7 +1946,9 @@ def load_settings_state() -> dict:
     except Exception:
         rss["item_limit"] = 10
     try:
-        rss["check_interval_minutes"] = max(5, min(180, int(rss.get("check_interval_minutes", 15))))
+        rss["check_interval_minutes"] = max(
+            5, min(180, int(rss.get("check_interval_minutes", 15)))
+        )
     except Exception:
         rss["check_interval_minutes"] = 15
     rss["notify_new_items"] = bool(rss.get("notify_new_items", True))
@@ -1647,7 +1957,9 @@ def load_settings_state() -> dict:
     rss["open_in_browser"] = bool(rss.get("open_in_browser", True))
     rss["show_images"] = bool(rss.get("show_images", True))
     sort_mode = str(rss.get("sort_mode", "newest")).strip().lower()
-    rss["sort_mode"] = sort_mode if sort_mode in {"newest", "oldest", "byfeed"} else "newest"
+    rss["sort_mode"] = (
+        sort_mode if sort_mode in {"newest", "oldest", "byfeed"} else "newest"
+    )
     try:
         rss["max_per_feed"] = max(1, min(20, int(rss.get("max_per_feed", 5))))
     except Exception:
@@ -1666,10 +1978,16 @@ def load_settings_state() -> dict:
     crypto = dict(payload.get("crypto", {}))
     crypto["api_provider"] = "coingecko"
     crypto["api_key"] = str(crypto.get("api_key", "")).strip()
-    crypto["tracked_coins"] = str(crypto.get("tracked_coins", "bitcoin,ethereum")).strip()
-    crypto["vs_currency"] = str(crypto.get("vs_currency", "usd")).strip().lower() or "usd"
+    crypto["tracked_coins"] = str(
+        crypto.get("tracked_coins", "bitcoin,ethereum")
+    ).strip()
+    crypto["vs_currency"] = (
+        str(crypto.get("vs_currency", "usd")).strip().lower() or "usd"
+    )
     try:
-        crypto["check_interval_minutes"] = max(5, min(180, int(crypto.get("check_interval_minutes", 15))))
+        crypto["check_interval_minutes"] = max(
+            5, min(180, int(crypto.get("check_interval_minutes", 15)))
+        )
     except Exception:
         crypto["check_interval_minutes"] = 15
     try:
@@ -1678,11 +1996,15 @@ def load_settings_state() -> dict:
         crypto["chart_days"] = 7
     crypto["notify_price_moves"] = bool(crypto.get("notify_price_moves", True))
     try:
-        crypto["price_up_percent"] = max(0.5, min(50.0, float(crypto.get("price_up_percent", 3.0))))
+        crypto["price_up_percent"] = max(
+            0.5, min(50.0, float(crypto.get("price_up_percent", 3.0)))
+        )
     except Exception:
         crypto["price_up_percent"] = 3.0
     try:
-        crypto["price_down_percent"] = max(0.5, min(50.0, float(crypto.get("price_down_percent", 3.0))))
+        crypto["price_down_percent"] = max(
+            0.5, min(50.0, float(crypto.get("price_down_percent", 3.0)))
+        )
     except Exception:
         crypto["price_down_percent"] = 3.0
     vps = dict(payload.get("vps", {}))
@@ -1694,8 +2016,14 @@ def load_settings_state() -> dict:
     vps["username"] = str(vps.get("username", "")).strip()
     vps["identity_file"] = str(vps.get("identity_file", "")).strip()
     vps["app_service"] = str(vps.get("app_service", "")).strip()
-    vps["health_command"] = str(vps.get("health_command", "uptime && df -h /")).strip() or "uptime && df -h /"
-    vps["update_command"] = str(vps.get("update_command", "sudo apt update && sudo apt upgrade -y")).strip() or "sudo apt update && sudo apt upgrade -y"
+    vps["health_command"] = (
+        str(vps.get("health_command", "uptime && df -h /")).strip()
+        or "uptime && df -h /"
+    )
+    vps["update_command"] = (
+        str(vps.get("update_command", "sudo apt update && sudo apt upgrade -y")).strip()
+        or "sudo apt update && sudo apt upgrade -y"
+    )
     clock = dict(payload.get("clock", {}))
     try:
         clock["size"] = max(220, min(520, int(clock.get("size", 320))))
@@ -1713,65 +2041,114 @@ def load_settings_state() -> dict:
     autolock = dict(payload.get("autolock", {}))
     autolock["enabled"] = bool(autolock.get("enabled", True))
     try:
-        autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2))))
+        autolock["timeout_minutes"] = max(
+            1, min(60, int(autolock.get("timeout_minutes", 2)))
+        )
     except Exception:
         autolock["timeout_minutes"] = 2
     lockscreen = dict(payload.get("lockscreen", {}))
     lockscreen["blur_screenshot"] = bool(lockscreen.get("blur_screenshot", False))
-    lockscreen["pause_media_on_lock"] = bool(lockscreen.get("pause_media_on_lock", True))
+    lockscreen["pause_media_on_lock"] = bool(
+        lockscreen.get("pause_media_on_lock", True)
+    )
     lockscreen["use_slow_fade"] = bool(lockscreen.get("use_slow_fade", True))
-    lockscreen["prefer_i3lock_color"] = bool(lockscreen.get("prefer_i3lock_color", True))
+    lockscreen["prefer_i3lock_color"] = bool(
+        lockscreen.get("prefer_i3lock_color", True)
+    )
     lockscreen["show_clock"] = bool(lockscreen.get("show_clock", True))
     lockscreen["show_indicator"] = bool(lockscreen.get("show_indicator", True))
     lockscreen["pass_media_keys"] = bool(lockscreen.get("pass_media_keys", True))
     lockscreen["pass_volume_keys"] = bool(lockscreen.get("pass_volume_keys", True))
     try:
-        lockscreen["refresh_rate"] = max(0, min(30, int(lockscreen.get("refresh_rate", 1))))
+        lockscreen["refresh_rate"] = max(
+            0, min(30, int(lockscreen.get("refresh_rate", 1)))
+        )
     except Exception:
         lockscreen["refresh_rate"] = 1
     try:
-        lockscreen["ring_radius"] = max(8, min(80, int(lockscreen.get("ring_radius", 28))))
+        lockscreen["ring_radius"] = max(
+            8, min(80, int(lockscreen.get("ring_radius", 28)))
+        )
     except Exception:
         lockscreen["ring_radius"] = 28
     try:
         lockscreen["ring_width"] = max(1, min(24, int(lockscreen.get("ring_width", 6))))
     except Exception:
         lockscreen["ring_width"] = 6
-    lockscreen["time_format"] = str(lockscreen.get("time_format", "%H:%M")).strip() or "%H:%M"
-    lockscreen["date_format"] = str(lockscreen.get("date_format", "%A, %d %B %Y")).strip() or "%A, %d %B %Y"
-    lockscreen["greeter_text"] = str(lockscreen.get("greeter_text", "Hanauta locked • Type your password to unlock")).strip() or "Hanauta locked • Type your password to unlock"
-    lockscreen["verifying_text"] = str(lockscreen.get("verifying_text", "Verifying...")).strip() or "Verifying..."
-    lockscreen["wrong_text"] = str(lockscreen.get("wrong_text", "Wrong password")).strip() or "Wrong password"
+    lockscreen["time_format"] = (
+        str(lockscreen.get("time_format", "%H:%M")).strip() or "%H:%M"
+    )
+    lockscreen["date_format"] = (
+        str(lockscreen.get("date_format", "%A, %d %B %Y")).strip() or "%A, %d %B %Y"
+    )
+    lockscreen["greeter_text"] = (
+        str(
+            lockscreen.get(
+                "greeter_text", "Hanauta locked • Type your password to unlock"
+            )
+        ).strip()
+        or "Hanauta locked • Type your password to unlock"
+    )
+    lockscreen["verifying_text"] = (
+        str(lockscreen.get("verifying_text", "Verifying...")).strip() or "Verifying..."
+    )
+    lockscreen["wrong_text"] = (
+        str(lockscreen.get("wrong_text", "Wrong password")).strip() or "Wrong password"
+    )
     audio = dict(payload.get("audio", {}))
     audio["default_sink"] = str(audio.get("default_sink", "")).strip()
     audio["default_source"] = str(audio.get("default_source", "")).strip()
     audio["alert_sounds_enabled"] = bool(audio.get("alert_sounds_enabled", True))
     mute_behavior = str(audio.get("mute_behavior", "leave_as_is")).strip().lower()
-    audio["mute_behavior"] = mute_behavior if mute_behavior in {"leave_as_is", "mute_on_lock", "mute_on_suspend"} else "leave_as_is"
-    audio["route_new_apps_to_default_sink"] = bool(audio.get("route_new_apps_to_default_sink", True))
+    audio["mute_behavior"] = (
+        mute_behavior
+        if mute_behavior in {"leave_as_is", "mute_on_lock", "mute_on_suspend"}
+        else "leave_as_is"
+    )
+    audio["route_new_apps_to_default_sink"] = bool(
+        audio.get("route_new_apps_to_default_sink", True)
+    )
     notifications = dict(payload.get("notifications", {}))
     try:
-        notifications["history_limit"] = max(10, min(1000, int(notifications.get("history_limit", 150))))
+        notifications["history_limit"] = max(
+            10, min(1000, int(notifications.get("history_limit", 150)))
+        )
     except Exception:
         notifications["history_limit"] = 150
     urgency_policy = str(notifications.get("urgency_policy", "normal")).strip().lower()
-    notifications["urgency_policy"] = urgency_policy if urgency_policy in {"all", "normal", "critical_only"} else "normal"
-    notifications["pause_while_sharing"] = bool(notifications.get("pause_while_sharing", True))
-    notifications["per_app_rules_enabled"] = bool(notifications.get("per_app_rules_enabled", True))
+    notifications["urgency_policy"] = (
+        urgency_policy
+        if urgency_policy in {"all", "normal", "critical_only"}
+        else "normal"
+    )
+    notifications["pause_while_sharing"] = bool(
+        notifications.get("pause_while_sharing", True)
+    )
+    notifications["per_app_rules_enabled"] = bool(
+        notifications.get("per_app_rules_enabled", True)
+    )
     input_settings = dict(payload.get("input", {}))
-    input_settings["keyboard_layout"] = str(input_settings.get("keyboard_layout", "us")).strip() or "us"
+    input_settings["keyboard_layout"] = (
+        str(input_settings.get("keyboard_layout", "us")).strip() or "us"
+    )
     try:
-        input_settings["repeat_delay_ms"] = max(150, min(1200, int(input_settings.get("repeat_delay_ms", 300))))
+        input_settings["repeat_delay_ms"] = max(
+            150, min(1200, int(input_settings.get("repeat_delay_ms", 300)))
+        )
     except Exception:
         input_settings["repeat_delay_ms"] = 300
     try:
-        input_settings["repeat_rate"] = max(10, min(60, int(input_settings.get("repeat_rate", 30))))
+        input_settings["repeat_rate"] = max(
+            10, min(60, int(input_settings.get("repeat_rate", 30)))
+        )
     except Exception:
         input_settings["repeat_rate"] = 30
     input_settings["tap_to_click"] = bool(input_settings.get("tap_to_click", True))
     input_settings["natural_scroll"] = bool(input_settings.get("natural_scroll", False))
     try:
-        input_settings["mouse_accel"] = max(-10, min(10, int(input_settings.get("mouse_accel", 0))))
+        input_settings["mouse_accel"] = max(
+            -10, min(10, int(input_settings.get("mouse_accel", 0)))
+        )
     except Exception:
         input_settings["mouse_accel"] = 0
     startup = dict(payload.get("startup", {}))
@@ -1781,34 +2158,58 @@ def load_settings_state() -> dict:
     startup["restore_displays"] = bool(startup.get("restore_displays", True))
     startup["restore_vpn"] = bool(startup.get("restore_vpn", True))
     try:
-        startup["startup_delay_seconds"] = max(0, min(120, int(startup.get("startup_delay_seconds", 0))))
+        startup["startup_delay_seconds"] = max(
+            0, min(120, int(startup.get("startup_delay_seconds", 0)))
+        )
     except Exception:
         startup["startup_delay_seconds"] = 0
     startup["restart_hooks_enabled"] = bool(startup.get("restart_hooks_enabled", True))
     startup["watchdog_enabled"] = bool(startup.get("watchdog_enabled", False))
     privacy = dict(payload.get("privacy", {}))
     privacy["lock_on_suspend"] = bool(privacy.get("lock_on_suspend", True))
-    privacy["hide_notification_content_global"] = bool(privacy.get("hide_notification_content_global", False))
-    privacy["pause_notifications_while_sharing"] = bool(privacy.get("pause_notifications_while_sharing", True))
-    privacy["screenshot_guard_enabled"] = bool(privacy.get("screenshot_guard_enabled", False))
-    privacy["screen_share_guard_enabled"] = bool(privacy.get("screen_share_guard_enabled", True))
+    privacy["hide_notification_content_global"] = bool(
+        privacy.get("hide_notification_content_global", False)
+    )
+    privacy["pause_notifications_while_sharing"] = bool(
+        privacy.get("pause_notifications_while_sharing", True)
+    )
+    privacy["screenshot_guard_enabled"] = bool(
+        privacy.get("screenshot_guard_enabled", False)
+    )
+    privacy["screen_share_guard_enabled"] = bool(
+        privacy.get("screen_share_guard_enabled", True)
+    )
     networking = dict(payload.get("networking", {}))
-    networking["preferred_wifi_interface"] = str(networking.get("preferred_wifi_interface", "")).strip()
-    networking["preferred_wireguard_interface"] = str(networking.get("preferred_wireguard_interface", "")).strip()
+    networking["preferred_wifi_interface"] = str(
+        networking.get("preferred_wifi_interface", "")
+    ).strip()
+    networking["preferred_wireguard_interface"] = str(
+        networking.get("preferred_wireguard_interface", "")
+    ).strip()
     networking["wifi_autoconnect"] = bool(networking.get("wifi_autoconnect", True))
-    networking["vpn_reconnect_on_login"] = bool(networking.get("vpn_reconnect_on_login", False))
+    networking["vpn_reconnect_on_login"] = bool(
+        networking.get("vpn_reconnect_on_login", False)
+    )
     split_tunnel_apps = networking.get("split_tunnel_apps", [])
-    networking["split_tunnel_apps"] = split_tunnel_apps if isinstance(split_tunnel_apps, list) else []
+    networking["split_tunnel_apps"] = (
+        split_tunnel_apps if isinstance(split_tunnel_apps, list) else []
+    )
     storage = dict(payload.get("storage", {}))
     try:
-        storage["wallpaper_cache_cleanup_days"] = max(1, min(365, int(storage.get("wallpaper_cache_cleanup_days", 30))))
+        storage["wallpaper_cache_cleanup_days"] = max(
+            1, min(365, int(storage.get("wallpaper_cache_cleanup_days", 30)))
+        )
     except Exception:
         storage["wallpaper_cache_cleanup_days"] = 30
     try:
-        storage["log_retention_days"] = max(1, min(365, int(storage.get("log_retention_days", 14))))
+        storage["log_retention_days"] = max(
+            1, min(365, int(storage.get("log_retention_days", 14)))
+        )
     except Exception:
         storage["log_retention_days"] = 14
-    storage["clean_temp_state_on_startup"] = bool(storage.get("clean_temp_state_on_startup", False))
+    storage["clean_temp_state_on_startup"] = bool(
+        storage.get("clean_temp_state_on_startup", False)
+    )
     health = dict(payload.get("health", {}))
     health["provider"] = str(health.get("provider", "manual")).strip().lower()
     if health["provider"] not in {"manual", "fitbit"}:
@@ -1818,11 +2219,15 @@ def load_settings_state() -> dict:
     except Exception:
         health["step_goal"] = 10000
     try:
-        health["water_goal_ml"] = max(250, min(6000, int(health.get("water_goal_ml", 2000))))
+        health["water_goal_ml"] = max(
+            250, min(6000, int(health.get("water_goal_ml", 2000)))
+        )
     except Exception:
         health["water_goal_ml"] = 2000
     try:
-        health["sync_interval_minutes"] = max(5, min(360, int(health.get("sync_interval_minutes", 30))))
+        health["sync_interval_minutes"] = max(
+            5, min(360, int(health.get("sync_interval_minutes", 30)))
+        )
     except Exception:
         health["sync_interval_minutes"] = 30
     health["fitbit_client_id"] = str(health.get("fitbit_client_id", "")).strip()
@@ -1895,8 +2300,12 @@ def load_notification_rules_state() -> dict:
     for rule_id, defaults in DEFAULT_NOTIFICATION_RULES["rules"].items():
         section = f"rule.{rule_id}"
         rules[rule_id] = {
-            "enabled": parser.getboolean(section, "enabled", fallback=bool(defaults.get("enabled", False))),
-            "source_app": parser.get(section, "source_app", fallback=str(defaults.get("source_app", ""))).strip(),
+            "enabled": parser.getboolean(
+                section, "enabled", fallback=bool(defaults.get("enabled", False))
+            ),
+            "source_app": parser.get(
+                section, "source_app", fallback=str(defaults.get("source_app", ""))
+            ).strip(),
             "summary_contains": [
                 item.strip()
                 for item in parser.get(
@@ -1924,7 +2333,10 @@ def load_notification_rules_state() -> dict:
                 ).split(",")
                 if item.strip()
             ],
-            "action": parser.get(section, "action", fallback=str(defaults.get("action", "ignore"))).strip() or "ignore",
+            "action": parser.get(
+                section, "action", fallback=str(defaults.get("action", "ignore"))
+            ).strip()
+            or "ignore",
         }
 
     for section in parser.sections():
@@ -1936,10 +2348,25 @@ def load_notification_rules_state() -> dict:
         rules[rule_id] = {
             "enabled": parser.getboolean(section, "enabled", fallback=False),
             "source_app": parser.get(section, "source_app", fallback="").strip(),
-            "summary_contains": [item.strip() for item in parser.get(section, "summary_contains", fallback="").split(",") if item.strip()],
-            "body_contains": [item.strip() for item in parser.get(section, "body_contains", fallback="").split(",") if item.strip()],
-            "processes": [item.strip() for item in parser.get(section, "processes", fallback="").split(",") if item.strip()],
-            "action": parser.get(section, "action", fallback="ignore").strip() or "ignore",
+            "summary_contains": [
+                item.strip()
+                for item in parser.get(section, "summary_contains", fallback="").split(
+                    ","
+                )
+                if item.strip()
+            ],
+            "body_contains": [
+                item.strip()
+                for item in parser.get(section, "body_contains", fallback="").split(",")
+                if item.strip()
+            ],
+            "processes": [
+                item.strip()
+                for item in parser.get(section, "processes", fallback="").split(",")
+                if item.strip()
+            ],
+            "action": parser.get(section, "action", fallback="ignore").strip()
+            or "ignore",
         }
 
     return {"version": version, "rules": rules}
@@ -1948,7 +2375,9 @@ def load_notification_rules_state() -> dict:
 def save_notification_rules_state(state: dict) -> None:
     parser = configparser.ConfigParser()
     parser.optionxform = str
-    parser["meta"] = {"version": str(int(state.get("version", DEFAULT_NOTIFICATION_RULES["version"])))}
+    parser["meta"] = {
+        "version": str(int(state.get("version", DEFAULT_NOTIFICATION_RULES["version"])))
+    }
     rules = state.get("rules", {})
     if not isinstance(rules, dict):
         rules = {}
@@ -1958,9 +2387,27 @@ def save_notification_rules_state(state: dict) -> None:
         parser[f"rule.{rule_id}"] = {
             "enabled": "true" if bool(rule.get("enabled", False)) else "false",
             "source_app": str(rule.get("source_app", "")).strip(),
-            "summary_contains": ",".join([str(item).strip() for item in rule.get("summary_contains", []) if str(item).strip()]),
-            "body_contains": ",".join([str(item).strip() for item in rule.get("body_contains", []) if str(item).strip()]),
-            "processes": ",".join([str(item).strip() for item in rule.get("processes", []) if str(item).strip()]),
+            "summary_contains": ",".join(
+                [
+                    str(item).strip()
+                    for item in rule.get("summary_contains", [])
+                    if str(item).strip()
+                ]
+            ),
+            "body_contains": ",".join(
+                [
+                    str(item).strip()
+                    for item in rule.get("body_contains", [])
+                    if str(item).strip()
+                ]
+            ),
+            "processes": ",".join(
+                [
+                    str(item).strip()
+                    for item in rule.get("processes", [])
+                    if str(item).strip()
+                ]
+            ),
             "action": str(rule.get("action", "ignore")).strip() or "ignore",
         }
     NOTIFICATION_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1986,7 +2433,9 @@ def restore_saved_wallpaper() -> None:
     if not wallpaper_path.exists() or not wallpaper_path.is_file():
         return
 
-    active_displays = [display for display in parse_xrandr_state() if display.get("enabled")]
+    active_displays = [
+        display for display in parse_xrandr_state() if display.get("enabled")
+    ]
     if not active_displays:
         if WALLPAPER_SCRIPT.exists():
             run_bg([str(WALLPAPER_SCRIPT), str(wallpaper_path)])
@@ -2030,7 +2479,10 @@ def restore_saved_wallpaper() -> None:
             str(fit_modes.get(str(display.get("name", "")), "fill")),
         )
         painter.end()
-        target = RENDERED_WALLPAPER_DIR / f"{sanitize_output_name(str(display.get('name', 'display')))}.png"
+        target = (
+            RENDERED_WALLPAPER_DIR
+            / f"{sanitize_output_name(str(display.get('name', 'display')))}.png"
+        )
         canvas.save(str(target), "PNG")
         rendered_paths.append(target)
 
@@ -2055,7 +2507,9 @@ def restore_saved_vpn() -> None:
     vpn = services.get("vpn_control", {})
     if not isinstance(vpn, dict):
         return
-    if not bool(vpn.get("enabled", True)) or not bool(vpn.get("reconnect_on_login", False)):
+    if not bool(vpn.get("enabled", True)) or not bool(
+        vpn.get("reconnect_on_login", False)
+    ):
         return
     iface = str(vpn.get("preferred_interface", "")).strip() or "wg0"
     if not iface:
@@ -2077,9 +2531,13 @@ def restore_saved_vpn() -> None:
     run_bg([str(vpn_script), "--toggle-wg", iface])
 
 
-def build_display_command(displays: list[dict], primary_name: str, layout_mode: str) -> list[str]:
+def build_display_command(
+    displays: list[dict], primary_name: str, layout_mode: str
+) -> list[str]:
     cmd = ["xrandr"]
-    ordered = sorted(displays, key=lambda item: (item["name"] != primary_name, item["name"]))
+    ordered = sorted(
+        displays, key=lambda item: (item["name"] != primary_name, item["name"])
+    )
     previous_enabled: str | None = None
     for display in ordered:
         cmd.extend(["--output", str(display["name"])])
@@ -2116,7 +2574,9 @@ def normalize_display_orientation(value: object) -> str:
 def restore_saved_displays() -> None:
     settings = load_settings_state()
     startup_state = settings.get("startup", {})
-    if isinstance(startup_state, dict) and not bool(startup_state.get("restore_displays", True)):
+    if isinstance(startup_state, dict) and not bool(
+        startup_state.get("restore_displays", True)
+    ):
         return
 
     display_state = settings.get("display", {})
@@ -2158,10 +2618,18 @@ def restore_saved_displays() -> None:
             restored.append(
                 {
                     "name": name,
-                    "enabled": bool(saved.get("enabled", current_item.get("enabled", True))),
-                    "resolution": str(saved.get("resolution", current_item.get("current_mode", ""))),
+                    "enabled": bool(
+                        saved.get("enabled", current_item.get("enabled", True))
+                    ),
+                    "resolution": str(
+                        saved.get("resolution", current_item.get("current_mode", ""))
+                    ),
                     "refresh": str(saved.get("refresh", "Auto")),
-                    "orientation": normalize_display_orientation(saved.get("orientation", current_item.get("orientation", "normal"))),
+                    "orientation": normalize_display_orientation(
+                        saved.get(
+                            "orientation", current_item.get("orientation", "normal")
+                        )
+                    ),
                     "modes": list(current_item.get("modes", [])),
                 }
             )
@@ -2172,7 +2640,9 @@ def restore_saved_displays() -> None:
         enabled = [display for display in restored if display.get("enabled")]
         if not enabled:
             return
-        primary_name = str(display_state.get("primary", "")).strip() or str(enabled[0]["name"])
+        primary_name = str(display_state.get("primary", "")).strip() or str(
+            enabled[0]["name"]
+        )
         if primary_name not in {str(display["name"]) for display in enabled}:
             primary_name = str(enabled[0]["name"])
         layout_mode = str(display_state.get("layout_mode", "extend"))
@@ -2186,9 +2656,15 @@ def restore_saved_displays() -> None:
             if not common_modes:
                 layout_mode = "extend"
             else:
-                primary_display = next(display for display in enabled if str(display["name"]) == primary_name)
+                primary_display = next(
+                    display
+                    for display in enabled
+                    if str(display["name"]) == primary_name
+                )
                 if str(primary_display.get("resolution", "")) not in common_modes:
-                    primary_display["resolution"] = sorted(common_modes, key=resolution_area, reverse=True)[0]
+                    primary_display["resolution"] = sorted(
+                        common_modes, key=resolution_area, reverse=True
+                    )[0]
                 for display in enabled:
                     display["resolution"] = primary_display["resolution"]
                     if str(display["name"]) != primary_name:
@@ -2211,7 +2687,9 @@ def restore_saved_displays() -> None:
                 mismatch = True
                 break
             want = normalize_display_orientation(display.get("orientation", "normal"))
-            got = normalize_display_orientation(applied[name].get("orientation", "normal"))
+            got = normalize_display_orientation(
+                applied[name].get("orientation", "normal")
+            )
             if got != want:
                 mismatch = True
                 break
@@ -2222,9 +2700,21 @@ def restore_saved_displays() -> None:
 
 def accent_palette(name: str) -> dict[str, str]:
     palettes = {
-        "orchid": {"accent": "#D0BCFF", "on_accent": "#381E72", "soft": "rgba(208,188,255,0.18)"},
-        "mint": {"accent": "#8FE3CF", "on_accent": "#11352D", "soft": "rgba(143,227,207,0.18)"},
-        "sunset": {"accent": "#FFB59E", "on_accent": "#4D2418", "soft": "rgba(255,181,158,0.18)"},
+        "orchid": {
+            "accent": "#D0BCFF",
+            "on_accent": "#381E72",
+            "soft": "rgba(208,188,255,0.18)",
+        },
+        "mint": {
+            "accent": "#8FE3CF",
+            "on_accent": "#11352D",
+            "soft": "rgba(143,227,207,0.18)",
+        },
+        "sunset": {
+            "accent": "#FFB59E",
+            "on_accent": "#4D2418",
+            "soft": "rgba(255,181,158,0.18)",
+        },
     }
     return palettes.get(name, palettes["orchid"])
 
@@ -2233,13 +2723,18 @@ def normalize_ha_url(url: str) -> str:
     return url.strip().rstrip("/")
 
 
-def fetch_home_assistant_json(base_url: str, token: str, path: str) -> tuple[object | None, str]:
+def fetch_home_assistant_json(
+    base_url: str, token: str, path: str
+) -> tuple[object | None, str]:
     if not base_url or not token:
         return None, "Home Assistant URL and token are required."
     try:
         req = request.Request(
             f"{normalize_ha_url(base_url)}{path}",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
         )
         with request.urlopen(req, timeout=3.5) as response:
             return json.loads(response.read().decode("utf-8")), ""
@@ -2290,7 +2785,9 @@ def send_ntfy_message(
     auth_mode_clean = normalize_ntfy_auth_mode(auth_mode, has_token=has_token)
     if has_token:
         headers["Authorization"] = f"Bearer {token.strip()}"
-    req = request.Request(url, data=message.encode("utf-8"), headers=headers, method="POST")
+    req = request.Request(
+        url, data=message.encode("utf-8"), headers=headers, method="POST"
+    )
     if not has_token and auth_mode_clean == "basic" and (username.strip() or password):
         credentials = f"{username.strip()}:{password}"
         encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
@@ -2359,7 +2856,9 @@ def parse_xrandr_state() -> list[dict]:
             }
             if geom_match:
                 dims = geom_match.group(0)
-                _, pos_x, pos_y = re.match(r"(\d+x\d+)\+(-?\d+)\+(-?\d+)", dims).groups()
+                _, pos_x, pos_y = re.match(
+                    r"(\d+x\d+)\+(-?\d+)\+(-?\d+)", dims
+                ).groups()
                 current["x"] = int(pos_x)
                 current["y"] = int(pos_y)
             displays.append(current)
@@ -2448,7 +2947,11 @@ def format_picom_value(value: object) -> str:
     if isinstance(value, str):
         return f'"{value}"'
     if isinstance(value, float):
-        return f"{value:.2f}".rstrip("0").rstrip(".") if "." in f"{value:.2f}" else str(value)
+        return (
+            f"{value:.2f}".rstrip("0").rstrip(".")
+            if "." in f"{value:.2f}"
+            else str(value)
+        )
     return str(value)
 
 
@@ -2468,7 +2971,11 @@ def write_default_pyqt_palette(use_matugen: bool = False) -> None:
     write_pyqt_palette(HANAUTA_DARK_PALETTE, use_matugen=use_matugen)
 
 
-def write_pyqt_palette(palette: dict[str, str], use_matugen: bool = False, fonts: dict[str, str] | None = None) -> None:
+def write_pyqt_palette(
+    palette: dict[str, str],
+    use_matugen: bool = False,
+    fonts: dict[str, str] | None = None,
+) -> None:
     PYQT_THEME_DIR.mkdir(parents=True, exist_ok=True)
     payload = {"use_matugen": bool(use_matugen)}
     payload.update(palette)
@@ -2481,7 +2988,9 @@ def selected_theme_key(settings_state: dict) -> str:
     appearance = settings_state.get("appearance", {})
     choice = str(appearance.get("theme_choice", "dark")).strip().lower()
     if choice == "custom":
-        custom_theme = str(appearance.get("custom_theme_id", "retrowave")).strip().lower()
+        custom_theme = (
+            str(appearance.get("custom_theme_id", "retrowave")).strip().lower()
+        )
         return custom_theme if custom_theme in CUSTOM_THEME_KEYS else "retrowave"
     if choice == "light":
         return "hanauta_light"
@@ -2504,7 +3013,8 @@ def _copytree_clean(source: Path, destination: Path) -> None:
 
 
 def _hanauta_gtk_css(palette: dict[str, str]) -> str:
-    return f"""
+    return (
+        f"""
 @define-color theme_bg_color {palette["background"]};
 @define-color theme_fg_color {palette["on_surface"]};
 @define-color theme_base_color {palette["surface_container"]};
@@ -2582,7 +3092,9 @@ progressbar progress, scale highlight {{
   border-radius: 999px;
   background-color: {palette["primary"]};
 }}
-""".strip() + "\n"
+""".strip()
+        + "\n"
+    )
 
 
 def _write_index_theme(theme_dir: Path, display_name: str, gtk_theme: str) -> None:
@@ -2632,7 +3144,9 @@ def ensure_dracula_gtk_theme() -> str:
 
 def ensure_retrowave_gtk_theme() -> str:
     metadata = THEME_LIBRARY["retrowave"]
-    source = ROOT / "hanauta" / "vendor" / "themes" / "retrowave-theme" / "src" / "retrowave"
+    source = (
+        ROOT / "hanauta" / "vendor" / "themes" / "retrowave-theme" / "src" / "retrowave"
+    )
     target = THEMES_HOME / str(metadata["gtk_theme"])
     if target.exists() or target.is_symlink():
         shutil.rmtree(target, ignore_errors=True)
@@ -2646,7 +3160,13 @@ def ensure_retrowave_gtk_theme() -> str:
     if (gtk3_source / "assets").exists():
         _copytree_clean(gtk3_source / "assets", gtk3_target / "assets")
     subprocess.run(
-        ["sassc", "-I", str(gtk3_source), str(gtk3_source / "gtk.scss"), str(gtk3_target / "gtk.css")],
+        [
+            "sassc",
+            "-I",
+            str(gtk3_source),
+            str(gtk3_source / "gtk.scss"),
+            str(gtk3_target / "gtk.css"),
+        ],
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -2669,7 +3189,9 @@ def ensure_theme_installed(theme_key: str) -> str:
     return ensure_builtin_hanauta_gtk_theme(theme_key)
 
 
-def apply_gtk_theme(theme_name: str, color_scheme: str = "prefer-dark", icon_theme: str = "") -> None:
+def apply_gtk_theme(
+    theme_name: str, color_scheme: str = "prefer-dark", icon_theme: str = ""
+) -> None:
     cmd = ["bash", str(ROOT / "hanauta" / "scripts" / "set_theme.sh"), theme_name]
     if icon_theme:
         cmd.append(icon_theme)
@@ -2684,7 +3206,9 @@ def apply_gtk_theme(theme_name: str, color_scheme: str = "prefer-dark", icon_the
     )
 
 
-def sync_static_theme_from_settings(settings_state: dict, apply_gtk: bool = False) -> str:
+def sync_static_theme_from_settings(
+    settings_state: dict, apply_gtk: bool = False
+) -> str:
     theme_key = selected_theme_key(settings_state)
     metadata = THEME_LIBRARY[theme_key]
     write_pyqt_palette(
@@ -2756,7 +3280,9 @@ def expand_wallpaper_dir(path_value: object) -> Path | None:
 def caelestia_wallpaper_dirs(cache_dir: Path) -> list[Path]:
     shell_config = Path.home() / ".config" / "caelestia" / "shell.json"
     config = load_json_file(shell_config)
-    configured_dir = expand_wallpaper_dir(nested_dict_value(config, "paths", "wallpaperDir"))
+    configured_dir = expand_wallpaper_dir(
+        nested_dict_value(config, "paths", "wallpaperDir")
+    )
     env_dir = expand_wallpaper_dir(os.environ.get("CAELESTIA_WALLPAPERS_DIR"))
     candidates = [
         configured_dir,
@@ -2783,8 +3309,14 @@ def caelestia_wallpaper_dirs(cache_dir: Path) -> list[Path]:
 def end4_wallpaper_dirs(cache_dir: Path) -> list[Path]:
     shell_config = Path.home() / ".config" / "illogical-impulse" / "config.json"
     config = load_json_file(shell_config)
-    configured_file = expand_wallpaper_dir(nested_dict_value(config, "background", "wallpaperPath"))
-    configured_dir = configured_file.parent if configured_file and configured_file.suffix else configured_file
+    configured_file = expand_wallpaper_dir(
+        nested_dict_value(config, "background", "wallpaperPath")
+    )
+    configured_dir = (
+        configured_file.parent
+        if configured_file and configured_file.suffix
+        else configured_file
+    )
     candidates = [
         configured_dir,
         Path.home() / "Wallpaper-Bank" / "wallpapers",
@@ -2863,7 +3395,11 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
                 check=False,
             )
             if fetch.returncode != 0:
-                message = (fetch.stderr or fetch.stdout or "Failed to refresh wallpaper source.").strip()
+                message = (
+                    fetch.stderr
+                    or fetch.stdout
+                    or "Failed to refresh wallpaper source."
+                ).strip()
                 return False, message, None
             reset = subprocess.run(
                 ["git", "-C", str(cache_dir), "reset", "--hard", "FETCH_HEAD"],
@@ -2872,7 +3408,9 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
                 check=False,
             )
             if reset.returncode != 0:
-                message = (reset.stderr or reset.stdout or "Failed to update wallpaper source.").strip()
+                message = (
+                    reset.stderr or reset.stdout or "Failed to update wallpaper source."
+                ).strip()
                 return False, message, None
         else:
             if cache_dir.exists():
@@ -2884,7 +3422,9 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
                 check=False,
             )
             if clone.returncode != 0:
-                message = (clone.stderr or clone.stdout or "Failed to clone wallpaper source.").strip()
+                message = (
+                    clone.stderr or clone.stdout or "Failed to clone wallpaper source."
+                ).strip()
                 return False, message, None
     except Exception as exc:
         return False, str(exc), None
@@ -2903,10 +3443,16 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
         source_labels.append(str(source_dir))
     if not candidates:
         candidates = [
-            path for path in cache_dir.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+            path
+            for path in cache_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
         ]
     if not candidates:
-        return False, f"{preset['label']} does not currently expose wallpaper images in the expected paths.", None
+        return (
+            False,
+            f"{preset['label']} does not currently expose wallpaper images in the expected paths.",
+            None,
+        )
 
     shutil.rmtree(target_dir, ignore_errors=True)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -2933,7 +3479,11 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
     if len(source_labels) > 2:
         source_summary += f", +{len(source_labels) - 2} more"
     if source_summary:
-        return True, f"Synced {copied} image(s) from {preset['label']} using {source_summary}.", target_dir
+        return (
+            True,
+            f"Synced {copied} image(s) from {preset['label']} using {source_summary}.",
+            target_dir,
+        )
     return True, f"Synced {copied} image(s) from {preset['label']}.", target_dir
 
 
@@ -2953,7 +3503,9 @@ def sanitize_output_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
 
 
-def draw_wallpaper_mode(painter: QPainter, source: QImage, width: int, height: int, mode: str) -> None:
+def draw_wallpaper_mode(
+    painter: QPainter, source: QImage, width: int, height: int, mode: str
+) -> None:
     if source.isNull() or width <= 0 or height <= 0:
         return
     src_w = source.width()
@@ -2990,7 +3542,9 @@ def draw_wallpaper_mode(painter: QPainter, source: QImage, width: int, height: i
         if mode == "fit"
         else Qt.AspectRatioMode.KeepAspectRatioByExpanding
     )
-    scaled = source.scaled(width, height, aspect_mode, Qt.TransformationMode.SmoothTransformation)
+    scaled = source.scaled(
+        width, height, aspect_mode, Qt.TransformationMode.SmoothTransformation
+    )
     x = (width - scaled.width()) // 2
     y = (height - scaled.height()) // 2
     painter.drawImage(x, y, scaled)
@@ -3049,12 +3603,16 @@ class NavPillButton(QPushButton):
         self.text_label = QLabel(text)
         self.text_label.setObjectName("navPillText")
         self.text_label.setProperty("iconRole", False)
-        self.text_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.text_label.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
         self.text_label.setWordWrap(False)
         nav_font = QFont(text_font, 10, QFont.Weight.DemiBold)
         nav_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         self.text_label.setFont(nav_font)
-        self.text_label.setStyleSheet("color: rgba(246,235,247,0.92); background: transparent;")
+        self.text_label.setStyleSheet(
+            "color: rgba(246,235,247,0.92); background: transparent;"
+        )
 
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.text_label, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -3078,7 +3636,9 @@ class SegmentedChip(QPushButton):
 
 
 class ThemeModeCard(QPushButton):
-    def __init__(self, icon_text: str, title: str, icon_font: str, ui_font: str) -> None:
+    def __init__(
+        self, icon_text: str, title: str, icon_font: str, ui_font: str
+    ) -> None:
         super().__init__()
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -3384,10 +3944,14 @@ class PreviewCard(QFrame):
         title.setStyleSheet("color: #F8EEF7; background: transparent;")
         title.adjustSize()
 
-        subtitle = QLabel("Expressive surfaces, soft contrast, and subtle translucency.", overlay)
+        subtitle = QLabel(
+            "Expressive surfaces, soft contrast, and subtle translucency.", overlay
+        )
         subtitle.move(14, 186)
         subtitle.setFont(QFont(ui_font, 9))
-        subtitle.setStyleSheet("color: rgba(248,238,247,0.75); background: transparent;")
+        subtitle.setStyleSheet(
+            "color: rgba(248,238,247,0.75); background: transparent;"
+        )
         subtitle.adjustSize()
 
         layout.addWidget(self.wallpaper_label)
@@ -3397,7 +3961,9 @@ class PreviewCard(QFrame):
 
 
 class ActionCard(QPushButton):
-    def __init__(self, icon_text: str, title: str, detail: str, icon_font: str, ui_font: str) -> None:
+    def __init__(
+        self, icon_text: str, title: str, detail: str, icon_font: str, ui_font: str
+    ) -> None:
         super().__init__()
         self._icon_font = icon_font
         self._ui_font = ui_font
@@ -3430,7 +3996,9 @@ class ActionCard(QPushButton):
         self.detail_label = QLabel(detail)
         self.detail_label.setWordWrap(True)
         self.detail_label.setFont(QFont(ui_font, 8))
-        self.detail_label.setStyleSheet("color: rgba(255,255,255,0.82); background: transparent;")
+        self.detail_label.setStyleSheet(
+            "color: rgba(255,255,255,0.82); background: transparent;"
+        )
 
         text_wrap.addWidget(self.title_label)
         text_wrap.addWidget(self.detail_label)
@@ -3445,7 +4013,15 @@ class ActionCard(QPushButton):
 
 
 class SettingsRow(QFrame):
-    def __init__(self, icon_text: str, title: str, detail: str, icon_font: str, ui_font: str, trailing: QWidget) -> None:
+    def __init__(
+        self,
+        icon_text: str,
+        title: str,
+        detail: str,
+        icon_font: str,
+        ui_font: str,
+        trailing: QWidget,
+    ) -> None:
         super().__init__()
         self.setObjectName("settingsRow")
 
@@ -3473,14 +4049,18 @@ class SettingsRow(QFrame):
 
         detail_label = QLabel(detail)
         detail_label.setFont(QFont(ui_font, 8))
-        detail_label.setStyleSheet("color: rgba(255,255,255,0.78); background: transparent;")
+        detail_label.setStyleSheet(
+            "color: rgba(255,255,255,0.78); background: transparent;"
+        )
 
         text_wrap.addWidget(title_label)
         text_wrap.addWidget(detail_label)
 
         layout.addWidget(icon_wrap)
         layout.addLayout(text_wrap, 1)
-        layout.addWidget(trailing, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(
+            trailing, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
 
 class ExpandableServiceSection(QFrame):
@@ -3545,7 +4125,9 @@ class ExpandableServiceSection(QFrame):
         self.detail_label = QLabel(detail)
         self.detail_label.setWordWrap(True)
         self.detail_label.setFont(QFont(ui_font, 9))
-        self.detail_label.setStyleSheet("color: rgba(255,255,255,0.80); background: transparent;")
+        self.detail_label.setStyleSheet(
+            "color: rgba(255,255,255,0.80); background: transparent;"
+        )
         text_wrap.addWidget(self.title_label)
         text_wrap.addWidget(self.detail_label)
 
@@ -3591,7 +4173,9 @@ class ExpandableServiceSection(QFrame):
         self.header_button.setEnabled(True)
         self.setProperty("serviceEnabled", enabled)
         self.header_button.setProperty("serviceEnabled", enabled)
-        self.detail_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self.detail_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.NoTextInteraction
+        )
         if not enabled:
             self.set_expanded(False)
         self.style().unpolish(self)
@@ -3599,7 +4183,9 @@ class ExpandableServiceSection(QFrame):
 
 
 class SettingsWindow(QWidget):
-    def __init__(self, initial_page: str = "appearance", initial_service_section: str = "") -> None:
+    def __init__(
+        self, initial_page: str = "appearance", initial_service_section: str = ""
+    ) -> None:
         super().__init__()
         self.fonts = load_app_fonts()
         self.main_font = detect_font(
@@ -3633,8 +4219,11 @@ class SettingsWindow(QWidget):
         )
 
         self.settings_state = load_settings_state()
-        self.plugin_service_builders = self._load_plugin_service_builders()
-        self.mail_account_store = MailAccountStore(Path(load_mail_storage_config()["db_path"]).expanduser())
+        self.plugin_service_builders: dict[str, dict[str, object]] = {}
+        self._plugin_builders_loaded = False
+        self.mail_account_store = MailAccountStore(
+            Path(load_mail_storage_config()["db_path"]).expanduser()
+        )
         self.notification_rules_state = load_notification_rules_state()
         self._weather_city_map: dict[str, WeatherCity] = {}
         self._selected_weather_city: WeatherCity | None = configured_city()
@@ -3647,7 +4236,9 @@ class SettingsWindow(QWidget):
             write_default_pyqt_palette(use_matugen=False)
         self.theme_palette = load_theme_palette()
         self._theme_mtime = palette_mtime()
-        self.current_accent = accent_palette(self.settings_state["appearance"].get("accent", "orchid"))
+        self.current_accent = accent_palette(
+            self.settings_state["appearance"].get("accent", "orchid")
+        )
         self._refresh_current_accent()
         self.initial_page = initial_page
         self.initial_service_section = initial_service_section
@@ -3719,13 +4310,18 @@ class SettingsWindow(QWidget):
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
-        self._slideshow_timer.setInterval(max(5, int(self.settings_state["appearance"].get("slideshow_interval", 30))) * 1000)
+        self._slideshow_timer.setInterval(
+            max(5, int(self.settings_state["appearance"].get("slideshow_interval", 30)))
+            * 1000
+        )
         if self.settings_state["appearance"].get("slideshow_enabled"):
             self._slideshow_timer.start()
         self._show_page(self.initial_page)
 
     def _pick_wallpaper(self) -> Path:
-        configured = Path(self.settings_state["appearance"].get("wallpaper_path", "")).expanduser()
+        configured = Path(
+            self.settings_state["appearance"].get("wallpaper_path", "")
+        ).expanduser()
         if configured.exists() and configured.is_file():
             return configured
         if CURRENT_WALLPAPER.exists():
@@ -3789,9 +4385,13 @@ class SettingsWindow(QWidget):
         close_button.setProperty("iconButton", True)
         close_button.clicked.connect(self.close)
 
-        layout.addWidget(lead_chip, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(
+            lead_chip, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         layout.addLayout(title_wrap, 1)
-        layout.addWidget(close_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(
+            close_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         return header
 
     def _build_sidebar(self) -> QWidget:
@@ -3830,7 +4430,9 @@ class SettingsWindow(QWidget):
 
         self.sidebar_section_label = QLabel("Workspace")
         self.sidebar_section_label.setObjectName("sidebarSectionLabel")
-        self.sidebar_section_label.setFont(QFont(self.ui_font, 8, QFont.Weight.DemiBold))
+        self.sidebar_section_label.setFont(
+            QFont(self.ui_font, 8, QFont.Weight.DemiBold)
+        )
         nav_layout.addWidget(self.sidebar_section_label)
 
         self.nav_group = QButtonGroup(self)
@@ -3859,7 +4461,9 @@ class SettingsWindow(QWidget):
         for key, glyph, label, checked in items:
             button = NavPillButton(glyph, label, self.icon_font, self.ui_font)
             button.setChecked(checked)
-            button.clicked.connect(lambda checked=False, current=key: self._show_page(current))
+            button.clicked.connect(
+                lambda checked=False, current=key: self._show_page(current)
+            )
             self.nav_group.addButton(button)
             self.nav_buttons[key] = button
             nav_layout.addWidget(button)
@@ -3884,10 +4488,33 @@ class SettingsWindow(QWidget):
         self.page_stack.addWidget(self._build_storage_page())
         self.page_stack.addWidget(self._build_region_page())
         self.page_stack.addWidget(self._build_bar_page())
-        self.page_stack.addWidget(self._build_services_page())
+        self.services_page_index = self.page_stack.count()
+        self._services_page_ready = False
+        self.page_stack.addWidget(self._build_services_placeholder())
         self.page_stack.addWidget(self._build_picom_page())
         self._show_page(self.initial_page)
         return self.page_stack
+
+    def _build_services_placeholder(self) -> QWidget:
+        placeholder = QWidget()
+        layout = QVBoxLayout(placeholder)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+        loading = QLabel("Services page is loaded on demand for faster startup.")
+        loading.setWordWrap(True)
+        loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(loading)
+        layout.addStretch(1)
+        return placeholder
+
+    def _ensure_services_page_ready(self) -> None:
+        if getattr(self, "_services_page_ready", False):
+            return
+        services_page = self._build_services_page()
+        index = int(getattr(self, "services_page_index", 14))
+        self.page_stack.removeWidget(self.page_stack.widget(index))
+        self.page_stack.insertWidget(index, services_page)
+        self._services_page_ready = True
 
     def _toggle_sidebar(self) -> None:
         self._sidebar_collapsed = not self._sidebar_collapsed
@@ -3987,12 +4614,16 @@ class SettingsWindow(QWidget):
             "picom": 15,
         }
         resolved = key if key in order else "appearance"
+        if resolved == "services":
+            self._ensure_services_page_ready()
         self.current_page = resolved
         self.page_stack.setCurrentIndex(order[resolved])
         for button_key, button in getattr(self, "nav_buttons", {}).items():
             button.setChecked(button_key == resolved)
         if resolved == "services" and self.initial_service_section:
-            QTimer.singleShot(0, lambda: self._focus_service_section(self.initial_service_section))
+            QTimer.singleShot(
+                0, lambda: self._focus_service_section(self.initial_service_section)
+            )
 
     def _build_system_overview_card(self) -> QWidget:
         card = QFrame()
@@ -4025,7 +4656,9 @@ class SettingsWindow(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
         self.system_overview_labels: dict[str, QLabel] = {}
-        for index, key in enumerate(("Host", "Kernel", "Session", "Python", "Uptime", "Screen")):
+        for index, key in enumerate(
+            ("Host", "Kernel", "Session", "Python", "Uptime", "Screen")
+        ):
             label = QLabel("...")
             label.setFont(QFont(self.ui_font, 10))
             label.setStyleSheet("color: #FFFFFF;")
@@ -4087,7 +4720,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Wallpaper & Colors")
         title.setObjectName("appearanceTitle")
         title.setFont(QFont(self.display_font, 13))
-        subtitle = QLabel("Pick, import, and rotate wallpapers without disturbing Matugen theming.")
+        subtitle = QLabel(
+            "Pick, import, and rotate wallpapers without disturbing Matugen theming."
+        )
         subtitle.setObjectName("appearanceSubtitle")
         subtitle.setFont(QFont(self.ui_font, 9))
 
@@ -4116,9 +4751,27 @@ class SettingsWindow(QWidget):
         actions = QVBoxLayout(actions_wrap)
         actions.setContentsMargins(14, 14, 14, 14)
         actions.setSpacing(8)
-        self.random_wall_button = ActionCard(material_icon("auto_awesome"), "Random Wallpaper", "Pick a random image from your slideshow folder", self.icon_font, self.ui_font)
-        self.choose_picture_button = ActionCard(material_icon("photo_library"), "Choose picture", "Select and apply a wallpaper image", self.icon_font, self.ui_font)
-        self.choose_folder_button = ActionCard(material_icon("folder_open"), "Choose folder", "Use a folder as a slideshow source", self.icon_font, self.ui_font)
+        self.random_wall_button = ActionCard(
+            material_icon("auto_awesome"),
+            "Random Wallpaper",
+            "Pick a random image from your slideshow folder",
+            self.icon_font,
+            self.ui_font,
+        )
+        self.choose_picture_button = ActionCard(
+            material_icon("photo_library"),
+            "Choose picture",
+            "Select and apply a wallpaper image",
+            self.icon_font,
+            self.ui_font,
+        )
+        self.choose_folder_button = ActionCard(
+            material_icon("folder_open"),
+            "Choose folder",
+            "Use a folder as a slideshow source",
+            self.icon_font,
+            self.ui_font,
+        )
         self.random_wall_button.clicked.connect(self._apply_random_wallpaper)
         self.choose_picture_button.clicked.connect(self._choose_wallpaper_file)
         self.choose_folder_button.clicked.connect(self._choose_wallpaper_folder)
@@ -4135,10 +4788,21 @@ class SettingsWindow(QWidget):
         modes.setContentsMargins(0, 0, 0, 0)
         modes.setHorizontalSpacing(8)
         modes.setVerticalSpacing(8)
-        light = ThemeModeCard(material_icon("light_mode"), "Light", self.icon_font, self.ui_font)
-        dark = ThemeModeCard(material_icon("dark_mode"), "Dark", self.icon_font, self.ui_font)
-        custom = ThemeModeCard(material_icon("palette"), "Custom", self.icon_font, self.ui_font)
-        wallpaper_aware = ThemeModeCard(material_icon("auto_awesome"), "Wallpaper Aware (matugen)", self.icon_font, self.ui_font)
+        light = ThemeModeCard(
+            material_icon("light_mode"), "Light", self.icon_font, self.ui_font
+        )
+        dark = ThemeModeCard(
+            material_icon("dark_mode"), "Dark", self.icon_font, self.ui_font
+        )
+        custom = ThemeModeCard(
+            material_icon("palette"), "Custom", self.icon_font, self.ui_font
+        )
+        wallpaper_aware = ThemeModeCard(
+            material_icon("auto_awesome"),
+            "Wallpaper Aware (matugen)",
+            self.icon_font,
+            self.ui_font,
+        )
         self.theme_buttons = {
             "light": light,
             "dark": dark,
@@ -4149,7 +4813,9 @@ class SettingsWindow(QWidget):
         self.mode_group.setExclusive(True)
         for key, button in self.theme_buttons.items():
             self.mode_group.addButton(button)
-            button.clicked.connect(lambda checked=False, current=key: self._set_theme_choice(current))
+            button.clicked.connect(
+                lambda checked=False, current=key: self._set_theme_choice(current)
+            )
         modes.addWidget(light, 0, 0)
         modes.addWidget(dark, 0, 1)
         modes.addWidget(custom, 1, 0)
@@ -4167,20 +4833,34 @@ class SettingsWindow(QWidget):
         custom_theme_layout.setContentsMargins(10, 10, 10, 10)
         custom_theme_layout.setHorizontalSpacing(8)
         custom_theme_layout.setVerticalSpacing(8)
-        retrowave = ThemeModeCard(material_icon("bolt"), "Retrowave", self.icon_font, self.ui_font)
-        dracula = ThemeModeCard(material_icon("dark_mode"), "Dracula", self.icon_font, self.ui_font)
-        caelestia = ThemeModeCard(material_icon("auto_awesome"), "Caelestia", self.icon_font, self.ui_font)
-        self.custom_theme_buttons = {"retrowave": retrowave, "dracula": dracula, "caelestia": caelestia}
+        retrowave = ThemeModeCard(
+            material_icon("bolt"), "Retrowave", self.icon_font, self.ui_font
+        )
+        dracula = ThemeModeCard(
+            material_icon("dark_mode"), "Dracula", self.icon_font, self.ui_font
+        )
+        caelestia = ThemeModeCard(
+            material_icon("auto_awesome"), "Caelestia", self.icon_font, self.ui_font
+        )
+        self.custom_theme_buttons = {
+            "retrowave": retrowave,
+            "dracula": dracula,
+            "caelestia": caelestia,
+        }
         self.custom_theme_group = QButtonGroup(self)
         self.custom_theme_group.setExclusive(True)
         for key, button in self.custom_theme_buttons.items():
             self.custom_theme_group.addButton(button)
-            button.clicked.connect(lambda checked=False, current=key: self._set_custom_theme(current))
+            button.clicked.connect(
+                lambda checked=False, current=key: self._set_custom_theme(current)
+            )
         custom_theme_layout.addWidget(retrowave, 0, 0)
         custom_theme_layout.addWidget(dracula, 0, 1)
         custom_theme_layout.addWidget(caelestia, 1, 0)
         actions.addWidget(self.custom_theme_wrap)
-        self.custom_theme_hint = QLabel("Custom themes drive both Hanauta colors and the matching GTK theme.")
+        self.custom_theme_hint = QLabel(
+            "Custom themes drive both Hanauta colors and the matching GTK theme."
+        )
         self.custom_theme_hint.setObjectName("settingsStatus")
         self.custom_theme_hint.setFont(QFont(self.ui_font, 8))
         actions.addWidget(self.custom_theme_hint)
@@ -4203,14 +4883,20 @@ class SettingsWindow(QWidget):
 
         self.slideshow_interval = QSlider(Qt.Orientation.Horizontal)
         self.slideshow_interval.setRange(5, 86400)
-        self.slideshow_interval.setValue(int(self.settings_state["appearance"].get("slideshow_interval", 30)))
+        self.slideshow_interval.setValue(
+            int(self.settings_state["appearance"].get("slideshow_interval", 30))
+        )
         self.slideshow_interval.setFixedWidth(164)
         self.slideshow_interval.valueChanged.connect(self._set_slideshow_interval)
         self.slideshow_interval_label = QLabel(
-            self._format_slideshow_interval_text(int(self.settings_state["appearance"].get("slideshow_interval", 30)))
+            self._format_slideshow_interval_text(
+                int(self.settings_state["appearance"].get("slideshow_interval", 30))
+            )
         )
         self.slideshow_interval_label.setFixedWidth(108)
-        self.slideshow_interval_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.slideshow_interval_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         self.slideshow_interval_label.setStyleSheet("color: rgba(246,235,247,0.78);")
         slideshow_interval_wrap = QWidget()
         slideshow_interval_layout = QHBoxLayout(slideshow_interval_wrap)
@@ -4234,7 +4920,11 @@ class SettingsWindow(QWidget):
                 "Adjust the overall transparency of the notification center panel.",
                 35,
                 100,
-                int(self.settings_state["appearance"].get("notification_center_panel_opacity", 84)),
+                int(
+                    self.settings_state["appearance"].get(
+                        "notification_center_panel_opacity", 84
+                    )
+                ),
                 material_icon("opacity"),
                 "notification_center_panel_opacity",
             )
@@ -4245,7 +4935,11 @@ class SettingsWindow(QWidget):
                 "Control cards, sliders, quick actions, media, KDE Connect, and Home Assistant stay denser than the shell.",
                 35,
                 100,
-                int(self.settings_state["appearance"].get("notification_center_card_opacity", 92)),
+                int(
+                    self.settings_state["appearance"].get(
+                        "notification_center_card_opacity", 92
+                    )
+                ),
                 material_icon("widgets"),
                 "notification_center_card_opacity",
             )
@@ -4256,7 +4950,11 @@ class SettingsWindow(QWidget):
                 "Limit how wide desktop notifications can grow on screen.",
                 260,
                 640,
-                int(self.settings_state["appearance"].get("notification_toast_max_width", 356)),
+                int(
+                    self.settings_state["appearance"].get(
+                        "notification_toast_max_width", 356
+                    )
+                ),
                 material_icon("crop_square"),
                 "notification_toast_max_width",
             )
@@ -4267,7 +4965,11 @@ class SettingsWindow(QWidget):
                 "Limit how tall desktop notifications can grow before content is clipped.",
                 160,
                 640,
-                int(self.settings_state["appearance"].get("notification_toast_max_height", 280)),
+                int(
+                    self.settings_state["appearance"].get(
+                        "notification_toast_max_height", 280
+                    )
+                ),
                 material_icon("crop_square"),
                 "notification_toast_max_height",
             )
@@ -4293,9 +4995,15 @@ class SettingsWindow(QWidget):
             matugen_button,
         )
         self.matugen_notifications_switch = SwitchButton(
-            bool(self.settings_state["appearance"].get("matugen_notifications_enabled", False))
+            bool(
+                self.settings_state["appearance"].get(
+                    "matugen_notifications_enabled", False
+                )
+            )
         )
-        self.matugen_notifications_switch.toggledValue.connect(self._set_matugen_notifications_enabled)
+        self.matugen_notifications_switch.toggledValue.connect(
+            self._set_matugen_notifications_enabled
+        )
         matugen_notifications = SettingsRow(
             material_icon("notifications_active"),
             "Matugen notifications",
@@ -4305,7 +5013,11 @@ class SettingsWindow(QWidget):
             self.matugen_notifications_switch,
         )
         self.wallpaper_change_notifications_switch = SwitchButton(
-            bool(self.settings_state["appearance"].get("wallpaper_change_notifications_enabled", False))
+            bool(
+                self.settings_state["appearance"].get(
+                    "wallpaper_change_notifications_enabled", False
+                )
+            )
         )
         self.wallpaper_change_notifications_switch.toggledValue.connect(
             self._set_wallpaper_change_notifications_enabled
@@ -4332,12 +5044,16 @@ class SettingsWindow(QWidget):
         layout.setSpacing(12)
 
         header = QHBoxLayout()
-        icon = IconLabel(material_icon("desktop_windows"), self.icon_font, 15, "#F4EAF7")
+        icon = IconLabel(
+            material_icon("desktop_windows"), self.icon_font, 15, "#F4EAF7"
+        )
         icon.setFixedSize(22, 22)
         title = QLabel("Displays")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Primary monitor, extend or duplicate mode, resolution, refresh rate, and rotation.")
+        subtitle = QLabel(
+            "Primary monitor, extend or duplicate mode, resolution, refresh rate, and rotation."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -4378,7 +5094,9 @@ class SettingsWindow(QWidget):
         if connected_count > 1:
             layout.addWidget(self._build_display_global_card())
         else:
-            self.display_status.setText("Single display detected. Primary and mirror controls are hidden.")
+            self.display_status.setText(
+                "Single display detected. Primary and mirror controls are hidden."
+            )
 
         self.display_outputs_container = QVBoxLayout()
         self.display_outputs_container.setContentsMargins(0, 0, 0, 0)
@@ -4397,7 +5115,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Multi-monitor layout")
         title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
         title.setStyleSheet("color: #FFFFFF;")
-        detail = QLabel("Choose the primary display and whether active outputs extend left-to-right or mirror the primary.")
+        detail = QLabel(
+            "Choose the primary display and whether active outputs extend left-to-right or mirror the primary."
+        )
         detail.setFont(QFont(self.ui_font, 8))
         detail.setStyleSheet("color: rgba(246,235,247,0.72);")
         detail.setWordWrap(True)
@@ -4413,7 +5133,14 @@ class SettingsWindow(QWidget):
         self.primary_display_combo.setObjectName("settingsCombo")
         for display in self.display_state:
             self.primary_display_combo.addItem(display["name"])
-        primary_name = next((display["name"] for display in self.display_state if display.get("primary")), self.display_state[0]["name"])
+        primary_name = next(
+            (
+                display["name"]
+                for display in self.display_state
+                if display.get("primary")
+            ),
+            self.display_state[0]["name"],
+        )
         self.primary_display_combo.setCurrentText(primary_name)
         row.addWidget(primary_label)
         row.addWidget(self.primary_display_combo, 1)
@@ -4426,7 +5153,11 @@ class SettingsWindow(QWidget):
         self.display_layout_group.setExclusive(True)
         for key, label in (("extend", "Extend"), ("duplicate", "Duplicate")):
             chip = SegmentedChip(label, checked=(key == "extend"))
-            chip.clicked.connect(lambda checked=False, current=key: self._set_display_layout_mode(current))
+            chip.clicked.connect(
+                lambda checked=False, current=key: self._set_display_layout_mode(
+                    current
+                )
+            )
             self.display_layout_group.addButton(chip)
             self.display_layout_buttons[key] = chip
             mode_row.addWidget(chip)
@@ -4459,7 +5190,9 @@ class SettingsWindow(QWidget):
             desc_bits = []
             if display.get("primary"):
                 desc_bits.append("Primary")
-            desc_bits.append("Active" if display.get("enabled") else "Connected but inactive")
+            desc_bits.append(
+                "Active" if display.get("enabled") else "Connected but inactive"
+            )
             subtitle = QLabel(" • ".join(desc_bits))
             subtitle.setFont(QFont(self.ui_font, 8))
             subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -4509,14 +5242,18 @@ class SettingsWindow(QWidget):
             wallpaper_combo.setCurrentText(saved_mode.title())
             wallpaper_combo.blockSignals(False)
             wallpaper_combo.currentTextChanged.connect(
-                lambda _text, current=display["name"], combo=wallpaper_combo: self._set_display_wallpaper_mode(
-                    current,
-                    str(combo.currentData() or combo.currentText().lower()),
+                lambda _text, current=display["name"], combo=wallpaper_combo: (
+                    self._set_display_wallpaper_mode(
+                        current,
+                        str(combo.currentData() or combo.currentText().lower()),
+                    )
                 )
             )
 
             resolution_combo.currentTextChanged.connect(
-                lambda mode, current=display["name"]: self._sync_refresh_rates_for_output(current, mode)
+                lambda mode, current=display["name"]: (
+                    self._sync_refresh_rates_for_output(current, mode)
+                )
             )
             self.display_controls[display["name"]] = {
                 "enabled": enabled_switch,
@@ -4525,13 +5262,25 @@ class SettingsWindow(QWidget):
                 "orientation": orientation_combo,
                 "wallpaper": wallpaper_combo,
             }
-            self._sync_refresh_rates_for_output(display["name"], resolution_combo.currentText())
+            self._sync_refresh_rates_for_output(
+                display["name"], resolution_combo.currentText()
+            )
 
-            control_grid.addWidget(self._settings_labeled_field("Enabled", enabled_switch), 0, 0)
-            control_grid.addWidget(self._settings_labeled_field("Resolution", resolution_combo), 0, 1)
-            control_grid.addWidget(self._settings_labeled_field("Refresh", refresh_combo), 1, 0)
-            control_grid.addWidget(self._settings_labeled_field("Orientation", orientation_combo), 1, 1)
-            control_grid.addWidget(self._settings_labeled_field("Wallpaper", wallpaper_combo), 2, 0, 1, 2)
+            control_grid.addWidget(
+                self._settings_labeled_field("Enabled", enabled_switch), 0, 0
+            )
+            control_grid.addWidget(
+                self._settings_labeled_field("Resolution", resolution_combo), 0, 1
+            )
+            control_grid.addWidget(
+                self._settings_labeled_field("Refresh", refresh_combo), 1, 0
+            )
+            control_grid.addWidget(
+                self._settings_labeled_field("Orientation", orientation_combo), 1, 1
+            )
+            control_grid.addWidget(
+                self._settings_labeled_field("Wallpaper", wallpaper_combo), 2, 0, 1, 2
+            )
             layout.addLayout(control_grid)
             self.display_outputs_container.addWidget(card)
 
@@ -4552,7 +5301,9 @@ class SettingsWindow(QWidget):
         refresh_combo = controls.get("refresh")
         if not isinstance(refresh_combo, QComboBox):
             return
-        display = next((item for item in self.display_state if item["name"] == output_name), None)
+        display = next(
+            (item for item in self.display_state if item["name"] == output_name), None
+        )
         if display is None:
             return
         refresh_combo.blockSignals(True)
@@ -4575,7 +5326,9 @@ class SettingsWindow(QWidget):
             chip.setChecked(key == mode)
 
     def _set_display_wallpaper_mode(self, output_name: str, mode: str) -> None:
-        fit_modes = self.settings_state["appearance"].setdefault("wallpaper_fit_modes", {})
+        fit_modes = self.settings_state["appearance"].setdefault(
+            "wallpaper_fit_modes", {}
+        )
         fit_modes[output_name] = mode
         save_settings_state(self.settings_state)
         self._apply_current_wallpaper_layout()
@@ -4595,18 +5348,29 @@ class SettingsWindow(QWidget):
                 name = screen.name().strip()
                 if name and name not in names:
                     names.append(name)
-        primary_name = next((str(display.get("name", "")).strip() for display in self.display_state if display.get("primary")), "")
+        primary_name = next(
+            (
+                str(display.get("name", "")).strip()
+                for display in self.display_state
+                if display.get("primary")
+            ),
+            "",
+        )
         for name in names:
             label = f"{name} (primary)" if name == primary_name else name
             entries.append((label, "named", name))
         return entries
 
-    def _populate_monitor_target_combo(self, combo: QComboBox, mode: str, name: str) -> None:
+    def _populate_monitor_target_combo(
+        self, combo: QComboBox, mode: str, name: str
+    ) -> None:
         combo.blockSignals(True)
         combo.clear()
         entries = self._monitor_choice_entries()
         target_index = 0
-        normalized_mode = mode if mode in {"primary", "follow_mouse", "named"} else "primary"
+        normalized_mode = (
+            mode if mode in {"primary", "follow_mouse", "named"} else "primary"
+        )
         normalized_name = name.strip()
         for index, (label, entry_mode, entry_name) in enumerate(entries):
             combo.addItem(label, {"mode": entry_mode, "name": entry_name})
@@ -4615,7 +5379,11 @@ class SettingsWindow(QWidget):
         if normalized_mode == "named" and normalized_name:
             for index in range(combo.count()):
                 payload = combo.itemData(index)
-                if isinstance(payload, dict) and payload.get("mode") == "named" and payload.get("name") == normalized_name:
+                if (
+                    isinstance(payload, dict)
+                    and payload.get("mode") == "named"
+                    and payload.get("name") == normalized_name
+                ):
                     target_index = index
                     break
         combo.setCurrentIndex(target_index)
@@ -4623,20 +5391,35 @@ class SettingsWindow(QWidget):
 
     def _refresh_display_state(self) -> None:
         self.display_state = parse_xrandr_state()
-        self.display_status.setText("Display state refreshed from xrandr." if self.display_state else "No displays detected through xrandr.")
+        self.display_status.setText(
+            "Display state refreshed from xrandr."
+            if self.display_state
+            else "No displays detected through xrandr."
+        )
         if hasattr(self, "primary_display_combo"):
             self.primary_display_combo.clear()
             for display in self.display_state:
                 self.primary_display_combo.addItem(display["name"])
             if self.display_state:
-                saved_primary = str(self.settings_state.get("display", {}).get("primary", ""))
+                saved_primary = str(
+                    self.settings_state.get("display", {}).get("primary", "")
+                )
                 available_names = {display["name"] for display in self.display_state}
                 if saved_primary in available_names:
                     primary_name = saved_primary
                 else:
-                    primary_name = next((display["name"] for display in self.display_state if display.get("primary")), self.display_state[0]["name"])
+                    primary_name = next(
+                        (
+                            display["name"]
+                            for display in self.display_state
+                            if display.get("primary")
+                        ),
+                        self.display_state[0]["name"],
+                    )
                 self.primary_display_combo.setCurrentText(primary_name)
-        saved_layout = str(self.settings_state.get("display", {}).get("layout_mode", "extend"))
+        saved_layout = str(
+            self.settings_state.get("display", {}).get("layout_mode", "extend")
+        )
         if saved_layout in {"extend", "duplicate"}:
             self._set_display_layout_mode(saved_layout)
         if hasattr(self, "bar_monitor_target_combo"):
@@ -4672,10 +5455,20 @@ class SettingsWindow(QWidget):
             collected.append(
                 {
                     "name": display["name"],
-                    "enabled": bool(enabled_widget.isChecked()) if isinstance(enabled_widget, SwitchButton) else bool(saved.get("enabled", display.get("enabled"))),
-                    "resolution": resolution_widget.currentText() if isinstance(resolution_widget, QComboBox) else str(saved.get("resolution", display.get("current_mode", ""))),
-                    "refresh": refresh_widget.currentText() if isinstance(refresh_widget, QComboBox) else str(saved.get("refresh", "Auto")),
-                    "orientation": orientation_widget.currentText() if isinstance(orientation_widget, QComboBox) else str(saved.get("orientation", display.get("orientation", "normal"))),
+                    "enabled": bool(enabled_widget.isChecked())
+                    if isinstance(enabled_widget, SwitchButton)
+                    else bool(saved.get("enabled", display.get("enabled"))),
+                    "resolution": resolution_widget.currentText()
+                    if isinstance(resolution_widget, QComboBox)
+                    else str(saved.get("resolution", display.get("current_mode", ""))),
+                    "refresh": refresh_widget.currentText()
+                    if isinstance(refresh_widget, QComboBox)
+                    else str(saved.get("refresh", "Auto")),
+                    "orientation": orientation_widget.currentText()
+                    if isinstance(orientation_widget, QComboBox)
+                    else str(
+                        saved.get("orientation", display.get("orientation", "normal"))
+                    ),
                     "modes": list(display.get("modes", [])),
                 }
             )
@@ -4690,7 +5483,9 @@ class SettingsWindow(QWidget):
 
         primary_name = enabled[0]["name"]
         if len(self.display_state) > 1 and hasattr(self, "primary_display_combo"):
-            primary_name = self.primary_display_combo.currentText() or enabled[0]["name"]
+            primary_name = (
+                self.primary_display_combo.currentText() or enabled[0]["name"]
+            )
             if primary_name not in {display["name"] for display in enabled}:
                 primary_name = enabled[0]["name"]
 
@@ -4699,11 +5494,17 @@ class SettingsWindow(QWidget):
             for display in enabled[1:]:
                 common_modes &= set(display["modes"])
             if not common_modes:
-                self.display_status.setText("No shared resolution is available across enabled displays for duplicate mode.")
+                self.display_status.setText(
+                    "No shared resolution is available across enabled displays for duplicate mode."
+                )
                 return
-            primary_display = next(display for display in enabled if display["name"] == primary_name)
+            primary_display = next(
+                display for display in enabled if display["name"] == primary_name
+            )
             if primary_display["resolution"] not in common_modes:
-                primary_display["resolution"] = sorted(common_modes, key=resolution_area, reverse=True)[0]
+                primary_display["resolution"] = sorted(
+                    common_modes, key=resolution_area, reverse=True
+                )[0]
             for display in enabled:
                 display["resolution"] = primary_display["resolution"]
                 if display["name"] != primary_name:
@@ -4712,7 +5513,13 @@ class SettingsWindow(QWidget):
         cmd = build_display_command(displays, primary_name, self.display_layout_mode)
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            self.display_status.setText((result.stderr or result.stdout or "Failed to apply display settings.").strip())
+            self.display_status.setText(
+                (
+                    result.stderr
+                    or result.stdout
+                    or "Failed to apply display settings."
+                ).strip()
+            )
             return
         self.settings_state["display"] = {
             "layout_mode": self.display_layout_mode,
@@ -4746,7 +5553,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Picom")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Core compositor behavior, shadows, opacity, and corners from picom.conf.")
+        subtitle = QLabel(
+            "Core compositor behavior, shadows, opacity, and corners from picom.conf."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -4792,32 +5601,188 @@ class SettingsWindow(QWidget):
         self.picom_backend_combo = QComboBox()
         self.picom_backend_combo.setObjectName("settingsCombo")
         self.picom_backend_combo.addItems(["glx", "xrender"])
-        self.picom_backend_combo.setCurrentText(str(self.picom_state.get("backend", "glx")))
+        self.picom_backend_combo.setCurrentText(
+            str(self.picom_state.get("backend", "glx"))
+        )
 
-        self.picom_vsync_switch = SwitchButton(bool(self.picom_state.get("vsync", True)))
-        self.picom_damage_switch = SwitchButton(bool(self.picom_state.get("use-damage", True)))
-        self.picom_shadow_switch = SwitchButton(bool(self.picom_state.get("shadow", True)))
-        self.picom_fading_switch = SwitchButton(bool(self.picom_state.get("fading", False)))
-        self.picom_clip_switch = SwitchButton(bool(self.picom_state.get("transparent-clipping", False)))
-        self.picom_rounded_switch = SwitchButton(bool(self.picom_state.get("detect-rounded-corners", True)))
+        self.picom_vsync_switch = SwitchButton(
+            bool(self.picom_state.get("vsync", True))
+        )
+        self.picom_damage_switch = SwitchButton(
+            bool(self.picom_state.get("use-damage", True))
+        )
+        self.picom_shadow_switch = SwitchButton(
+            bool(self.picom_state.get("shadow", True))
+        )
+        self.picom_fading_switch = SwitchButton(
+            bool(self.picom_state.get("fading", False))
+        )
+        self.picom_clip_switch = SwitchButton(
+            bool(self.picom_state.get("transparent-clipping", False))
+        )
+        self.picom_rounded_switch = SwitchButton(
+            bool(self.picom_state.get("detect-rounded-corners", True))
+        )
 
-        layout.addWidget(SettingsRow(material_icon("tune"), "Backend", "Choose the renderer used by picom.", self.icon_font, self.ui_font, self.picom_backend_combo))
-        layout.addWidget(SettingsRow(material_icon("sync"), "VSync", "Reduce tearing by syncing frames.", self.icon_font, self.ui_font, self.picom_vsync_switch))
-        layout.addWidget(SettingsRow(material_icon("widgets"), "Use damage", "Only redraw changed regions where possible.", self.icon_font, self.ui_font, self.picom_damage_switch))
-        layout.addWidget(SettingsRow(material_icon("shadow"), "Shadows", "Enable shadow rendering around windows.", self.icon_font, self.ui_font, self.picom_shadow_switch))
-        layout.addWidget(self._slider_settings_row("Shadow radius", "Blur radius for shadows.", 0, 60, int(self.picom_state.get("shadow-radius", 18)), material_icon("shadow"), "picom_shadow_radius"))
-        layout.addWidget(self._slider_settings_row("Shadow opacity", "Overall shadow strength.", 0, 100, int(float(self.picom_state.get("shadow-opacity", 0.18)) * 100), material_icon("opacity"), "picom_shadow_opacity"))
-        layout.addWidget(self._slider_settings_row("Shadow offset X", "Horizontal shadow offset.", -40, 40, int(self.picom_state.get("shadow-offset-x", -12)), material_icon("tune"), "picom_shadow_offset_x"))
-        layout.addWidget(self._slider_settings_row("Shadow offset Y", "Vertical shadow offset.", -40, 40, int(self.picom_state.get("shadow-offset-y", -12)), material_icon("tune"), "picom_shadow_offset_y"))
-        layout.addWidget(SettingsRow(material_icon("auto_awesome"), "Fading", "Fade transitions for mapped and unmapped windows.", self.icon_font, self.ui_font, self.picom_fading_switch))
-        layout.addWidget(self._slider_settings_row("Active opacity", "Opacity for focused windows.", 50, 100, int(float(self.picom_state.get("active-opacity", 1.0)) * 100), material_icon("opacity"), "picom_active_opacity"))
-        layout.addWidget(self._slider_settings_row("Inactive opacity", "Opacity for unfocused windows.", 50, 100, int(float(self.picom_state.get("inactive-opacity", 1.0)) * 100), material_icon("opacity"), "picom_inactive_opacity"))
-        layout.addWidget(self._slider_settings_row("Corner radius", "Rounded corner radius in pixels.", 0, 40, int(self.picom_state.get("corner-radius", 18)), material_icon("flip"), "picom_corner_radius"))
-        layout.addWidget(SettingsRow(material_icon("crop_square"), "Transparent clipping", "Clip transparent pixels before drawing.", self.icon_font, self.ui_font, self.picom_clip_switch))
-        layout.addWidget(SettingsRow(material_icon("flip"), "Detect rounded corners", "Respect client-side rounded corners when available.", self.icon_font, self.ui_font, self.picom_rounded_switch))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("tune"),
+                "Backend",
+                "Choose the renderer used by picom.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_backend_combo,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sync"),
+                "VSync",
+                "Reduce tearing by syncing frames.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_vsync_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Use damage",
+                "Only redraw changed regions where possible.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_damage_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("shadow"),
+                "Shadows",
+                "Enable shadow rendering around windows.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_shadow_switch,
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Shadow radius",
+                "Blur radius for shadows.",
+                0,
+                60,
+                int(self.picom_state.get("shadow-radius", 18)),
+                material_icon("shadow"),
+                "picom_shadow_radius",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Shadow opacity",
+                "Overall shadow strength.",
+                0,
+                100,
+                int(float(self.picom_state.get("shadow-opacity", 0.18)) * 100),
+                material_icon("opacity"),
+                "picom_shadow_opacity",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Shadow offset X",
+                "Horizontal shadow offset.",
+                -40,
+                40,
+                int(self.picom_state.get("shadow-offset-x", -12)),
+                material_icon("tune"),
+                "picom_shadow_offset_x",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Shadow offset Y",
+                "Vertical shadow offset.",
+                -40,
+                40,
+                int(self.picom_state.get("shadow-offset-y", -12)),
+                material_icon("tune"),
+                "picom_shadow_offset_y",
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("auto_awesome"),
+                "Fading",
+                "Fade transitions for mapped and unmapped windows.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_fading_switch,
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Active opacity",
+                "Opacity for focused windows.",
+                50,
+                100,
+                int(float(self.picom_state.get("active-opacity", 1.0)) * 100),
+                material_icon("opacity"),
+                "picom_active_opacity",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Inactive opacity",
+                "Opacity for unfocused windows.",
+                50,
+                100,
+                int(float(self.picom_state.get("inactive-opacity", 1.0)) * 100),
+                material_icon("opacity"),
+                "picom_inactive_opacity",
+            )
+        )
+        layout.addWidget(
+            self._slider_settings_row(
+                "Corner radius",
+                "Rounded corner radius in pixels.",
+                0,
+                40,
+                int(self.picom_state.get("corner-radius", 18)),
+                material_icon("flip"),
+                "picom_corner_radius",
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Transparent clipping",
+                "Clip transparent pixels before drawing.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_clip_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Detect rounded corners",
+                "Respect client-side rounded corners when available.",
+                self.icon_font,
+                self.ui_font,
+                self.picom_rounded_switch,
+            )
+        )
         return card
 
-    def _slider_settings_row(self, title: str, detail: str, minimum: int, maximum: int, value: int, icon: str, attr_prefix: str) -> QWidget:
+    def _slider_settings_row(
+        self,
+        title: str,
+        detail: str,
+        minimum: int,
+        maximum: int,
+        value: int,
+        icon: str,
+        attr_prefix: str,
+    ) -> QWidget:
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(minimum, maximum)
         slider.setValue(value)
@@ -4826,7 +5791,9 @@ class SettingsWindow(QWidget):
         label.setFixedWidth(36)
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label.setStyleSheet("color: rgba(246,235,247,0.78);")
-        slider.valueChanged.connect(lambda current, target=label: target.setText(str(current)))
+        slider.valueChanged.connect(
+            lambda current, target=label: target.setText(str(current))
+        )
         wrap = QWidget()
         row = QHBoxLayout(wrap)
         row.setContentsMargins(0, 0, 0, 0)
@@ -4857,52 +5824,80 @@ class SettingsWindow(QWidget):
 
         self.bar_launcher_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_launcher_offset_slider.setRange(-8, 8)
-        self.bar_launcher_offset_slider.setValue(int(self.settings_state["bar"].get("launcher_offset", 0)))
+        self.bar_launcher_offset_slider.setValue(
+            int(self.settings_state["bar"].get("launcher_offset", 0))
+        )
         self.bar_launcher_offset_slider.setFixedWidth(164)
-        self.bar_launcher_offset_slider.valueChanged.connect(self._set_bar_launcher_offset)
+        self.bar_launcher_offset_slider.valueChanged.connect(
+            self._set_bar_launcher_offset
+        )
 
         self.bar_workspace_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_workspace_offset_slider.setRange(-8, 8)
-        self.bar_workspace_offset_slider.setValue(int(self.settings_state["bar"].get("workspace_offset", 0)))
+        self.bar_workspace_offset_slider.setValue(
+            int(self.settings_state["bar"].get("workspace_offset", 0))
+        )
         self.bar_workspace_offset_slider.setFixedWidth(164)
-        self.bar_workspace_offset_slider.valueChanged.connect(self._set_bar_workspace_offset)
+        self.bar_workspace_offset_slider.valueChanged.connect(
+            self._set_bar_workspace_offset
+        )
 
         self.bar_workspace_count_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_workspace_count_slider.setRange(1, 10)
-        self.bar_workspace_count_slider.setValue(int(self.settings_state["bar"].get("workspace_count", 5)))
+        self.bar_workspace_count_slider.setValue(
+            int(self.settings_state["bar"].get("workspace_count", 5))
+        )
         self.bar_workspace_count_slider.setFixedWidth(164)
-        self.bar_workspace_count_slider.valueChanged.connect(self._set_bar_workspace_count)
+        self.bar_workspace_count_slider.valueChanged.connect(
+            self._set_bar_workspace_count
+        )
 
-        self.bar_workspace_label_switch = SwitchButton(bool(self.settings_state["bar"].get("show_workspace_label", False)))
-        self.bar_workspace_label_switch.toggledValue.connect(self._set_bar_show_workspace_label)
+        self.bar_workspace_label_switch = SwitchButton(
+            bool(self.settings_state["bar"].get("show_workspace_label", False))
+        )
+        self.bar_workspace_label_switch.toggledValue.connect(
+            self._set_bar_show_workspace_label
+        )
 
         self.bar_datetime_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_datetime_offset_slider.setRange(-8, 8)
-        self.bar_datetime_offset_slider.setValue(int(self.settings_state["bar"].get("datetime_offset", 0)))
+        self.bar_datetime_offset_slider.setValue(
+            int(self.settings_state["bar"].get("datetime_offset", 0))
+        )
         self.bar_datetime_offset_slider.setFixedWidth(164)
-        self.bar_datetime_offset_slider.valueChanged.connect(self._set_bar_datetime_offset)
+        self.bar_datetime_offset_slider.valueChanged.connect(
+            self._set_bar_datetime_offset
+        )
 
         self.bar_media_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_media_offset_slider.setRange(-8, 8)
-        self.bar_media_offset_slider.setValue(int(self.settings_state["bar"].get("media_offset", 0)))
+        self.bar_media_offset_slider.setValue(
+            int(self.settings_state["bar"].get("media_offset", 0))
+        )
         self.bar_media_offset_slider.setFixedWidth(164)
         self.bar_media_offset_slider.valueChanged.connect(self._set_bar_media_offset)
 
         self.bar_status_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_status_offset_slider.setRange(-8, 8)
-        self.bar_status_offset_slider.setValue(int(self.settings_state["bar"].get("status_offset", 0)))
+        self.bar_status_offset_slider.setValue(
+            int(self.settings_state["bar"].get("status_offset", 0))
+        )
         self.bar_status_offset_slider.setFixedWidth(164)
         self.bar_status_offset_slider.valueChanged.connect(self._set_bar_status_offset)
 
         self.bar_tray_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_tray_offset_slider.setRange(-8, 8)
-        self.bar_tray_offset_slider.setValue(int(self.settings_state["bar"].get("tray_offset", 0)))
+        self.bar_tray_offset_slider.setValue(
+            int(self.settings_state["bar"].get("tray_offset", 0))
+        )
         self.bar_tray_offset_slider.setFixedWidth(164)
         self.bar_tray_offset_slider.valueChanged.connect(self._set_bar_tray_offset)
 
         self.bar_height_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_height_slider.setRange(32, 72)
-        self.bar_height_slider.setValue(int(self.settings_state["bar"].get("bar_height", 40)))
+        self.bar_height_slider.setValue(
+            int(self.settings_state["bar"].get("bar_height", 40))
+        )
         self.bar_height_slider.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         self.bar_height_slider.setInvertedAppearance(False)
         self.bar_height_slider.setInvertedControls(False)
@@ -4911,24 +5906,36 @@ class SettingsWindow(QWidget):
 
         self.bar_chip_radius_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_chip_radius_slider.setRange(0, 32)
-        self.bar_chip_radius_slider.setValue(int(self.settings_state["bar"].get("chip_radius", 0)))
+        self.bar_chip_radius_slider.setValue(
+            int(self.settings_state["bar"].get("chip_radius", 0))
+        )
         self.bar_chip_radius_slider.setFixedWidth(164)
         self.bar_chip_radius_slider.valueChanged.connect(self._set_bar_chip_radius)
 
-        self.bar_full_merge_switch = SwitchButton(bool(self.settings_state["bar"].get("merge_all_chips", False)))
+        self.bar_full_merge_switch = SwitchButton(
+            bool(self.settings_state["bar"].get("merge_all_chips", False))
+        )
         self.bar_full_merge_switch.toggledValue.connect(self._set_bar_merge_all_chips)
 
-        self.bar_tray_tint_switch = SwitchButton(bool(self.settings_state["bar"].get("tray_tint_with_matugen", True)))
-        self.bar_tray_tint_switch.toggledValue.connect(self._set_bar_tray_tint_with_matugen)
+        self.bar_tray_tint_switch = SwitchButton(
+            bool(self.settings_state["bar"].get("tray_tint_with_matugen", True))
+        )
+        self.bar_tray_tint_switch.toggledValue.connect(
+            self._set_bar_tray_tint_with_matugen
+        )
 
         self.bar_monitor_target_combo = QComboBox()
         self.bar_monitor_target_combo.setFixedWidth(220)
         self._populate_monitor_target_combo(
             self.bar_monitor_target_combo,
-            str(self.settings_state["bar"].get("monitor_mode", "primary")).strip().lower(),
+            str(self.settings_state["bar"].get("monitor_mode", "primary"))
+            .strip()
+            .lower(),
             str(self.settings_state["bar"].get("monitor_name", "")).strip(),
         )
-        self.bar_monitor_target_combo.currentIndexChanged.connect(self._set_bar_monitor_target)
+        self.bar_monitor_target_combo.currentIndexChanged.connect(
+            self._set_bar_monitor_target
+        )
 
         self.dock_monitor_target_combo = QComboBox()
         self.dock_monitor_target_combo.setFixedWidth(220)
@@ -4938,11 +5945,15 @@ class SettingsWindow(QWidget):
             str(dock_monitor_settings.get("monitor_mode", "primary")).strip().lower(),
             str(dock_monitor_settings.get("monitor_name", "")).strip(),
         )
-        self.dock_monitor_target_combo.currentIndexChanged.connect(self._set_dock_monitor_target)
+        self.dock_monitor_target_combo.currentIndexChanged.connect(
+            self._set_dock_monitor_target
+        )
 
         self.bar_full_radius_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_full_radius_slider.setRange(0, 32)
-        self.bar_full_radius_slider.setValue(int(self.settings_state["bar"].get("full_bar_radius", 18)))
+        self.bar_full_radius_slider.setValue(
+            int(self.settings_state["bar"].get("full_bar_radius", 18))
+        )
         self.bar_full_radius_slider.setFixedWidth(164)
         self.bar_full_radius_slider.valueChanged.connect(self._set_bar_full_radius)
 
@@ -5126,7 +6137,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Energy & power")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Idle locking, power actions, brightness, and battery health in one place.")
+        subtitle = QLabel(
+            "Idle locking, power actions, brightness, and battery health in one place."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5161,7 +6174,9 @@ class SettingsWindow(QWidget):
 
         self.energy_hibernate_button = QPushButton("Hibernate")
         self.energy_hibernate_button.setObjectName("secondaryButton")
-        self.energy_hibernate_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.energy_hibernate_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.energy_hibernate_button.clicked.connect(self._hibernate_now)
         self.energy_hibernate_button.setEnabled(shutil.which("systemctl") is not None)
         actions.addWidget(self.energy_hibernate_button)
@@ -5173,7 +6188,9 @@ class SettingsWindow(QWidget):
         self.energy_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.energy_status)
 
-        self.autolock_enabled_switch = SwitchButton(bool(self.settings_state.get("autolock", {}).get("enabled", True)))
+        self.autolock_enabled_switch = SwitchButton(
+            bool(self.settings_state.get("autolock", {}).get("enabled", True))
+        )
         self.autolock_enabled_switch.toggledValue.connect(self._set_autolock_enabled)
         layout.addWidget(
             SettingsRow(
@@ -5186,12 +6203,18 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.autolock_timeout_input = QLineEdit(str(int(self.settings_state.get("autolock", {}).get("timeout_minutes", 2))))
+        self.autolock_timeout_input = QLineEdit(
+            str(int(self.settings_state.get("autolock", {}).get("timeout_minutes", 2)))
+        )
         self.autolock_timeout_input.setValidator(QIntValidator(1, 60, self))
         self.autolock_timeout_input.setFixedWidth(88)
         self.autolock_timeout_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.autolock_timeout_input.editingFinished.connect(self._set_autolock_timeout_minutes_from_input)
-        self.autolock_timeout_input.setEnabled(bool(self.settings_state.get("autolock", {}).get("enabled", True)))
+        self.autolock_timeout_input.editingFinished.connect(
+            self._set_autolock_timeout_minutes_from_input
+        )
+        self.autolock_timeout_input.setEnabled(
+            bool(self.settings_state.get("autolock", {}).get("enabled", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("timer"),
@@ -5204,7 +6227,9 @@ class SettingsWindow(QWidget):
         )
 
         lockscreen = self.settings_state.get("lockscreen", {})
-        self.lockscreen_blur_switch = SwitchButton(bool(lockscreen.get("blur_screenshot", False)))
+        self.lockscreen_blur_switch = SwitchButton(
+            bool(lockscreen.get("blur_screenshot", False))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("photo_library"),
@@ -5216,7 +6241,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_pause_media_switch = SwitchButton(bool(lockscreen.get("pause_media_on_lock", True)))
+        self.lockscreen_pause_media_switch = SwitchButton(
+            bool(lockscreen.get("pause_media_on_lock", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("music_note"),
@@ -5228,7 +6255,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_slow_fade_switch = SwitchButton(bool(lockscreen.get("use_slow_fade", True)))
+        self.lockscreen_slow_fade_switch = SwitchButton(
+            bool(lockscreen.get("use_slow_fade", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("opacity"),
@@ -5240,7 +6269,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_prefer_color_switch = SwitchButton(bool(lockscreen.get("prefer_i3lock_color", True)))
+        self.lockscreen_prefer_color_switch = SwitchButton(
+            bool(lockscreen.get("prefer_i3lock_color", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("palette"),
@@ -5252,7 +6283,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_show_clock_switch = SwitchButton(bool(lockscreen.get("show_clock", True)))
+        self.lockscreen_show_clock_switch = SwitchButton(
+            bool(lockscreen.get("show_clock", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("schedule"),
@@ -5264,7 +6297,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_show_indicator_switch = SwitchButton(bool(lockscreen.get("show_indicator", True)))
+        self.lockscreen_show_indicator_switch = SwitchButton(
+            bool(lockscreen.get("show_indicator", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("lock"),
@@ -5276,7 +6311,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_pass_media_switch = SwitchButton(bool(lockscreen.get("pass_media_keys", True)))
+        self.lockscreen_pass_media_switch = SwitchButton(
+            bool(lockscreen.get("pass_media_keys", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("music_note"),
@@ -5288,7 +6325,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_pass_volume_switch = SwitchButton(bool(lockscreen.get("pass_volume_keys", True)))
+        self.lockscreen_pass_volume_switch = SwitchButton(
+            bool(lockscreen.get("pass_volume_keys", True))
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("tune"),
@@ -5300,7 +6339,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_refresh_input = QLineEdit(str(int(lockscreen.get("refresh_rate", 1))))
+        self.lockscreen_refresh_input = QLineEdit(
+            str(int(lockscreen.get("refresh_rate", 1)))
+        )
         self.lockscreen_refresh_input.setValidator(QIntValidator(0, 30, self))
         self.lockscreen_refresh_input.setFixedWidth(88)
         self.lockscreen_refresh_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5315,7 +6356,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_ring_radius_input = QLineEdit(str(int(lockscreen.get("ring_radius", 28))))
+        self.lockscreen_ring_radius_input = QLineEdit(
+            str(int(lockscreen.get("ring_radius", 28)))
+        )
         self.lockscreen_ring_radius_input.setValidator(QIntValidator(8, 80, self))
         self.lockscreen_ring_radius_input.setFixedWidth(88)
         self.lockscreen_ring_radius_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5330,7 +6373,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_ring_width_input = QLineEdit(str(int(lockscreen.get("ring_width", 6))))
+        self.lockscreen_ring_width_input = QLineEdit(
+            str(int(lockscreen.get("ring_width", 6)))
+        )
         self.lockscreen_ring_width_input.setValidator(QIntValidator(1, 24, self))
         self.lockscreen_ring_width_input.setFixedWidth(88)
         self.lockscreen_ring_width_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5345,7 +6390,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_time_format_input = QLineEdit(str(lockscreen.get("time_format", "%H:%M")))
+        self.lockscreen_time_format_input = QLineEdit(
+            str(lockscreen.get("time_format", "%H:%M"))
+        )
         self.lockscreen_time_format_input.setPlaceholderText("%H:%M")
         layout.addWidget(
             SettingsRow(
@@ -5358,7 +6405,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_date_format_input = QLineEdit(str(lockscreen.get("date_format", "%A, %d %B %Y")))
+        self.lockscreen_date_format_input = QLineEdit(
+            str(lockscreen.get("date_format", "%A, %d %B %Y"))
+        )
         self.lockscreen_date_format_input.setPlaceholderText("%A, %d %B %Y")
         layout.addWidget(
             SettingsRow(
@@ -5371,8 +6420,16 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_greeter_text_input = QLineEdit(str(lockscreen.get("greeter_text", "Hanauta locked • Type your password to unlock")))
-        self.lockscreen_greeter_text_input.setPlaceholderText("Hanauta locked • Type your password to unlock")
+        self.lockscreen_greeter_text_input = QLineEdit(
+            str(
+                lockscreen.get(
+                    "greeter_text", "Hanauta locked • Type your password to unlock"
+                )
+            )
+        )
+        self.lockscreen_greeter_text_input.setPlaceholderText(
+            "Hanauta locked • Type your password to unlock"
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("description"),
@@ -5384,7 +6441,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_verifying_text_input = QLineEdit(str(lockscreen.get("verifying_text", "Verifying...")))
+        self.lockscreen_verifying_text_input = QLineEdit(
+            str(lockscreen.get("verifying_text", "Verifying..."))
+        )
         self.lockscreen_verifying_text_input.setPlaceholderText("Verifying...")
         layout.addWidget(
             SettingsRow(
@@ -5397,7 +6456,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.lockscreen_wrong_text_input = QLineEdit(str(lockscreen.get("wrong_text", "Wrong password")))
+        self.lockscreen_wrong_text_input = QLineEdit(
+            str(lockscreen.get("wrong_text", "Wrong password"))
+        )
         self.lockscreen_wrong_text_input.setPlaceholderText("Wrong password")
         layout.addWidget(
             SettingsRow(
@@ -5417,7 +6478,9 @@ class SettingsWindow(QWidget):
 
         self.lockscreen_save_button = QPushButton("Save lockscreen settings")
         self.lockscreen_save_button.setObjectName("primaryButton")
-        self.lockscreen_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.lockscreen_save_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.lockscreen_save_button.clicked.connect(self._save_lockscreen_settings)
         layout.addWidget(self.lockscreen_save_button, 0, Qt.AlignmentFlag.AlignLeft)
 
@@ -5429,11 +6492,17 @@ class SettingsWindow(QWidget):
         self.energy_brightness_input.setValidator(QIntValidator(1, 100, self))
         self.energy_brightness_input.setFixedWidth(88)
         self.energy_brightness_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.energy_brightness_input.editingFinished.connect(self._apply_energy_brightness)
+        self.energy_brightness_input.editingFinished.connect(
+            self._apply_energy_brightness
+        )
         self.energy_brightness_apply_button = QPushButton("Apply")
         self.energy_brightness_apply_button.setObjectName("secondaryButton")
-        self.energy_brightness_apply_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.energy_brightness_apply_button.clicked.connect(self._apply_energy_brightness)
+        self.energy_brightness_apply_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.energy_brightness_apply_button.clicked.connect(
+            self._apply_energy_brightness
+        )
         brightness_row.addWidget(self.energy_brightness_input)
         brightness_row.addWidget(self.energy_brightness_apply_button)
         layout.addWidget(
@@ -5485,12 +6554,18 @@ class SettingsWindow(QWidget):
         battery_text_wrap.setSpacing(5)
         self.energy_battery_title = QLabel("Battery")
         self.energy_battery_title.setWordWrap(True)
-        self.energy_battery_title.setFont(QFont(self.ui_font, 12, QFont.Weight.DemiBold))
-        self.energy_battery_title.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.energy_battery_title.setFont(
+            QFont(self.ui_font, 12, QFont.Weight.DemiBold)
+        )
+        self.energy_battery_title.setStyleSheet(
+            "color: #FFFFFF; background: transparent;"
+        )
         self.energy_battery_summary = QLabel("")
         self.energy_battery_summary.setWordWrap(True)
         self.energy_battery_summary.setFont(QFont(self.ui_font, 9))
-        self.energy_battery_summary.setStyleSheet("color: rgba(255,255,255,0.80); background: transparent;")
+        self.energy_battery_summary.setStyleSheet(
+            "color: rgba(255,255,255,0.80); background: transparent;"
+        )
         battery_text_wrap.addWidget(self.energy_battery_title)
         battery_text_wrap.addWidget(self.energy_battery_summary)
 
@@ -5550,7 +6625,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Audio")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Default output, mic input, alert sounds, and how Hanauta should behave when audio focus changes.")
+        subtitle = QLabel(
+            "Default output, mic input, alert sounds, and how Hanauta should behave when audio focus changes."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5565,27 +6642,80 @@ class SettingsWindow(QWidget):
 
         self.audio_sink_combo = QComboBox()
         self.audio_sink_combo.setObjectName("settingsCombo")
-        layout.addWidget(SettingsRow(material_icon("music_note"), "Default sink", "Choose the default playback device for new apps.", self.icon_font, self.ui_font, self.audio_sink_combo))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("music_note"),
+                "Default sink",
+                "Choose the default playback device for new apps.",
+                self.icon_font,
+                self.ui_font,
+                self.audio_sink_combo,
+            )
+        )
 
         self.audio_source_combo = QComboBox()
         self.audio_source_combo.setObjectName("settingsCombo")
-        layout.addWidget(SettingsRow(material_icon("monitor_heart"), "Microphone source", "Choose the default capture device for voice apps and recordings.", self.icon_font, self.ui_font, self.audio_source_combo))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("monitor_heart"),
+                "Microphone source",
+                "Choose the default capture device for voice apps and recordings.",
+                self.icon_font,
+                self.ui_font,
+                self.audio_source_combo,
+            )
+        )
 
-        self.audio_alert_sounds_switch = SwitchButton(bool(self.settings_state["audio"].get("alert_sounds_enabled", True)))
-        layout.addWidget(SettingsRow(material_icon("notifications"), "Alert sounds", "Allow notification and reminder sounds when supported by the widget or daemon.", self.icon_font, self.ui_font, self.audio_alert_sounds_switch))
+        self.audio_alert_sounds_switch = SwitchButton(
+            bool(self.settings_state["audio"].get("alert_sounds_enabled", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications"),
+                "Alert sounds",
+                "Allow notification and reminder sounds when supported by the widget or daemon.",
+                self.icon_font,
+                self.ui_font,
+                self.audio_alert_sounds_switch,
+            )
+        )
 
-        self.audio_route_switch = SwitchButton(bool(self.settings_state["audio"].get("route_new_apps_to_default_sink", True)))
-        layout.addWidget(SettingsRow(material_icon("hub"), "Route new apps to default sink", "Prefer the selected sink for fresh app launches instead of leaving routing entirely to PulseAudio defaults.", self.icon_font, self.ui_font, self.audio_route_switch))
+        self.audio_route_switch = SwitchButton(
+            bool(
+                self.settings_state["audio"].get("route_new_apps_to_default_sink", True)
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("hub"),
+                "Route new apps to default sink",
+                "Prefer the selected sink for fresh app launches instead of leaving routing entirely to PulseAudio defaults.",
+                self.icon_font,
+                self.ui_font,
+                self.audio_route_switch,
+            )
+        )
 
         self.audio_mute_behavior_combo = QComboBox()
         self.audio_mute_behavior_combo.setObjectName("settingsCombo")
         self.audio_mute_behavior_combo.addItem("Leave as is", "leave_as_is")
         self.audio_mute_behavior_combo.addItem("Mute on lock", "mute_on_lock")
         self.audio_mute_behavior_combo.addItem("Mute on suspend", "mute_on_suspend")
-        mute_behavior = str(self.settings_state["audio"].get("mute_behavior", "leave_as_is"))
+        mute_behavior = str(
+            self.settings_state["audio"].get("mute_behavior", "leave_as_is")
+        )
         mute_index = self.audio_mute_behavior_combo.findData(mute_behavior)
         self.audio_mute_behavior_combo.setCurrentIndex(max(0, mute_index))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Mute behavior", "What Hanauta should prefer to do when you lock or suspend the session.", self.icon_font, self.ui_font, self.audio_mute_behavior_combo))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Mute behavior",
+                "What Hanauta should prefer to do when you lock or suspend the session.",
+                self.icon_font,
+                self.ui_font,
+                self.audio_mute_behavior_combo,
+            )
+        )
 
         self.audio_status = QLabel("Audio routing is ready.")
         self.audio_status.setWordWrap(True)
@@ -5622,7 +6752,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Notifications")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Global toast behavior, history sizing, urgency preferences, and per-app rule entry points.")
+        subtitle = QLabel(
+            "Global toast behavior, history sizing, urgency preferences, and per-app rule entry points."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5635,39 +6767,125 @@ class SettingsWindow(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
-        self.notifications_history_limit_input = QLineEdit(str(int(self.settings_state["notifications"].get("history_limit", 150))))
-        self.notifications_history_limit_input.setValidator(QIntValidator(10, 1000, self))
+        self.notifications_history_limit_input = QLineEdit(
+            str(int(self.settings_state["notifications"].get("history_limit", 150)))
+        )
+        self.notifications_history_limit_input.setValidator(
+            QIntValidator(10, 1000, self)
+        )
         self.notifications_history_limit_input.setFixedWidth(96)
-        self.notifications_history_limit_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("storage"), "History limit", "How many notifications Hanauta should aim to keep in recent history views.", self.icon_font, self.ui_font, self.notifications_history_limit_input))
+        self.notifications_history_limit_input.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("storage"),
+                "History limit",
+                "How many notifications Hanauta should aim to keep in recent history views.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_history_limit_input,
+            )
+        )
 
         self.notifications_urgency_combo = QComboBox()
         self.notifications_urgency_combo.setObjectName("settingsCombo")
         self.notifications_urgency_combo.addItem("All", "all")
         self.notifications_urgency_combo.addItem("Normal and critical", "normal")
         self.notifications_urgency_combo.addItem("Critical only", "critical_only")
-        urgency = str(self.settings_state["notifications"].get("urgency_policy", "normal"))
+        urgency = str(
+            self.settings_state["notifications"].get("urgency_policy", "normal")
+        )
         urgency_index = self.notifications_urgency_combo.findData(urgency)
         self.notifications_urgency_combo.setCurrentIndex(max(0, urgency_index))
-        layout.addWidget(SettingsRow(material_icon("warning"), "Urgency policy", "A policy note for which notifications should interrupt you most aggressively.", self.icon_font, self.ui_font, self.notifications_urgency_combo))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("warning"),
+                "Urgency policy",
+                "A policy note for which notifications should interrupt you most aggressively.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_urgency_combo,
+            )
+        )
 
-        self.notifications_pause_share_switch = SwitchButton(bool(self.settings_state["notifications"].get("pause_while_sharing", True)))
-        layout.addWidget(SettingsRow(material_icon("videocam"), "Pause while sharing", "Prefer quieter notifications while you are screen sharing or presenting.", self.icon_font, self.ui_font, self.notifications_pause_share_switch))
+        self.notifications_pause_share_switch = SwitchButton(
+            bool(self.settings_state["notifications"].get("pause_while_sharing", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("videocam"),
+                "Pause while sharing",
+                "Prefer quieter notifications while you are screen sharing or presenting.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_pause_share_switch,
+            )
+        )
 
-        self.notifications_rules_switch = SwitchButton(bool(self.settings_state["notifications"].get("per_app_rules_enabled", True)))
-        layout.addWidget(SettingsRow(material_icon("settings"), "Per-app overrides", "Keep app-specific notification rules enabled through Hanauta's shared rules file.", self.icon_font, self.ui_font, self.notifications_rules_switch))
+        self.notifications_rules_switch = SwitchButton(
+            bool(
+                self.settings_state["notifications"].get("per_app_rules_enabled", True)
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("settings"),
+                "Per-app overrides",
+                "Keep app-specific notification rules enabled through Hanauta's shared rules file.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_rules_switch,
+            )
+        )
 
-        self.notifications_toast_width_input = QLineEdit(str(int(self.settings_state["appearance"].get("notification_toast_max_width", 356))))
+        self.notifications_toast_width_input = QLineEdit(
+            str(
+                int(
+                    self.settings_state["appearance"].get(
+                        "notification_toast_max_width", 356
+                    )
+                )
+            )
+        )
         self.notifications_toast_width_input.setValidator(QIntValidator(260, 640, self))
         self.notifications_toast_width_input.setFixedWidth(96)
         self.notifications_toast_width_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("crop_square"), "Toast max width", "Limit how wide desktop notifications are allowed to grow.", self.icon_font, self.ui_font, self.notifications_toast_width_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Toast max width",
+                "Limit how wide desktop notifications are allowed to grow.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_toast_width_input,
+            )
+        )
 
-        self.notifications_toast_height_input = QLineEdit(str(int(self.settings_state["appearance"].get("notification_toast_max_height", 280))))
-        self.notifications_toast_height_input.setValidator(QIntValidator(160, 640, self))
+        self.notifications_toast_height_input = QLineEdit(
+            str(
+                int(
+                    self.settings_state["appearance"].get(
+                        "notification_toast_max_height", 280
+                    )
+                )
+            )
+        )
+        self.notifications_toast_height_input.setValidator(
+            QIntValidator(160, 640, self)
+        )
         self.notifications_toast_height_input.setFixedWidth(96)
         self.notifications_toast_height_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("crop_square"), "Toast max height", "Limit how tall desktop notifications can grow before clipping.", self.icon_font, self.ui_font, self.notifications_toast_height_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Toast max height",
+                "Limit how tall desktop notifications can grow before clipping.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_toast_height_input,
+            )
+        )
 
         rules_row = QWidget()
         rules_layout = QHBoxLayout(rules_row)
@@ -5678,11 +6896,24 @@ class SettingsWindow(QWidget):
         rules_path_label.setStyleSheet("color: rgba(246,235,247,0.72);")
         self.notifications_open_rules_button = QPushButton("Open rules")
         self.notifications_open_rules_button.setObjectName("secondaryButton")
-        self.notifications_open_rules_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.notifications_open_rules_button.clicked.connect(lambda: run_bg(["xdg-open", str(NOTIFICATION_RULES_FILE)]))
+        self.notifications_open_rules_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.notifications_open_rules_button.clicked.connect(
+            lambda: run_bg(["xdg-open", str(NOTIFICATION_RULES_FILE)])
+        )
         rules_layout.addWidget(rules_path_label, 1)
         rules_layout.addWidget(self.notifications_open_rules_button)
-        layout.addWidget(SettingsRow(material_icon("settings"), "Rules file", "Direct path to Hanauta's per-app notification overrides.", self.icon_font, self.ui_font, rules_row))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("settings"),
+                "Rules file",
+                "Direct path to Hanauta's per-app notification overrides.",
+                self.icon_font,
+                self.ui_font,
+                rules_row,
+            )
+        )
 
         self.notifications_status = QLabel("Notification routing is ready.")
         self.notifications_status.setWordWrap(True)
@@ -5695,6 +6926,49 @@ class SettingsWindow(QWidget):
         save_button.clicked.connect(self._save_notifications_page_settings)
         layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
         return card
+
+    def _normalize_keyboard_layout_value(self, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return "us"
+        text = " ".join(part for part in text.split() if part)
+        return text or "us"
+
+    def _resolve_keyboard_layout_value(self) -> str:
+        combo = getattr(self, "input_keyboard_layout_combo", None)
+        if not isinstance(combo, QComboBox):
+            return "us"
+        text = combo.currentText().strip()
+        if hasattr(self, "_keyboard_layout_label_to_value"):
+            label_map = getattr(self, "_keyboard_layout_label_to_value", {})
+            if isinstance(label_map, dict):
+                mapped = label_map.get(text)
+                if isinstance(mapped, str) and mapped.strip():
+                    return self._normalize_keyboard_layout_value(mapped)
+        if text:
+            lowered = text.casefold()
+            for _label, layout_value in KEYBOARD_LAYOUT_PRESETS:
+                if lowered == layout_value.casefold():
+                    return self._normalize_keyboard_layout_value(layout_value)
+            if " - " in text:
+                suffix = text.rsplit(" - ", 1)[-1].strip()
+                if suffix:
+                    return self._normalize_keyboard_layout_value(suffix)
+            return self._normalize_keyboard_layout_value(text)
+        data = combo.currentData()
+        if isinstance(data, str) and data.strip():
+            return self._normalize_keyboard_layout_value(data)
+        return "us"
+
+    def _apply_keyboard_layout(self, value: str) -> None:
+        if shutil.which("setxkbmap") is None:
+            return
+        normalized = self._normalize_keyboard_layout_value(value)
+        parts = normalized.split(maxsplit=1)
+        command = ["setxkbmap", parts[0]]
+        if len(parts) > 1 and parts[1].strip():
+            command.extend(["-variant", parts[1].strip()])
+        run_bg(command)
 
     def _build_input_card(self) -> QWidget:
         card = QFrame()
@@ -5709,7 +6983,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Input")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Keyboard repeat, layout switching, touchpad preferences, and mouse feel.")
+        subtitle = QLabel(
+            "Keyboard repeat, layout switching, touchpad preferences, and mouse feel."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5722,33 +6998,124 @@ class SettingsWindow(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
-        self.input_keyboard_layout_input = QLineEdit(str(self.settings_state["input"].get("keyboard_layout", "us")))
-        self.input_keyboard_layout_input.setPlaceholderText("us, us intl, br")
-        layout.addWidget(SettingsRow(material_icon("language"), "Keyboard layout", "Layout passed to setxkbmap when you apply input settings.", self.icon_font, self.ui_font, self.input_keyboard_layout_input))
+        self.input_keyboard_layout_combo = QComboBox()
+        self.input_keyboard_layout_combo.setObjectName("settingsCombo")
+        self.input_keyboard_layout_combo.setEditable(True)
+        self.input_keyboard_layout_combo.setInsertPolicy(
+            QComboBox.InsertPolicy.NoInsert
+        )
+        self._keyboard_layout_label_to_value: dict[str, str] = {}
+        labels: list[str] = []
+        for label, layout_value in KEYBOARD_LAYOUT_PRESETS:
+            self.input_keyboard_layout_combo.addItem(label, layout_value)
+            self._keyboard_layout_label_to_value[label] = layout_value
+            labels.append(label)
+        completer_model = QStringListModel(labels, self)
+        self.input_keyboard_layout_completer = QCompleter(completer_model, self)
+        self.input_keyboard_layout_completer.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
+        self.input_keyboard_layout_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.input_keyboard_layout_combo.setCompleter(
+            self.input_keyboard_layout_completer
+        )
+        current_layout = self._normalize_keyboard_layout_value(
+            str(self.settings_state["input"].get("keyboard_layout", "us"))
+        )
+        current_index = self.input_keyboard_layout_combo.findData(current_layout)
+        if current_index >= 0:
+            self.input_keyboard_layout_combo.setCurrentIndex(current_index)
+        else:
+            self.input_keyboard_layout_combo.setCurrentText(current_layout)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("language"),
+                "Keyboard language",
+                "Choose a layout by language name. Hanauta saves and applies it to the current i3 session.",
+                self.icon_font,
+                self.ui_font,
+                self.input_keyboard_layout_combo,
+            )
+        )
 
-        self.input_repeat_delay_input = QLineEdit(str(int(self.settings_state["input"].get("repeat_delay_ms", 300))))
+        self.input_repeat_delay_input = QLineEdit(
+            str(int(self.settings_state["input"].get("repeat_delay_ms", 300)))
+        )
         self.input_repeat_delay_input.setValidator(QIntValidator(150, 1200, self))
         self.input_repeat_delay_input.setFixedWidth(96)
         self.input_repeat_delay_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("timer"), "Repeat delay (ms)", "How long the keyboard waits before repeating a held key.", self.icon_font, self.ui_font, self.input_repeat_delay_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("timer"),
+                "Repeat delay (ms)",
+                "How long the keyboard waits before repeating a held key.",
+                self.icon_font,
+                self.ui_font,
+                self.input_repeat_delay_input,
+            )
+        )
 
-        self.input_repeat_rate_input = QLineEdit(str(int(self.settings_state["input"].get("repeat_rate", 30))))
+        self.input_repeat_rate_input = QLineEdit(
+            str(int(self.settings_state["input"].get("repeat_rate", 30)))
+        )
         self.input_repeat_rate_input.setValidator(QIntValidator(10, 60, self))
         self.input_repeat_rate_input.setFixedWidth(96)
         self.input_repeat_rate_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("timer"), "Repeat rate", "Approximate repeat rate used with xset for keyboard repeats.", self.icon_font, self.ui_font, self.input_repeat_rate_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("timer"),
+                "Repeat rate",
+                "Approximate repeat rate used with xset for keyboard repeats.",
+                self.icon_font,
+                self.ui_font,
+                self.input_repeat_rate_input,
+            )
+        )
 
-        self.input_tap_to_click_switch = SwitchButton(bool(self.settings_state["input"].get("tap_to_click", True)))
-        layout.addWidget(SettingsRow(material_icon("widgets"), "Touchpad tap to click", "Save whether touchpad taps should act as left clicks.", self.icon_font, self.ui_font, self.input_tap_to_click_switch))
+        self.input_tap_to_click_switch = SwitchButton(
+            bool(self.settings_state["input"].get("tap_to_click", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Touchpad tap to click",
+                "Save whether touchpad taps should act as left clicks.",
+                self.icon_font,
+                self.ui_font,
+                self.input_tap_to_click_switch,
+            )
+        )
 
-        self.input_natural_scroll_switch = SwitchButton(bool(self.settings_state["input"].get("natural_scroll", False)))
-        layout.addWidget(SettingsRow(material_icon("flip"), "Natural scroll", "Prefer content-following scroll direction for touchpads and mice where supported.", self.icon_font, self.ui_font, self.input_natural_scroll_switch))
+        self.input_natural_scroll_switch = SwitchButton(
+            bool(self.settings_state["input"].get("natural_scroll", False))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Natural scroll",
+                "Prefer content-following scroll direction for touchpads and mice where supported.",
+                self.icon_font,
+                self.ui_font,
+                self.input_natural_scroll_switch,
+            )
+        )
 
-        self.input_mouse_accel_input = QLineEdit(str(int(self.settings_state["input"].get("mouse_accel", 0))))
+        self.input_mouse_accel_input = QLineEdit(
+            str(int(self.settings_state["input"].get("mouse_accel", 0)))
+        )
         self.input_mouse_accel_input.setValidator(QIntValidator(-10, 10, self))
         self.input_mouse_accel_input.setFixedWidth(96)
         self.input_mouse_accel_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("tune"), "Mouse acceleration", "Signed adjustment placeholder for your preferred mouse feel.", self.icon_font, self.ui_font, self.input_mouse_accel_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("tune"),
+                "Mouse acceleration",
+                "Signed adjustment placeholder for your preferred mouse feel.",
+                self.icon_font,
+                self.ui_font,
+                self.input_mouse_accel_input,
+            )
+        )
 
         self.input_status = QLabel("Input preferences are ready.")
         self.input_status.setWordWrap(True)
@@ -5778,7 +7145,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Startup")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("What the session should restore, how long it should wait, and whether extra hooks should watch the shell.")
+        subtitle = QLabel(
+            "What the session should restore, how long it should wait, and whether extra hooks should watch the shell."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5792,29 +7161,121 @@ class SettingsWindow(QWidget):
         layout.addLayout(header)
 
         startup_settings = self.settings_state["startup"]
-        self.startup_bar_switch = SwitchButton(bool(startup_settings.get("launch_bar", True)))
-        self.startup_dock_switch = SwitchButton(bool(startup_settings.get("launch_dock", True)))
-        self.startup_wallpaper_switch = SwitchButton(bool(startup_settings.get("restore_wallpaper", True)))
-        self.startup_displays_switch = SwitchButton(bool(startup_settings.get("restore_displays", True)))
-        self.startup_vpn_switch = SwitchButton(bool(startup_settings.get("restore_vpn", True)))
-        self.startup_restart_hooks_switch = SwitchButton(bool(startup_settings.get("restart_hooks_enabled", True)))
-        self.startup_watchdog_switch = SwitchButton(bool(startup_settings.get("watchdog_enabled", False)))
-        layout.addWidget(SettingsRow(material_icon("crop_square"), "Launch bar", "Remember that the PyQt bar should start with the session.", self.icon_font, self.ui_font, self.startup_bar_switch))
-        layout.addWidget(SettingsRow(material_icon("dock_to_left"), "Launch dock", "Remember that the PyQt dock should start with the session.", self.icon_font, self.ui_font, self.startup_dock_switch))
-        layout.addWidget(SettingsRow(material_icon("image"), "Restore wallpaper", "Reapply the saved wallpaper layout at startup.", self.icon_font, self.ui_font, self.startup_wallpaper_switch))
-        layout.addWidget(SettingsRow(material_icon("desktop_windows"), "Restore displays", "Reapply the saved display layout at startup.", self.icon_font, self.ui_font, self.startup_displays_switch))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Restore VPN", "Reconnect the preferred WireGuard tunnel when allowed.", self.icon_font, self.ui_font, self.startup_vpn_switch))
-        layout.addWidget(SettingsRow(material_icon("refresh"), "Restart hooks", "Persist whether restart-time helper hooks should be treated as enabled.", self.icon_font, self.ui_font, self.startup_restart_hooks_switch))
-        layout.addWidget(SettingsRow(material_icon("warning"), "Watchdogs", "Persist whether watchdog-style startup checks should be considered enabled.", self.icon_font, self.ui_font, self.startup_watchdog_switch))
+        self.startup_bar_switch = SwitchButton(
+            bool(startup_settings.get("launch_bar", True))
+        )
+        self.startup_dock_switch = SwitchButton(
+            bool(startup_settings.get("launch_dock", True))
+        )
+        self.startup_wallpaper_switch = SwitchButton(
+            bool(startup_settings.get("restore_wallpaper", True))
+        )
+        self.startup_displays_switch = SwitchButton(
+            bool(startup_settings.get("restore_displays", True))
+        )
+        self.startup_vpn_switch = SwitchButton(
+            bool(startup_settings.get("restore_vpn", True))
+        )
+        self.startup_restart_hooks_switch = SwitchButton(
+            bool(startup_settings.get("restart_hooks_enabled", True))
+        )
+        self.startup_watchdog_switch = SwitchButton(
+            bool(startup_settings.get("watchdog_enabled", False))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Launch bar",
+                "Remember that the PyQt bar should start with the session.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_bar_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("dock_to_left"),
+                "Launch dock",
+                "Remember that the PyQt dock should start with the session.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_dock_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("image"),
+                "Restore wallpaper",
+                "Reapply the saved wallpaper layout at startup.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_wallpaper_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("desktop_windows"),
+                "Restore displays",
+                "Reapply the saved display layout at startup.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_displays_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Restore VPN",
+                "Reconnect the preferred WireGuard tunnel when allowed.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_vpn_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Restart hooks",
+                "Persist whether restart-time helper hooks should be treated as enabled.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_restart_hooks_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("warning"),
+                "Watchdogs",
+                "Persist whether watchdog-style startup checks should be considered enabled.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_watchdog_switch,
+            )
+        )
 
-        self.startup_delay_input = QLineEdit(str(int(startup_settings.get("startup_delay_seconds", 0))))
+        self.startup_delay_input = QLineEdit(
+            str(int(startup_settings.get("startup_delay_seconds", 0)))
+        )
         self.startup_delay_input.setValidator(QIntValidator(0, 120, self))
         self.startup_delay_input.setFixedWidth(96)
         self.startup_delay_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("timer"), "Startup delay (sec)", "Optional delay before heavyweight startup work kicks in.", self.icon_font, self.ui_font, self.startup_delay_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("timer"),
+                "Startup delay (sec)",
+                "Optional delay before heavyweight startup work kicks in.",
+                self.icon_font,
+                self.ui_font,
+                self.startup_delay_input,
+            )
+        )
 
         startup_lines = startup_exec_lines()
-        startup_preview = "\n".join(startup_lines[:8]) if startup_lines else "No startup commands were detected."
+        startup_preview = (
+            "\n".join(startup_lines[:8])
+            if startup_lines
+            else "No startup commands were detected."
+        )
         self.startup_preview_label = QLabel(startup_preview)
         self.startup_preview_label.setWordWrap(True)
         self.startup_preview_label.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -5824,7 +7285,9 @@ class SettingsWindow(QWidget):
         buttons.setSpacing(8)
         open_button = QPushButton("Open startup.sh")
         open_button.setObjectName("secondaryButton")
-        open_button.clicked.connect(lambda: run_bg(["xdg-open", str(ROOT / "startup.sh")]))
+        open_button.clicked.connect(
+            lambda: run_bg(["xdg-open", str(ROOT / "startup.sh")])
+        )
         save_button = QPushButton("Save startup settings")
         save_button.setObjectName("primaryButton")
         save_button.clicked.connect(self._save_startup_settings)
@@ -5854,7 +7317,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Privacy")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Hide sensitive content, lock more aggressively, and soften what leaks during screenshots or screen sharing.")
+        subtitle = QLabel(
+            "Hide sensitive content, lock more aggressively, and soften what leaks during screenshots or screen sharing."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5868,16 +7333,71 @@ class SettingsWindow(QWidget):
         layout.addLayout(header)
 
         privacy = self.settings_state["privacy"]
-        self.privacy_lock_suspend_switch = SwitchButton(bool(privacy.get("lock_on_suspend", True)))
-        self.privacy_hide_content_switch = SwitchButton(bool(privacy.get("hide_notification_content_global", False)))
-        self.privacy_pause_share_switch = SwitchButton(bool(privacy.get("pause_notifications_while_sharing", True)))
-        self.privacy_screenshot_guard_switch = SwitchButton(bool(privacy.get("screenshot_guard_enabled", False)))
-        self.privacy_screen_share_guard_switch = SwitchButton(bool(privacy.get("screen_share_guard_enabled", True)))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Lock on suspend", "Remember that suspending the PC should be treated as a privacy boundary.", self.icon_font, self.ui_font, self.privacy_lock_suspend_switch))
-        layout.addWidget(SettingsRow(material_icon("visibility_off"), "Hide notification content globally", "Apply a privacy-first notification preference across Hanauta-owned alerts.", self.icon_font, self.ui_font, self.privacy_hide_content_switch))
-        layout.addWidget(SettingsRow(material_icon("videocam"), "Pause while sharing", "Prefer muting or softening notifications while screen sharing.", self.icon_font, self.ui_font, self.privacy_pause_share_switch))
-        layout.addWidget(SettingsRow(material_icon("photo_library"), "Screenshot guard", "Remember a preference to hide or reduce sensitive surfaces during screenshots.", self.icon_font, self.ui_font, self.privacy_screenshot_guard_switch))
-        layout.addWidget(SettingsRow(material_icon("shield"), "Screen-share safeguard", "Keep the stronger privacy preference when screen-sharing tools are active.", self.icon_font, self.ui_font, self.privacy_screen_share_guard_switch))
+        self.privacy_lock_suspend_switch = SwitchButton(
+            bool(privacy.get("lock_on_suspend", True))
+        )
+        self.privacy_hide_content_switch = SwitchButton(
+            bool(privacy.get("hide_notification_content_global", False))
+        )
+        self.privacy_pause_share_switch = SwitchButton(
+            bool(privacy.get("pause_notifications_while_sharing", True))
+        )
+        self.privacy_screenshot_guard_switch = SwitchButton(
+            bool(privacy.get("screenshot_guard_enabled", False))
+        )
+        self.privacy_screen_share_guard_switch = SwitchButton(
+            bool(privacy.get("screen_share_guard_enabled", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Lock on suspend",
+                "Remember that suspending the PC should be treated as a privacy boundary.",
+                self.icon_font,
+                self.ui_font,
+                self.privacy_lock_suspend_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("visibility_off"),
+                "Hide notification content globally",
+                "Apply a privacy-first notification preference across Hanauta-owned alerts.",
+                self.icon_font,
+                self.ui_font,
+                self.privacy_hide_content_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("videocam"),
+                "Pause while sharing",
+                "Prefer muting or softening notifications while screen sharing.",
+                self.icon_font,
+                self.ui_font,
+                self.privacy_pause_share_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("photo_library"),
+                "Screenshot guard",
+                "Remember a preference to hide or reduce sensitive surfaces during screenshots.",
+                self.icon_font,
+                self.ui_font,
+                self.privacy_screenshot_guard_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("shield"),
+                "Screen-share safeguard",
+                "Keep the stronger privacy preference when screen-sharing tools are active.",
+                self.icon_font,
+                self.ui_font,
+                self.privacy_screen_share_guard_switch,
+            )
+        )
 
         self.privacy_status = QLabel("Privacy preferences are ready.")
         self.privacy_status.setWordWrap(True)
@@ -5904,7 +7424,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Networking")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Preferred Wi-Fi and VPN interfaces, reconnect behavior, and split-tunnel notes.")
+        subtitle = QLabel(
+            "Preferred Wi-Fi and VPN interfaces, reconnect behavior, and split-tunnel notes."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5922,33 +7444,103 @@ class SettingsWindow(QWidget):
         self.networking_wifi_combo.addItem("Automatic", "")
         for iface in list_wifi_interfaces():
             self.networking_wifi_combo.addItem(iface, iface)
-        wifi_pref = str(self.settings_state["networking"].get("preferred_wifi_interface", ""))
+        wifi_pref = str(
+            self.settings_state["networking"].get("preferred_wifi_interface", "")
+        )
         wifi_idx = self.networking_wifi_combo.findData(wifi_pref)
         self.networking_wifi_combo.setCurrentIndex(max(0, wifi_idx))
-        layout.addWidget(SettingsRow(material_icon("public"), "Preferred Wi-Fi interface", "Prefer one wireless interface when multiple are available.", self.icon_font, self.ui_font, self.networking_wifi_combo))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "Preferred Wi-Fi interface",
+                "Prefer one wireless interface when multiple are available.",
+                self.icon_font,
+                self.ui_font,
+                self.networking_wifi_combo,
+            )
+        )
 
-        self.networking_wifi_autoconnect_switch = SwitchButton(bool(self.settings_state["networking"].get("wifi_autoconnect", True)))
-        layout.addWidget(SettingsRow(material_icon("refresh"), "Wi-Fi autoconnect", "Remember whether Wi-Fi should reconnect automatically when possible.", self.icon_font, self.ui_font, self.networking_wifi_autoconnect_switch))
+        self.networking_wifi_autoconnect_switch = SwitchButton(
+            bool(self.settings_state["networking"].get("wifi_autoconnect", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Wi-Fi autoconnect",
+                "Remember whether Wi-Fi should reconnect automatically when possible.",
+                self.icon_font,
+                self.ui_font,
+                self.networking_wifi_autoconnect_switch,
+            )
+        )
 
         self.networking_wg_combo = QComboBox()
         self.networking_wg_combo.setObjectName("settingsCombo")
         self.networking_wg_combo.addItem("Automatic", "")
         for iface in list_wireguard_interfaces():
             self.networking_wg_combo.addItem(iface, iface)
-        wg_pref = str(self.settings_state["networking"].get("preferred_wireguard_interface", self.settings_state["services"].get("vpn_control", {}).get("preferred_interface", "")))
+        wg_pref = str(
+            self.settings_state["networking"].get(
+                "preferred_wireguard_interface",
+                self.settings_state["services"]
+                .get("vpn_control", {})
+                .get("preferred_interface", ""),
+            )
+        )
         wg_idx = self.networking_wg_combo.findData(wg_pref)
         self.networking_wg_combo.setCurrentIndex(max(0, wg_idx))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Preferred WireGuard interface", "Keep one tunnel selected for reconnect actions and the VPN widget.", self.icon_font, self.ui_font, self.networking_wg_combo))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Preferred WireGuard interface",
+                "Keep one tunnel selected for reconnect actions and the VPN widget.",
+                self.icon_font,
+                self.ui_font,
+                self.networking_wg_combo,
+            )
+        )
 
-        vpn_reconnect = bool(self.settings_state["networking"].get("vpn_reconnect_on_login", self.settings_state["services"].get("vpn_control", {}).get("reconnect_on_login", False)))
+        vpn_reconnect = bool(
+            self.settings_state["networking"].get(
+                "vpn_reconnect_on_login",
+                self.settings_state["services"]
+                .get("vpn_control", {})
+                .get("reconnect_on_login", False),
+            )
+        )
         self.networking_vpn_reconnect_switch = SwitchButton(vpn_reconnect)
-        layout.addWidget(SettingsRow(material_icon("refresh"), "Reconnect VPN on login", "Restore the preferred WireGuard tunnel at session start when enabled.", self.icon_font, self.ui_font, self.networking_vpn_reconnect_switch))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Reconnect VPN on login",
+                "Restore the preferred WireGuard tunnel at session start when enabled.",
+                self.icon_font,
+                self.ui_font,
+                self.networking_vpn_reconnect_switch,
+            )
+        )
 
-        split_tunnel = self.settings_state["networking"].get("split_tunnel_apps", self.settings_state["services"].get("vpn_control", {}).get("split_tunnel_apps", []))
-        split_tunnel_text = ", ".join([str(item).strip() for item in split_tunnel if str(item).strip()])
+        split_tunnel = self.settings_state["networking"].get(
+            "split_tunnel_apps",
+            self.settings_state["services"]
+            .get("vpn_control", {})
+            .get("split_tunnel_apps", []),
+        )
+        split_tunnel_text = ", ".join(
+            [str(item).strip() for item in split_tunnel if str(item).strip()]
+        )
         self.networking_split_tunnel_input = QLineEdit(split_tunnel_text)
         self.networking_split_tunnel_input.setPlaceholderText("discord, steam, firefox")
-        layout.addWidget(SettingsRow(material_icon("hub"), "Split-tunnel apps", "Comma-separated app names or desktop ids to remember for future VPN routing work.", self.icon_font, self.ui_font, self.networking_split_tunnel_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("hub"),
+                "Split-tunnel apps",
+                "Comma-separated app names or desktop ids to remember for future VPN routing work.",
+                self.icon_font,
+                self.ui_font,
+                self.networking_split_tunnel_input,
+            )
+        )
 
         self.networking_status = QLabel("Networking preferences are ready.")
         self.networking_status.setWordWrap(True)
@@ -5975,7 +7567,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Storage")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Cache sizes, cleanup policies, wallpaper source data, and temporary Hanauta state.")
+        subtitle = QLabel(
+            "Cache sizes, cleanup policies, wallpaper source data, and temporary Hanauta state."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         title_wrap = QVBoxLayout()
@@ -5988,27 +7582,75 @@ class SettingsWindow(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
-        self.storage_cache_cleanup_days_input = QLineEdit(str(int(self.settings_state["storage"].get("wallpaper_cache_cleanup_days", 30))))
+        self.storage_cache_cleanup_days_input = QLineEdit(
+            str(
+                int(
+                    self.settings_state["storage"].get(
+                        "wallpaper_cache_cleanup_days", 30
+                    )
+                )
+            )
+        )
         self.storage_cache_cleanup_days_input.setValidator(QIntValidator(1, 365, self))
         self.storage_cache_cleanup_days_input.setFixedWidth(96)
         self.storage_cache_cleanup_days_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("image"), "Wallpaper cache cleanup days", "Preferred retention window for wallpaper source caches and rendered wallpaper assets.", self.icon_font, self.ui_font, self.storage_cache_cleanup_days_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("image"),
+                "Wallpaper cache cleanup days",
+                "Preferred retention window for wallpaper source caches and rendered wallpaper assets.",
+                self.icon_font,
+                self.ui_font,
+                self.storage_cache_cleanup_days_input,
+            )
+        )
 
-        self.storage_log_retention_days_input = QLineEdit(str(int(self.settings_state["storage"].get("log_retention_days", 14))))
+        self.storage_log_retention_days_input = QLineEdit(
+            str(int(self.settings_state["storage"].get("log_retention_days", 14)))
+        )
         self.storage_log_retention_days_input.setValidator(QIntValidator(1, 365, self))
         self.storage_log_retention_days_input.setFixedWidth(96)
         self.storage_log_retention_days_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(SettingsRow(material_icon("schedule"), "Log retention days", "Preferred retention window for Hanauta logs and debugging traces.", self.icon_font, self.ui_font, self.storage_log_retention_days_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Log retention days",
+                "Preferred retention window for Hanauta logs and debugging traces.",
+                self.icon_font,
+                self.ui_font,
+                self.storage_log_retention_days_input,
+            )
+        )
 
-        self.storage_clean_temp_switch = SwitchButton(bool(self.settings_state["storage"].get("clean_temp_state_on_startup", False)))
-        layout.addWidget(SettingsRow(material_icon("refresh"), "Clean temp state on startup", "Remember whether short-lived cache and temp state should be cleaned when the session boots.", self.icon_font, self.ui_font, self.storage_clean_temp_switch))
+        self.storage_clean_temp_switch = SwitchButton(
+            bool(
+                self.settings_state["storage"].get("clean_temp_state_on_startup", False)
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Clean temp state on startup",
+                "Remember whether short-lived cache and temp state should be cleaned when the session boots.",
+                self.icon_font,
+                self.ui_font,
+                self.storage_clean_temp_switch,
+            )
+        )
 
         self.storage_metrics: dict[str, QLabel] = {}
         metrics_grid = QGridLayout()
         metrics_grid.setContentsMargins(0, 0, 0, 0)
         metrics_grid.setHorizontalSpacing(10)
         metrics_grid.setVerticalSpacing(10)
-        for index, key in enumerate(("Wallpaper Source Cache", "Rendered Wallpapers", "Mail Attachments", "State Root")):
+        for index, key in enumerate(
+            (
+                "Wallpaper Source Cache",
+                "Rendered Wallpapers",
+                "Mail Attachments",
+                "State Root",
+            )
+        ):
             label = QLabel("...")
             label.setFont(QFont(self.ui_font, 10))
             label.setStyleSheet("color: #FFFFFF;")
@@ -6035,7 +7677,12 @@ class SettingsWindow(QWidget):
         save_button = QPushButton("Save storage settings")
         save_button.setObjectName("primaryButton")
         save_button.clicked.connect(self._save_storage_settings)
-        for button in (refresh_button, clear_wallpaper_button, clear_temp_button, save_button):
+        for button in (
+            refresh_button,
+            clear_wallpaper_button,
+            clear_temp_button,
+            save_button,
+        ):
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         buttons.addWidget(refresh_button)
         buttons.addWidget(clear_wallpaper_button)
@@ -6084,7 +7731,9 @@ class SettingsWindow(QWidget):
                     encoding = ""
                 if encoding and "." not in detected_locale:
                     detected_locale = f"{detected_locale}.{encoding}"
-        self.region_locale_input = QLineEdit(self.settings_state["region"].get("locale_code", detected_locale))
+        self.region_locale_input = QLineEdit(
+            self.settings_state["region"].get("locale_code", detected_locale)
+        )
         self.region_locale_input.setPlaceholderText(detected_locale or "en_US.UTF-8")
         layout.addWidget(
             SettingsRow(
@@ -6097,7 +7746,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.region_24h_switch = SwitchButton(bool(self.settings_state["region"].get("use_24_hour", False)))
+        self.region_24h_switch = SwitchButton(
+            bool(self.settings_state["region"].get("use_24_hour", False))
+        )
         self.region_24h_switch.toggledValue.connect(self._set_region_use_24_hour)
         layout.addWidget(
             SettingsRow(
@@ -6118,7 +7769,9 @@ class SettingsWindow(QWidget):
         current_date_style = str(self.settings_state["region"].get("date_style", "us"))
         date_style_index = self.region_date_style_combo.findData(current_date_style)
         self.region_date_style_combo.setCurrentIndex(max(0, date_style_index))
-        self.region_date_style_combo.currentIndexChanged.connect(self._set_region_date_style)
+        self.region_date_style_combo.currentIndexChanged.connect(
+            self._set_region_date_style
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("calendar_month"),
@@ -6134,10 +7787,14 @@ class SettingsWindow(QWidget):
         self.region_temperature_combo.setObjectName("settingsCombo")
         self.region_temperature_combo.addItem("Celsius", "c")
         self.region_temperature_combo.addItem("Fahrenheit", "f")
-        current_temp_style = str(self.settings_state["region"].get("temperature_unit", "c"))
+        current_temp_style = str(
+            self.settings_state["region"].get("temperature_unit", "c")
+        )
         temp_style_index = self.region_temperature_combo.findData(current_temp_style)
         self.region_temperature_combo.setCurrentIndex(max(0, temp_style_index))
-        self.region_temperature_combo.currentIndexChanged.connect(self._set_region_temperature_unit)
+        self.region_temperature_combo.currentIndexChanged.connect(
+            self._set_region_temperature_unit
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("partly_cloudy_day"),
@@ -6149,14 +7806,18 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.region_location_input = QLineEdit(self.settings_state["weather"].get("name", ""))
+        self.region_location_input = QLineEdit(
+            self.settings_state["weather"].get("name", "")
+        )
         if self._selected_weather_city is not None:
             self.region_location_input.setText(self._selected_weather_city.label)
         self.region_location_input.setPlaceholderText("Type a city, region, or country")
         self.region_location_input.textEdited.connect(self._queue_weather_city_search)
         self.region_location_model = QStringListModel(self)
         self.region_location_completer = QCompleter(self.region_location_model, self)
-        self.region_location_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.region_location_completer.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
         self.region_location_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.region_location_completer.activated[str].connect(self._select_weather_city)
         self.region_location_input.setCompleter(self.region_location_completer)
@@ -6185,7 +7846,9 @@ class SettingsWindow(QWidget):
 
         self.region_location_button = QPushButton("Save shared location")
         self.region_location_button.setObjectName("primaryButton")
-        self.region_location_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.region_location_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.region_location_button.clicked.connect(self._save_weather_settings)
         layout.addWidget(self.region_location_button, 0, Qt.AlignmentFlag.AlignLeft)
 
@@ -6209,7 +7872,9 @@ class SettingsWindow(QWidget):
         title = QLabel("Marketplace")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Discover modular Hanauta services from one or more GitHub catalogs, or install private plugins from local ZIP bundles.")
+        subtitle = QLabel(
+            "Discover modular Hanauta services from one or more GitHub catalogs, or install private plugins from local ZIP bundles."
+        )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         subtitle.setWordWrap(True)
@@ -6224,8 +7889,16 @@ class SettingsWindow(QWidget):
         layout.addLayout(header)
 
         marketplace = self.settings_state.setdefault("marketplace", {})
-        self.marketplace_repo_input = QLineEdit(str(marketplace.get("catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins")))
-        self.marketplace_repo_input.setPlaceholderText("https://github.com/gab-luz/hanauta-plugins")
+        self.marketplace_repo_input = QLineEdit(
+            str(
+                marketplace.get(
+                    "catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins"
+                )
+            )
+        )
+        self.marketplace_repo_input.setPlaceholderText(
+            "https://github.com/gab-luz/hanauta-plugins"
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("public"),
@@ -6237,7 +7910,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.marketplace_branch_input = QLineEdit(str(marketplace.get("catalog_branch", "main")))
+        self.marketplace_branch_input = QLineEdit(
+            str(marketplace.get("catalog_branch", "main"))
+        )
         self.marketplace_branch_input.setPlaceholderText("main")
         layout.addWidget(
             SettingsRow(
@@ -6250,7 +7925,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.marketplace_manifest_input = QLineEdit(str(marketplace.get("catalog_manifest_path", "plugins.json")))
+        self.marketplace_manifest_input = QLineEdit(
+            str(marketplace.get("catalog_manifest_path", "plugins.json"))
+        )
         self.marketplace_manifest_input.setPlaceholderText("plugins.json")
         layout.addWidget(
             SettingsRow(
@@ -6273,7 +7950,10 @@ class SettingsWindow(QWidget):
                 if not repo_url:
                     continue
                 branch = str(row.get("branch", "main")).strip() or "main"
-                manifest_path = str(row.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
+                manifest_path = (
+                    str(row.get("manifest_path", "plugins.json")).strip().lstrip("/")
+                    or "plugins.json"
+                )
                 source_lines.append(f"{repo_url} | {branch} | {manifest_path}")
         self.marketplace_sources_input = QPlainTextEdit("\n".join(source_lines))
         self.marketplace_sources_input.setPlaceholderText(
@@ -6291,8 +7971,12 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.marketplace_install_dir_input = QLineEdit(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))))
-        self.marketplace_install_dir_input.setPlaceholderText(str(ROOT / "hanauta" / "plugins"))
+        self.marketplace_install_dir_input = QLineEdit(
+            str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))
+        )
+        self.marketplace_install_dir_input.setPlaceholderText(
+            str(ROOT / "hanauta" / "plugins")
+        )
         install_dir_row = QWidget()
         install_dir_layout = QHBoxLayout(install_dir_row)
         install_dir_layout.setContentsMargins(0, 0, 0, 0)
@@ -6300,8 +7984,12 @@ class SettingsWindow(QWidget):
         install_dir_layout.addWidget(self.marketplace_install_dir_input, 1)
         self.marketplace_choose_dir_button = QPushButton("Choose")
         self.marketplace_choose_dir_button.setObjectName("secondaryButton")
-        self.marketplace_choose_dir_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.marketplace_choose_dir_button.clicked.connect(self._marketplace_choose_install_dir)
+        self.marketplace_choose_dir_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.marketplace_choose_dir_button.clicked.connect(
+            self._marketplace_choose_install_dir
+        )
         install_dir_layout.addWidget(self.marketplace_choose_dir_button)
         layout.addWidget(
             SettingsRow(
@@ -6335,10 +8023,18 @@ class SettingsWindow(QWidget):
         ):
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.marketplace_save_button.clicked.connect(self._marketplace_save_settings)
-        self.marketplace_refresh_button.clicked.connect(self._marketplace_refresh_catalog)
-        self.marketplace_install_button.clicked.connect(self._marketplace_install_selected)
-        self.marketplace_install_zip_button.clicked.connect(self._marketplace_install_zip)
-        self.marketplace_open_dir_button.clicked.connect(self._marketplace_open_install_dir)
+        self.marketplace_refresh_button.clicked.connect(
+            self._marketplace_refresh_catalog
+        )
+        self.marketplace_install_button.clicked.connect(
+            self._marketplace_install_selected
+        )
+        self.marketplace_install_zip_button.clicked.connect(
+            self._marketplace_install_zip
+        )
+        self.marketplace_open_dir_button.clicked.connect(
+            self._marketplace_open_install_dir
+        )
         actions.addWidget(self.marketplace_save_button)
         actions.addWidget(self.marketplace_refresh_button)
         actions.addWidget(self.marketplace_install_button)
@@ -6363,13 +8059,19 @@ class SettingsWindow(QWidget):
         catalog_layout.addWidget(catalog_title)
         catalog_layout.addWidget(catalog_subtitle)
         self.marketplace_search_input = QLineEdit()
-        self.marketplace_search_input.setPlaceholderText("Search plugins by name, id, or description")
-        self.marketplace_search_input.textChanged.connect(self._marketplace_filter_catalog)
+        self.marketplace_search_input.setPlaceholderText(
+            "Search plugins by name, id, or description"
+        )
+        self.marketplace_search_input.textChanged.connect(
+            self._marketplace_filter_catalog
+        )
         catalog_layout.addWidget(self.marketplace_search_input)
 
         self.marketplace_plugin_list = QListWidget()
         self.marketplace_plugin_list.setObjectName("marketplacePluginList")
-        self.marketplace_plugin_list.currentItemChanged.connect(self._marketplace_update_details)
+        self.marketplace_plugin_list.currentItemChanged.connect(
+            self._marketplace_update_details
+        )
         self.marketplace_plugin_list.setMinimumHeight(250)
         self.marketplace_plugin_list.setAlternatingRowColors(False)
         self.marketplace_plugin_list.setUniformItemSizes(False)
@@ -6385,7 +8087,9 @@ class SettingsWindow(QWidget):
         detail_title.setObjectName("marketplacePanelTitle")
         detail_layout.addWidget(detail_title)
 
-        self.marketplace_detail_label = QLabel("Select a plugin from the catalog to inspect installation details.")
+        self.marketplace_detail_label = QLabel(
+            "Select a plugin from the catalog to inspect installation details."
+        )
         self.marketplace_detail_label.setObjectName("marketplaceDetailText")
         self.marketplace_detail_label.setWordWrap(True)
         detail_layout.addWidget(self.marketplace_detail_label)
@@ -6420,20 +8124,42 @@ class SettingsWindow(QWidget):
         warnings: list[str] = []
         permissions = row.get("permissions", {})
         if isinstance(permissions, dict) and permissions:
-            warnings.append("Declared permissions: " + ", ".join(sorted(str(key).strip() for key in permissions.keys() if str(key).strip())))
+            warnings.append(
+                "Declared permissions: "
+                + ", ".join(
+                    sorted(
+                        str(key).strip()
+                        for key in permissions.keys()
+                        if str(key).strip()
+                    )
+                )
+            )
         capabilities = row.get("capabilities", [])
         capability_list: list[str] = []
         if isinstance(capabilities, dict):
-            capability_list = [str(key).strip() for key, enabled in capabilities.items() if str(key).strip() and bool(enabled)]
+            capability_list = [
+                str(key).strip()
+                for key, enabled in capabilities.items()
+                if str(key).strip() and bool(enabled)
+            ]
         elif isinstance(capabilities, list):
-            capability_list = [str(value).strip() for value in capabilities if str(value).strip()]
+            capability_list = [
+                str(value).strip() for value in capabilities if str(value).strip()
+            ]
         if "polkit" in capability_list:
-            warnings.append("This plugin may request elevated privileges through Polkit (pkexec).")
-        if "fullscreen_alert" in capability_list or "fullscreen_overlay" in capability_list:
+            warnings.append(
+                "This plugin may request elevated privileges through Polkit (pkexec)."
+            )
+        if (
+            "fullscreen_alert" in capability_list
+            or "fullscreen_overlay" in capability_list
+        ):
             warnings.append("This plugin may show fullscreen alerts/overlays.")
         requirements = row.get("requirements", [])
         if isinstance(requirements, list):
-            req_list = [str(value).strip() for value in requirements if str(value).strip()]
+            req_list = [
+                str(value).strip() for value in requirements if str(value).strip()
+            ]
             if req_list:
                 warnings.append("Runtime requirements: " + ", ".join(req_list))
         return "\n".join(warnings).strip()
@@ -6458,7 +8184,13 @@ class SettingsWindow(QWidget):
         normalized = key.strip().lower()
         candidates: list[str] = []
         if normalized in {"polkit", "privileged", "root", "systemd"}:
-            candidates.extend(["permission-polkit.svg", "permission-systemd.svg", "permission-privileged.svg"])
+            candidates.extend(
+                [
+                    "permission-polkit.svg",
+                    "permission-systemd.svg",
+                    "permission-privileged.svg",
+                ]
+            )
         elif normalized in {"hosts", "fs_hosts", "filesystem", "files"}:
             candidates.extend(["permission-fs-hosts.svg", "permission-filesystem.svg"])
         elif normalized in {"network", "vpn", "dns"}:
@@ -6478,7 +8210,9 @@ class SettingsWindow(QWidget):
                 return path
         return None
 
-    def _marketplace_permission_items(self, plugin: dict[str, object], manifest: dict[str, object] | None = None) -> list[dict[str, str]]:
+    def _marketplace_permission_items(
+        self, plugin: dict[str, object], manifest: dict[str, object] | None = None
+    ) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
         permissions = plugin.get("permissions", {})
         if isinstance(permissions, dict):
@@ -6495,9 +8229,15 @@ class SettingsWindow(QWidget):
         capabilities = plugin.get("capabilities", [])
         capability_list: list[str] = []
         if isinstance(capabilities, dict):
-            capability_list = [str(key).strip() for key, enabled in capabilities.items() if str(key).strip() and bool(enabled)]
+            capability_list = [
+                str(key).strip()
+                for key, enabled in capabilities.items()
+                if str(key).strip() and bool(enabled)
+            ]
         elif isinstance(capabilities, list):
-            capability_list = [str(value).strip() for value in capabilities if str(value).strip()]
+            capability_list = [
+                str(value).strip() for value in capabilities if str(value).strip()
+            ]
         for capability in capability_list:
             if capability in {"polkit", "fullscreen_alert", "fullscreen_overlay"}:
                 description = (
@@ -6527,7 +8267,8 @@ class SettingsWindow(QWidget):
                         {
                             "key": key,
                             "label": label or key.replace("_", " ").title(),
-                            "description": description or "Requested by plugin install manifest.",
+                            "description": description
+                            or "Requested by plugin install manifest.",
                         }
                     )
             i3_changes = manifest.get("i3_changes", [])
@@ -6620,7 +8361,9 @@ class SettingsWindow(QWidget):
         title.setStyleSheet("color: rgba(246,235,247,0.92);")
         layout.addWidget(title)
 
-        body = QLabel(intro_text.strip() or "This plugin requests runtime/system permissions.")
+        body = QLabel(
+            intro_text.strip() or "This plugin requests runtime/system permissions."
+        )
         body.setWordWrap(True)
         body.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(body)
@@ -6639,12 +8382,25 @@ class SettingsWindow(QWidget):
                 icon_label.setFixedSize(24, 24)
                 icon_label.setFixedWidth(24)
                 icon_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-                icon_path = self._permission_icon_asset_for_key(str(item.get("key", "")))
-                icon_pixmap = QPixmap(str(icon_path)) if icon_path is not None else QPixmap()
+                icon_path = self._permission_icon_asset_for_key(
+                    str(item.get("key", ""))
+                )
+                icon_pixmap = (
+                    QPixmap(str(icon_path)) if icon_path is not None else QPixmap()
+                )
                 if not icon_pixmap.isNull():
-                    icon_label.setPixmap(icon_pixmap.scaled(20, 20, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                    icon_label.setPixmap(
+                        icon_pixmap.scaled(
+                            20,
+                            20,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
                 else:
-                    icon_label.setText(self._permission_icon_for_key(str(item.get("key", ""))))
+                    icon_label.setText(
+                        self._permission_icon_for_key(str(item.get("key", "")))
+                    )
                     icon_label.setFont(QFont(self.icon_font, 14))
                 text = QLabel(
                     f"{str(item.get('label', 'Permission'))}\n{str(item.get('description', '')).strip() or 'Requested by plugin.'}"
@@ -6698,7 +8454,9 @@ class SettingsWindow(QWidget):
             return {}
         return payload if isinstance(payload, dict) else {}
 
-    def _save_plugin_install_receipt(self, plugin_id: str, payload: dict[str, object]) -> None:
+    def _save_plugin_install_receipt(
+        self, plugin_id: str, payload: dict[str, object]
+    ) -> None:
         receipt_path = self._plugin_install_receipt_file(plugin_id)
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         receipt_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -6716,7 +8474,9 @@ class SettingsWindow(QWidget):
         except Exception:
             pass
 
-    def _render_desktop_entry(self, entry: dict[str, object], plugin_dir: Path) -> tuple[str, str]:
+    def _render_desktop_entry(
+        self, entry: dict[str, object], plugin_dir: Path
+    ) -> tuple[str, str]:
         desktop_id = str(entry.get("id", "")).strip()
         if not desktop_id:
             desktop_id = f"{plugin_dir.name}.desktop"
@@ -6728,19 +8488,27 @@ class SettingsWindow(QWidget):
         categories = entry.get("categories", ["Utility"])
         if not isinstance(categories, list):
             categories = ["Utility"]
-        categories_str = ";".join(str(value).strip() for value in categories if str(value).strip())
+        categories_str = ";".join(
+            str(value).strip() for value in categories if str(value).strip()
+        )
         if categories_str and not categories_str.endswith(";"):
             categories_str += ";"
         exec_value = ""
         raw_exec = entry.get("exec", [])
         if isinstance(raw_exec, list):
-            parts = [str(value).replace("${PLUGIN_DIR}", str(plugin_dir)).strip() for value in raw_exec if str(value).strip()]
+            parts = [
+                str(value).replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
+                for value in raw_exec
+                if str(value).strip()
+            ]
             exec_value = " ".join(parts)
         elif isinstance(raw_exec, str):
             exec_value = raw_exec.replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
         if not exec_value:
             exec_value = f"python3 {plugin_dir / 'hanauta_plugin.py'}"
-        icon = str(entry.get("icon", "")).replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
+        icon = (
+            str(entry.get("icon", "")).replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
+        )
         body = [
             "[Desktop Entry]",
             "Type=Application",
@@ -6755,7 +8523,9 @@ class SettingsWindow(QWidget):
         body.append("")
         return desktop_id, "\n".join(body)
 
-    def _apply_plugin_desktop_entries(self, plugin_id: str, plugin_dir: Path, manifest: dict[str, object]) -> list[dict[str, object]]:
+    def _apply_plugin_desktop_entries(
+        self, plugin_id: str, plugin_dir: Path, manifest: dict[str, object]
+    ) -> list[dict[str, object]]:
         actions: list[dict[str, object]] = []
         desktop_entries = manifest.get("desktop_entries", [])
         if not isinstance(desktop_entries, list) or not desktop_entries:
@@ -6792,7 +8562,9 @@ class SettingsWindow(QWidget):
             )
         return actions
 
-    def _resolve_privileged_install_command(self, plugin_dir: Path, manifest: dict[str, object]) -> list[str]:
+    def _resolve_privileged_install_command(
+        self, plugin_dir: Path, manifest: dict[str, object]
+    ) -> list[str]:
         install = manifest.get("privileged_install", {})
         if isinstance(install, dict):
             command = install.get("command", [])
@@ -6809,7 +8581,9 @@ class SettingsWindow(QWidget):
             return ["bash", str(fallback)]
         return []
 
-    def _resolve_privileged_uninstall_command(self, plugin_dir: Path, manifest: dict[str, object]) -> list[str]:
+    def _resolve_privileged_uninstall_command(
+        self, plugin_dir: Path, manifest: dict[str, object]
+    ) -> list[str]:
         uninstall = manifest.get("privileged_uninstall", {})
         if isinstance(uninstall, dict):
             command = uninstall.get("command", [])
@@ -6826,7 +8600,9 @@ class SettingsWindow(QWidget):
             return ["bash", str(fallback)]
         return []
 
-    def _revert_plugin_desktop_entries(self, plugin_id: str, receipt: dict[str, object]) -> None:
+    def _revert_plugin_desktop_entries(
+        self, plugin_id: str, receipt: dict[str, object]
+    ) -> None:
         entries = receipt.get("desktop_entries", [])
         if not isinstance(entries, list):
             return
@@ -6853,10 +8629,14 @@ class SettingsWindow(QWidget):
             except Exception:
                 continue
 
-    def _run_plugin_post_install_steps(self, plugin: dict[str, object], target_dir: Path) -> bool:
+    def _run_plugin_post_install_steps(
+        self, plugin: dict[str, object], target_dir: Path
+    ) -> bool:
         plugin_id = str(plugin.get("id", target_dir.name)).strip() or target_dir.name
         manifest = self._load_plugin_install_manifest(target_dir)
-        permission_items = self._marketplace_permission_items(plugin, manifest if manifest else None)
+        permission_items = self._marketplace_permission_items(
+            plugin, manifest if manifest else None
+        )
         if permission_items:
             accepted = self._marketplace_show_permission_dialog(
                 plugin_name=str(plugin.get("name", plugin.get("id", "Plugin"))),
@@ -6865,12 +8645,16 @@ class SettingsWindow(QWidget):
                 confirm_label="Proceed",
             )
             if not accepted:
-                self.marketplace_status.setText("Install paused: permission review was not approved.")
+                self.marketplace_status.setText(
+                    "Install paused: permission review was not approved."
+                )
                 return False
 
         desktop_actions: list[dict[str, object]] = []
         if manifest:
-            desktop_actions = self._apply_plugin_desktop_entries(plugin_id, target_dir, manifest)
+            desktop_actions = self._apply_plugin_desktop_entries(
+                plugin_id, target_dir, manifest
+            )
 
         requires_privileged = bool(manifest.get("requires_privileged_install", False))
         has_systemd_unit = bool(list((target_dir / "systemd").glob("*.service")))
@@ -6889,7 +8673,9 @@ class SettingsWindow(QWidget):
 
         command = self._resolve_privileged_install_command(target_dir, manifest)
         if not command:
-            self.marketplace_status.setText("Plugin install completed, but no privileged install command was found.")
+            self.marketplace_status.setText(
+                "Plugin install completed, but no privileged install command was found."
+            )
             self._save_plugin_install_receipt(
                 plugin_id,
                 {
@@ -6925,7 +8711,8 @@ class SettingsWindow(QWidget):
                 "This plugin needs privileged setup to install or update systemd services and protected files. "
                 "Continuing will show a Polkit authentication prompt."
             ),
-            permission_items=permission_items or [
+            permission_items=permission_items
+            or [
                 {
                     "key": "privileged",
                     "label": "Privileged Install",
@@ -6935,7 +8722,9 @@ class SettingsWindow(QWidget):
             confirm_label="Continue to Polkit",
         )
         if not accepted:
-            self.marketplace_status.setText("Plugin installed. Privileged setup was skipped.")
+            self.marketplace_status.setText(
+                "Plugin installed. Privileged setup was skipped."
+            )
             return True
 
         ok = run_with_polkit(command, detached=False, timeout=180)
@@ -6962,7 +8751,9 @@ class SettingsWindow(QWidget):
         return True
 
     def _installed_plugin_entry_by_id(self, plugin_id: str) -> dict[str, object] | None:
-        installed = self.settings_state.get("marketplace", {}).get("installed_plugins", [])
+        installed = self.settings_state.get("marketplace", {}).get(
+            "installed_plugins", []
+        )
         if not isinstance(installed, list):
             return None
         for row in installed:
@@ -6975,7 +8766,11 @@ class SettingsWindow(QWidget):
     def _uninstall_plugin_from_services(self, plugin_id: str, plugin_name: str) -> None:
         row = self._installed_plugin_entry_by_id(plugin_id)
         if row is None:
-            QMessageBox.information(self, "Plugin Not Installed", f"{plugin_name} is not tracked as an installed plugin.")
+            QMessageBox.information(
+                self,
+                "Plugin Not Installed",
+                f"{plugin_name} is not tracked as an installed plugin.",
+            )
             return
         answer = QMessageBox.question(
             self,
@@ -6988,12 +8783,20 @@ class SettingsWindow(QWidget):
             return
         install_path = Path(str(row.get("install_path", "")).strip()).expanduser()
         receipt = self._load_plugin_install_receipt(plugin_id)
-        manifest = self._load_plugin_install_manifest(install_path) if install_path.exists() else {}
+        manifest = (
+            self._load_plugin_install_manifest(install_path)
+            if install_path.exists()
+            else {}
+        )
         if not manifest and isinstance(receipt.get("manifest", {}), dict):
             manifest = receipt.get("manifest", {})
 
-        permission_items = self._marketplace_permission_items(row, manifest if isinstance(manifest, dict) else None)
-        uninstall_command = self._resolve_privileged_uninstall_command(install_path, manifest if isinstance(manifest, dict) else {})
+        permission_items = self._marketplace_permission_items(
+            row, manifest if isinstance(manifest, dict) else None
+        )
+        uninstall_command = self._resolve_privileged_uninstall_command(
+            install_path, manifest if isinstance(manifest, dict) else {}
+        )
         if uninstall_command:
             accepted = self._marketplace_show_permission_dialog(
                 plugin_name=plugin_name,
@@ -7001,7 +8804,8 @@ class SettingsWindow(QWidget):
                     "Uninstall may revert privileged changes performed during installation. "
                     "Continuing can open a Polkit authentication prompt."
                 ),
-                permission_items=permission_items or [
+                permission_items=permission_items
+                or [
                     {
                         "key": "privileged",
                         "label": "Privileged Uninstall",
@@ -7013,11 +8817,19 @@ class SettingsWindow(QWidget):
             if not accepted:
                 return
             if not polkit_available():
-                QMessageBox.warning(self, "Uninstall Blocked", "Privileged uninstall requires pkexec, but it is unavailable.")
+                QMessageBox.warning(
+                    self,
+                    "Uninstall Blocked",
+                    "Privileged uninstall requires pkexec, but it is unavailable.",
+                )
                 return
             ok = run_with_polkit(uninstall_command, detached=False, timeout=180)
             if not ok:
-                QMessageBox.warning(self, "Uninstall Failed", "Privileged uninstall failed or was cancelled.")
+                QMessageBox.warning(
+                    self,
+                    "Uninstall Failed",
+                    "Privileged uninstall failed or was cancelled.",
+                )
                 return
 
         self._revert_plugin_desktop_entries(plugin_id, receipt)
@@ -7026,24 +8838,41 @@ class SettingsWindow(QWidget):
             try:
                 shutil.rmtree(install_path)
             except Exception as exc:
-                QMessageBox.warning(self, "Uninstall Failed", f"Unable to remove plugin folder:\n{exc}")
+                QMessageBox.warning(
+                    self, "Uninstall Failed", f"Unable to remove plugin folder:\n{exc}"
+                )
                 return
         marketplace = self.settings_state.setdefault("marketplace", {})
         installed = marketplace.get("installed_plugins", [])
         if not isinstance(installed, list):
             installed = []
-        installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")).strip() == plugin_id)]
+        installed = [
+            entry
+            for entry in installed
+            if not (
+                isinstance(entry, dict)
+                and str(entry.get("id", "")).strip() == plugin_id
+            )
+        ]
         marketplace["installed_plugins"] = installed
         save_settings_state(self.settings_state)
         self._clear_plugin_install_receipt(plugin_id)
         wrapper = getattr(self, "_plugin_service_wrappers", {}).get(plugin_id)
         if isinstance(wrapper, QWidget):
             wrapper.setVisible(False)
-        QMessageBox.information(self, "Plugin Uninstalled", f"{plugin_name} was uninstalled.\n\nReopen Settings to refresh service sections.")
+        QMessageBox.information(
+            self,
+            "Plugin Uninstalled",
+            f"{plugin_name} was uninstalled.\n\nReopen Settings to refresh service sections.",
+        )
 
     def _marketplace_choose_install_dir(self) -> None:
-        initial = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
-        selected = QFileDialog.getExistingDirectory(self, "Choose plugin install directory", initial)
+        initial = self.marketplace_install_dir_input.text().strip() or str(
+            ROOT / "hanauta" / "plugins"
+        )
+        selected = QFileDialog.getExistingDirectory(
+            self, "Choose plugin install directory", initial
+        )
         if selected:
             self.marketplace_install_dir_input.setText(selected)
 
@@ -7051,7 +8880,9 @@ class SettingsWindow(QWidget):
         sources: list[dict[str, str]] = []
         primary_repo = self.marketplace_repo_input.text().strip()
         primary_branch = self.marketplace_branch_input.text().strip() or "main"
-        primary_manifest = self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json"
+        primary_manifest = (
+            self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json"
+        )
         if primary_repo:
             sources.append(
                 {
@@ -7080,7 +8911,8 @@ class SettingsWindow(QWidget):
             source = {
                 "repo_url": repo_url,
                 "branch": str(branch).strip() or "main",
-                "manifest_path": str(manifest_path).strip().lstrip("/") or "plugins.json",
+                "manifest_path": str(manifest_path).strip().lstrip("/")
+                or "plugins.json",
             }
             if any(
                 source["repo_url"] == existing["repo_url"]
@@ -7095,20 +8927,37 @@ class SettingsWindow(QWidget):
     def _marketplace_save_settings(self) -> None:
         marketplace = self.settings_state.setdefault("marketplace", {})
         sources = self._marketplace_catalog_sources_from_ui()
-        primary = sources[0] if sources else {
-            "repo_url": self.marketplace_repo_input.text().strip(),
-            "branch": self.marketplace_branch_input.text().strip() or "main",
-            "manifest_path": self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json",
-        }
+        primary = (
+            sources[0]
+            if sources
+            else {
+                "repo_url": self.marketplace_repo_input.text().strip(),
+                "branch": self.marketplace_branch_input.text().strip() or "main",
+                "manifest_path": self.marketplace_manifest_input.text()
+                .strip()
+                .lstrip("/")
+                or "plugins.json",
+            }
+        )
         marketplace["catalog_repo_url"] = str(primary.get("repo_url", "")).strip()
-        marketplace["catalog_branch"] = str(primary.get("branch", "main")).strip() or "main"
-        marketplace["catalog_manifest_path"] = str(primary.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
+        marketplace["catalog_branch"] = (
+            str(primary.get("branch", "main")).strip() or "main"
+        )
+        marketplace["catalog_manifest_path"] = (
+            str(primary.get("manifest_path", "plugins.json")).strip().lstrip("/")
+            or "plugins.json"
+        )
         marketplace["catalog_sources"] = sources
-        marketplace["install_dir"] = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
+        marketplace["install_dir"] = (
+            self.marketplace_install_dir_input.text().strip()
+            or str(ROOT / "hanauta" / "plugins")
+        )
         save_settings_state(self.settings_state)
         self.marketplace_status.setText("Marketplace configuration saved.")
 
-    def _marketplace_manifest_url_for_source(self, repo_url: str, branch: str, manifest_path: str) -> str:
+    def _marketplace_manifest_url_for_source(
+        self, repo_url: str, branch: str, manifest_path: str
+    ) -> str:
         parsed = parse.urlparse(repo_url)
         if parsed.netloc.lower() == "github.com":
             parts = [part for part in parsed.path.split("/") if part]
@@ -7118,7 +8967,9 @@ class SettingsWindow(QWidget):
                 return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{manifest_path}"
         return repo_url.rstrip("/") + "/" + manifest_path
 
-    def _marketplace_normalize_catalog(self, payload: object) -> list[dict[str, object]]:
+    def _marketplace_normalize_catalog(
+        self, payload: object
+    ) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
         plugins: object = payload
         if isinstance(payload, dict):
@@ -7128,20 +8979,37 @@ class SettingsWindow(QWidget):
         for item in plugins:
             if not isinstance(item, dict):
                 continue
-            plugin_id = str(item.get("id", "")).strip() or str(item.get("name", "")).strip().lower().replace(" ", "_")
-            repo = str(item.get("repo", "")).strip() or str(item.get("repository", "")).strip()
+            plugin_id = str(item.get("id", "")).strip() or str(
+                item.get("name", "")
+            ).strip().lower().replace(" ", "_")
+            repo = (
+                str(item.get("repo", "")).strip()
+                or str(item.get("repository", "")).strip()
+            )
             if not plugin_id or not repo:
                 continue
             capabilities_raw = item.get("capabilities", [])
             capabilities: list[str] = []
             if isinstance(capabilities_raw, dict):
-                capabilities = [str(key).strip() for key, enabled in capabilities_raw.items() if str(key).strip() and bool(enabled)]
+                capabilities = [
+                    str(key).strip()
+                    for key, enabled in capabilities_raw.items()
+                    if str(key).strip() and bool(enabled)
+                ]
             elif isinstance(capabilities_raw, list):
-                capabilities = [str(value).strip() for value in capabilities_raw if str(value).strip()]
+                capabilities = [
+                    str(value).strip()
+                    for value in capabilities_raw
+                    if str(value).strip()
+                ]
             requirements_raw = item.get("requirements", [])
             requirements: list[str] = []
             if isinstance(requirements_raw, list):
-                requirements = [str(value).strip() for value in requirements_raw if str(value).strip()]
+                requirements = [
+                    str(value).strip()
+                    for value in requirements_raw
+                    if str(value).strip()
+                ]
             try:
                 api_min_version = int(item.get("api_min_version", 1) or 1)
             except Exception:
@@ -7163,7 +9031,9 @@ class SettingsWindow(QWidget):
                     "requirements": requirements,
                     "api_min_version": max(1, api_min_version),
                     "api_target_version": max(1, api_target_version),
-                    "permissions": item.get("permissions", {}) if isinstance(item.get("permissions", {}), dict) else {},
+                    "permissions": item.get("permissions", {})
+                    if isinstance(item.get("permissions", {}), dict)
+                    else {},
                 }
             )
         return rows
@@ -7172,7 +9042,9 @@ class SettingsWindow(QWidget):
         self._marketplace_save_settings()
         sources = self._marketplace_catalog_sources_from_ui()
         if not sources:
-            self.marketplace_status.setText("Add at least one catalog source before refreshing.")
+            self.marketplace_status.setText(
+                "Add at least one catalog source before refreshing."
+            )
             return
         merged: list[dict[str, object]] = []
         seen_ids: set[str] = set()
@@ -7180,12 +9052,19 @@ class SettingsWindow(QWidget):
         for source in sources:
             repo_url = str(source.get("repo_url", "")).strip()
             branch = str(source.get("branch", "main")).strip() or "main"
-            manifest_path = str(source.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
+            manifest_path = (
+                str(source.get("manifest_path", "plugins.json")).strip().lstrip("/")
+                or "plugins.json"
+            )
             if not repo_url:
                 continue
-            manifest_url = self._marketplace_manifest_url_for_source(repo_url, branch, manifest_path)
+            manifest_url = self._marketplace_manifest_url_for_source(
+                repo_url, branch, manifest_path
+            )
             try:
-                req = request.Request(manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"})
+                req = request.Request(
+                    manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"}
+                )
                 with request.urlopen(req, timeout=10) as response:
                     payload = json.loads(response.read().decode("utf-8"))
             except Exception as exc:
@@ -7205,7 +9084,9 @@ class SettingsWindow(QWidget):
                     "Failed to refresh catalogs: " + " | ".join(source_errors[:2])
                 )
             else:
-                self.marketplace_status.setText("Catalog loaded but no valid plugins were found in the configured sources.")
+                self.marketplace_status.setText(
+                    "Catalog loaded but no valid plugins were found in the configured sources."
+                )
             return
         marketplace = self.settings_state.setdefault("marketplace", {})
         marketplace["catalog_cache"] = merged
@@ -7223,12 +9104,17 @@ class SettingsWindow(QWidget):
     def _marketplace_populate_catalog(self, catalog: list[dict[str, object]]) -> None:
         installed_ids = {
             str(entry.get("id", "")).strip()
-            for entry in self.settings_state.get("marketplace", {}).get("installed_plugins", [])
+            for entry in self.settings_state.get("marketplace", {}).get(
+                "installed_plugins", []
+            )
             if isinstance(entry, dict)
         }
         self.marketplace_plugin_list.clear()
         for plugin in catalog:
-            name = str(plugin.get("name", "")).strip() or str(plugin.get("id", "plugin")).strip()
+            name = (
+                str(plugin.get("name", "")).strip()
+                or str(plugin.get("id", "plugin")).strip()
+            )
             description = str(plugin.get("description", "")).strip()
             plugin_id = str(plugin.get("id", "")).strip()
             badge = "Installed • " if plugin_id in installed_ids else ""
@@ -7237,13 +9123,18 @@ class SettingsWindow(QWidget):
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, plugin)
             source_hint = str(plugin.get("catalog_source", "")).strip()
-            item.setData(Qt.ItemDataRole.UserRole + 1, f"{name} {plugin_id} {description} {source_hint}".lower())
+            item.setData(
+                Qt.ItemDataRole.UserRole + 1,
+                f"{name} {plugin_id} {description} {source_hint}".lower(),
+            )
             item.setToolTip(str(plugin.get("repo", "")).strip())
             self.marketplace_plugin_list.addItem(item)
         if self.marketplace_plugin_list.count() > 0:
             self.marketplace_plugin_list.setCurrentRow(0)
         else:
-            self.marketplace_detail_label.setText("No plugins in the cached catalog yet. Use Refresh catalog.")
+            self.marketplace_detail_label.setText(
+                "No plugins in the cached catalog yet. Use Refresh catalog."
+            )
 
     def _marketplace_filter_catalog(self, value: str) -> None:
         needle = value.strip().lower()
@@ -7255,11 +9146,15 @@ class SettingsWindow(QWidget):
     def _marketplace_update_details(self) -> None:
         item = self.marketplace_plugin_list.currentItem()
         if item is None:
-            self.marketplace_detail_label.setText("Select a plugin from the catalog to inspect installation details.")
+            self.marketplace_detail_label.setText(
+                "Select a plugin from the catalog to inspect installation details."
+            )
             return
         plugin = item.data(Qt.ItemDataRole.UserRole)
         if not isinstance(plugin, dict):
-            self.marketplace_detail_label.setText("Plugin metadata is unavailable for this row.")
+            self.marketplace_detail_label.setText(
+                "Plugin metadata is unavailable for this row."
+            )
             return
         details = [
             f"Name: {str(plugin.get('name', plugin.get('id', 'plugin')))}",
@@ -7280,19 +9175,32 @@ class SettingsWindow(QWidget):
             details.append(f"Description: {description}")
         capabilities = plugin.get("capabilities", [])
         if isinstance(capabilities, list):
-            cap_list = [str(value).strip() for value in capabilities if str(value).strip()]
+            cap_list = [
+                str(value).strip() for value in capabilities if str(value).strip()
+            ]
             if cap_list:
                 details.append("Capabilities: " + ", ".join(cap_list))
         requirements = plugin.get("requirements", [])
         if isinstance(requirements, list):
-            req_list = [str(value).strip() for value in requirements if str(value).strip()]
+            req_list = [
+                str(value).strip() for value in requirements if str(value).strip()
+            ]
             if req_list:
                 details.append("Requirements: " + ", ".join(req_list))
         details.append(f"API min: {int(plugin.get('api_min_version', 1) or 1)}")
         details.append(f"API target: {int(plugin.get('api_target_version', 1) or 1)}")
         permissions = plugin.get("permissions", {})
         if isinstance(permissions, dict) and permissions:
-            details.append("Permissions: " + ", ".join(sorted(str(key).strip() for key in permissions.keys() if str(key).strip())))
+            details.append(
+                "Permissions: "
+                + ", ".join(
+                    sorted(
+                        str(key).strip()
+                        for key in permissions.keys()
+                        if str(key).strip()
+                    )
+                )
+            )
         self.marketplace_detail_label.setText("\n".join(details))
 
     def _marketplace_sanitize_plugin_id(self, value: str) -> str:
@@ -7303,7 +9211,9 @@ class SettingsWindow(QWidget):
     def _marketplace_install_selected(self) -> None:
         item = self.marketplace_plugin_list.currentItem()
         if item is None:
-            self.marketplace_status.setText("Select a plugin from the catalog before installing.")
+            self.marketplace_status.setText(
+                "Select a plugin from the catalog before installing."
+            )
             return
         plugin = item.data(Qt.ItemDataRole.UserRole)
         if not isinstance(plugin, dict):
@@ -7313,7 +9223,9 @@ class SettingsWindow(QWidget):
         plugin_id = str(plugin.get("id", "")).strip()
         branch = str(plugin.get("branch", "main")).strip() or "main"
         if not repo or not plugin_id:
-            self.marketplace_status.setText("Plugin entry is missing a valid id or repo URL.")
+            self.marketplace_status.setText(
+                "Plugin entry is missing a valid id or repo URL."
+            )
             return
         api_min_version, api_target_version = self._plugin_api_versions_from_row(plugin)
         if api_min_version > HOST_PLUGIN_API_VERSION:
@@ -7330,13 +9242,20 @@ class SettingsWindow(QWidget):
                 confirm_label="Install",
             )
             if not accepted:
-                self.marketplace_status.setText(f"Installation cancelled for {plugin_id}.")
+                self.marketplace_status.setText(
+                    f"Installation cancelled for {plugin_id}."
+                )
                 return
         if shutil.which("git") is None:
-            self.marketplace_status.setText("git is required to install marketplace plugins.")
+            self.marketplace_status.setText(
+                "git is required to install marketplace plugins."
+            )
             return
 
-        install_root = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
+        install_root = Path(
+            self.marketplace_install_dir_input.text().strip()
+            or str(ROOT / "hanauta" / "plugins")
+        ).expanduser()
         install_root.mkdir(parents=True, exist_ok=True)
         target_dir = install_root / plugin_id
         install_mode = "clone"
@@ -7348,17 +9267,23 @@ class SettingsWindow(QWidget):
                     f"{plugin_id} already exists at:\n{target_dir}\n\n"
                     "Select Yes to overwrite with a clean reinstall, or No to keep files and run a git update."
                 ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.No,
             )
             if answer == QMessageBox.StandardButton.Cancel:
-                self.marketplace_status.setText(f"Installation cancelled for {plugin_id}.")
+                self.marketplace_status.setText(
+                    f"Installation cancelled for {plugin_id}."
+                )
                 return
             if answer == QMessageBox.StandardButton.Yes:
                 try:
                     shutil.rmtree(target_dir)
                 except Exception as exc:
-                    self.marketplace_status.setText(f"Cannot overwrite {plugin_id}: {exc}")
+                    self.marketplace_status.setText(
+                        f"Cannot overwrite {plugin_id}: {exc}"
+                    )
                     return
                 install_mode = "clone"
             else:
@@ -7367,14 +9292,31 @@ class SettingsWindow(QWidget):
         try:
             if install_mode == "update" and (target_dir / ".git").exists():
                 result = subprocess.run(
-                    ["git", "-C", str(target_dir), "pull", "--ff-only", "origin", branch],
+                    [
+                        "git",
+                        "-C",
+                        str(target_dir),
+                        "pull",
+                        "--ff-only",
+                        "origin",
+                        branch,
+                    ],
                     capture_output=True,
                     text=True,
                     check=False,
                 )
             else:
                 result = subprocess.run(
-                    ["git", "clone", "--depth", "1", "--branch", branch, repo, str(target_dir)],
+                    [
+                        "git",
+                        "clone",
+                        "--depth",
+                        "1",
+                        "--branch",
+                        branch,
+                        repo,
+                        str(target_dir),
+                    ],
                     capture_output=True,
                     text=True,
                     check=False,
@@ -7385,7 +9327,9 @@ class SettingsWindow(QWidget):
 
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
-            self.marketplace_status.setText(f"Install failed for {plugin_id}: {stderr or 'git returned an error.'}")
+            self.marketplace_status.setText(
+                f"Install failed for {plugin_id}: {stderr or 'git returned an error.'}"
+            )
             return
 
         marketplace = self.settings_state.setdefault("marketplace", {})
@@ -7403,11 +9347,17 @@ class SettingsWindow(QWidget):
             "requirements": plugin.get("requirements", []),
             "api_min_version": api_min_version,
             "api_target_version": api_target_version,
-            "permissions": plugin.get("permissions", {}) if isinstance(plugin.get("permissions", {}), dict) else {},
+            "permissions": plugin.get("permissions", {})
+            if isinstance(plugin.get("permissions", {}), dict)
+            else {},
             "catalog_source": str(plugin.get("catalog_source", "")).strip(),
             "installed_at_epoch": int(time.time()),
         }
-        installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)]
+        installed = [
+            entry
+            for entry in installed
+            if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)
+        ]
         installed.append(record)
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
@@ -7416,7 +9366,10 @@ class SettingsWindow(QWidget):
         self._run_plugin_post_install_steps(plugin, target_dir)
 
     def _marketplace_install_zip(self) -> None:
-        install_root = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
+        install_root = Path(
+            self.marketplace_install_dir_input.text().strip()
+            or str(ROOT / "hanauta" / "plugins")
+        ).expanduser()
         install_root.mkdir(parents=True, exist_ok=True)
         archive_path_str, _selected_filter = QFileDialog.getOpenFileName(
             self,
@@ -7431,17 +9384,25 @@ class SettingsWindow(QWidget):
             self.marketplace_status.setText("Selected ZIP file does not exist.")
             return
         try:
-            with tempfile.TemporaryDirectory(prefix="hanauta-plugin-zip-") as temp_dir_str:
+            with tempfile.TemporaryDirectory(
+                prefix="hanauta-plugin-zip-"
+            ) as temp_dir_str:
                 temp_dir = Path(temp_dir_str)
                 with zipfile.ZipFile(archive_path) as bundle:
                     bundle.extractall(temp_dir)
                 candidates = [path.parent for path in temp_dir.rglob(PLUGIN_ENTRYPOINT)]
                 if not candidates:
-                    self.marketplace_status.setText("ZIP does not contain a plugin entrypoint (hanauta_plugin.py).")
+                    self.marketplace_status.setText(
+                        "ZIP does not contain a plugin entrypoint (hanauta_plugin.py)."
+                    )
                     return
                 source_dir = sorted(candidates, key=lambda path: len(path.parts))[0]
-                raw_plugin_id = source_dir.name if source_dir.name else archive_path.stem
-                plugin_id = self._marketplace_sanitize_plugin_id(raw_plugin_id or archive_path.stem)
+                raw_plugin_id = (
+                    source_dir.name if source_dir.name else archive_path.stem
+                )
+                plugin_id = self._marketplace_sanitize_plugin_id(
+                    raw_plugin_id or archive_path.stem
+                )
                 target_dir = install_root / plugin_id
                 plugin_meta: dict[str, object] = {
                     "id": plugin_id,
@@ -7460,12 +9421,16 @@ class SettingsWindow(QWidget):
                         QMessageBox.StandardButton.No,
                     )
                     if answer != QMessageBox.StandardButton.Yes:
-                        self.marketplace_status.setText(f"ZIP install cancelled for {plugin_id}.")
+                        self.marketplace_status.setText(
+                            f"ZIP install cancelled for {plugin_id}."
+                        )
                         return
                     shutil.rmtree(target_dir)
                 shutil.copytree(source_dir, target_dir)
         except zipfile.BadZipFile:
-            self.marketplace_status.setText("The selected file is not a valid ZIP archive.")
+            self.marketplace_status.setText(
+                "The selected file is not a valid ZIP archive."
+            )
             return
         except Exception as exc:
             self.marketplace_status.setText(f"ZIP install failed: {exc}")
@@ -7489,22 +9454,33 @@ class SettingsWindow(QWidget):
             "permissions": {},
             "installed_at_epoch": int(time.time()),
         }
-        installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)]
+        installed = [
+            entry
+            for entry in installed
+            if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)
+        ]
         installed.append(record)
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
         save_settings_state(self.settings_state)
-        self.marketplace_status.setText(f"Installed ZIP plugin {plugin_id} into {target_dir}.")
+        self.marketplace_status.setText(
+            f"Installed ZIP plugin {plugin_id} into {target_dir}."
+        )
         self._run_plugin_post_install_steps(plugin_meta, target_dir)
 
     def _marketplace_open_install_dir(self) -> None:
-        install_dir = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
+        install_dir = Path(
+            self.marketplace_install_dir_input.text().strip()
+            or str(ROOT / "hanauta" / "plugins")
+        ).expanduser()
         install_dir.mkdir(parents=True, exist_ok=True)
         run_bg(["xdg-open", str(install_dir)])
 
     def _plugin_search_roots(self) -> list[Path]:
         marketplace = self.settings_state.get("marketplace", {})
-        configured_root = Path(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))).expanduser()
+        configured_root = Path(
+            str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))
+        ).expanduser()
         candidates = [
             configured_root,
             ROOT / "hanauta" / "plugins",
@@ -7512,7 +9488,11 @@ class SettingsWindow(QWidget):
         roots: list[Path] = []
         seen: set[str] = set()
         for candidate in candidates:
-            key = str(candidate.resolve()) if candidate.exists() else str(candidate.expanduser())
+            key = (
+                str(candidate.resolve())
+                if candidate.exists()
+                else str(candidate.expanduser())
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -7529,7 +9509,9 @@ class SettingsWindow(QWidget):
             for row in installed_entries:
                 if not isinstance(row, dict):
                     continue
-                api_min_version, _api_target_version = self._plugin_api_versions_from_row(row)
+                api_min_version, _api_target_version = (
+                    self._plugin_api_versions_from_row(row)
+                )
                 if api_min_version > HOST_PLUGIN_API_VERSION:
                     continue
                 plugin_id = str(row.get("id", "")).strip()
@@ -7632,7 +9614,9 @@ class SettingsWindow(QWidget):
                 continue
             module_name = f"hanauta_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
             try:
-                spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
+                spec = importlib.util.spec_from_file_location(
+                    module_name, str(entrypoint)
+                )
                 if spec is None or spec.loader is None:
                     continue
                 module = importlib.util.module_from_spec(spec)
@@ -7646,8 +9630,12 @@ class SettingsWindow(QWidget):
             if not isinstance(payload, dict):
                 continue
             plugin_id = str(payload.get("id", "")).strip()
-            plugin_name = str(payload.get("name", plugin_id or plugin_dir.name)).strip() or (plugin_id or plugin_dir.name)
-            api_min_version, _api_target_version = self._plugin_api_versions_from_row(payload)
+            plugin_name = str(
+                payload.get("name", plugin_id or plugin_dir.name)
+            ).strip() or (plugin_id or plugin_dir.name)
+            api_min_version, _api_target_version = self._plugin_api_versions_from_row(
+                payload
+            )
             if api_min_version > HOST_PLUGIN_API_VERSION:
                 continue
             sections = payload.get("service_sections", [])
@@ -7689,60 +9677,144 @@ class SettingsWindow(QWidget):
         self.service_sections: dict[str, ExpandableServiceSection] = {}
         self.service_display_switches: dict[str, SwitchButton] = {}
         self._plugin_service_wrappers: dict[str, QWidget] = {}
-        for key, widget in (
-            ("mail", self._build_mail_service_section()),
-            ("kdeconnect", self._build_kdeconnect_service_section()),
-            ("home_assistant", self._build_home_assistant_section()),
-            ("vpn_control", self._build_vpn_service_section()),
-            ("christian_widget", self._build_christian_service_section()),
-            ("health_widget", self._build_health_service_section()),
-            ("calendar_widget", self._build_calendar_service_section()),
-            ("reminders_widget", self._build_reminders_service_section()),
-            ("pomodoro_widget", self._build_pomodoro_service_section()),
-            ("cap_alerts", self._build_cap_alerts_service_section()),
-            ("obs_widget", self._build_obs_service_section()),
-            ("crypto_widget", self._build_crypto_service_section()),
-            ("vps_widget", self._build_vps_service_section()),
-            ("desktop_clock_widget", self._build_desktop_clock_service_section()),
-            ("game_mode", self._build_game_mode_service_section()),
-            ("weather", self._build_weather_section()),
-            ("ntfy", self._build_ntfy_section()),
-        ):
-            layout.addWidget(widget)
-        for key in sorted(self.plugin_service_builders.keys()):
-            section_meta = self.plugin_service_builders.get(key, {})
+        self._services_build_layout = layout
+        self._services_build_finished = False
+        self._services_core_queue = [
+            ("mail", self._build_mail_service_section),
+            ("kdeconnect", self._build_kdeconnect_service_section),
+            ("home_assistant", self._build_home_assistant_section),
+            ("vpn_control", self._build_vpn_service_section),
+            ("christian_widget", self._build_christian_service_section),
+            ("health_widget", self._build_health_service_section),
+            ("calendar_widget", self._build_calendar_service_section),
+            ("reminders_widget", self._build_reminders_service_section),
+            ("pomodoro_widget", self._build_pomodoro_service_section),
+            ("cap_alerts", self._build_cap_alerts_service_section),
+            ("obs_widget", self._build_obs_service_section),
+            ("crypto_widget", self._build_crypto_service_section),
+            ("vps_widget", self._build_vps_service_section),
+            ("desktop_clock_widget", self._build_desktop_clock_service_section),
+            ("game_mode", self._build_game_mode_service_section),
+            ("virtualization", self._build_virtualization_service_section),
+            ("weather", self._build_weather_section),
+            ("ntfy", self._build_ntfy_section),
+        ]
+        self._services_plugin_queue: list[dict[str, object]] = []
+        self._services_loading_label = QLabel("Loading service sections...")
+        self._services_loading_label.setWordWrap(True)
+        self._services_loading_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self._services_loading_label)
+        QTimer.singleShot(0, self._build_next_services_section)
+        return card
+
+    def _add_plugin_service_widget(
+        self, widget: QWidget, plugin_id: str, plugin_name: str
+    ) -> None:
+        layout = getattr(self, "_services_build_layout", None)
+        if not isinstance(layout, QVBoxLayout):
+            return
+        if plugin_id and self._installed_plugin_entry_by_id(plugin_id) is not None:
+            wrapper = QWidget()
+            wrapper_layout = QVBoxLayout(wrapper)
+            wrapper_layout.setContentsMargins(0, 0, 0, 0)
+            wrapper_layout.setSpacing(8)
+            wrapper_layout.addWidget(widget)
+            action_row = QHBoxLayout()
+            action_row.addStretch(1)
+            uninstall_button = QPushButton("Uninstall plugin")
+            uninstall_button.setObjectName("secondaryButton")
+            uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            uninstall_button.clicked.connect(
+                lambda _checked=False, pid=plugin_id, pname=plugin_name: (
+                    self._uninstall_plugin_from_services(pid, pname)
+                )
+            )
+            action_row.addWidget(uninstall_button)
+            wrapper_layout.addLayout(action_row)
+            self._plugin_service_wrappers[plugin_id] = wrapper
+            layout.addWidget(wrapper)
+            return
+        layout.addWidget(widget)
+
+    def _build_next_services_section(self) -> None:
+        layout = getattr(self, "_services_build_layout", None)
+        if not isinstance(layout, QVBoxLayout):
+            return
+
+        core_queue = getattr(self, "_services_core_queue", [])
+        if core_queue:
+            key, builder = core_queue.pop(0)
+            try:
+                widget = builder()
+            except Exception:
+                widget = None
+            if isinstance(widget, QWidget):
+                layout.addWidget(widget)
+            if str(getattr(self, "initial_service_section", "")).strip() == str(key):
+                QTimer.singleShot(
+                    0,
+                    lambda current_key=str(key): self._focus_service_section(
+                        current_key
+                    ),
+                )
+            QTimer.singleShot(0, self._build_next_services_section)
+            return
+
+        if not getattr(self, "_plugin_builders_loaded", False):
+            self.plugin_service_builders = self._load_plugin_service_builders()
+            self._plugin_builders_loaded = True
+            plugin_queue: list[dict[str, object]] = []
+            for key in sorted(self.plugin_service_builders.keys()):
+                section_meta = self.plugin_service_builders.get(key, {})
+                section_meta = (
+                    dict(section_meta) if isinstance(section_meta, dict) else {}
+                )
+                section_meta["_key"] = key
+                plugin_queue.append(section_meta)
+            self._services_plugin_queue = plugin_queue
+
+        plugin_queue = getattr(self, "_services_plugin_queue", [])
+        if plugin_queue:
+            section_meta = plugin_queue.pop(0)
+            key = str(section_meta.get("_key", "")).strip()
             builder = section_meta.get("builder")
             plugin_dir = section_meta.get("plugin_dir")
             plugin_id = str(section_meta.get("plugin_id", "")).strip()
-            plugin_name = str(section_meta.get("plugin_name", plugin_id)).strip() or plugin_id
-            if not callable(builder):
-                continue
-            try:
-                widget = builder(self, self._plugin_api(plugin_dir if isinstance(plugin_dir, Path) else None))
-            except Exception:
-                continue
-            if isinstance(widget, QWidget):
-                if plugin_id and self._installed_plugin_entry_by_id(plugin_id) is not None:
-                    wrapper = QWidget()
-                    wrapper_layout = QVBoxLayout(wrapper)
-                    wrapper_layout.setContentsMargins(0, 0, 0, 0)
-                    wrapper_layout.setSpacing(8)
-                    wrapper_layout.addWidget(widget)
-                    action_row = QHBoxLayout()
-                    action_row.addStretch(1)
-                    uninstall_button = QPushButton("Uninstall plugin")
-                    uninstall_button.setObjectName("secondaryButton")
-                    uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-                    uninstall_button.clicked.connect(
-                        lambda _checked=False, pid=plugin_id, pname=plugin_name: self._uninstall_plugin_from_services(pid, pname)
+            plugin_name = (
+                str(section_meta.get("plugin_name", plugin_id)).strip() or plugin_id
+            )
+            if callable(builder):
+                try:
+                    widget = builder(
+                        self,
+                        self._plugin_api(
+                            plugin_dir if isinstance(plugin_dir, Path) else None
+                        ),
                     )
-                    action_row.addWidget(uninstall_button)
-                    wrapper_layout.addLayout(action_row)
-                    self._plugin_service_wrappers[plugin_id] = wrapper
-                    layout.addWidget(wrapper)
-                else:
-                    layout.addWidget(widget)
-        return card
+                except Exception:
+                    widget = None
+                if isinstance(widget, QWidget):
+                    self._add_plugin_service_widget(widget, plugin_id, plugin_name)
+                    if str(getattr(self, "initial_service_section", "")).strip() == key:
+                        QTimer.singleShot(
+                            0,
+                            lambda current_key=key: self._focus_service_section(
+                                current_key
+                            ),
+                        )
+            QTimer.singleShot(0, self._build_next_services_section)
+            return
+
+        if not getattr(self, "_services_build_finished", False):
+            self._services_build_finished = True
+            if isinstance(getattr(self, "_services_loading_label", None), QLabel):
+                self._services_loading_label.setText("Services ready.")
+                QTimer.singleShot(700, self._services_loading_label.deleteLater)
+            layout.addStretch(1)
+            if str(getattr(self, "initial_service_section", "")).strip():
+                QTimer.singleShot(
+                    0, lambda: self._focus_service_section(self.initial_service_section)
+                )
 
     def _focus_service_section(self, key: str) -> None:
         section = getattr(self, "service_sections", {}).get(key)
@@ -7761,7 +9833,9 @@ class SettingsWindow(QWidget):
 
         self.mail_account_picker = QComboBox()
         self.mail_account_picker.setObjectName("settingsCombo")
-        self.mail_account_picker.currentIndexChanged.connect(self._load_selected_mail_account)
+        self.mail_account_picker.currentIndexChanged.connect(
+            self._load_selected_mail_account
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("mail"),
@@ -7794,20 +9868,112 @@ class SettingsWindow(QWidget):
         self.mail_signature_input.setPlaceholderText("Sent from Hanauta Mail")
         self.mail_poll_interval_input = QLineEdit("90")
         self.mail_avatar_path_input = QLineEdit()
-        self.mail_avatar_path_input.setPlaceholderText("Optional profile image for this account")
+        self.mail_avatar_path_input.setPlaceholderText(
+            "Optional profile image for this account"
+        )
         self.mail_storage_path_input = QLineEdit(load_mail_storage_config()["db_path"])
         self.mail_storage_path_input.setPlaceholderText(str(MAIL_DB_PATH))
 
-        layout.addWidget(SettingsRow(material_icon("settings"), "Label", "Friendly account label shown in Hanauta Mail.", self.icon_font, self.ui_font, self.mail_label_input))
-        layout.addWidget(SettingsRow(material_icon("person"), "Display name", "Used for outgoing mail sender formatting.", self.icon_font, self.ui_font, self.mail_display_name_input))
-        layout.addWidget(SettingsRow(material_icon("mail"), "Email address", "Primary mailbox address.", self.icon_font, self.ui_font, self.mail_email_input))
-        layout.addWidget(SettingsRow(material_icon("person"), "Username", "Login used by both IMAP and SMTP on most providers.", self.icon_font, self.ui_font, self.mail_username_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Password", "Use an app password when your provider requires one.", self.icon_font, self.ui_font, self.mail_password_input))
-        layout.addWidget(SettingsRow(material_icon("settings"), "IMAP host", "Incoming mail server, such as imap.gmail.com.", self.icon_font, self.ui_font, self.mail_imap_host_input))
-        layout.addWidget(SettingsRow(material_icon("schedule"), "IMAP port", "Usually 993 with SSL enabled.", self.icon_font, self.ui_font, self.mail_imap_port_input))
-        layout.addWidget(SettingsRow(material_icon("settings"), "SMTP host", "Outgoing mail server, such as smtp.gmail.com.", self.icon_font, self.ui_font, self.mail_smtp_host_input))
-        layout.addWidget(SettingsRow(material_icon("schedule"), "SMTP port", "Usually 587 with STARTTLS or 465 with SSL.", self.icon_font, self.ui_font, self.mail_smtp_port_input))
-        layout.addWidget(SettingsRow(material_icon("mail"), "Signature", "Appended to new messages and replies.", self.icon_font, self.ui_font, self.mail_signature_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("settings"),
+                "Label",
+                "Friendly account label shown in Hanauta Mail.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_label_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "Display name",
+                "Used for outgoing mail sender formatting.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_display_name_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("mail"),
+                "Email address",
+                "Primary mailbox address.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_email_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "Username",
+                "Login used by both IMAP and SMTP on most providers.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_username_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Password",
+                "Use an app password when your provider requires one.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_password_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("settings"),
+                "IMAP host",
+                "Incoming mail server, such as imap.gmail.com.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_imap_host_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "IMAP port",
+                "Usually 993 with SSL enabled.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_imap_port_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("settings"),
+                "SMTP host",
+                "Outgoing mail server, such as smtp.gmail.com.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_smtp_host_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "SMTP port",
+                "Usually 587 with STARTTLS or 465 with SSL.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_smtp_port_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("mail"),
+                "Signature",
+                "Appended to new messages and replies.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_signature_input,
+            )
+        )
         avatar_row = QWidget()
         avatar_layout = QHBoxLayout(avatar_row)
         avatar_layout.setContentsMargins(0, 0, 0, 0)
@@ -7815,11 +9981,31 @@ class SettingsWindow(QWidget):
         avatar_layout.addWidget(self.mail_avatar_path_input, 1)
         self.mail_choose_avatar_button = QPushButton("Choose")
         self.mail_choose_avatar_button.setObjectName("secondaryButton")
-        self.mail_choose_avatar_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_choose_avatar_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.mail_choose_avatar_button.clicked.connect(self._choose_mail_avatar)
         avatar_layout.addWidget(self.mail_choose_avatar_button)
-        layout.addWidget(SettingsRow(material_icon("mail"), "Account avatar", "Shown in Hanauta Mail next to the server status chip.", self.icon_font, self.ui_font, avatar_row))
-        layout.addWidget(SettingsRow(material_icon("schedule"), "Sync interval (sec)", "Background refresh cadence for this account.", self.icon_font, self.ui_font, self.mail_poll_interval_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("mail"),
+                "Account avatar",
+                "Shown in Hanauta Mail next to the server status chip.",
+                self.icon_font,
+                self.ui_font,
+                avatar_row,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Sync interval (sec)",
+                "Background refresh cadence for this account.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_poll_interval_input,
+            )
+        )
         storage_row = QWidget()
         storage_layout = QHBoxLayout(storage_row)
         storage_layout.setContentsMargins(0, 0, 0, 0)
@@ -7827,29 +10013,115 @@ class SettingsWindow(QWidget):
         storage_layout.addWidget(self.mail_storage_path_input, 1)
         self.mail_choose_storage_button = QPushButton("Choose")
         self.mail_choose_storage_button.setObjectName("secondaryButton")
-        self.mail_choose_storage_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_choose_storage_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.mail_choose_storage_button.clicked.connect(self._choose_mail_storage_path)
         storage_layout.addWidget(self.mail_choose_storage_button)
-        layout.addWidget(SettingsRow(material_icon("storage"), "Encrypted mail store", "Choose where Hanauta Mail keeps its encrypted local database under local state.", self.icon_font, self.ui_font, storage_row))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("storage"),
+                "Encrypted mail store",
+                "Choose where Hanauta Mail keeps its encrypted local database under local state.",
+                self.icon_font,
+                self.ui_font,
+                storage_row,
+            )
+        )
 
         self.mail_imap_ssl_switch = SwitchButton(True)
         self.mail_smtp_starttls_switch = SwitchButton(True)
         self.mail_smtp_ssl_switch = SwitchButton(False)
         self.mail_notify_switch = SwitchButton(True)
         mail_settings = self.settings_state.setdefault("mail", {})
-        self.mail_global_notify_switch = SwitchButton(bool(mail_settings.get("notify_new_messages", True)))
-        self.mail_sound_notify_switch = SwitchButton(bool(mail_settings.get("play_notification_sound", False)))
-        self.mail_hide_content_switch = SwitchButton(bool(mail_settings.get("hide_notification_content", False)))
-        self.mail_global_notify_switch.toggledValue.connect(self._set_mail_notifications_enabled)
-        self.mail_sound_notify_switch.toggledValue.connect(self._set_mail_notification_sound_enabled)
-        self.mail_hide_content_switch.toggledValue.connect(self._set_mail_hide_notification_content)
-        layout.addWidget(SettingsRow(material_icon("shield"), "IMAP SSL", "Keep this enabled for almost every modern provider.", self.icon_font, self.ui_font, self.mail_imap_ssl_switch))
-        layout.addWidget(SettingsRow(material_icon("mail"), "SMTP STARTTLS", "Use STARTTLS when your SMTP port is 587.", self.icon_font, self.ui_font, self.mail_smtp_starttls_switch))
-        layout.addWidget(SettingsRow(material_icon("shield"), "SMTP SSL", "Use this instead of STARTTLS when your provider wants port 465.", self.icon_font, self.ui_font, self.mail_smtp_ssl_switch))
-        layout.addWidget(SettingsRow(material_icon("notifications_active"), "Desktop notifications", "Allow this mailbox to send new mail notifications.", self.icon_font, self.ui_font, self.mail_notify_switch))
-        layout.addWidget(SettingsRow(material_icon("notifications_active"), "Notify on new mail", "Show desktop notifications when new messages arrive.", self.icon_font, self.ui_font, self.mail_global_notify_switch))
-        layout.addWidget(SettingsRow(material_icon("notifications"), "Notification sound", "Play a sound when a new mail toast is shown.", self.icon_font, self.ui_font, self.mail_sound_notify_switch))
-        layout.addWidget(SettingsRow(material_icon("shield"), "Hide notification content", "Use a privacy-friendly notification message without subject or preview text.", self.icon_font, self.ui_font, self.mail_hide_content_switch))
+        self.mail_global_notify_switch = SwitchButton(
+            bool(mail_settings.get("notify_new_messages", True))
+        )
+        self.mail_sound_notify_switch = SwitchButton(
+            bool(mail_settings.get("play_notification_sound", False))
+        )
+        self.mail_hide_content_switch = SwitchButton(
+            bool(mail_settings.get("hide_notification_content", False))
+        )
+        self.mail_global_notify_switch.toggledValue.connect(
+            self._set_mail_notifications_enabled
+        )
+        self.mail_sound_notify_switch.toggledValue.connect(
+            self._set_mail_notification_sound_enabled
+        )
+        self.mail_hide_content_switch.toggledValue.connect(
+            self._set_mail_hide_notification_content
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("shield"),
+                "IMAP SSL",
+                "Keep this enabled for almost every modern provider.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_imap_ssl_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("mail"),
+                "SMTP STARTTLS",
+                "Use STARTTLS when your SMTP port is 587.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_smtp_starttls_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("shield"),
+                "SMTP SSL",
+                "Use this instead of STARTTLS when your provider wants port 465.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_smtp_ssl_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Desktop notifications",
+                "Allow this mailbox to send new mail notifications.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_notify_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Notify on new mail",
+                "Show desktop notifications when new messages arrive.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_global_notify_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications"),
+                "Notification sound",
+                "Play a sound when a new mail toast is shown.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_sound_notify_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("shield"),
+                "Hide notification content",
+                "Use a privacy-friendly notification message without subject or preview text.",
+                self.icon_font,
+                self.ui_font,
+                self.mail_hide_content_switch,
+            )
+        )
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
@@ -7861,7 +10133,12 @@ class SettingsWindow(QWidget):
         self.mail_delete_button.setObjectName("secondaryButton")
         self.mail_open_button = QPushButton("Open Hanauta Mail")
         self.mail_open_button.setObjectName("secondaryButton")
-        for button in (self.mail_new_button, self.mail_save_button, self.mail_delete_button, self.mail_open_button):
+        for button in (
+            self.mail_new_button,
+            self.mail_save_button,
+            self.mail_delete_button,
+            self.mail_open_button,
+        ):
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.mail_new_button.clicked.connect(self._clear_mail_account_form)
         self.mail_save_button.clicked.connect(self._save_mail_account_settings)
@@ -7882,14 +10159,18 @@ class SettingsWindow(QWidget):
         self.mail_mailto_button.setObjectName("secondaryButton")
         for button in (self.mail_favorite_button, self.mail_mailto_button):
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.mail_favorite_button.clicked.connect(self._set_hanauta_mail_favorite_client)
+        self.mail_favorite_button.clicked.connect(
+            self._set_hanauta_mail_favorite_client
+        )
         self.mail_mailto_button.clicked.connect(self._set_hanauta_mailto_handler)
         integration_actions.addWidget(self.mail_favorite_button)
         integration_actions.addWidget(self.mail_mailto_button)
         integration_actions.addStretch(1)
         layout.addLayout(integration_actions)
 
-        self.mail_status = QLabel("Mail accounts are stored in Hanauta Mail's shared database.")
+        self.mail_status = QLabel(
+            "Mail accounts are stored in Hanauta Mail's shared database."
+        )
         self.mail_status.setWordWrap(True)
         self.mail_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.mail_status)
@@ -7929,8 +10210,14 @@ class SettingsWindow(QWidget):
         self._load_selected_mail_account(target_index)
 
     def _load_selected_mail_account(self, index: int) -> None:
-        account_id = int(self.mail_account_picker.itemData(index) or 0) if hasattr(self, "mail_account_picker") else 0
-        account = self.mail_account_store.get_account(account_id) if account_id > 0 else None
+        account_id = (
+            int(self.mail_account_picker.itemData(index) or 0)
+            if hasattr(self, "mail_account_picker")
+            else 0
+        )
+        account = (
+            self.mail_account_store.get_account(account_id) if account_id > 0 else None
+        )
         if not account:
             self._clear_mail_account_form(update_picker=False)
             self.mail_delete_button.setEnabled(False)
@@ -7946,19 +10233,27 @@ class SettingsWindow(QWidget):
         self.mail_smtp_port_input.setText(str(account.get("smtp_port", 587)))
         self.mail_signature_input.setText(str(account.get("signature", "")))
         self.mail_avatar_path_input.setText(str(account.get("avatar_path", "")))
-        self.mail_poll_interval_input.setText(str(account.get("poll_interval_seconds", 90)))
+        self.mail_poll_interval_input.setText(
+            str(account.get("poll_interval_seconds", 90))
+        )
         self.mail_imap_ssl_switch.setChecked(bool(account.get("imap_ssl", True)))
         self.mail_imap_ssl_switch._apply_state()
-        self.mail_smtp_starttls_switch.setChecked(bool(account.get("smtp_starttls", True)))
+        self.mail_smtp_starttls_switch.setChecked(
+            bool(account.get("smtp_starttls", True))
+        )
         self.mail_smtp_starttls_switch._apply_state()
         self.mail_smtp_ssl_switch.setChecked(bool(account.get("smtp_ssl", False)))
         self.mail_smtp_ssl_switch._apply_state()
         self.mail_notify_switch.setChecked(bool(account.get("notify_enabled", True)))
         self.mail_notify_switch._apply_state()
         self.mail_delete_button.setEnabled(True)
-        self.mail_status.setText(f"Editing {account.get('email_address', 'mail account')}.")
+        self.mail_status.setText(
+            f"Editing {account.get('email_address', 'mail account')}."
+        )
 
-    def _clear_mail_account_form(self, checked: bool = False, *, update_picker: bool = True) -> None:
+    def _clear_mail_account_form(
+        self, checked: bool = False, *, update_picker: bool = True
+    ) -> None:
         del checked
         if update_picker and hasattr(self, "mail_account_picker"):
             self.mail_account_picker.blockSignals(True)
@@ -7991,8 +10286,16 @@ class SettingsWindow(QWidget):
         self.mail_status.setText("Create a new IMAP/SMTP account for Hanauta Mail.")
 
     def _save_mail_account_settings(self) -> None:
-        current_index = self.mail_account_picker.currentIndex() if hasattr(self, "mail_account_picker") else 0
-        account_id = int(self.mail_account_picker.itemData(current_index) or 0) if hasattr(self, "mail_account_picker") else 0
+        current_index = (
+            self.mail_account_picker.currentIndex()
+            if hasattr(self, "mail_account_picker")
+            else 0
+        )
+        account_id = (
+            int(self.mail_account_picker.itemData(current_index) or 0)
+            if hasattr(self, "mail_account_picker")
+            else 0
+        )
         required = {
             "email address": self.mail_email_input.text().strip(),
             "username": self.mail_username_input.text().strip(),
@@ -8009,7 +10312,9 @@ class SettingsWindow(QWidget):
             smtp_port = int(self.mail_smtp_port_input.text().strip() or "587")
             poll_interval = int(self.mail_poll_interval_input.text().strip() or "90")
         except Exception:
-            self.mail_status.setText("Mail ports and sync interval must be valid numbers.")
+            self.mail_status.setText(
+                "Mail ports and sync interval must be valid numbers."
+            )
             return
         payload = {
             "id": account_id,
@@ -8032,7 +10337,9 @@ class SettingsWindow(QWidget):
             "folders_json": "[]",
             "folder_state_json": "{}",
         }
-        desired_path = Path(self.mail_storage_path_input.text().strip() or str(MAIL_DB_PATH)).expanduser()
+        desired_path = Path(
+            self.mail_storage_path_input.text().strip() or str(MAIL_DB_PATH)
+        ).expanduser()
         current_path = self.mail_account_store.path.expanduser()
         if desired_path != current_path:
             desired_path.parent.mkdir(parents=True, exist_ok=True)
@@ -8054,8 +10361,16 @@ class SettingsWindow(QWidget):
         self.mail_status.setText(f"Mail account saved for {payload['email_address']}.")
 
     def _delete_mail_account_settings(self) -> None:
-        current_index = self.mail_account_picker.currentIndex() if hasattr(self, "mail_account_picker") else 0
-        account_id = int(self.mail_account_picker.itemData(current_index) or 0) if hasattr(self, "mail_account_picker") else 0
+        current_index = (
+            self.mail_account_picker.currentIndex()
+            if hasattr(self, "mail_account_picker")
+            else 0
+        )
+        account_id = (
+            int(self.mail_account_picker.itemData(current_index) or 0)
+            if hasattr(self, "mail_account_picker")
+            else 0
+        )
         if account_id <= 0:
             self.mail_status.setText("Select a saved account before deleting it.")
             return
@@ -8073,7 +10388,12 @@ class SettingsWindow(QWidget):
             self.mail_status.setText("Hanauta Mail launch script is unavailable.")
             return
         try:
-            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
         except Exception as exc:
             self.mail_status.setText(f"Failed to open Hanauta Mail: {exc}")
             return
@@ -8082,14 +10402,22 @@ class SettingsWindow(QWidget):
     def _sync_mail_integration_buttons(self) -> None:
         favorite_enabled = current_favorite_mail_handler() == MAIL_DESKTOP_ID
         mailto_enabled = current_mailto_handler() == MAIL_DESKTOP_ID
-        self.mail_favorite_button.setText("Favorite Mail Client Enabled" if favorite_enabled else "Set Favorite Mail Client")
-        self.mail_mailto_button.setText("mailto Links Enabled" if mailto_enabled else "Handle mailto Links")
+        self.mail_favorite_button.setText(
+            "Favorite Mail Client Enabled"
+            if favorite_enabled
+            else "Set Favorite Mail Client"
+        )
+        self.mail_mailto_button.setText(
+            "mailto Links Enabled" if mailto_enabled else "Handle mailto Links"
+        )
 
     def _ensure_hanauta_mail_desktop_entry(self) -> bool:
         if hanauta_mail_desktop_installed():
             return True
         if not MAIL_DESKTOP_INSTALL_SCRIPT.exists():
-            self.mail_status.setText("The Hanauta Mail desktop install helper is missing.")
+            self.mail_status.setText(
+                "The Hanauta Mail desktop install helper is missing."
+            )
             return False
         result = subprocess.run(
             ["bash", str(MAIL_DESKTOP_INSTALL_SCRIPT)],
@@ -8100,12 +10428,18 @@ class SettingsWindow(QWidget):
         if result.returncode == 0 and hanauta_mail_desktop_installed():
             return True
         if not MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT.exists():
-            self.mail_status.setText("Unable to register the Hanauta Mail desktop entry.")
+            self.mail_status.setText(
+                "Unable to register the Hanauta Mail desktop entry."
+            )
             return False
         if shutil.which("pkexec") is None:
-            self.mail_status.setText("Unable to register Hanauta Mail system-wide because pkexec is unavailable.")
+            self.mail_status.setText(
+                "Unable to register Hanauta Mail system-wide because pkexec is unavailable."
+            )
             return False
-        self.mail_status.setText("Installing the Hanauta Mail desktop entry system-wide. A polkit dialog may appear.")
+        self.mail_status.setText(
+            "Installing the Hanauta Mail desktop entry system-wide. A polkit dialog may appear."
+        )
         system_result = subprocess.run(
             ["pkexec", "bash", str(MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT)],
             capture_output=True,
@@ -8121,25 +10455,39 @@ class SettingsWindow(QWidget):
         if not self._ensure_hanauta_mail_desktop_entry():
             return
         if shutil.which("xdg-settings") is None:
-            self.mail_status.setText("xdg-settings is unavailable, so Hanauta Mail could not be set as the favorite mail client.")
+            self.mail_status.setText(
+                "xdg-settings is unavailable, so Hanauta Mail could not be set as the favorite mail client."
+            )
             return
         result = subprocess.run(
-            ["xdg-settings", "set", "default-url-scheme-handler", "mailto", MAIL_DESKTOP_ID],
+            [
+                "xdg-settings",
+                "set",
+                "default-url-scheme-handler",
+                "mailto",
+                MAIL_DESKTOP_ID,
+            ],
             capture_output=True,
             text=True,
             check=False,
         )
         if result.returncode != 0:
-            self.mail_status.setText("Failed to set Hanauta Mail as the favorite mail client.")
+            self.mail_status.setText(
+                "Failed to set Hanauta Mail as the favorite mail client."
+            )
             return
         self._sync_mail_integration_buttons()
-        self.mail_status.setText("Hanauta Mail is now the favorite mail client for mailto links.")
+        self.mail_status.setText(
+            "Hanauta Mail is now the favorite mail client for mailto links."
+        )
 
     def _set_hanauta_mailto_handler(self) -> None:
         if not self._ensure_hanauta_mail_desktop_entry():
             return
         if shutil.which("xdg-mime") is None:
-            self.mail_status.setText("xdg-mime is unavailable, so mailto handling could not be enabled.")
+            self.mail_status.setText(
+                "xdg-mime is unavailable, so mailto handling could not be enabled."
+            )
             return
         result = subprocess.run(
             ["xdg-mime", "default", MAIL_DESKTOP_ID, "x-scheme-handler/mailto"],
@@ -8148,30 +10496,48 @@ class SettingsWindow(QWidget):
             check=False,
         )
         if result.returncode != 0:
-            self.mail_status.setText("Failed to enable mailto link handling for Hanauta Mail.")
+            self.mail_status.setText(
+                "Failed to enable mailto link handling for Hanauta Mail."
+            )
             return
         self._sync_mail_integration_buttons()
         self.mail_status.setText("Hanauta Mail will now handle mailto links.")
 
     def _set_mail_notifications_enabled(self, enabled: bool) -> None:
-        self.settings_state.setdefault("mail", {})["notify_new_messages"] = bool(enabled)
+        self.settings_state.setdefault("mail", {})["notify_new_messages"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
 
     def _set_mail_notification_sound_enabled(self, enabled: bool) -> None:
-        self.settings_state.setdefault("mail", {})["play_notification_sound"] = bool(enabled)
+        self.settings_state.setdefault("mail", {})["play_notification_sound"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
 
     def _set_mail_hide_notification_content(self, enabled: bool) -> None:
-        self.settings_state.setdefault("mail", {})["hide_notification_content"] = bool(enabled)
+        self.settings_state.setdefault("mail", {})["hide_notification_content"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
 
     def _choose_mail_avatar(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Choose mail avatar", str(Path.home() / "Pictures"), "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose mail avatar",
+            str(Path.home() / "Pictures"),
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
         if path:
             self.mail_avatar_path_input.setText(path)
 
     def _choose_mail_storage_path(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Choose Hanauta Mail database", self.mail_storage_path_input.text().strip() or str(MAIL_DB_PATH), "SQLite database (*.sqlite3 *.db)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Choose Hanauta Mail database",
+            self.mail_storage_path_input.text().strip() or str(MAIL_DB_PATH),
+            "SQLite database (*.sqlite3 *.db)",
+        )
         if path:
             self.mail_storage_path_input.setText(path)
 
@@ -8189,13 +10555,22 @@ class SettingsWindow(QWidget):
         hero_logo = QLabel()
         hero_logo.setFixedSize(28, 28)
         hero_logo.setScaledContents(True)
-        hero_logo.setPixmap(QPixmap(str(HOME_ASSISTANT_LOGO)).scaled(28, 28, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        hero_logo.setPixmap(
+            QPixmap(str(HOME_ASSISTANT_LOGO)).scaled(
+                28,
+                28,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
         hero_text_wrap = QVBoxLayout()
         hero_text_wrap.setContentsMargins(0, 0, 0, 0)
         hero_text_wrap.setSpacing(2)
         hero_title = QLabel("Home Assistant")
         hero_title.setFont(QFont(self.display_font, 12))
-        hero_hint = QLabel("Connect your server, pin entities, and optionally expose the popup on the bar.")
+        hero_hint = QLabel(
+            "Connect your server, pin entities, and optionally expose the popup on the bar."
+        )
         hero_hint.setWordWrap(True)
         hero_hint.setStyleSheet("color: rgba(246,235,247,0.72);")
         hero_text_wrap.addWidget(hero_title)
@@ -8204,14 +10579,32 @@ class SettingsWindow(QWidget):
         hero_layout.addLayout(hero_text_wrap, 1)
         content_layout.addWidget(hero)
 
-        self.ha_url_input = QLineEdit(self.settings_state["home_assistant"].get("url", ""))
+        self.ha_url_input = QLineEdit(
+            self.settings_state["home_assistant"].get("url", "")
+        )
         self.ha_url_input.setPlaceholderText("https://homeassistant.local:8123")
-        self.ha_token_input = QLineEdit(self.settings_state["home_assistant"].get("token", ""))
+        self.ha_token_input = QLineEdit(
+            self.settings_state["home_assistant"].get("token", "")
+        )
         self.ha_token_input.setPlaceholderText("Long-lived access token")
         self.ha_token_input.setEchoMode(QLineEdit.EchoMode.Password)
 
-        url_row = SettingsRow(material_icon("web_asset"), "Server URL", "Home Assistant base URL.", self.icon_font, self.ui_font, self.ha_url_input)
-        token_row = SettingsRow(material_icon("bolt"), "Access token", "Used to fetch and pin entities.", self.icon_font, self.ui_font, self.ha_token_input)
+        url_row = SettingsRow(
+            material_icon("web_asset"),
+            "Server URL",
+            "Home Assistant base URL.",
+            self.icon_font,
+            self.ui_font,
+            self.ha_url_input,
+        )
+        token_row = SettingsRow(
+            material_icon("bolt"),
+            "Access token",
+            "Used to fetch and pin entities.",
+            self.icon_font,
+            self.ui_font,
+            self.ha_token_input,
+        )
         content_layout.addWidget(url_row)
         content_layout.addWidget(token_row)
 
@@ -8224,7 +10617,9 @@ class SettingsWindow(QWidget):
             )
         )
         self.ha_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("home_assistant", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "home_assistant", enabled
+            )
         )
         self.service_display_switches["home_assistant"] = self.ha_display_switch
         content_layout.addWidget(
@@ -8278,7 +10673,15 @@ class SettingsWindow(QWidget):
         buttons.addWidget(self.ha_refresh_button)
         content_layout.addLayout(buttons)
 
-        self.ha_status = QLabel("Home Assistant is idle.")
+        ha_cache = load_service_cache_json("home_assistant.json")
+        cached_entities = (
+            ha_cache.get("entities", []) if isinstance(ha_cache, dict) else []
+        )
+        if isinstance(cached_entities, list) and cached_entities:
+            status_text = f"Using hanauta-service cache: {len(cached_entities)} entity snapshot(s) available."
+        else:
+            status_text = "Home Assistant is idle."
+        self.ha_status = QLabel(status_text)
         self.ha_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         content_layout.addWidget(self.ha_status)
 
@@ -8320,7 +10723,9 @@ class SettingsWindow(QWidget):
             DEFAULT_NOTIFICATION_RULES["rules"][rule_id],
         )
 
-        self.kdeconnect_whatsapp_ignore_switch = SwitchButton(bool(rule.get("enabled", False)))
+        self.kdeconnect_whatsapp_ignore_switch = SwitchButton(
+            bool(rule.get("enabled", False))
+        )
         self.kdeconnect_whatsapp_ignore_switch.toggledValue.connect(
             lambda enabled: self._set_notification_rule_enabled(rule_id, enabled)
         )
@@ -8340,7 +10745,9 @@ class SettingsWindow(QWidget):
         self.kdeconnect_low_battery_switch = SwitchButton(
             bool(service.get("low_battery_fullscreen_notification", False))
         )
-        self.kdeconnect_low_battery_switch.toggledValue.connect(self._set_kdeconnect_low_battery_fullscreen_notification)
+        self.kdeconnect_low_battery_switch.toggledValue.connect(
+            self._set_kdeconnect_low_battery_fullscreen_notification
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("notifications_active"),
@@ -8354,12 +10761,22 @@ class SettingsWindow(QWidget):
 
         self.kdeconnect_battery_threshold_slider = QSlider(Qt.Orientation.Horizontal)
         self.kdeconnect_battery_threshold_slider.setRange(1, 100)
-        self.kdeconnect_battery_threshold_slider.setValue(int(service.get("low_battery_threshold", 20)))
-        self.kdeconnect_battery_threshold_slider.valueChanged.connect(self._set_kdeconnect_low_battery_threshold)
-        self.kdeconnect_battery_threshold_label = QLabel(f"{int(service.get('low_battery_threshold', 20))}%")
+        self.kdeconnect_battery_threshold_slider.setValue(
+            int(service.get("low_battery_threshold", 20))
+        )
+        self.kdeconnect_battery_threshold_slider.valueChanged.connect(
+            self._set_kdeconnect_low_battery_threshold
+        )
+        self.kdeconnect_battery_threshold_label = QLabel(
+            f"{int(service.get('low_battery_threshold', 20))}%"
+        )
         self.kdeconnect_battery_threshold_label.setFixedWidth(48)
-        self.kdeconnect_battery_threshold_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.kdeconnect_battery_threshold_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+        self.kdeconnect_battery_threshold_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.kdeconnect_battery_threshold_label.setStyleSheet(
+            "color: rgba(246,235,247,0.78);"
+        )
         threshold_wrap = QWidget()
         threshold_layout = QHBoxLayout(threshold_wrap)
         threshold_layout.setContentsMargins(0, 0, 0, 0)
@@ -8391,7 +10808,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.kdeconnect_rules_status = QLabel("KDE Connect notification rules are idle.")
+        self.kdeconnect_rules_status = QLabel(
+            "KDE Connect notification rules are idle."
+        )
         self.kdeconnect_rules_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         self.kdeconnect_rules_status.setWordWrap(True)
         layout.addWidget(self.kdeconnect_rules_status)
@@ -8424,7 +10843,9 @@ class SettingsWindow(QWidget):
             )
         )
         display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("vpn_control", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "vpn_control", enabled
+            )
         )
         self.service_display_switches["vpn_control"] = display_switch
         layout.addWidget(
@@ -8487,7 +10908,9 @@ class SettingsWindow(QWidget):
             )
         )
         display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_bar_visibility("christian_widget", enabled)
+            lambda enabled: self._set_service_bar_visibility(
+                "christian_widget", enabled
+            )
         )
         self.service_display_switches["christian_widget"] = display_switch
         layout.addWidget(
@@ -8509,7 +10932,9 @@ class SettingsWindow(QWidget):
             )
         )
         next_devotion_switch.toggledValue.connect(
-            lambda enabled: self._set_christian_service_flag("next_devotion_notifications", enabled)
+            lambda enabled: self._set_christian_service_flag(
+                "next_devotion_notifications", enabled
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -8530,7 +10955,9 @@ class SettingsWindow(QWidget):
             )
         )
         hourly_verse_switch.toggledValue.connect(
-            lambda enabled: self._set_christian_service_flag("hourly_verse_notifications", enabled)
+            lambda enabled: self._set_christian_service_flag(
+                "hourly_verse_notifications", enabled
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -8589,9 +11016,15 @@ class SettingsWindow(QWidget):
 
         self.health_provider_combo = QComboBox()
         self.health_provider_combo.addItems(["Manual", "Fitbit"])
-        provider_index = 1 if self.settings_state["health"].get("provider", "manual") == "fitbit" else 0
+        provider_index = (
+            1
+            if self.settings_state["health"].get("provider", "manual") == "fitbit"
+            else 0
+        )
         self.health_provider_combo.setCurrentIndex(provider_index)
-        self.health_provider_combo.currentIndexChanged.connect(self._set_health_provider)
+        self.health_provider_combo.currentIndexChanged.connect(
+            self._set_health_provider
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("favorite"),
@@ -8603,7 +11036,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.health_step_goal_input = QLineEdit(str(self.settings_state["health"].get("step_goal", 10000)))
+        self.health_step_goal_input = QLineEdit(
+            str(self.settings_state["health"].get("step_goal", 10000))
+        )
         self.health_step_goal_input.setPlaceholderText("10000")
         layout.addWidget(
             SettingsRow(
@@ -8616,7 +11051,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.health_water_goal_input = QLineEdit(str(self.settings_state["health"].get("water_goal_ml", 2000)))
+        self.health_water_goal_input = QLineEdit(
+            str(self.settings_state["health"].get("water_goal_ml", 2000))
+        )
         self.health_water_goal_input.setPlaceholderText("2000")
         layout.addWidget(
             SettingsRow(
@@ -8629,7 +11066,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.health_sync_interval_input = QLineEdit(str(self.settings_state["health"].get("sync_interval_minutes", 30)))
+        self.health_sync_interval_input = QLineEdit(
+            str(self.settings_state["health"].get("sync_interval_minutes", 30))
+        )
         self.health_sync_interval_input.setPlaceholderText("30")
         layout.addWidget(
             SettingsRow(
@@ -8651,7 +11090,9 @@ class SettingsWindow(QWidget):
             )
         )
         water_reminder_switch.toggledValue.connect(
-            lambda enabled: self._set_health_service_flag("water_reminder_notifications", enabled)
+            lambda enabled: self._set_health_service_flag(
+                "water_reminder_notifications", enabled
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -8673,7 +11114,9 @@ class SettingsWindow(QWidget):
             )
         )
         stand_reminder_switch.toggledValue.connect(
-            lambda enabled: self._set_health_service_flag("stand_up_reminder_notifications", enabled)
+            lambda enabled: self._set_health_service_flag(
+                "stand_up_reminder_notifications", enabled
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -8695,7 +11138,9 @@ class SettingsWindow(QWidget):
             )
         )
         movement_reminder_switch.toggledValue.connect(
-            lambda enabled: self._set_health_service_flag("movement_reminder_notifications", enabled)
+            lambda enabled: self._set_health_service_flag(
+                "movement_reminder_notifications", enabled
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -8711,16 +11156,28 @@ class SettingsWindow(QWidget):
         self.health_stand_reminder_switch = stand_reminder_switch
         self.health_movement_reminder_switch = movement_reminder_switch
 
-        self.health_fitbit_client_id_input = QLineEdit(self.settings_state["health"].get("fitbit_client_id", ""))
+        self.health_fitbit_client_id_input = QLineEdit(
+            self.settings_state["health"].get("fitbit_client_id", "")
+        )
         self.health_fitbit_client_id_input.setPlaceholderText("Fitbit client id")
-        self.health_fitbit_client_secret_input = QLineEdit(self.settings_state["health"].get("fitbit_client_secret", ""))
-        self.health_fitbit_client_secret_input.setPlaceholderText("Fitbit client secret")
+        self.health_fitbit_client_secret_input = QLineEdit(
+            self.settings_state["health"].get("fitbit_client_secret", "")
+        )
+        self.health_fitbit_client_secret_input.setPlaceholderText(
+            "Fitbit client secret"
+        )
         self.health_fitbit_client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.health_fitbit_access_token_input = QLineEdit(self.settings_state["health"].get("fitbit_access_token", ""))
+        self.health_fitbit_access_token_input = QLineEdit(
+            self.settings_state["health"].get("fitbit_access_token", "")
+        )
         self.health_fitbit_access_token_input.setPlaceholderText("Fitbit access token")
         self.health_fitbit_access_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.health_fitbit_refresh_token_input = QLineEdit(self.settings_state["health"].get("fitbit_refresh_token", ""))
-        self.health_fitbit_refresh_token_input.setPlaceholderText("Fitbit refresh token")
+        self.health_fitbit_refresh_token_input = QLineEdit(
+            self.settings_state["health"].get("fitbit_refresh_token", "")
+        )
+        self.health_fitbit_refresh_token_input.setPlaceholderText(
+            "Fitbit refresh token"
+        )
         self.health_fitbit_refresh_token_input.setEchoMode(QLineEdit.EchoMode.Password)
 
         layout.addWidget(
@@ -8774,7 +11231,9 @@ class SettingsWindow(QWidget):
         button_row.addWidget(self.health_save_button)
         layout.addLayout(button_row)
 
-        self.health_status_label = QLabel("Manual mode works immediately. Switch to Fitbit when you have tokens ready.")
+        self.health_status_label = QLabel(
+            "Manual mode works immediately. Switch to Fitbit when you have tokens ready."
+        )
         self.health_status_label.setStyleSheet("color: rgba(246,235,247,0.72);")
         self.health_status_label.setWordWrap(True)
         layout.addWidget(self.health_status_label)
@@ -8800,7 +11259,9 @@ class SettingsWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.weather_city_input = QLineEdit(self.settings_state["weather"].get("name", ""))
+        self.weather_city_input = QLineEdit(
+            self.settings_state["weather"].get("name", "")
+        )
         if self._selected_weather_city is not None:
             self.weather_city_input.setText(self._selected_weather_city.label)
         self.weather_city_input.setPlaceholderText("Type a city, region, or country")
@@ -8808,7 +11269,9 @@ class SettingsWindow(QWidget):
 
         self.weather_city_model = QStringListModel(self)
         self.weather_city_completer = QCompleter(self.weather_city_model, self)
-        self.weather_city_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.weather_city_completer.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
         self.weather_city_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.weather_city_completer.activated[str].connect(self._select_weather_city)
         self.weather_city_input.setCompleter(self.weather_city_completer)
@@ -8880,7 +11343,9 @@ class SettingsWindow(QWidget):
         self.cap_alerts_test_mode_switch = SwitchButton(
             bool(self.settings_state["services"]["cap_alerts"].get("test_mode", False))
         )
-        self.cap_alerts_test_mode_switch.toggledValue.connect(self._set_cap_alerts_test_mode)
+        self.cap_alerts_test_mode_switch.toggledValue.connect(
+            self._set_cap_alerts_test_mode
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("science"),
@@ -8928,7 +11393,9 @@ class SettingsWindow(QWidget):
             )
         )
         self.calendar_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("calendar_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "calendar_widget", enabled
+            )
         )
         self.service_display_switches["calendar_widget"] = self.calendar_display_switch
         layout.addWidget(
@@ -8945,7 +11412,9 @@ class SettingsWindow(QWidget):
         self.calendar_week_numbers_switch = SwitchButton(
             bool(self.settings_state["calendar"].get("show_week_numbers", False))
         )
-        self.calendar_week_numbers_switch.toggledValue.connect(self._set_calendar_show_week_numbers)
+        self.calendar_week_numbers_switch.toggledValue.connect(
+            self._set_calendar_show_week_numbers
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("calendar_month"),
@@ -8960,7 +11429,9 @@ class SettingsWindow(QWidget):
         self.calendar_other_month_switch = SwitchButton(
             bool(self.settings_state["calendar"].get("show_other_month_days", True))
         )
-        self.calendar_other_month_switch.toggledValue.connect(self._set_calendar_show_other_month_days)
+        self.calendar_other_month_switch.toggledValue.connect(
+            self._set_calendar_show_other_month_days
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("event_upcoming"),
@@ -8976,10 +11447,14 @@ class SettingsWindow(QWidget):
         self.calendar_first_day_combo.setObjectName("settingsCombo")
         self.calendar_first_day_combo.addItem("Monday", "monday")
         self.calendar_first_day_combo.addItem("Sunday", "sunday")
-        current_first_day = str(self.settings_state["calendar"].get("first_day_of_week", "monday"))
+        current_first_day = str(
+            self.settings_state["calendar"].get("first_day_of_week", "monday")
+        )
         index = self.calendar_first_day_combo.findData(current_first_day)
         self.calendar_first_day_combo.setCurrentIndex(max(0, index))
-        self.calendar_first_day_combo.currentIndexChanged.connect(self._set_calendar_first_day)
+        self.calendar_first_day_combo.currentIndexChanged.connect(
+            self._set_calendar_first_day
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("schedule"),
@@ -8991,16 +11466,49 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.calendar_url_input = QLineEdit(self.settings_state["calendar"].get("caldav_url", ""))
+        self.calendar_url_input = QLineEdit(
+            self.settings_state["calendar"].get("caldav_url", "")
+        )
         self.calendar_url_input.setPlaceholderText("https://dav.example.com/caldav/")
-        self.calendar_user_input = QLineEdit(self.settings_state["calendar"].get("caldav_username", ""))
+        self.calendar_user_input = QLineEdit(
+            self.settings_state["calendar"].get("caldav_username", "")
+        )
         self.calendar_user_input.setPlaceholderText("username")
-        self.calendar_password_input = QLineEdit(self.settings_state["calendar"].get("caldav_password", ""))
+        self.calendar_password_input = QLineEdit(
+            self.settings_state["calendar"].get("caldav_password", "")
+        )
         self.calendar_password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.calendar_password_input.setPlaceholderText("Password or app password")
-        layout.addWidget(SettingsRow(material_icon("web_asset"), "CalDAV URL", "Used to discover and sync remote calendars into qcal.", self.icon_font, self.ui_font, self.calendar_url_input))
-        layout.addWidget(SettingsRow(material_icon("person"), "CalDAV username", "Account used for CalDAV discovery.", self.icon_font, self.ui_font, self.calendar_user_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "CalDAV password", "Stored so qcal can keep your event list wired up.", self.icon_font, self.ui_font, self.calendar_password_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("web_asset"),
+                "CalDAV URL",
+                "Used to discover and sync remote calendars into qcal.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_url_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "CalDAV username",
+                "Account used for CalDAV discovery.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_user_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "CalDAV password",
+                "Stored so qcal can keep your event list wired up.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_password_input,
+            )
+        )
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
@@ -9009,7 +11517,9 @@ class SettingsWindow(QWidget):
         self.calendar_discover_button = QPushButton("Discover calendars")
         self.calendar_discover_button.setObjectName("primaryButton")
         self.calendar_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.calendar_discover_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.calendar_discover_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.calendar_save_button.clicked.connect(self._save_calendar_settings)
         self.calendar_discover_button.clicked.connect(self._discover_calendar_calendars)
         buttons.addWidget(self.calendar_save_button)
@@ -9018,7 +11528,8 @@ class SettingsWindow(QWidget):
         layout.addLayout(buttons)
 
         self.calendar_status = QLabel(
-            str(self.settings_state["calendar"].get("last_sync_status", "")).strip() or "Calendar integration is idle."
+            str(self.settings_state["calendar"].get("last_sync_status", "")).strip()
+            or "Calendar integration is idle."
         )
         self.calendar_status.setWordWrap(True)
         self.calendar_status.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -9053,9 +11564,13 @@ class SettingsWindow(QWidget):
             )
         )
         self.reminders_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("reminders_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "reminders_widget", enabled
+            )
         )
-        self.service_display_switches["reminders_widget"] = self.reminders_display_switch
+        self.service_display_switches["reminders_widget"] = (
+            self.reminders_display_switch
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("widgets"),
@@ -9076,7 +11591,9 @@ class SettingsWindow(QWidget):
             )
         )
         self.reminders_bar_switch.toggledValue.connect(
-            lambda enabled: self._set_service_bar_visibility("reminders_widget", enabled)
+            lambda enabled: self._set_service_bar_visibility(
+                "reminders_widget", enabled
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -9094,10 +11611,14 @@ class SettingsWindow(QWidget):
         self.reminders_intensity_combo.addItem("Quiet", "quiet")
         self.reminders_intensity_combo.addItem("Discrete", "discrete")
         self.reminders_intensity_combo.addItem("Very disturbing", "disturbing")
-        current_intensity = str(self.settings_state["reminders"].get("default_intensity", "discrete"))
+        current_intensity = str(
+            self.settings_state["reminders"].get("default_intensity", "discrete")
+        )
         intensity_index = self.reminders_intensity_combo.findData(current_intensity)
         self.reminders_intensity_combo.setCurrentIndex(max(0, intensity_index))
-        self.reminders_intensity_combo.currentIndexChanged.connect(self._set_reminder_default_intensity)
+        self.reminders_intensity_combo.currentIndexChanged.connect(
+            self._set_reminder_default_intensity
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("notifications_active"),
@@ -9111,8 +11632,12 @@ class SettingsWindow(QWidget):
 
         self.reminders_lead_slider = QSlider(Qt.Orientation.Horizontal)
         self.reminders_lead_slider.setRange(0, 120)
-        self.reminders_lead_slider.setValue(int(self.settings_state["reminders"].get("default_lead_minutes", 20)))
-        self.reminders_lead_slider.valueChanged.connect(self._set_reminder_default_lead_minutes)
+        self.reminders_lead_slider.setValue(
+            int(self.settings_state["reminders"].get("default_lead_minutes", 20))
+        )
+        self.reminders_lead_slider.valueChanged.connect(
+            self._set_reminder_default_lead_minutes
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("alarm"),
@@ -9124,7 +11649,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.tea_label_input = QLineEdit(self.settings_state["reminders"].get("tea_label", "Tea"))
+        self.tea_label_input = QLineEdit(
+            self.settings_state["reminders"].get("tea_label", "Tea")
+        )
         self.tea_label_input.setPlaceholderText("Tea, eggs, rice, pasta...")
         layout.addWidget(
             SettingsRow(
@@ -9139,7 +11666,9 @@ class SettingsWindow(QWidget):
 
         self.tea_minutes_slider = QSlider(Qt.Orientation.Horizontal)
         self.tea_minutes_slider.setRange(1, 30)
-        self.tea_minutes_slider.setValue(int(self.settings_state["reminders"].get("tea_minutes", 5)))
+        self.tea_minutes_slider.setValue(
+            int(self.settings_state["reminders"].get("tea_minutes", 5))
+        )
         self.tea_minutes_slider.valueChanged.connect(self._set_tea_default_minutes)
         layout.addWidget(
             SettingsRow(
@@ -9194,7 +11723,9 @@ class SettingsWindow(QWidget):
             )
         )
         self.pomodoro_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("pomodoro_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "pomodoro_widget", enabled
+            )
         )
         self.service_display_switches["pomodoro_widget"] = self.pomodoro_display_switch
         layout.addWidget(
@@ -9232,7 +11763,9 @@ class SettingsWindow(QWidget):
 
         self.pomodoro_work_slider = QSlider(Qt.Orientation.Horizontal)
         self.pomodoro_work_slider.setRange(5, 90)
-        self.pomodoro_work_slider.setValue(int(self.settings_state["pomodoro"].get("work_minutes", 25)))
+        self.pomodoro_work_slider.setValue(
+            int(self.settings_state["pomodoro"].get("work_minutes", 25))
+        )
         self.pomodoro_work_slider.valueChanged.connect(self._set_pomodoro_work_minutes)
         layout.addWidget(
             SettingsRow(
@@ -9247,8 +11780,12 @@ class SettingsWindow(QWidget):
 
         self.pomodoro_short_break_slider = QSlider(Qt.Orientation.Horizontal)
         self.pomodoro_short_break_slider.setRange(1, 30)
-        self.pomodoro_short_break_slider.setValue(int(self.settings_state["pomodoro"].get("short_break_minutes", 5)))
-        self.pomodoro_short_break_slider.valueChanged.connect(self._set_pomodoro_short_break_minutes)
+        self.pomodoro_short_break_slider.setValue(
+            int(self.settings_state["pomodoro"].get("short_break_minutes", 5))
+        )
+        self.pomodoro_short_break_slider.valueChanged.connect(
+            self._set_pomodoro_short_break_minutes
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("coffee"),
@@ -9262,8 +11799,12 @@ class SettingsWindow(QWidget):
 
         self.pomodoro_long_break_slider = QSlider(Qt.Orientation.Horizontal)
         self.pomodoro_long_break_slider.setRange(5, 60)
-        self.pomodoro_long_break_slider.setValue(int(self.settings_state["pomodoro"].get("long_break_minutes", 15)))
-        self.pomodoro_long_break_slider.valueChanged.connect(self._set_pomodoro_long_break_minutes)
+        self.pomodoro_long_break_slider.setValue(
+            int(self.settings_state["pomodoro"].get("long_break_minutes", 15))
+        )
+        self.pomodoro_long_break_slider.valueChanged.connect(
+            self._set_pomodoro_long_break_minutes
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("schedule"),
@@ -9277,8 +11818,12 @@ class SettingsWindow(QWidget):
 
         self.pomodoro_cycle_slider = QSlider(Qt.Orientation.Horizontal)
         self.pomodoro_cycle_slider.setRange(2, 8)
-        self.pomodoro_cycle_slider.setValue(int(self.settings_state["pomodoro"].get("long_break_every", 4)))
-        self.pomodoro_cycle_slider.valueChanged.connect(self._set_pomodoro_long_break_every)
+        self.pomodoro_cycle_slider.setValue(
+            int(self.settings_state["pomodoro"].get("long_break_every", 4))
+        )
+        self.pomodoro_cycle_slider.valueChanged.connect(
+            self._set_pomodoro_long_break_every
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("alarm"),
@@ -9293,7 +11838,9 @@ class SettingsWindow(QWidget):
         self.pomodoro_auto_breaks_switch = SwitchButton(
             bool(self.settings_state["pomodoro"].get("auto_start_breaks", False))
         )
-        self.pomodoro_auto_breaks_switch.toggledValue.connect(self._set_pomodoro_auto_start_breaks)
+        self.pomodoro_auto_breaks_switch.toggledValue.connect(
+            self._set_pomodoro_auto_start_breaks
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("refresh"),
@@ -9308,7 +11855,9 @@ class SettingsWindow(QWidget):
         self.pomodoro_auto_focus_switch = SwitchButton(
             bool(self.settings_state["pomodoro"].get("auto_start_focus", False))
         )
-        self.pomodoro_auto_focus_switch.toggledValue.connect(self._set_pomodoro_auto_start_focus)
+        self.pomodoro_auto_focus_switch.toggledValue.connect(
+            self._set_pomodoro_auto_start_focus
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("auto_awesome"),
@@ -9354,7 +11903,9 @@ class SettingsWindow(QWidget):
             )
         )
         self.rss_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("rss_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "rss_widget", enabled
+            )
         )
         self.service_display_switches["rss_widget"] = self.rss_display_switch
         layout.addWidget(
@@ -9428,10 +11979,16 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
 
         self.obs_display_switch = SwitchButton(
-            bool(self.settings_state["services"]["obs_widget"].get("show_in_notification_center", True))
+            bool(
+                self.settings_state["services"]["obs_widget"].get(
+                    "show_in_notification_center", True
+                )
+            )
         )
         self.obs_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("obs_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "obs_widget", enabled
+            )
         )
         self.service_display_switches["obs_widget"] = self.obs_display_switch
         layout.addWidget(
@@ -9446,7 +12003,9 @@ class SettingsWindow(QWidget):
         )
 
         self.obs_bar_switch = SwitchButton(
-            bool(self.settings_state["services"]["obs_widget"].get("show_in_bar", False))
+            bool(
+                self.settings_state["services"]["obs_widget"].get("show_in_bar", False)
+            )
         )
         self.obs_bar_switch.toggledValue.connect(
             lambda enabled: self._set_service_bar_visibility("obs_widget", enabled)
@@ -9462,17 +12021,56 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.obs_host_input = QLineEdit(self.settings_state["obs"].get("host", "127.0.0.1"))
-        self.obs_port_input = QLineEdit(str(self.settings_state["obs"].get("port", 4455)))
-        self.obs_password_input = QLineEdit(self.settings_state["obs"].get("password", ""))
+        self.obs_host_input = QLineEdit(
+            self.settings_state["obs"].get("host", "127.0.0.1")
+        )
+        self.obs_port_input = QLineEdit(
+            str(self.settings_state["obs"].get("port", 4455))
+        )
+        self.obs_password_input = QLineEdit(
+            self.settings_state["obs"].get("password", "")
+        )
         self.obs_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.obs_auto_connect_switch = SwitchButton(bool(self.settings_state["obs"].get("auto_connect", False)))
+        self.obs_auto_connect_switch = SwitchButton(
+            bool(self.settings_state["obs"].get("auto_connect", False))
+        )
         self.obs_auto_connect_switch.toggledValue.connect(self._set_obs_auto_connect)
-        self.obs_debug_tooltips_switch = SwitchButton(bool(self.settings_state["obs"].get("show_debug_tooltips", False)))
-        self.obs_debug_tooltips_switch.toggledValue.connect(self._set_obs_debug_tooltips)
-        layout.addWidget(SettingsRow(material_icon("public"), "OBS host", "OBS WebSocket host, usually 127.0.0.1.", self.icon_font, self.ui_font, self.obs_host_input))
-        layout.addWidget(SettingsRow(material_icon("sensors"), "OBS port", "OBS WebSocket port. OBS 30+ defaults to 4455.", self.icon_font, self.ui_font, self.obs_port_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "OBS password", "Optional OBS WebSocket password.", self.icon_font, self.ui_font, self.obs_password_input))
+        self.obs_debug_tooltips_switch = SwitchButton(
+            bool(self.settings_state["obs"].get("show_debug_tooltips", False))
+        )
+        self.obs_debug_tooltips_switch.toggledValue.connect(
+            self._set_obs_debug_tooltips
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "OBS host",
+                "OBS WebSocket host, usually 127.0.0.1.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_host_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sensors"),
+                "OBS port",
+                "OBS WebSocket port. OBS 30+ defaults to 4455.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_port_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "OBS password",
+                "Optional OBS WebSocket password.",
+                self.icon_font,
+                self.ui_font,
+                self.obs_password_input,
+            )
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("refresh"),
@@ -9526,10 +12124,16 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
 
         self.crypto_display_switch = SwitchButton(
-            bool(self.settings_state["services"]["crypto_widget"].get("show_in_notification_center", True))
+            bool(
+                self.settings_state["services"]["crypto_widget"].get(
+                    "show_in_notification_center", True
+                )
+            )
         )
         self.crypto_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("crypto_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "crypto_widget", enabled
+            )
         )
         self.service_display_switches["crypto_widget"] = self.crypto_display_switch
         layout.addWidget(
@@ -9544,7 +12148,11 @@ class SettingsWindow(QWidget):
         )
 
         self.crypto_bar_switch = SwitchButton(
-            bool(self.settings_state["services"]["crypto_widget"].get("show_in_bar", False))
+            bool(
+                self.settings_state["services"]["crypto_widget"].get(
+                    "show_in_bar", False
+                )
+            )
         )
         self.crypto_bar_switch.toggledValue.connect(
             lambda enabled: self._set_service_bar_visibility("crypto_widget", enabled)
@@ -9560,46 +12168,149 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.crypto_coins_input = QLineEdit(self.settings_state["crypto"].get("tracked_coins", "bitcoin,ethereum"))
+        self.crypto_coins_input = QLineEdit(
+            self.settings_state["crypto"].get("tracked_coins", "bitcoin,ethereum")
+        )
         self.crypto_coins_input.setPlaceholderText("bitcoin,ethereum,solana")
-        self.crypto_currency_input = QLineEdit(self.settings_state["crypto"].get("vs_currency", "usd"))
+        self.crypto_currency_input = QLineEdit(
+            self.settings_state["crypto"].get("vs_currency", "usd")
+        )
         self.crypto_currency_input.setPlaceholderText("usd")
-        self.crypto_api_key_input = QLineEdit(self.settings_state["crypto"].get("api_key", ""))
+        self.crypto_api_key_input = QLineEdit(
+            self.settings_state["crypto"].get("api_key", "")
+        )
         self.crypto_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.crypto_api_key_input.setPlaceholderText("Optional CoinGecko Demo API key")
-        layout.addWidget(SettingsRow(material_icon("show_chart"), "Tracked coins", "Comma-separated CoinGecko coin ids like bitcoin, ethereum, solana.", self.icon_font, self.ui_font, self.crypto_coins_input))
-        layout.addWidget(SettingsRow(material_icon("public"), "Quote currency", "The currency used for pricing, such as usd or brl.", self.icon_font, self.ui_font, self.crypto_currency_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "CoinGecko Demo key", "Optional free demo key for higher limits. Hanauta uses CoinGecko for price and chart data.", self.icon_font, self.ui_font, self.crypto_api_key_input))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("show_chart"),
+                "Tracked coins",
+                "Comma-separated CoinGecko coin ids like bitcoin, ethereum, solana.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_coins_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "Quote currency",
+                "The currency used for pricing, such as usd or brl.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_currency_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "CoinGecko Demo key",
+                "Optional free demo key for higher limits. Hanauta uses CoinGecko for price and chart data.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_api_key_input,
+            )
+        )
 
         self.crypto_interval_slider = QSlider(Qt.Orientation.Horizontal)
         self.crypto_interval_slider.setRange(5, 180)
-        self.crypto_interval_slider.setValue(int(self.settings_state["crypto"].get("check_interval_minutes", 15)))
-        self.crypto_interval_slider.valueChanged.connect(self._set_crypto_check_interval)
-        layout.addWidget(SettingsRow(material_icon("refresh"), "Check interval", "How often Hanauta checks tracked coins for fresh prices and alert-worthy moves.", self.icon_font, self.ui_font, self.crypto_interval_slider))
+        self.crypto_interval_slider.setValue(
+            int(self.settings_state["crypto"].get("check_interval_minutes", 15))
+        )
+        self.crypto_interval_slider.valueChanged.connect(
+            self._set_crypto_check_interval
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Check interval",
+                "How often Hanauta checks tracked coins for fresh prices and alert-worthy moves.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_interval_slider,
+            )
+        )
 
         self.crypto_chart_days_slider = QSlider(Qt.Orientation.Horizontal)
         self.crypto_chart_days_slider.setRange(1, 90)
-        self.crypto_chart_days_slider.setValue(int(self.settings_state["crypto"].get("chart_days", 7)))
+        self.crypto_chart_days_slider.setValue(
+            int(self.settings_state["crypto"].get("chart_days", 7))
+        )
         self.crypto_chart_days_slider.valueChanged.connect(self._set_crypto_chart_days)
-        layout.addWidget(SettingsRow(material_icon("calendar_month"), "Chart days", "How many recent days the high-resolution chart should cover by default.", self.icon_font, self.ui_font, self.crypto_chart_days_slider))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("calendar_month"),
+                "Chart days",
+                "How many recent days the high-resolution chart should cover by default.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_chart_days_slider,
+            )
+        )
 
-        self.crypto_alert_switch = SwitchButton(bool(self.settings_state["crypto"].get("notify_price_moves", True)))
-        self.crypto_alert_switch.toggledValue.connect(self._set_crypto_notify_price_moves)
-        layout.addWidget(SettingsRow(material_icon("notifications_active"), "Price alerts", "Send notifications when tracked coins move beyond your up/down thresholds.", self.icon_font, self.ui_font, self.crypto_alert_switch))
+        self.crypto_alert_switch = SwitchButton(
+            bool(self.settings_state["crypto"].get("notify_price_moves", True))
+        )
+        self.crypto_alert_switch.toggledValue.connect(
+            self._set_crypto_notify_price_moves
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Price alerts",
+                "Send notifications when tracked coins move beyond your up/down thresholds.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_alert_switch,
+            )
+        )
 
         self.crypto_up_slider = QSlider(Qt.Orientation.Horizontal)
         self.crypto_up_slider.setRange(1, 20)
-        self.crypto_up_slider.setValue(int(round(float(self.settings_state["crypto"].get("price_up_percent", 3.0)))))
+        self.crypto_up_slider.setValue(
+            int(
+                round(float(self.settings_state["crypto"].get("price_up_percent", 3.0)))
+            )
+        )
         self.crypto_up_slider.valueChanged.connect(self._set_crypto_up_percent)
-        layout.addWidget(SettingsRow(material_icon("bolt"), "Up alert threshold", "Notify when a tracked coin rises by at least this percent since the previous check.", self.icon_font, self.ui_font, self.crypto_up_slider))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("bolt"),
+                "Up alert threshold",
+                "Notify when a tracked coin rises by at least this percent since the previous check.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_up_slider,
+            )
+        )
 
         self.crypto_down_slider = QSlider(Qt.Orientation.Horizontal)
         self.crypto_down_slider.setRange(1, 20)
-        self.crypto_down_slider.setValue(int(round(float(self.settings_state["crypto"].get("price_down_percent", 3.0)))))
+        self.crypto_down_slider.setValue(
+            int(
+                round(
+                    float(self.settings_state["crypto"].get("price_down_percent", 3.0))
+                )
+            )
+        )
         self.crypto_down_slider.valueChanged.connect(self._set_crypto_down_percent)
-        layout.addWidget(SettingsRow(material_icon("bolt"), "Down alert threshold", "Notify when a tracked coin falls by at least this percent since the previous check.", self.icon_font, self.ui_font, self.crypto_down_slider))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("bolt"),
+                "Down alert threshold",
+                "Notify when a tracked coin falls by at least this percent since the previous check.",
+                self.icon_font,
+                self.ui_font,
+                self.crypto_down_slider,
+            )
+        )
 
-        self.crypto_status = QLabel("Crypto tracker is set to CoinGecko pricing.")
+        crypto_cache = load_service_cache_json("crypto.json")
+        if isinstance(crypto_cache, dict) and crypto_cache.get("updated_at"):
+            status_text = "Using hanauta-service cache for initial crypto snapshot."
+        else:
+            status_text = "Crypto tracker is set to CoinGecko pricing."
+        self.crypto_status = QLabel(status_text)
         self.crypto_status.setWordWrap(True)
         self.crypto_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.crypto_status)
@@ -9631,10 +12342,16 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
 
         self.vps_display_switch = SwitchButton(
-            bool(self.settings_state["services"]["vps_widget"].get("show_in_notification_center", True))
+            bool(
+                self.settings_state["services"]["vps_widget"].get(
+                    "show_in_notification_center", True
+                )
+            )
         )
         self.vps_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("vps_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "vps_widget", enabled
+            )
         )
         self.service_display_switches["vps_widget"] = self.vps_display_switch
         layout.addWidget(
@@ -9650,20 +12367,97 @@ class SettingsWindow(QWidget):
 
         self.vps_host_input = QLineEdit(self.settings_state["vps"].get("host", ""))
         self.vps_port_input = QLineEdit(str(self.settings_state["vps"].get("port", 22)))
-        self.vps_username_input = QLineEdit(self.settings_state["vps"].get("username", ""))
-        self.vps_identity_input = QLineEdit(self.settings_state["vps"].get("identity_file", ""))
-        self.vps_service_input = QLineEdit(self.settings_state["vps"].get("app_service", ""))
-        self.vps_health_input = QLineEdit(self.settings_state["vps"].get("health_command", "uptime && df -h /"))
-        self.vps_update_input = QLineEdit(self.settings_state["vps"].get("update_command", "sudo apt update && sudo apt upgrade -y"))
-        layout.addWidget(SettingsRow(material_icon("public"), "Host", "Server host or IP for SSH connections.", self.icon_font, self.ui_font, self.vps_host_input))
-        layout.addWidget(SettingsRow(material_icon("sensors"), "Port", "SSH port for the VPS.", self.icon_font, self.ui_font, self.vps_port_input))
-        layout.addWidget(SettingsRow(material_icon("person"), "Username", "SSH username.", self.icon_font, self.ui_font, self.vps_username_input))
-        layout.addWidget(SettingsRow(material_icon("lock"), "Identity file", "Optional SSH private key path if you do not want to rely on your default agent.", self.icon_font, self.ui_font, self.vps_identity_input))
-        layout.addWidget(SettingsRow(material_icon("hub"), "App service", "Optional systemd service to restart or check quickly, like caddy or myapp.service.", self.icon_font, self.ui_font, self.vps_service_input))
-        layout.addWidget(SettingsRow(material_icon("terminal"), "Health command", "Command used by the widget to collect uptime, disk, and service health.", self.icon_font, self.ui_font, self.vps_health_input))
-        layout.addWidget(SettingsRow(material_icon("refresh"), "Update command", "Command used when you want Hanauta to run package updates over SSH.", self.icon_font, self.ui_font, self.vps_update_input))
+        self.vps_username_input = QLineEdit(
+            self.settings_state["vps"].get("username", "")
+        )
+        self.vps_identity_input = QLineEdit(
+            self.settings_state["vps"].get("identity_file", "")
+        )
+        self.vps_service_input = QLineEdit(
+            self.settings_state["vps"].get("app_service", "")
+        )
+        self.vps_health_input = QLineEdit(
+            self.settings_state["vps"].get("health_command", "uptime && df -h /")
+        )
+        self.vps_update_input = QLineEdit(
+            self.settings_state["vps"].get(
+                "update_command", "sudo apt update && sudo apt upgrade -y"
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("public"),
+                "Host",
+                "Server host or IP for SSH connections.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_host_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sensors"),
+                "Port",
+                "SSH port for the VPS.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_port_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "Username",
+                "SSH username.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_username_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "Identity file",
+                "Optional SSH private key path if you do not want to rely on your default agent.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_identity_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("hub"),
+                "App service",
+                "Optional systemd service to restart or check quickly, like caddy or myapp.service.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_service_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("terminal"),
+                "Health command",
+                "Command used by the widget to collect uptime, disk, and service health.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_health_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("refresh"),
+                "Update command",
+                "Command used when you want Hanauta to run package updates over SSH.",
+                self.icon_font,
+                self.ui_font,
+                self.vps_update_input,
+            )
+        )
 
-        self.vps_status = QLabel("VPS widget can run SSH health checks and maintenance commands.")
+        self.vps_status = QLabel(
+            "VPS widget can run SSH health checks and maintenance commands."
+        )
         self.vps_status.setWordWrap(True)
         self.vps_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.vps_status)
@@ -9696,12 +12490,20 @@ class SettingsWindow(QWidget):
         native_clock = DESKTOP_CLOCK_BINARY.exists()
 
         self.clock_display_switch = SwitchButton(
-            bool(self.settings_state["services"]["desktop_clock_widget"].get("show_in_notification_center", True))
+            bool(
+                self.settings_state["services"]["desktop_clock_widget"].get(
+                    "show_in_notification_center", True
+                )
+            )
         )
         self.clock_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("desktop_clock_widget", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "desktop_clock_widget", enabled
+            )
         )
-        self.service_display_switches["desktop_clock_widget"] = self.clock_display_switch
+        self.service_display_switches["desktop_clock_widget"] = (
+            self.clock_display_switch
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("widgets"),
@@ -9715,7 +12517,9 @@ class SettingsWindow(QWidget):
 
         self.clock_size_slider = QSlider(Qt.Orientation.Horizontal)
         self.clock_size_slider.setRange(220, 520)
-        self.clock_size_slider.setValue(int(self.settings_state["clock"].get("size", 320)))
+        self.clock_size_slider.setValue(
+            int(self.settings_state["clock"].get("size", 320))
+        )
         self.clock_size_slider.valueChanged.connect(self._set_clock_size)
         layout.addWidget(
             SettingsRow(
@@ -9728,7 +12532,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.clock_seconds_switch = SwitchButton(bool(self.settings_state["clock"].get("show_seconds", True)))
+        self.clock_seconds_switch = SwitchButton(
+            bool(self.settings_state["clock"].get("show_seconds", True))
+        )
         self.clock_seconds_switch.toggledValue.connect(self._set_clock_show_seconds)
         layout.addWidget(
             SettingsRow(
@@ -9789,10 +12595,16 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
 
         self.game_mode_display_switch = SwitchButton(
-            bool(self.settings_state["services"]["game_mode"].get("show_in_notification_center", True))
+            bool(
+                self.settings_state["services"]["game_mode"].get(
+                    "show_in_notification_center", True
+                )
+            )
         )
         self.game_mode_display_switch.toggledValue.connect(
-            lambda enabled: self._set_service_notification_visibility("game_mode", enabled)
+            lambda enabled: self._set_service_notification_visibility(
+                "game_mode", enabled
+            )
         )
         self.service_display_switches["game_mode"] = self.game_mode_display_switch
         layout.addWidget(
@@ -9852,6 +12664,268 @@ class SettingsWindow(QWidget):
         self.service_sections["game_mode"] = section
         return section
 
+    def _build_virtualization_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        virtualization = self.settings_state["services"].setdefault(
+            "virtualization", {}
+        )
+        ide_actions = virtualization.get("ide_actions", {})
+        if not isinstance(ide_actions, dict):
+            ide_actions = {}
+            virtualization["ide_actions"] = ide_actions
+
+        self.virtualbox_manager_switch = SwitchButton(
+            bool(virtualization.get("virtualbox_manager_to_next_workspace", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("keyboard_tab"),
+                "Move VirtualBox Manager away",
+                "When a VM window launches, move the manager window to the next workspace so the guest VM keeps this workspace.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualbox_manager_switch,
+            )
+        )
+
+        self.virtualbox_guest_current_ws_switch = SwitchButton(
+            bool(virtualization.get("virtualbox_guest_keep_current_workspace", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("keep"),
+                "Keep VM on current workspace",
+                "Pins VirtualBox guest windows to the workspace where you launched them.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualbox_guest_current_ws_switch,
+            )
+        )
+
+        self.virtualbox_guest_fullscreen_switch = SwitchButton(
+            bool(virtualization.get("virtualbox_guest_fullscreen", False))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("fullscreen"),
+                "Auto-fullscreen guest VM",
+                "Automatically fullscreen VirtualBox guest windows when they open.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualbox_guest_fullscreen_switch,
+            )
+        )
+
+        self.virtualization_prompt_once_switch = SwitchButton(
+            bool(virtualization.get("emulator_prompt_once_per_ide", True))
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("help"),
+                "Prompt once per IDE",
+                "Show the emulator layout decision dialog only once per IDE and remember the choice.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualization_prompt_once_switch,
+            )
+        )
+
+        self.virtualization_move_target_combo = QComboBox()
+        self.virtualization_move_target_combo.setObjectName("settingsCombo")
+        self.virtualization_move_target_combo.addItem(
+            "Next workspace on current output", "next_on_output"
+        )
+        self.virtualization_move_target_combo.addItem("Next workspace", "next")
+        target_value = (
+            str(virtualization.get("emulator_move_target", "next_on_output"))
+            .strip()
+            .lower()
+        )
+        target_index = self.virtualization_move_target_combo.findData(
+            target_value
+            if target_value in {"next", "next_on_output"}
+            else "next_on_output"
+        )
+        self.virtualization_move_target_combo.setCurrentIndex(
+            target_index if target_index >= 0 else 0
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("move_up"),
+                "Emulator move target",
+                "Default destination when emulator layout is set to move to another workspace.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualization_move_target_combo,
+            )
+        )
+
+        def ide_combo(saved: str) -> QComboBox:
+            combo = QComboBox()
+            combo.setObjectName("settingsCombo")
+            combo.addItem("Ask on launch", "ask")
+            combo.addItem("Split current workspace", "split")
+            combo.addItem("Move emulator to another workspace", "move_workspace")
+            index = combo.findData(
+                saved if saved in {"ask", "split", "move_workspace"} else "ask"
+            )
+            combo.setCurrentIndex(index if index >= 0 else 0)
+            return combo
+
+        self.virtualization_ide_vscode_combo = ide_combo(
+            str(ide_actions.get("vscode", "ask")).strip().lower()
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("code"),
+                "VSCode emulator behavior",
+                "Choose how Hanauta places Android Emulator when launched from VSCode.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualization_ide_vscode_combo,
+            )
+        )
+
+        self.virtualization_ide_vscodium_combo = ide_combo(
+            str(ide_actions.get("vscodium", "ask")).strip().lower()
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("code"),
+                "VSCodium emulator behavior",
+                "Choose how Hanauta places Android Emulator when launched from VSCodium.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualization_ide_vscodium_combo,
+            )
+        )
+
+        self.virtualization_ide_android_studio_combo = ide_combo(
+            str(ide_actions.get("android_studio", "ask")).strip().lower()
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("android"),
+                "Android Studio emulator behavior",
+                "Choose how Hanauta places Android Emulator when launched from Android Studio.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualization_ide_android_studio_combo,
+            )
+        )
+
+        self.virtualization_ide_jetbrains_combo = ide_combo(
+            str(ide_actions.get("jetbrains", "ask")).strip().lower()
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("memory"),
+                "JetBrains IDE emulator behavior",
+                "Choose how Hanauta places Android Emulator for IntelliJ/Android Studio-family IDEs.",
+                self.icon_font,
+                self.ui_font,
+                self.virtualization_ide_jetbrains_combo,
+            )
+        )
+
+        reset_button = QPushButton("Reset learned IDE choices")
+        reset_button.setObjectName("secondaryButton")
+        reset_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        reset_button.clicked.connect(self._reset_virtualization_ide_choices)
+
+        save_button = QPushButton("Save virtualization settings")
+        save_button.setObjectName("primaryButton")
+        save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        save_button.clicked.connect(self._save_virtualization_settings)
+
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(8)
+        button_row.addWidget(reset_button)
+        button_row.addWidget(save_button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        self.virtualization_status = QLabel(
+            "Virtualization daemon listens for i3 window events and applies VM/emulator routing policy."
+        )
+        self.virtualization_status.setWordWrap(True)
+        self.virtualization_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.virtualization_status)
+
+        section = ExpandableServiceSection(
+            "virtualization",
+            "Virtualization",
+            "Manage VirtualBox manager routing, guest VM placement, and emulator layout behavior per IDE.",
+            material_icon("developer_board"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("virtualization"),
+            lambda enabled: self._set_service_enabled("virtualization", enabled),
+        )
+        self.service_sections["virtualization"] = section
+        return section
+
+    def _save_virtualization_settings(self) -> None:
+        service = self.settings_state["services"].setdefault("virtualization", {})
+        ide_actions = service.setdefault("ide_actions", {})
+        if not isinstance(ide_actions, dict):
+            ide_actions = {}
+            service["ide_actions"] = ide_actions
+        service["virtualbox_manager_to_next_workspace"] = bool(
+            self.virtualbox_manager_switch.isChecked()
+        )
+        service["virtualbox_guest_keep_current_workspace"] = bool(
+            self.virtualbox_guest_current_ws_switch.isChecked()
+        )
+        service["virtualbox_guest_fullscreen"] = bool(
+            self.virtualbox_guest_fullscreen_switch.isChecked()
+        )
+        service["emulator_prompt_once_per_ide"] = bool(
+            self.virtualization_prompt_once_switch.isChecked()
+        )
+        service["emulator_move_target"] = str(
+            self.virtualization_move_target_combo.currentData() or "next_on_output"
+        )
+        ide_actions["vscode"] = str(
+            self.virtualization_ide_vscode_combo.currentData() or "ask"
+        )
+        ide_actions["vscodium"] = str(
+            self.virtualization_ide_vscodium_combo.currentData() or "ask"
+        )
+        ide_actions["android_studio"] = str(
+            self.virtualization_ide_android_studio_combo.currentData() or "ask"
+        )
+        ide_actions["jetbrains"] = str(
+            self.virtualization_ide_jetbrains_combo.currentData() or "ask"
+        )
+        save_settings_state(self.settings_state)
+        if self._service_enabled("virtualization"):
+            self._start_virtualization_daemon()
+        if hasattr(self, "virtualization_status"):
+            self.virtualization_status.setText("Virtualization settings saved.")
+
+    def _reset_virtualization_ide_choices(self) -> None:
+        for combo in (
+            getattr(self, "virtualization_ide_vscode_combo", None),
+            getattr(self, "virtualization_ide_vscodium_combo", None),
+            getattr(self, "virtualization_ide_android_studio_combo", None),
+            getattr(self, "virtualization_ide_jetbrains_combo", None),
+        ):
+            if isinstance(combo, QComboBox):
+                index = combo.findData("ask")
+                combo.setCurrentIndex(index if index >= 0 else 0)
+        self._save_virtualization_settings()
+        if hasattr(self, "virtualization_status"):
+            self.virtualization_status.setText(
+                "IDE virtualization choices reset to ask-on-launch."
+            )
+
     def _build_study_tracker_service_section(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -9859,12 +12933,20 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
 
         self.study_tracker_bar_switch = SwitchButton(
-            bool(self.settings_state["services"]["study_tracker_widget"].get("show_in_bar", False))
+            bool(
+                self.settings_state["services"]["study_tracker_widget"].get(
+                    "show_in_bar", False
+                )
+            )
         )
         self.study_tracker_bar_switch.toggledValue.connect(
-            lambda enabled: self._set_service_bar_visibility("study_tracker_widget", enabled)
+            lambda enabled: self._set_service_bar_visibility(
+                "study_tracker_widget", enabled
+            )
         )
-        self.service_display_switches["study_tracker_widget"] = self.study_tracker_bar_switch
+        self.service_display_switches["study_tracker_widget"] = (
+            self.study_tracker_bar_switch
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("widgets"),
@@ -9918,7 +13000,9 @@ class SettingsWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.ntfy_server_input = QLineEdit(self.settings_state["ntfy"].get("server_url", "https://ntfy.sh"))
+        self.ntfy_server_input = QLineEdit(
+            self.settings_state["ntfy"].get("server_url", "https://ntfy.sh")
+        )
         self.ntfy_server_input.setPlaceholderText("https://ntfy.sh")
         layout.addWidget(
             SettingsRow(
@@ -9938,7 +13022,9 @@ class SettingsWindow(QWidget):
         auth_mode = str(self.settings_state["ntfy"].get("auth_mode", "token"))
         auth_index = self.ntfy_auth_mode_combo.findData(auth_mode)
         self.ntfy_auth_mode_combo.setCurrentIndex(auth_index if auth_index >= 0 else 0)
-        self.ntfy_auth_mode_combo.currentIndexChanged.connect(self._sync_ntfy_auth_inputs)
+        self.ntfy_auth_mode_combo.currentIndexChanged.connect(
+            self._sync_ntfy_auth_inputs
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("shield"),
@@ -9963,9 +13049,13 @@ class SettingsWindow(QWidget):
         )
         layout.addWidget(self.ntfy_token_row)
 
-        self.ntfy_username_input = QLineEdit(self.settings_state["ntfy"].get("username", ""))
+        self.ntfy_username_input = QLineEdit(
+            self.settings_state["ntfy"].get("username", "")
+        )
         self.ntfy_username_input.setPlaceholderText("Username")
-        self.ntfy_password_input = QLineEdit(self.settings_state["ntfy"].get("password", ""))
+        self.ntfy_password_input = QLineEdit(
+            self.settings_state["ntfy"].get("password", "")
+        )
         self.ntfy_password_input.setPlaceholderText("Password")
         self.ntfy_password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.ntfy_username_row = SettingsRow(
@@ -9989,13 +13079,21 @@ class SettingsWindow(QWidget):
 
         self.ntfy_topics_model = QStringListModel(self)
         self.ntfy_topic_entry_input = QLineEdit()
-        self.ntfy_topic_entry_input.setPlaceholderText("Add or pick a topic and press Enter")
+        self.ntfy_topic_entry_input.setPlaceholderText(
+            "Add or pick a topic and press Enter"
+        )
         self.ntfy_topic_entry_input_completer = QCompleter(self.ntfy_topics_model, self)
-        self.ntfy_topic_entry_input_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.ntfy_topic_entry_input_completer.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
         self.ntfy_topic_entry_input_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.ntfy_topic_entry_input.setCompleter(self.ntfy_topic_entry_input_completer)
-        self.ntfy_topic_entry_input.returnPressed.connect(self._add_ntfy_topic_from_entry)
-        self.ntfy_topic_entry_input_completer.activated[str].connect(self._add_ntfy_topic)
+        self.ntfy_topic_entry_input.returnPressed.connect(
+            self._add_ntfy_topic_from_entry
+        )
+        self.ntfy_topic_entry_input_completer.activated[str].connect(
+            self._add_ntfy_topic
+        )
 
         self.ntfy_topic_filter_input = QLineEdit()
         self.ntfy_topic_filter_input.setPlaceholderText("Filter available topics")
@@ -10003,7 +13101,9 @@ class SettingsWindow(QWidget):
 
         self.ntfy_refresh_topics_button = QPushButton("Refresh topics")
         self.ntfy_refresh_topics_button.setObjectName("secondaryButton")
-        self.ntfy_refresh_topics_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.ntfy_refresh_topics_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.ntfy_refresh_topics_button.clicked.connect(self._fetch_ntfy_topics)
 
         self.ntfy_topic_list = QListWidget()
@@ -10015,9 +13115,15 @@ class SettingsWindow(QWidget):
         self.ntfy_selected_topics_label.setWordWrap(True)
         self.ntfy_selected_topics_label.setStyleSheet("color: rgba(246,235,247,0.72);")
 
-        self.ntfy_all_topics_checkbox = QCheckBox("Receive notifications from all topics")
-        self.ntfy_all_topics_checkbox.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.ntfy_all_topics_checkbox.stateChanged.connect(self._sync_ntfy_topic_controls)
+        self.ntfy_all_topics_checkbox = QCheckBox(
+            "Receive notifications from all topics"
+        )
+        self.ntfy_all_topics_checkbox.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.ntfy_all_topics_checkbox.stateChanged.connect(
+            self._sync_ntfy_topic_controls
+        )
 
         topic_controls = QWidget()
         topic_layout = QVBoxLayout(topic_controls)
@@ -10044,7 +13150,9 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.ntfy_bar_switch = SwitchButton(bool(self.settings_state["ntfy"].get("show_in_bar", False)))
+        self.ntfy_bar_switch = SwitchButton(
+            bool(self.settings_state["ntfy"].get("show_in_bar", False))
+        )
         self.ntfy_bar_switch.toggledValue.connect(self._set_ntfy_show_in_bar)
         layout.addWidget(
             SettingsRow(
@@ -10057,8 +13165,12 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.ntfy_hide_content_switch = SwitchButton(bool(self.settings_state["ntfy"].get("hide_notification_content", False)))
-        self.ntfy_hide_content_switch.toggledValue.connect(self._set_ntfy_hide_notification_content)
+        self.ntfy_hide_content_switch = SwitchButton(
+            bool(self.settings_state["ntfy"].get("hide_notification_content", False))
+        )
+        self.ntfy_hide_content_switch.toggledValue.connect(
+            self._set_ntfy_hide_notification_content
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("visibility_off"),
@@ -10104,7 +13216,9 @@ class SettingsWindow(QWidget):
                 self.ntfy_selected_topics.append(topic)
         self.ntfy_available_topics = list(self.ntfy_selected_topics)
         self._populate_ntfy_topic_list(self.ntfy_available_topics)
-        self.ntfy_all_topics_checkbox.setChecked(bool(self.settings_state["ntfy"].get("all_topics", False)))
+        self.ntfy_all_topics_checkbox.setChecked(
+            bool(self.settings_state["ntfy"].get("all_topics", False))
+        )
         self._sync_ntfy_auth_inputs()
         self._sync_ntfy_topic_controls()
 
@@ -10126,7 +13240,11 @@ class SettingsWindow(QWidget):
         if not hasattr(self, "ntfy_auth_mode_combo"):
             return "token"
         raw = self.ntfy_auth_mode_combo.currentData() or "token"
-        has_token = bool(str(getattr(self, "ntfy_token_input", QLineEdit()).text()).strip()) if hasattr(self, "ntfy_token_input") else False
+        has_token = (
+            bool(str(getattr(self, "ntfy_token_input", QLineEdit()).text()).strip())
+            if hasattr(self, "ntfy_token_input")
+            else False
+        )
         return normalize_ntfy_auth_mode(raw, has_token=has_token)
 
     def _sync_ntfy_auth_inputs(self) -> None:
@@ -10164,7 +13282,11 @@ class SettingsWindow(QWidget):
         for topic in normalized:
             item = QListWidgetItem(topic)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            state = Qt.CheckState.Checked if topic in self.ntfy_selected_topics else Qt.CheckState.Unchecked
+            state = (
+                Qt.CheckState.Checked
+                if topic in self.ntfy_selected_topics
+                else Qt.CheckState.Unchecked
+            )
             item.setCheckState(state)
             self.ntfy_topic_list.addItem(item)
         self.ntfy_topic_list.blockSignals(False)
@@ -10184,7 +13306,10 @@ class SettingsWindow(QWidget):
     def _update_ntfy_selected_topics_label(self) -> None:
         if not hasattr(self, "ntfy_selected_topics_label"):
             return
-        if getattr(self, "ntfy_all_topics_checkbox", None) and self.ntfy_all_topics_checkbox.isChecked():
+        if (
+            getattr(self, "ntfy_all_topics_checkbox", None)
+            and self.ntfy_all_topics_checkbox.isChecked()
+        ):
             text = "Receiving notifications from all topics."
         elif not self.ntfy_selected_topics:
             text = "No topics selected yet."
@@ -10222,7 +13347,10 @@ class SettingsWindow(QWidget):
         self.ntfy_topic_entry_input.clear()
 
     def _sync_ntfy_topic_controls(self) -> None:
-        all_topics = bool(getattr(self, "ntfy_all_topics_checkbox", None) and self.ntfy_all_topics_checkbox.isChecked())
+        all_topics = bool(
+            getattr(self, "ntfy_all_topics_checkbox", None)
+            and self.ntfy_all_topics_checkbox.isChecked()
+        )
         for widget in (
             getattr(self, "ntfy_topic_entry_input", None),
             getattr(self, "ntfy_topic_filter_input", None),
@@ -10266,7 +13394,9 @@ class SettingsWindow(QWidget):
             except Exception:
                 detail = ""
             if hasattr(self, "ntfy_status"):
-                self.ntfy_status.setText(detail or f"HTTP {exc.code} while fetching topics.")
+                self.ntfy_status.setText(
+                    detail or f"HTTP {exc.code} while fetching topics."
+                )
             return
         except Exception as exc:
             if hasattr(self, "ntfy_status"):
@@ -10276,11 +13406,19 @@ class SettingsWindow(QWidget):
         try:
             payload = json.loads(payload_text)
             if isinstance(payload, dict):
-                parsed = [str(item).strip() for item in payload.get("topics", []) if isinstance(item, str)]
+                parsed = [
+                    str(item).strip()
+                    for item in payload.get("topics", [])
+                    if isinstance(item, str)
+                ]
             elif isinstance(payload, list):
-                parsed = [str(item).strip() for item in payload if isinstance(item, str)]
+                parsed = [
+                    str(item).strip() for item in payload if isinstance(item, str)
+                ]
         except Exception:
-            parsed = [line.strip() for line in payload_text.splitlines() if line.strip()]
+            parsed = [
+                line.strip() for line in payload_text.splitlines() if line.strip()
+            ]
         parsed = [item for item in parsed if item]
         if parsed:
             self._populate_ntfy_topic_list(parsed)
@@ -10288,7 +13426,10 @@ class SettingsWindow(QWidget):
             self.ntfy_status.setText(f"Fetched {len(parsed)} topic(s).")
 
     def _resolve_ntfy_test_topic(self) -> str:
-        if getattr(self, "ntfy_all_topics_checkbox", None) and self.ntfy_all_topics_checkbox.isChecked():
+        if (
+            getattr(self, "ntfy_all_topics_checkbox", None)
+            and self.ntfy_all_topics_checkbox.isChecked()
+        ):
             return ""
         if self.ntfy_selected_topics:
             return self.ntfy_selected_topics[0]
@@ -10319,7 +13460,17 @@ class SettingsWindow(QWidget):
                 service["water_reminder_notifications"] = False
                 service["stand_up_reminder_notifications"] = False
                 service["movement_reminder_notifications"] = False
-            if key in {"home_assistant", "reminders_widget", "pomodoro_widget", "rss_widget", "obs_widget", "crypto_widget", "game_mode", "cap_alerts", "study_tracker_widget"}:
+            if key in {
+                "home_assistant",
+                "reminders_widget",
+                "pomodoro_widget",
+                "rss_widget",
+                "obs_widget",
+                "crypto_widget",
+                "game_mode",
+                "cap_alerts",
+                "study_tracker_widget",
+            }:
                 service["show_in_bar"] = False
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
@@ -10330,7 +13481,9 @@ class SettingsWindow(QWidget):
             if key == "christian_widget":
                 display_switch.setChecked(bool(service.get("show_in_bar", False)))
             else:
-                display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
+                display_switch.setChecked(
+                    bool(service.get("show_in_notification_center", False))
+                )
             display_switch._apply_state()
         if key == "christian_widget":
             for attr_name, setting_key in (
@@ -10355,10 +13508,22 @@ class SettingsWindow(QWidget):
                 if reminder_switch is not None:
                     reminder_switch.setChecked(bool(service.get(setting_key, False)))
                     reminder_switch._apply_state()
-        if key in {"calendar_widget", "reminders_widget", "pomodoro_widget", "obs_widget", "crypto_widget", "vps_widget", "desktop_clock_widget", "game_mode", "cap_alerts"}:
+        if key in {
+            "calendar_widget",
+            "reminders_widget",
+            "pomodoro_widget",
+            "obs_widget",
+            "crypto_widget",
+            "vps_widget",
+            "desktop_clock_widget",
+            "game_mode",
+            "cap_alerts",
+        }:
             display_switch = getattr(self, "service_display_switches", {}).get(key)
             if display_switch is not None:
-                display_switch.setChecked(bool(service.get("show_in_notification_center", False)))
+                display_switch.setChecked(
+                    bool(service.get("show_in_notification_center", False))
+                )
                 display_switch._apply_state()
         if key == "vpn_control":
             switch = getattr(self, "vpn_reconnect_switch", None)
@@ -10370,20 +13535,31 @@ class SettingsWindow(QWidget):
             if switch is not None:
                 rule = self.notification_rules_state["rules"].get(
                     "kdeconnect_ignore_whatsapp_when_desktop_client_active",
-                    DEFAULT_NOTIFICATION_RULES["rules"]["kdeconnect_ignore_whatsapp_when_desktop_client_active"],
+                    DEFAULT_NOTIFICATION_RULES["rules"][
+                        "kdeconnect_ignore_whatsapp_when_desktop_client_active"
+                    ],
                 )
                 switch.setChecked(bool(rule.get("enabled", False) and enabled))
                 switch._apply_state()
             low_battery_switch = getattr(self, "kdeconnect_low_battery_switch", None)
             if low_battery_switch is not None:
-                low_battery_switch.setChecked(bool(service.get("low_battery_fullscreen_notification", False) and enabled))
+                low_battery_switch.setChecked(
+                    bool(
+                        service.get("low_battery_fullscreen_notification", False)
+                        and enabled
+                    )
+                )
                 low_battery_switch._apply_state()
-            threshold_slider = getattr(self, "kdeconnect_battery_threshold_slider", None)
+            threshold_slider = getattr(
+                self, "kdeconnect_battery_threshold_slider", None
+            )
             threshold_label = getattr(self, "kdeconnect_battery_threshold_label", None)
             if threshold_slider is not None:
                 threshold_slider.setValue(int(service.get("low_battery_threshold", 20)))
             if threshold_label is not None:
-                threshold_label.setText(f"{int(service.get('low_battery_threshold', 20))}%")
+                threshold_label.setText(
+                    f"{int(service.get('low_battery_threshold', 20))}%"
+                )
         if key == "reminders_widget":
             switch = getattr(self, "reminders_bar_switch", None)
             if switch is not None:
@@ -10433,6 +13609,11 @@ class SettingsWindow(QWidget):
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
+        if key == "virtualization":
+            if enabled:
+                self._start_virtualization_daemon()
+            else:
+                self._stop_virtualization_daemon()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -10468,7 +13649,9 @@ class SettingsWindow(QWidget):
         try:
             BAR_ICON_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             if not BAR_ICON_CONFIG_FILE.exists() and BAR_ICON_EXAMPLE_FILE.exists():
-                BAR_ICON_CONFIG_FILE.write_text(BAR_ICON_EXAMPLE_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+                BAR_ICON_CONFIG_FILE.write_text(
+                    BAR_ICON_EXAMPLE_FILE.read_text(encoding="utf-8"), encoding="utf-8"
+                )
         except OSError:
             return
         run_bg(["xdg-open", str(BAR_ICON_CONFIG_FILE)])
@@ -10481,18 +13664,54 @@ class SettingsWindow(QWidget):
         command = entry_command(STUDY_TRACKER_APP)
         if not command:
             if hasattr(self, "study_tracker_status"):
-                self.study_tracker_status.setText("Study Tracker launch command is unavailable.")
+                self.study_tracker_status.setText(
+                    "Study Tracker launch command is unavailable."
+                )
             return
         run_bg(command)
         if hasattr(self, "study_tracker_status"):
             self.study_tracker_status.setText("Study Tracker launched.")
 
+    def _start_virtualization_daemon(self) -> None:
+        if not VIRTUALIZATION_DAEMON_SCRIPT.exists():
+            if hasattr(self, "virtualization_status"):
+                self.virtualization_status.setText(
+                    "Virtualization daemon script is missing."
+                )
+            return
+        for pattern in entry_patterns(VIRTUALIZATION_DAEMON_SCRIPT):
+            subprocess.run(
+                ["pkill", "-f", pattern], capture_output=True, text=True, check=False
+            )
+        command = entry_command(VIRTUALIZATION_DAEMON_SCRIPT)
+        if not command:
+            if hasattr(self, "virtualization_status"):
+                self.virtualization_status.setText(
+                    "Virtualization daemon launch command is unavailable."
+                )
+            return
+        run_bg(command)
+        if hasattr(self, "virtualization_status"):
+            self.virtualization_status.setText("Virtualization daemon started.")
+
+    def _stop_virtualization_daemon(self) -> None:
+        for pattern in entry_patterns(VIRTUALIZATION_DAEMON_SCRIPT):
+            subprocess.run(
+                ["pkill", "-f", pattern], capture_output=True, text=True, check=False
+            )
+        if hasattr(self, "virtualization_status"):
+            self.virtualization_status.setText("Virtualization daemon stopped.")
+
     def _refresh_audio_devices(self) -> None:
         sinks = list_audio_devices("sinks")
         sources = list_audio_devices("sources")
         saved_audio = self.settings_state.get("audio", {})
-        selected_sink = str(saved_audio.get("default_sink", "")).strip() or default_audio_device("sink")
-        selected_source = str(saved_audio.get("default_source", "")).strip() or default_audio_device("source")
+        selected_sink = str(
+            saved_audio.get("default_sink", "")
+        ).strip() or default_audio_device("sink")
+        selected_source = str(
+            saved_audio.get("default_source", "")
+        ).strip() or default_audio_device("source")
         if hasattr(self, "audio_sink_combo"):
             self.audio_sink_combo.blockSignals(True)
             self.audio_sink_combo.clear()
@@ -10512,78 +13731,164 @@ class SettingsWindow(QWidget):
             self.audio_source_combo.setCurrentIndex(max(0, source_index))
             self.audio_source_combo.blockSignals(False)
         if hasattr(self, "audio_status"):
-            self.audio_status.setText(f"Detected {len(sinks)} sink(s) and {len(sources)} source(s).")
+            self.audio_status.setText(
+                f"Detected {len(sinks)} sink(s) and {len(sources)} source(s)."
+            )
 
     def _save_lockscreen_settings(self) -> None:
         lockscreen = self.settings_state.setdefault("lockscreen", {})
         lockscreen["blur_screenshot"] = bool(self.lockscreen_blur_switch.isChecked())
-        lockscreen["pause_media_on_lock"] = bool(self.lockscreen_pause_media_switch.isChecked())
+        lockscreen["pause_media_on_lock"] = bool(
+            self.lockscreen_pause_media_switch.isChecked()
+        )
         lockscreen["use_slow_fade"] = bool(self.lockscreen_slow_fade_switch.isChecked())
-        lockscreen["prefer_i3lock_color"] = bool(self.lockscreen_prefer_color_switch.isChecked())
+        lockscreen["prefer_i3lock_color"] = bool(
+            self.lockscreen_prefer_color_switch.isChecked()
+        )
         lockscreen["show_clock"] = bool(self.lockscreen_show_clock_switch.isChecked())
-        lockscreen["show_indicator"] = bool(self.lockscreen_show_indicator_switch.isChecked())
-        lockscreen["pass_media_keys"] = bool(self.lockscreen_pass_media_switch.isChecked())
-        lockscreen["pass_volume_keys"] = bool(self.lockscreen_pass_volume_switch.isChecked())
+        lockscreen["show_indicator"] = bool(
+            self.lockscreen_show_indicator_switch.isChecked()
+        )
+        lockscreen["pass_media_keys"] = bool(
+            self.lockscreen_pass_media_switch.isChecked()
+        )
+        lockscreen["pass_volume_keys"] = bool(
+            self.lockscreen_pass_volume_switch.isChecked()
+        )
         try:
-            lockscreen["refresh_rate"] = max(0, min(30, int(self.lockscreen_refresh_input.text().strip() or "1")))
+            lockscreen["refresh_rate"] = max(
+                0, min(30, int(self.lockscreen_refresh_input.text().strip() or "1"))
+            )
         except Exception:
             lockscreen["refresh_rate"] = 1
             self.lockscreen_refresh_input.setText("1")
         try:
-            lockscreen["ring_radius"] = max(8, min(80, int(self.lockscreen_ring_radius_input.text().strip() or "28")))
+            lockscreen["ring_radius"] = max(
+                8,
+                min(80, int(self.lockscreen_ring_radius_input.text().strip() or "28")),
+            )
         except Exception:
             lockscreen["ring_radius"] = 28
             self.lockscreen_ring_radius_input.setText("28")
         try:
-            lockscreen["ring_width"] = max(1, min(24, int(self.lockscreen_ring_width_input.text().strip() or "6")))
+            lockscreen["ring_width"] = max(
+                1, min(24, int(self.lockscreen_ring_width_input.text().strip() or "6"))
+            )
         except Exception:
             lockscreen["ring_width"] = 6
             self.lockscreen_ring_width_input.setText("6")
-        lockscreen["time_format"] = self.lockscreen_time_format_input.text().strip() or "%H:%M"
-        lockscreen["date_format"] = self.lockscreen_date_format_input.text().strip() or "%A, %d %B %Y"
-        lockscreen["greeter_text"] = self.lockscreen_greeter_text_input.text().strip() or "Hanauta locked • Type your password to unlock"
-        lockscreen["verifying_text"] = self.lockscreen_verifying_text_input.text().strip() or "Verifying..."
-        lockscreen["wrong_text"] = self.lockscreen_wrong_text_input.text().strip() or "Wrong password"
+        lockscreen["time_format"] = (
+            self.lockscreen_time_format_input.text().strip() or "%H:%M"
+        )
+        lockscreen["date_format"] = (
+            self.lockscreen_date_format_input.text().strip() or "%A, %d %B %Y"
+        )
+        lockscreen["greeter_text"] = (
+            self.lockscreen_greeter_text_input.text().strip()
+            or "Hanauta locked • Type your password to unlock"
+        )
+        lockscreen["verifying_text"] = (
+            self.lockscreen_verifying_text_input.text().strip() or "Verifying..."
+        )
+        lockscreen["wrong_text"] = (
+            self.lockscreen_wrong_text_input.text().strip() or "Wrong password"
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "lockscreen_status"):
             blur_text = "enabled" if lockscreen["blur_screenshot"] else "disabled"
-            self.lockscreen_status.setText(f"Lockscreen settings saved. Blur is {blur_text}.")
+            self.lockscreen_status.setText(
+                f"Lockscreen settings saved. Blur is {blur_text}."
+            )
 
     def _save_audio_settings(self) -> None:
         audio = self.settings_state.setdefault("audio", {})
-        sink = str(self.audio_sink_combo.currentData() or "").strip() if hasattr(self, "audio_sink_combo") else ""
-        source = str(self.audio_source_combo.currentData() or "").strip() if hasattr(self, "audio_source_combo") else ""
+        sink = (
+            str(self.audio_sink_combo.currentData() or "").strip()
+            if hasattr(self, "audio_sink_combo")
+            else ""
+        )
+        source = (
+            str(self.audio_source_combo.currentData() or "").strip()
+            if hasattr(self, "audio_source_combo")
+            else ""
+        )
         audio["default_sink"] = sink
         audio["default_source"] = source
-        audio["alert_sounds_enabled"] = bool(self.audio_alert_sounds_switch.isChecked()) if hasattr(self, "audio_alert_sounds_switch") else True
-        audio["route_new_apps_to_default_sink"] = bool(self.audio_route_switch.isChecked()) if hasattr(self, "audio_route_switch") else True
-        audio["mute_behavior"] = str(self.audio_mute_behavior_combo.currentData() or "leave_as_is") if hasattr(self, "audio_mute_behavior_combo") else "leave_as_is"
+        audio["alert_sounds_enabled"] = (
+            bool(self.audio_alert_sounds_switch.isChecked())
+            if hasattr(self, "audio_alert_sounds_switch")
+            else True
+        )
+        audio["route_new_apps_to_default_sink"] = (
+            bool(self.audio_route_switch.isChecked())
+            if hasattr(self, "audio_route_switch")
+            else True
+        )
+        audio["mute_behavior"] = (
+            str(self.audio_mute_behavior_combo.currentData() or "leave_as_is")
+            if hasattr(self, "audio_mute_behavior_combo")
+            else "leave_as_is"
+        )
         save_settings_state(self.settings_state)
         if shutil.which("pactl"):
             if sink:
-                subprocess.run(["pactl", "set-default-sink", sink], capture_output=True, text=True, check=False)
+                subprocess.run(
+                    ["pactl", "set-default-sink", sink],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
             if source:
-                subprocess.run(["pactl", "set-default-source", source], capture_output=True, text=True, check=False)
+                subprocess.run(
+                    ["pactl", "set-default-source", source],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
         if hasattr(self, "audio_status"):
             self.audio_status.setText("Audio settings saved.")
 
     def _save_notifications_page_settings(self) -> None:
         notifications = self.settings_state.setdefault("notifications", {})
         try:
-            notifications["history_limit"] = max(10, min(1000, int(self.notifications_history_limit_input.text().strip() or "150")))
+            notifications["history_limit"] = max(
+                10,
+                min(
+                    1000,
+                    int(self.notifications_history_limit_input.text().strip() or "150"),
+                ),
+            )
         except Exception:
             notifications["history_limit"] = 150
             self.notifications_history_limit_input.setText("150")
-        notifications["urgency_policy"] = str(self.notifications_urgency_combo.currentData() or "normal")
-        notifications["pause_while_sharing"] = bool(self.notifications_pause_share_switch.isChecked())
-        notifications["per_app_rules_enabled"] = bool(self.notifications_rules_switch.isChecked())
+        notifications["urgency_policy"] = str(
+            self.notifications_urgency_combo.currentData() or "normal"
+        )
+        notifications["pause_while_sharing"] = bool(
+            self.notifications_pause_share_switch.isChecked()
+        )
+        notifications["per_app_rules_enabled"] = bool(
+            self.notifications_rules_switch.isChecked()
+        )
         try:
-            self.settings_state["appearance"]["notification_toast_max_width"] = max(260, min(640, int(self.notifications_toast_width_input.text().strip() or "356")))
+            self.settings_state["appearance"]["notification_toast_max_width"] = max(
+                260,
+                min(
+                    640,
+                    int(self.notifications_toast_width_input.text().strip() or "356"),
+                ),
+            )
         except Exception:
             self.settings_state["appearance"]["notification_toast_max_width"] = 356
             self.notifications_toast_width_input.setText("356")
         try:
-            self.settings_state["appearance"]["notification_toast_max_height"] = max(160, min(640, int(self.notifications_toast_height_input.text().strip() or "280")))
+            self.settings_state["appearance"]["notification_toast_max_height"] = max(
+                160,
+                min(
+                    640,
+                    int(self.notifications_toast_height_input.text().strip() or "280"),
+                ),
+            )
         except Exception:
             self.settings_state["appearance"]["notification_toast_max_height"] = 280
             self.notifications_toast_height_input.setText("280")
@@ -10593,31 +13898,51 @@ class SettingsWindow(QWidget):
 
     def _save_input_settings(self) -> None:
         input_settings = self.settings_state.setdefault("input", {})
-        input_settings["keyboard_layout"] = self.input_keyboard_layout_input.text().strip() or "us"
+        input_settings["keyboard_layout"] = self._resolve_keyboard_layout_value()
         try:
-            input_settings["repeat_delay_ms"] = max(150, min(1200, int(self.input_repeat_delay_input.text().strip() or "300")))
+            input_settings["repeat_delay_ms"] = max(
+                150,
+                min(1200, int(self.input_repeat_delay_input.text().strip() or "300")),
+            )
         except Exception:
             input_settings["repeat_delay_ms"] = 300
             self.input_repeat_delay_input.setText("300")
         try:
-            input_settings["repeat_rate"] = max(10, min(60, int(self.input_repeat_rate_input.text().strip() or "30")))
+            input_settings["repeat_rate"] = max(
+                10, min(60, int(self.input_repeat_rate_input.text().strip() or "30"))
+            )
         except Exception:
             input_settings["repeat_rate"] = 30
             self.input_repeat_rate_input.setText("30")
-        input_settings["tap_to_click"] = bool(self.input_tap_to_click_switch.isChecked())
-        input_settings["natural_scroll"] = bool(self.input_natural_scroll_switch.isChecked())
+        input_settings["tap_to_click"] = bool(
+            self.input_tap_to_click_switch.isChecked()
+        )
+        input_settings["natural_scroll"] = bool(
+            self.input_natural_scroll_switch.isChecked()
+        )
         try:
-            input_settings["mouse_accel"] = max(-10, min(10, int(self.input_mouse_accel_input.text().strip() or "0")))
+            input_settings["mouse_accel"] = max(
+                -10, min(10, int(self.input_mouse_accel_input.text().strip() or "0"))
+            )
         except Exception:
             input_settings["mouse_accel"] = 0
             self.input_mouse_accel_input.setText("0")
         save_settings_state(self.settings_state)
-        if shutil.which("setxkbmap"):
-            run_bg(["setxkbmap", input_settings["keyboard_layout"]])
+        self._apply_keyboard_layout(str(input_settings.get("keyboard_layout", "us")))
         if shutil.which("xset"):
-            run_bg(["xset", "r", "rate", str(input_settings["repeat_delay_ms"]), str(input_settings["repeat_rate"])])
+            run_bg(
+                [
+                    "xset",
+                    "r",
+                    "rate",
+                    str(input_settings["repeat_delay_ms"]),
+                    str(input_settings["repeat_rate"]),
+                ]
+            )
         if hasattr(self, "input_status"):
-            self.input_status.setText("Input settings saved. Keyboard layout and repeat settings were applied when available.")
+            self.input_status.setText(
+                "Input settings saved. Keyboard language and repeat settings were applied for this session."
+            )
 
     def _save_startup_settings(self) -> None:
         startup = self.settings_state.setdefault("startup", {})
@@ -10626,43 +13951,75 @@ class SettingsWindow(QWidget):
         startup["restore_wallpaper"] = bool(self.startup_wallpaper_switch.isChecked())
         startup["restore_displays"] = bool(self.startup_displays_switch.isChecked())
         startup["restore_vpn"] = bool(self.startup_vpn_switch.isChecked())
-        startup["restart_hooks_enabled"] = bool(self.startup_restart_hooks_switch.isChecked())
+        startup["restart_hooks_enabled"] = bool(
+            self.startup_restart_hooks_switch.isChecked()
+        )
         startup["watchdog_enabled"] = bool(self.startup_watchdog_switch.isChecked())
         try:
-            startup["startup_delay_seconds"] = max(0, min(120, int(self.startup_delay_input.text().strip() or "0")))
+            startup["startup_delay_seconds"] = max(
+                0, min(120, int(self.startup_delay_input.text().strip() or "0"))
+            )
         except Exception:
             startup["startup_delay_seconds"] = 0
             self.startup_delay_input.setText("0")
         save_settings_state(self.settings_state)
         if hasattr(self, "startup_status"):
-            self.startup_status.setText("Startup settings saved. They are stored for launch and restore workflows.")
+            self.startup_status.setText(
+                "Startup settings saved. They are stored for launch and restore workflows."
+            )
 
     def _save_privacy_settings(self) -> None:
         privacy = self.settings_state.setdefault("privacy", {})
         privacy["lock_on_suspend"] = bool(self.privacy_lock_suspend_switch.isChecked())
-        privacy["hide_notification_content_global"] = bool(self.privacy_hide_content_switch.isChecked())
-        privacy["pause_notifications_while_sharing"] = bool(self.privacy_pause_share_switch.isChecked())
-        privacy["screenshot_guard_enabled"] = bool(self.privacy_screenshot_guard_switch.isChecked())
-        privacy["screen_share_guard_enabled"] = bool(self.privacy_screen_share_guard_switch.isChecked())
+        privacy["hide_notification_content_global"] = bool(
+            self.privacy_hide_content_switch.isChecked()
+        )
+        privacy["pause_notifications_while_sharing"] = bool(
+            self.privacy_pause_share_switch.isChecked()
+        )
+        privacy["screenshot_guard_enabled"] = bool(
+            self.privacy_screenshot_guard_switch.isChecked()
+        )
+        privacy["screen_share_guard_enabled"] = bool(
+            self.privacy_screen_share_guard_switch.isChecked()
+        )
         if privacy["hide_notification_content_global"]:
-            self.settings_state.setdefault("mail", {})["hide_notification_content"] = True
-            self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = True
+            self.settings_state.setdefault("mail", {})["hide_notification_content"] = (
+                True
+            )
+            self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = (
+                True
+            )
         save_settings_state(self.settings_state)
         if hasattr(self, "privacy_status"):
             self.privacy_status.setText("Privacy settings saved.")
 
     def _save_networking_settings(self) -> None:
         networking = self.settings_state.setdefault("networking", {})
-        vpn_service = self.settings_state.setdefault("services", {}).setdefault("vpn_control", {})
-        networking["preferred_wifi_interface"] = str(self.networking_wifi_combo.currentData() or "").strip()
-        networking["wifi_autoconnect"] = bool(self.networking_wifi_autoconnect_switch.isChecked())
+        vpn_service = self.settings_state.setdefault("services", {}).setdefault(
+            "vpn_control", {}
+        )
+        networking["preferred_wifi_interface"] = str(
+            self.networking_wifi_combo.currentData() or ""
+        ).strip()
+        networking["wifi_autoconnect"] = bool(
+            self.networking_wifi_autoconnect_switch.isChecked()
+        )
         preferred_wg = str(self.networking_wg_combo.currentData() or "").strip()
         networking["preferred_wireguard_interface"] = preferred_wg
-        networking["vpn_reconnect_on_login"] = bool(self.networking_vpn_reconnect_switch.isChecked())
-        split_tunnel_apps = [item.strip() for item in self.networking_split_tunnel_input.text().split(",") if item.strip()]
+        networking["vpn_reconnect_on_login"] = bool(
+            self.networking_vpn_reconnect_switch.isChecked()
+        )
+        split_tunnel_apps = [
+            item.strip()
+            for item in self.networking_split_tunnel_input.text().split(",")
+            if item.strip()
+        ]
         networking["split_tunnel_apps"] = split_tunnel_apps
         vpn_service["preferred_interface"] = preferred_wg
-        vpn_service["reconnect_on_login"] = bool(self.networking_vpn_reconnect_switch.isChecked())
+        vpn_service["reconnect_on_login"] = bool(
+            self.networking_vpn_reconnect_switch.isChecked()
+        )
         vpn_service["split_tunnel_apps"] = split_tunnel_apps
         save_settings_state(self.settings_state)
         if hasattr(self, "networking_status"):
@@ -10670,9 +14027,15 @@ class SettingsWindow(QWidget):
 
     def _refresh_storage_metrics(self) -> None:
         metrics = {
-            "Wallpaper Source Cache": format_bytes(directory_size_bytes(WALLPAPER_SOURCE_CACHE_DIR)),
-            "Rendered Wallpapers": format_bytes(directory_size_bytes(RENDERED_WALLPAPER_DIR)),
-            "Mail Attachments": format_bytes(directory_size_bytes(MAIL_STATE_DIR / "cache")),
+            "Wallpaper Source Cache": format_bytes(
+                directory_size_bytes(WALLPAPER_SOURCE_CACHE_DIR)
+            ),
+            "Rendered Wallpapers": format_bytes(
+                directory_size_bytes(RENDERED_WALLPAPER_DIR)
+            ),
+            "Mail Attachments": format_bytes(
+                directory_size_bytes(MAIL_STATE_DIR / "cache")
+            ),
             "State Root": format_bytes(directory_size_bytes(STATE_DIR.parent)),
         }
         for key, label in getattr(self, "storage_metrics", {}).items():
@@ -10687,7 +14050,9 @@ class SettingsWindow(QWidget):
                 shutil.rmtree(path, ignore_errors=True)
                 removed += 1
         if hasattr(self, "storage_status"):
-            self.storage_status.setText(f"Cleared {removed} wallpaper cache location(s).")
+            self.storage_status.setText(
+                f"Cleared {removed} wallpaper cache location(s)."
+            )
         self._refresh_storage_metrics()
 
     def _clear_temp_state(self) -> None:
@@ -10711,16 +14076,30 @@ class SettingsWindow(QWidget):
     def _save_storage_settings(self) -> None:
         storage = self.settings_state.setdefault("storage", {})
         try:
-            storage["wallpaper_cache_cleanup_days"] = max(1, min(365, int(self.storage_cache_cleanup_days_input.text().strip() or "30")))
+            storage["wallpaper_cache_cleanup_days"] = max(
+                1,
+                min(
+                    365,
+                    int(self.storage_cache_cleanup_days_input.text().strip() or "30"),
+                ),
+            )
         except Exception:
             storage["wallpaper_cache_cleanup_days"] = 30
             self.storage_cache_cleanup_days_input.setText("30")
         try:
-            storage["log_retention_days"] = max(1, min(365, int(self.storage_log_retention_days_input.text().strip() or "14")))
+            storage["log_retention_days"] = max(
+                1,
+                min(
+                    365,
+                    int(self.storage_log_retention_days_input.text().strip() or "14"),
+                ),
+            )
         except Exception:
             storage["log_retention_days"] = 14
             self.storage_log_retention_days_input.setText("14")
-        storage["clean_temp_state_on_startup"] = bool(self.storage_clean_temp_switch.isChecked())
+        storage["clean_temp_state_on_startup"] = bool(
+            self.storage_clean_temp_switch.isChecked()
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "storage_status"):
             self.storage_status.setText("Storage settings saved.")
@@ -10740,7 +14119,11 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
 
     def _sync_health_inputs(self) -> None:
-        provider = str(self.settings_state.get("health", {}).get("provider", "manual")).strip().lower()
+        provider = (
+            str(self.settings_state.get("health", {}).get("provider", "manual"))
+            .strip()
+            .lower()
+        )
         fitbit_mode = provider == "fitbit"
         for widget in (
             getattr(self, "health_fitbit_client_id_input", None),
@@ -10760,26 +14143,42 @@ class SettingsWindow(QWidget):
 
     def _save_health_settings(self) -> None:
         health = self.settings_state.setdefault("health", {})
-        health["provider"] = "fitbit" if self.health_provider_combo.currentIndex() == 1 else "manual"
+        health["provider"] = (
+            "fitbit" if self.health_provider_combo.currentIndex() == 1 else "manual"
+        )
         try:
-            health["step_goal"] = max(1000, min(50000, int(self.health_step_goal_input.text().strip() or "10000")))
+            health["step_goal"] = max(
+                1000,
+                min(50000, int(self.health_step_goal_input.text().strip() or "10000")),
+            )
         except Exception:
             health["step_goal"] = 10000
             self.health_step_goal_input.setText("10000")
         try:
-            health["water_goal_ml"] = max(250, min(6000, int(self.health_water_goal_input.text().strip() or "2000")))
+            health["water_goal_ml"] = max(
+                250,
+                min(6000, int(self.health_water_goal_input.text().strip() or "2000")),
+            )
         except Exception:
             health["water_goal_ml"] = 2000
             self.health_water_goal_input.setText("2000")
         try:
-            health["sync_interval_minutes"] = max(5, min(360, int(self.health_sync_interval_input.text().strip() or "30")))
+            health["sync_interval_minutes"] = max(
+                5, min(360, int(self.health_sync_interval_input.text().strip() or "30"))
+            )
         except Exception:
             health["sync_interval_minutes"] = 30
             self.health_sync_interval_input.setText("30")
         health["fitbit_client_id"] = self.health_fitbit_client_id_input.text().strip()
-        health["fitbit_client_secret"] = self.health_fitbit_client_secret_input.text().strip()
-        health["fitbit_access_token"] = self.health_fitbit_access_token_input.text().strip()
-        health["fitbit_refresh_token"] = self.health_fitbit_refresh_token_input.text().strip()
+        health["fitbit_client_secret"] = (
+            self.health_fitbit_client_secret_input.text().strip()
+        )
+        health["fitbit_access_token"] = (
+            self.health_fitbit_access_token_input.text().strip()
+        )
+        health["fitbit_refresh_token"] = (
+            self.health_fitbit_refresh_token_input.text().strip()
+        )
         save_settings_state(self.settings_state)
         self._sync_health_inputs()
         if health["provider"] == "fitbit":
@@ -10805,7 +14204,9 @@ class SettingsWindow(QWidget):
         service[flag] = bool(enabled)
         save_settings_state(self.settings_state)
 
-    def _set_notification_rule_enabled(self, rule_id: str, enabled: bool, persist: bool = True) -> None:
+    def _set_notification_rule_enabled(
+        self, rule_id: str, enabled: bool, persist: bool = True
+    ) -> None:
         rule = self.notification_rules_state["rules"].setdefault(
             rule_id,
             dict(DEFAULT_NOTIFICATION_RULES["rules"].get(rule_id, {})),
@@ -10822,7 +14223,9 @@ class SettingsWindow(QWidget):
                 else "KDE Connect WhatsApp ignore rule disabled."
             )
 
-    def _set_kdeconnect_low_battery_fullscreen_notification(self, enabled: bool) -> None:
+    def _set_kdeconnect_low_battery_fullscreen_notification(
+        self, enabled: bool
+    ) -> None:
         service = self.settings_state["services"].setdefault("kdeconnect", {})
         if not service.get("enabled", True) and enabled:
             return
@@ -10843,26 +14246,38 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         if hasattr(self, "kdeconnect_battery_threshold_label"):
             self.kdeconnect_battery_threshold_label.setText(f"{threshold}%")
-        if hasattr(self, "kdeconnect_rules_status") and bool(service.get("low_battery_fullscreen_notification", False)):
+        if hasattr(self, "kdeconnect_rules_status") and bool(
+            service.get("low_battery_fullscreen_notification", False)
+        ):
             self.kdeconnect_rules_status.setText(
                 f"Fullscreen low-battery alerts are enabled at {threshold}% for KDE Connect."
             )
 
     def _set_calendar_show_week_numbers(self, enabled: bool) -> None:
-        self.settings_state.setdefault("calendar", {})["show_week_numbers"] = bool(enabled)
+        self.settings_state.setdefault("calendar", {})["show_week_numbers"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "calendar_status"):
             self.calendar_status.setText("Calendar week numbers updated.")
 
     def _set_calendar_show_other_month_days(self, enabled: bool) -> None:
-        self.settings_state.setdefault("calendar", {})["show_other_month_days"] = bool(enabled)
+        self.settings_state.setdefault("calendar", {})["show_other_month_days"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "calendar_status"):
             self.calendar_status.setText("Calendar adjacent-month visibility updated.")
 
     def _set_calendar_first_day(self, index: int) -> None:
-        value = self.calendar_first_day_combo.itemData(index) if hasattr(self, "calendar_first_day_combo") else "monday"
-        self.settings_state.setdefault("calendar", {})["first_day_of_week"] = str(value or "monday")
+        value = (
+            self.calendar_first_day_combo.itemData(index)
+            if hasattr(self, "calendar_first_day_combo")
+            else "monday"
+        )
+        self.settings_state.setdefault("calendar", {})["first_day_of_week"] = str(
+            value or "monday"
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "calendar_status"):
             self.calendar_status.setText("Calendar first day updated.")
@@ -10883,7 +14298,9 @@ class SettingsWindow(QWidget):
         username = str(calendar.get("caldav_username", "")).strip()
         password = str(calendar.get("caldav_password", ""))
         if not url or not username or not password:
-            self.calendar_status.setText("CalDAV URL, username, and password are required.")
+            self.calendar_status.setText(
+                "CalDAV URL, username, and password are required."
+            )
             return
         if not QCAL_WRAPPER.exists():
             self.calendar_status.setText("qcal wrapper is missing.")
@@ -10901,27 +14318,44 @@ class SettingsWindow(QWidget):
         try:
             payload = json.loads(result.stdout or "{}")
         except Exception:
-            payload = {"success": False, "error": (result.stderr or "CalDAV discovery failed.").strip()}
+            payload = {
+                "success": False,
+                "error": (result.stderr or "CalDAV discovery failed.").strip(),
+            }
         success = bool(payload.get("success", False))
         calendar["connected"] = success
         names = payload.get("calendars", [])
         if success:
             discovered = ", ".join(str(name) for name in names[:3])
             suffix = "" if len(names) <= 3 else "..."
-            calendar["last_sync_status"] = f"Connected to {len(names)} calendar(s): {discovered}{suffix}"
+            calendar["last_sync_status"] = (
+                f"Connected to {len(names)} calendar(s): {discovered}{suffix}"
+            )
         else:
-            calendar["last_sync_status"] = str(payload.get("error", "Unable to discover calendars.")).strip()
+            calendar["last_sync_status"] = str(
+                payload.get("error", "Unable to discover calendars.")
+            ).strip()
         save_settings_state(self.settings_state)
-        self.calendar_status.setText(calendar["last_sync_status"] or "Calendar integration updated.")
+        self.calendar_status.setText(
+            calendar["last_sync_status"] or "Calendar integration updated."
+        )
 
     def _set_reminder_default_intensity(self, index: int) -> None:
-        value = self.reminders_intensity_combo.itemData(index) if hasattr(self, "reminders_intensity_combo") else "discrete"
-        self.settings_state.setdefault("reminders", {})["default_intensity"] = str(value or "discrete")
+        value = (
+            self.reminders_intensity_combo.itemData(index)
+            if hasattr(self, "reminders_intensity_combo")
+            else "discrete"
+        )
+        self.settings_state.setdefault("reminders", {})["default_intensity"] = str(
+            value or "discrete"
+        )
         save_settings_state(self.settings_state)
         self._refresh_reminders_status()
 
     def _set_reminder_default_lead_minutes(self, value: int) -> None:
-        self.settings_state.setdefault("reminders", {})["default_lead_minutes"] = int(value)
+        self.settings_state.setdefault("reminders", {})["default_lead_minutes"] = int(
+            value
+        )
         save_settings_state(self.settings_state)
         self._refresh_reminders_status()
 
@@ -10931,53 +14365,79 @@ class SettingsWindow(QWidget):
         self._refresh_reminders_status()
 
     def _set_pomodoro_work_minutes(self, value: int) -> None:
-        self.settings_state.setdefault("pomodoro", {})["work_minutes"] = max(5, min(90, int(value)))
+        self.settings_state.setdefault("pomodoro", {})["work_minutes"] = max(
+            5, min(90, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "pomodoro_status"):
-            self.pomodoro_status.setText(f"Work sessions set to {int(value)} minute(s).")
+            self.pomodoro_status.setText(
+                f"Work sessions set to {int(value)} minute(s)."
+            )
 
     def _set_pomodoro_short_break_minutes(self, value: int) -> None:
-        self.settings_state.setdefault("pomodoro", {})["short_break_minutes"] = max(1, min(30, int(value)))
+        self.settings_state.setdefault("pomodoro", {})["short_break_minutes"] = max(
+            1, min(30, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "pomodoro_status"):
             self.pomodoro_status.setText(f"Short breaks set to {int(value)} minute(s).")
 
     def _set_pomodoro_long_break_minutes(self, value: int) -> None:
-        self.settings_state.setdefault("pomodoro", {})["long_break_minutes"] = max(5, min(60, int(value)))
+        self.settings_state.setdefault("pomodoro", {})["long_break_minutes"] = max(
+            5, min(60, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "pomodoro_status"):
             self.pomodoro_status.setText(f"Long breaks set to {int(value)} minute(s).")
 
     def _set_pomodoro_long_break_every(self, value: int) -> None:
-        self.settings_state.setdefault("pomodoro", {})["long_break_every"] = max(2, min(8, int(value)))
-        save_settings_state(self.settings_state)
-        if hasattr(self, "pomodoro_status"):
-            self.pomodoro_status.setText(f"Long break cadence set to every {int(value)} focus session(s).")
-
-    def _set_pomodoro_auto_start_breaks(self, enabled: bool) -> None:
-        self.settings_state.setdefault("pomodoro", {})["auto_start_breaks"] = bool(enabled)
+        self.settings_state.setdefault("pomodoro", {})["long_break_every"] = max(
+            2, min(8, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "pomodoro_status"):
             self.pomodoro_status.setText(
-                "Break timers will auto-start after work sessions." if enabled else "Break timers now wait for manual start."
+                f"Long break cadence set to every {int(value)} focus session(s)."
+            )
+
+    def _set_pomodoro_auto_start_breaks(self, enabled: bool) -> None:
+        self.settings_state.setdefault("pomodoro", {})["auto_start_breaks"] = bool(
+            enabled
+        )
+        save_settings_state(self.settings_state)
+        if hasattr(self, "pomodoro_status"):
+            self.pomodoro_status.setText(
+                "Break timers will auto-start after work sessions."
+                if enabled
+                else "Break timers now wait for manual start."
             )
 
     def _set_pomodoro_auto_start_focus(self, enabled: bool) -> None:
-        self.settings_state.setdefault("pomodoro", {})["auto_start_focus"] = bool(enabled)
+        self.settings_state.setdefault("pomodoro", {})["auto_start_focus"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "pomodoro_status"):
             self.pomodoro_status.setText(
-                "Focus sessions will auto-start after breaks." if enabled else "Focus sessions now wait for manual start."
+                "Focus sessions will auto-start after breaks."
+                if enabled
+                else "Focus sessions now wait for manual start."
             )
 
     def _set_rss_item_limit(self, value: int) -> None:
-        self.settings_state.setdefault("rss", {})["item_limit"] = max(3, min(30, int(value)))
+        self.settings_state.setdefault("rss", {})["item_limit"] = max(
+            3, min(30, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "rss_status"):
-            self.rss_status.setText(f"RSS item limit set to {int(value)} story entries.")
+            self.rss_status.setText(
+                f"RSS item limit set to {int(value)} story entries."
+            )
 
     def _set_rss_check_interval(self, value: int) -> None:
-        self.settings_state.setdefault("rss", {})["check_interval_minutes"] = max(5, min(180, int(value)))
+        self.settings_state.setdefault("rss", {})["check_interval_minutes"] = max(
+            5, min(180, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "rss_status"):
             self.rss_status.setText(f"RSS checks now run every {int(value)} minute(s).")
@@ -10986,7 +14446,11 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("rss", {})["notify_new_items"] = bool(enabled)
         save_settings_state(self.settings_state)
         if hasattr(self, "rss_status"):
-            self.rss_status.setText("RSS notifications are enabled." if enabled else "RSS notifications are paused.")
+            self.rss_status.setText(
+                "RSS notifications are enabled."
+                if enabled
+                else "RSS notifications are paused."
+            )
 
     def _save_rss_settings(self) -> None:
         save_settings_state(self.settings_state)
@@ -11003,21 +14467,29 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("obs", {})["auto_connect"] = bool(enabled)
         save_settings_state(self.settings_state)
         if hasattr(self, "obs_status"):
-            self.obs_status.setText("OBS widget will connect immediately when opened." if enabled else "OBS widget now waits for a manual connect.")
+            self.obs_status.setText(
+                "OBS widget will connect immediately when opened."
+                if enabled
+                else "OBS widget now waits for a manual connect."
+            )
 
     def _set_obs_debug_tooltips(self, enabled: bool) -> None:
         self.settings_state.setdefault("obs", {})["show_debug_tooltips"] = bool(enabled)
         save_settings_state(self.settings_state)
         if hasattr(self, "obs_status"):
             self.obs_status.setText(
-                "OBS debug tooltips are enabled." if enabled else "OBS debug tooltips are disabled."
+                "OBS debug tooltips are enabled."
+                if enabled
+                else "OBS debug tooltips are disabled."
             )
 
     def _save_obs_settings(self) -> None:
         obs = self.settings_state.setdefault("obs", {})
         obs["host"] = self.obs_host_input.text().strip() or "127.0.0.1"
         try:
-            obs["port"] = max(1, min(65535, int(self.obs_port_input.text().strip() or "4455")))
+            obs["port"] = max(
+                1, min(65535, int(self.obs_port_input.text().strip() or "4455"))
+            )
         except Exception:
             obs["port"] = 4455
         obs["password"] = self.obs_password_input.text()
@@ -11025,44 +14497,70 @@ class SettingsWindow(QWidget):
         obs["show_debug_tooltips"] = bool(self.obs_debug_tooltips_switch.isChecked())
         save_settings_state(self.settings_state)
         if hasattr(self, "obs_status"):
-            self.obs_status.setText(f"OBS connection saved for {obs['host']}:{obs['port']}.")
+            self.obs_status.setText(
+                f"OBS connection saved for {obs['host']}:{obs['port']}."
+            )
 
     def _set_crypto_check_interval(self, value: int) -> None:
-        self.settings_state.setdefault("crypto", {})["check_interval_minutes"] = max(5, min(180, int(value)))
+        self.settings_state.setdefault("crypto", {})["check_interval_minutes"] = max(
+            5, min(180, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "crypto_status"):
-            self.crypto_status.setText(f"Crypto checks now run every {int(value)} minute(s).")
+            self.crypto_status.setText(
+                f"Crypto checks now run every {int(value)} minute(s)."
+            )
 
     def _set_crypto_chart_days(self, value: int) -> None:
-        self.settings_state.setdefault("crypto", {})["chart_days"] = max(1, min(90, int(value)))
+        self.settings_state.setdefault("crypto", {})["chart_days"] = max(
+            1, min(90, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "crypto_status"):
-            self.crypto_status.setText(f"Charts will open on the last {int(value)} day(s).")
+            self.crypto_status.setText(
+                f"Charts will open on the last {int(value)} day(s)."
+            )
 
     def _set_crypto_notify_price_moves(self, enabled: bool) -> None:
-        self.settings_state.setdefault("crypto", {})["notify_price_moves"] = bool(enabled)
+        self.settings_state.setdefault("crypto", {})["notify_price_moves"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "crypto_status"):
-            self.crypto_status.setText("Crypto move notifications are enabled." if enabled else "Crypto move notifications are paused.")
+            self.crypto_status.setText(
+                "Crypto move notifications are enabled."
+                if enabled
+                else "Crypto move notifications are paused."
+            )
 
     def _set_crypto_up_percent(self, value: int) -> None:
-        self.settings_state.setdefault("crypto", {})["price_up_percent"] = float(max(1, min(20, int(value))))
+        self.settings_state.setdefault("crypto", {})["price_up_percent"] = float(
+            max(1, min(20, int(value)))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "crypto_status"):
-            self.crypto_status.setText(f"Up alerts will trigger at {int(value)}% or more.")
+            self.crypto_status.setText(
+                f"Up alerts will trigger at {int(value)}% or more."
+            )
 
     def _set_crypto_down_percent(self, value: int) -> None:
-        self.settings_state.setdefault("crypto", {})["price_down_percent"] = float(max(1, min(20, int(value))))
+        self.settings_state.setdefault("crypto", {})["price_down_percent"] = float(
+            max(1, min(20, int(value)))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "crypto_status"):
-            self.crypto_status.setText(f"Down alerts will trigger at {int(value)}% or more.")
+            self.crypto_status.setText(
+                f"Down alerts will trigger at {int(value)}% or more."
+            )
 
     def _save_crypto_settings(self) -> None:
         crypto = self.settings_state.setdefault("crypto", {})
         crypto["api_provider"] = "coingecko"
         crypto["api_key"] = self.crypto_api_key_input.text().strip()
         crypto["tracked_coins"] = self.crypto_coins_input.text().strip()
-        crypto["vs_currency"] = self.crypto_currency_input.text().strip().lower() or "usd"
+        crypto["vs_currency"] = (
+            self.crypto_currency_input.text().strip().lower() or "usd"
+        )
         crypto["check_interval_minutes"] = int(self.crypto_interval_slider.value())
         crypto["chart_days"] = int(self.crypto_chart_days_slider.value())
         crypto["notify_price_moves"] = bool(self.crypto_alert_switch.isChecked())
@@ -11076,23 +14574,36 @@ class SettingsWindow(QWidget):
         vps = self.settings_state.setdefault("vps", {})
         vps["host"] = self.vps_host_input.text().strip()
         try:
-            vps["port"] = max(1, min(65535, int(self.vps_port_input.text().strip() or "22")))
+            vps["port"] = max(
+                1, min(65535, int(self.vps_port_input.text().strip() or "22"))
+            )
         except Exception:
             vps["port"] = 22
         vps["username"] = self.vps_username_input.text().strip()
         vps["identity_file"] = self.vps_identity_input.text().strip()
         vps["app_service"] = self.vps_service_input.text().strip()
-        vps["health_command"] = self.vps_health_input.text().strip() or "uptime && df -h /"
-        vps["update_command"] = self.vps_update_input.text().strip() or "sudo apt update && sudo apt upgrade -y"
+        vps["health_command"] = (
+            self.vps_health_input.text().strip() or "uptime && df -h /"
+        )
+        vps["update_command"] = (
+            self.vps_update_input.text().strip()
+            or "sudo apt update && sudo apt upgrade -y"
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "vps_status"):
             if vps["host"]:
-                self.vps_status.setText(f"VPS connection saved for {vps['username']}@{vps['host']}:{vps['port']}.")
+                self.vps_status.setText(
+                    f"VPS connection saved for {vps['username']}@{vps['host']}:{vps['port']}."
+                )
             else:
-                self.vps_status.setText("VPS settings saved. Add a host when you are ready.")
+                self.vps_status.setText(
+                    "VPS settings saved. Add a host when you are ready."
+                )
 
     def _set_clock_size(self, value: int) -> None:
-        self.settings_state.setdefault("clock", {})["size"] = max(220, min(520, int(value)))
+        self.settings_state.setdefault("clock", {})["size"] = max(
+            220, min(520, int(value))
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "clock_status"):
             self.clock_status.setText(f"Desktop clock size set to {int(value)}px.")
@@ -11101,7 +14612,9 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("clock", {})["show_seconds"] = bool(enabled)
         save_settings_state(self.settings_state)
         if hasattr(self, "clock_status"):
-            self.clock_status.setText("Seconds hand enabled." if enabled else "Seconds hand hidden.")
+            self.clock_status.setText(
+                "Seconds hand enabled." if enabled else "Seconds hand hidden."
+            )
 
     def _reset_clock_position(self) -> None:
         clock = self.settings_state.setdefault("clock", {})
@@ -11122,7 +14635,9 @@ class SettingsWindow(QWidget):
         command = self._desktop_clock_command()
         if not command:
             if hasattr(self, "clock_status"):
-                self.clock_status.setText("No desktop clock executable was found. Build `hanauta/bin/hanauta-clock` or keep the PyQt fallback installed.")
+                self.clock_status.setText(
+                    "No desktop clock executable was found. Build `hanauta/bin/hanauta-clock` or keep the PyQt fallback installed."
+                )
             return
         try:
             subprocess.Popen(
@@ -11144,14 +14659,18 @@ class SettingsWindow(QWidget):
     def _save_reminders_settings(self) -> None:
         reminders = self.settings_state.setdefault("reminders", {})
         reminders["tea_label"] = self.tea_label_input.text().strip() or "Tea"
-        reminders["default_intensity"] = str(self.reminders_intensity_combo.currentData() or "discrete")
+        reminders["default_intensity"] = str(
+            self.reminders_intensity_combo.currentData() or "discrete"
+        )
         reminders["default_lead_minutes"] = int(self.reminders_lead_slider.value())
         reminders["tea_minutes"] = int(self.tea_minutes_slider.value())
         save_settings_state(self.settings_state)
         self._refresh_reminders_status("Reminder defaults saved.")
 
     def _refresh_reminders_status(self, prefix: str = "") -> None:
-        tracked_count = len(self.settings_state.get("reminders", {}).get("tracked_events", []))
+        tracked_count = len(
+            self.settings_state.get("reminders", {}).get("tracked_events", [])
+        )
         detail = (
             f"{tracked_count} tracked reminder(s) • "
             f"{self.settings_state['reminders'].get('default_lead_minutes', 20)} min lead • "
@@ -11177,7 +14696,9 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
 
     def _set_ntfy_hide_notification_content(self, enabled: bool) -> None:
-        self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = bool(enabled)
+        self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "ntfy_status"):
             self.ntfy_status.setText(
@@ -11192,13 +14713,17 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         if hasattr(self, "weather_status"):
             self.weather_status.setText(
-                "Weather icon enabled on the bar." if enabled else "Weather icon disabled."
+                "Weather icon enabled on the bar."
+                if enabled
+                else "Weather icon disabled."
             )
 
     def _toggle_energy_battery_section(self) -> None:
         if not getattr(self, "_battery_present", False):
             return
-        self._set_energy_battery_section_expanded(not getattr(self, "_energy_battery_expanded", False))
+        self._set_energy_battery_section_expanded(
+            not getattr(self, "_energy_battery_expanded", False)
+        )
 
     def _set_energy_battery_section_expanded(self, expanded: bool) -> None:
         active = bool(getattr(self, "_battery_present", False))
@@ -11211,7 +14736,11 @@ class SettingsWindow(QWidget):
             self.energy_battery_chevron.setVisible(active)
             self.energy_battery_chevron.setStyleSheet(
                 "color: #F2E7F4; background: transparent;"
-                + ("transform: rotate(180deg);" if self._energy_battery_expanded else "")
+                + (
+                    "transform: rotate(180deg);"
+                    if self._energy_battery_expanded
+                    else ""
+                )
             )
 
     def _refresh_energy_state(self) -> None:
@@ -11225,7 +14754,9 @@ class SettingsWindow(QWidget):
             self.autolock_timeout_input.setText(str(autolock_minutes))
             self.autolock_timeout_input.setEnabled(autolock_enabled)
 
-        brightness = run_text([str(ROOT / "hanauta" / "scripts" / "brightness.sh"), "br"])
+        brightness = run_text(
+            [str(ROOT / "hanauta" / "scripts" / "brightness.sh"), "br"]
+        )
         try:
             brightness_value = max(1, min(100, int(brightness or "0")))
         except Exception:
@@ -11234,16 +14765,32 @@ class SettingsWindow(QWidget):
             self.energy_brightness_input.setText(str(brightness_value))
 
         if hasattr(self, "energy_status"):
-            battery_text = "battery detected" if self._battery_present else "no battery detected"
-            lock_text = f"auto lock in {autolock_minutes} min" if autolock_enabled else "auto lock disabled"
-            brightness_text = f"brightness {brightness_value}%" if brightness_value > 0 else "brightness unavailable"
-            self.energy_status.setText(f"{lock_text} • {brightness_text} • {battery_text}.")
+            battery_text = (
+                "battery detected" if self._battery_present else "no battery detected"
+            )
+            lock_text = (
+                f"auto lock in {autolock_minutes} min"
+                if autolock_enabled
+                else "auto lock disabled"
+            )
+            brightness_text = (
+                f"brightness {brightness_value}%"
+                if brightness_value > 0
+                else "brightness unavailable"
+            )
+            self.energy_status.setText(
+                f"{lock_text} • {brightness_text} • {battery_text}."
+            )
 
         if not hasattr(self, "energy_battery_summary"):
             return
         if not self._battery_present:
-            self.energy_battery_summary.setText("No battery detected on this PC. Battery controls stay collapsed and inactive.")
-            self.energy_battery_meta.setText("Connect a laptop battery or UPS-backed battery source if you want battery-specific details here.")
+            self.energy_battery_summary.setText(
+                "No battery detected on this PC. Battery controls stay collapsed and inactive."
+            )
+            self.energy_battery_meta.setText(
+                "Connect a laptop battery or UPS-backed battery source if you want battery-specific details here."
+            )
             for label in getattr(self, "energy_battery_labels", {}).values():
                 label.setText("Unavailable")
             self._set_energy_battery_section_expanded(False)
@@ -11260,11 +14807,27 @@ class SettingsWindow(QWidget):
         self.energy_battery_summary.setText(f"{capacity}% • {status} • {technology}")
         self.energy_battery_labels["Charge"].setText(f"{capacity}%")
         self.energy_battery_labels["State"].setText(status)
-        self.energy_battery_labels["Health"].setText(f"{health_percent}%" if health_percent is not None else "Unknown")
-        self.energy_battery_labels["Cycles"].setText(str(cycle_count) if cycle_count is not None else "Unknown")
-        meta_parts = [part for part in (manufacturer, model_name, str(snapshot.get("path", "") or "").strip()) if part]
-        self.energy_battery_meta.setText(" • ".join(meta_parts) if meta_parts else "Battery details are available.")
-        self._set_energy_battery_section_expanded(getattr(self, "_energy_battery_expanded", True))
+        self.energy_battery_labels["Health"].setText(
+            f"{health_percent}%" if health_percent is not None else "Unknown"
+        )
+        self.energy_battery_labels["Cycles"].setText(
+            str(cycle_count) if cycle_count is not None else "Unknown"
+        )
+        meta_parts = [
+            part
+            for part in (
+                manufacturer,
+                model_name,
+                str(snapshot.get("path", "") or "").strip(),
+            )
+            if part
+        ]
+        self.energy_battery_meta.setText(
+            " • ".join(meta_parts) if meta_parts else "Battery details are available."
+        )
+        self._set_energy_battery_section_expanded(
+            getattr(self, "_energy_battery_expanded", True)
+        )
 
     def _lock_now(self) -> None:
         if LOCK_SCRIPT.exists():
@@ -11307,7 +14870,9 @@ class SettingsWindow(QWidget):
     def _set_autolock_enabled(self, enabled: bool) -> None:
         autolock = self.settings_state.setdefault("autolock", {})
         autolock["enabled"] = bool(enabled)
-        autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2) or 2)))
+        autolock["timeout_minutes"] = max(
+            1, min(60, int(autolock.get("timeout_minutes", 2) or 2))
+        )
         if hasattr(self, "autolock_timeout_input"):
             self.autolock_timeout_input.setEnabled(bool(enabled))
         save_settings_state(self.settings_state)
@@ -11315,7 +14880,9 @@ class SettingsWindow(QWidget):
             if enabled:
                 minutes = int(autolock["timeout_minutes"])
                 label = "minute" if minutes == 1 else "minutes"
-                self.energy_status.setText(f"Auto lock enabled after {minutes} {label} of idle time unless caffeine is on.")
+                self.energy_status.setText(
+                    f"Auto lock enabled after {minutes} {label} of idle time unless caffeine is on."
+                )
             else:
                 self.energy_status.setText("Auto lock disabled.")
 
@@ -11341,15 +14908,25 @@ class SettingsWindow(QWidget):
         self._set_autolock_timeout_minutes(value)
 
     def _set_region_date_style(self, index: int) -> None:
-        value = self.region_date_style_combo.itemData(index) if hasattr(self, "region_date_style_combo") else "us"
+        value = (
+            self.region_date_style_combo.itemData(index)
+            if hasattr(self, "region_date_style_combo")
+            else "us"
+        )
         self.settings_state.setdefault("region", {})["date_style"] = str(value or "us")
         save_settings_state(self.settings_state)
         if hasattr(self, "region_status"):
             self.region_status.setText("Date style updated.")
 
     def _set_region_temperature_unit(self, index: int) -> None:
-        value = self.region_temperature_combo.itemData(index) if hasattr(self, "region_temperature_combo") else "c"
-        self.settings_state.setdefault("region", {})["temperature_unit"] = str(value or "c")
+        value = (
+            self.region_temperature_combo.itemData(index)
+            if hasattr(self, "region_temperature_combo")
+            else "c"
+        )
+        self.settings_state.setdefault("region", {})["temperature_unit"] = str(
+            value or "c"
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "region_status"):
             self.region_status.setText("Temperature unit updated.")
@@ -11359,14 +14936,18 @@ class SettingsWindow(QWidget):
         region["locale_code"] = self.region_locale_input.text().strip()
         region["use_24_hour"] = bool(self.region_24h_switch.isChecked())
         region["date_style"] = str(self.region_date_style_combo.currentData() or "us")
-        region["temperature_unit"] = str(self.region_temperature_combo.currentData() or "c")
+        region["temperature_unit"] = str(
+            self.region_temperature_combo.currentData() or "c"
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "region_status"):
             locale_label = region["locale_code"] or "system default"
             self.region_status.setText(f"Region settings saved for {locale_label}.")
 
     def _save_bar_settings(self) -> None:
-        self.settings_state["bar"] = merged_bar_settings(self.settings_state.get("bar", {}))
+        self.settings_state["bar"] = merged_bar_settings(
+            self.settings_state.get("bar", {})
+        )
         save_settings_state(self.settings_state)
 
     def _set_bar_launcher_offset(self, value: int) -> None:
@@ -11386,7 +14967,9 @@ class SettingsWindow(QWidget):
         self._save_bar_settings()
 
     def _set_bar_show_workspace_label(self, enabled: bool) -> None:
-        self.settings_state.setdefault("bar", {})["show_workspace_label"] = bool(enabled)
+        self.settings_state.setdefault("bar", {})["show_workspace_label"] = bool(
+            enabled
+        )
         self._save_bar_settings()
 
     def _set_bar_media_offset(self, value: int) -> None:
@@ -11414,7 +14997,9 @@ class SettingsWindow(QWidget):
         self._save_bar_settings()
 
     def _set_bar_tray_tint_with_matugen(self, enabled: bool) -> None:
-        self.settings_state.setdefault("bar", {})["tray_tint_with_matugen"] = bool(enabled)
+        self.settings_state.setdefault("bar", {})["tray_tint_with_matugen"] = bool(
+            enabled
+        )
         self._save_bar_settings()
 
     def _set_bar_monitor_target(self, index: int) -> None:
@@ -11470,9 +15055,17 @@ class SettingsWindow(QWidget):
         if hasattr(self, "region_location_model"):
             self.region_location_model.setStringList(labels)
         if labels:
-            if hasattr(self, "weather_city_completer") and hasattr(self, "weather_city_input") and self.weather_city_input.hasFocus():
+            if (
+                hasattr(self, "weather_city_completer")
+                and hasattr(self, "weather_city_input")
+                and self.weather_city_input.hasFocus()
+            ):
                 self.weather_city_completer.complete()
-            if hasattr(self, "region_location_completer") and hasattr(self, "region_location_input") and self.region_location_input.hasFocus():
+            if (
+                hasattr(self, "region_location_completer")
+                and hasattr(self, "region_location_input")
+                and self.region_location_input.hasFocus()
+            ):
                 self.region_location_completer.complete()
 
     def _select_weather_city(self, label: str) -> None:
@@ -11491,12 +15084,18 @@ class SettingsWindow(QWidget):
 
     def _save_weather_settings(self) -> None:
         city = self._selected_weather_city
-        current_text = self.weather_city_input.text().strip() if hasattr(self, "weather_city_input") else ""
+        current_text = (
+            self.weather_city_input.text().strip()
+            if hasattr(self, "weather_city_input")
+            else ""
+        )
         if city is None and current_text:
             city = self._weather_city_map.get(current_text)
         if city is None:
             if hasattr(self, "weather_status"):
-                self.weather_status.setText("Pick a city from the autocomplete list first.")
+                self.weather_status.setText(
+                    "Pick a city from the autocomplete list first."
+                )
             return
         weather = self.settings_state.setdefault("weather", {})
         weather.update(
@@ -11519,12 +15118,16 @@ class SettingsWindow(QWidget):
             self.region_status.setText(f"Shared location saved: {city.label}")
 
     def _make_transparency_switch(self) -> SwitchButton:
-        switch = SwitchButton(bool(self.settings_state["appearance"].get("transparency", True)))
+        switch = SwitchButton(
+            bool(self.settings_state["appearance"].get("transparency", True))
+        )
         switch.toggledValue.connect(self._set_transparency)
         return switch
 
     def _make_matugen_switch(self) -> SwitchButton:
-        switch = SwitchButton(bool(self.settings_state["appearance"].get("use_matugen_palette", False)))
+        switch = SwitchButton(
+            bool(self.settings_state["appearance"].get("use_matugen_palette", False))
+        )
         switch.toggledValue.connect(self._set_use_matugen_palette)
         self.matugen_palette_switch = switch
         return switch
@@ -11554,9 +15157,15 @@ class SettingsWindow(QWidget):
             )
 
     def _set_notification_center_card_opacity(self, value: int) -> None:
-        panel_opacity = int(self.settings_state["appearance"].get("notification_center_panel_opacity", 84))
+        panel_opacity = int(
+            self.settings_state["appearance"].get(
+                "notification_center_panel_opacity", 84
+            )
+        )
         card_opacity = max(panel_opacity, min(100, int(value)))
-        self.settings_state["appearance"]["notification_center_card_opacity"] = card_opacity
+        self.settings_state["appearance"]["notification_center_card_opacity"] = (
+            card_opacity
+        )
         if card_opacity != int(value):
             if hasattr(self, "notification_center_card_opacity_slider"):
                 self.notification_center_card_opacity_slider.blockSignals(True)
@@ -11575,24 +15184,42 @@ class SettingsWindow(QWidget):
         self.settings_state["appearance"]["notification_toast_max_width"] = toast_width
         save_settings_state(self.settings_state)
         if hasattr(self, "appearance_status"):
-            self.appearance_status.setText(f"Notification width limit set to {toast_width}px.")
+            self.appearance_status.setText(
+                f"Notification width limit set to {toast_width}px."
+            )
 
     def _set_notification_toast_max_height(self, value: int) -> None:
         toast_height = max(160, min(640, int(value)))
-        self.settings_state["appearance"]["notification_toast_max_height"] = toast_height
+        self.settings_state["appearance"]["notification_toast_max_height"] = (
+            toast_height
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "appearance_status"):
-            self.appearance_status.setText(f"Notification height limit set to {toast_height}px.")
+            self.appearance_status.setText(
+                f"Notification height limit set to {toast_height}px."
+            )
 
     def _set_use_matugen_palette(self, enabled: bool) -> None:
         self.settings_state["appearance"]["use_matugen_palette"] = bool(enabled)
         if enabled:
             self.settings_state["appearance"]["theme_choice"] = "wallpaper_aware"
         else:
-            current_choice = str(self.settings_state["appearance"].get("theme_choice", "dark")).strip().lower()
+            current_choice = (
+                str(self.settings_state["appearance"].get("theme_choice", "dark"))
+                .strip()
+                .lower()
+            )
             if current_choice == "wallpaper_aware":
-                fallback_mode = str(self.settings_state["appearance"].get("theme_mode", "dark")).strip().lower()
-                self.settings_state["appearance"]["theme_choice"] = fallback_mode if fallback_mode in {"light", "dark", "custom"} else "dark"
+                fallback_mode = (
+                    str(self.settings_state["appearance"].get("theme_mode", "dark"))
+                    .strip()
+                    .lower()
+                )
+                self.settings_state["appearance"]["theme_choice"] = (
+                    fallback_mode
+                    if fallback_mode in {"light", "dark", "custom"}
+                    else "dark"
+                )
         save_settings_state(self.settings_state)
         if enabled:
             self._apply_matugen_palette()
@@ -11610,7 +15237,9 @@ class SettingsWindow(QWidget):
         self._sync_accent_controls()
 
     def _set_matugen_notifications_enabled(self, enabled: bool) -> None:
-        self.settings_state["appearance"]["matugen_notifications_enabled"] = bool(enabled)
+        self.settings_state["appearance"]["matugen_notifications_enabled"] = bool(
+            enabled
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "appearance_status"):
             self.appearance_status.setText(
@@ -11620,7 +15249,9 @@ class SettingsWindow(QWidget):
             )
 
     def _set_wallpaper_change_notifications_enabled(self, enabled: bool) -> None:
-        self.settings_state["appearance"]["wallpaper_change_notifications_enabled"] = bool(enabled)
+        self.settings_state["appearance"]["wallpaper_change_notifications_enabled"] = (
+            bool(enabled)
+        )
         save_settings_state(self.settings_state)
         if hasattr(self, "appearance_status"):
             self.appearance_status.setText(
@@ -11644,7 +15275,9 @@ class SettingsWindow(QWidget):
             self._apply_styles()
             self._sync_accent_controls()
             if hasattr(self, "appearance_status"):
-                self.appearance_status.setText("Wallpaper aware mode is active. Hanauta will refresh colors from the current wallpaper.")
+                self.appearance_status.setText(
+                    "Wallpaper aware mode is active. Hanauta will refresh colors from the current wallpaper."
+                )
             return
         if choice == "custom":
             self.settings_state["appearance"]["theme_mode"] = "dark"
@@ -11701,7 +15334,9 @@ class SettingsWindow(QWidget):
         if self._restart_if_theme_fonts_changed():
             return
         if hasattr(self, "appearance_status"):
-            self.appearance_status.setText(f"Custom theme applied: {THEME_LIBRARY[theme_id]['label']}.")
+            self.appearance_status.setText(
+                f"Custom theme applied: {THEME_LIBRARY[theme_id]['label']}."
+            )
 
     def _ensure_system_theme_copy(self, theme_key: str) -> None:
         theme_key = str(theme_key).strip().lower()
@@ -11727,7 +15362,13 @@ class SettingsWindow(QWidget):
                 )
             return
         result = subprocess.run(
-            ["pkexec", "bash", str(SYSTEM_THEME_INSTALL_SCRIPT), theme_name, str(source_dir)],
+            [
+                "pkexec",
+                "bash",
+                str(SYSTEM_THEME_INSTALL_SCRIPT),
+                theme_name,
+                str(source_dir),
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -11746,7 +15387,9 @@ class SettingsWindow(QWidget):
 
     def _set_theme_mode(self, mode: str) -> None:
         self.settings_state["appearance"]["theme_mode"] = mode
-        self.settings_state["appearance"]["theme_choice"] = mode if mode in {"light", "dark", "custom"} else "dark"
+        self.settings_state["appearance"]["theme_choice"] = (
+            mode if mode in {"light", "dark", "custom"} else "dark"
+        )
         self.settings_state["appearance"]["use_matugen_palette"] = False
         save_settings_state(self.settings_state)
         sync_static_theme_from_settings(self.settings_state, apply_gtk=False)
@@ -11766,14 +15409,28 @@ class SettingsWindow(QWidget):
         accent = self.settings_state["appearance"].get("accent", "orchid")
         for key, chip in getattr(self, "accent_chips", {}).items():
             chip.setChecked(key == accent or (key == "auto" and accent == "orchid"))
-        theme_mode = str(self.settings_state["appearance"].get("theme_choice", "")).strip().lower()
+        theme_mode = (
+            str(self.settings_state["appearance"].get("theme_choice", ""))
+            .strip()
+            .lower()
+        )
         if theme_mode not in THEME_CHOICES:
-            theme_mode = "wallpaper_aware" if self.settings_state["appearance"].get("use_matugen_palette", False) else str(self.settings_state["appearance"].get("theme_mode", "dark")).strip().lower()
+            theme_mode = (
+                "wallpaper_aware"
+                if self.settings_state["appearance"].get("use_matugen_palette", False)
+                else str(self.settings_state["appearance"].get("theme_mode", "dark"))
+                .strip()
+                .lower()
+            )
         if theme_mode not in THEME_CHOICES:
             theme_mode = "dark"
         for key, button in getattr(self, "theme_buttons", {}).items():
             button.setChecked(key == theme_mode)
-        custom_theme_id = str(self.settings_state["appearance"].get("custom_theme_id", "retrowave")).strip().lower()
+        custom_theme_id = (
+            str(self.settings_state["appearance"].get("custom_theme_id", "retrowave"))
+            .strip()
+            .lower()
+        )
         for key, button in getattr(self, "custom_theme_buttons", {}).items():
             button.setChecked(key == custom_theme_id)
         custom_visible = theme_mode == "custom"
@@ -11788,7 +15445,11 @@ class SettingsWindow(QWidget):
     def _refresh_current_accent(self) -> None:
         accent = self.settings_state["appearance"].get("accent", "orchid")
         self.current_accent = accent_palette(accent)
-        theme_choice = str(self.settings_state["appearance"].get("theme_choice", "dark")).strip().lower()
+        theme_choice = (
+            str(self.settings_state["appearance"].get("theme_choice", "dark"))
+            .strip()
+            .lower()
+        )
         if self.theme_palette.use_matugen or theme_choice == "custom":
             self.current_accent = {
                 "accent": self.theme_palette.primary,
@@ -11808,7 +15469,12 @@ class SettingsWindow(QWidget):
             return
         self._theme_refresh_restart_pending = True
         page = getattr(self, "current_page", self.initial_page or "appearance")
-        command = [sys.executable, str(Path(__file__).resolve()), "--page", str(page or "appearance")]
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--page",
+            str(page or "appearance"),
+        ]
         if page == "services" and self.initial_service_section:
             command.extend(["--service-section", str(self.initial_service_section)])
         subprocess.Popen(
@@ -11858,16 +15524,26 @@ class SettingsWindow(QWidget):
             self.appearance_status.setText(f"Syncing wallpapers from {source_label}...")
         if hasattr(self, "wallpaper_sync_progress"):
             self.wallpaper_sync_progress.show()
-        for button_name in ("sync_caelestia_button", "sync_end4_button", "sync_catholic_button"):
+        for button_name in (
+            "sync_caelestia_button",
+            "sync_end4_button",
+            "sync_catholic_button",
+        ):
             button = getattr(self, button_name, None)
             if isinstance(button, QPushButton):
                 button.setEnabled(False)
         self._wallpaper_sync_worker = WallpaperSourceSyncWorker(source_key)
-        self._wallpaper_sync_worker.finished_sync.connect(self._finish_wallpaper_source_sync)
-        self._wallpaper_sync_worker.finished.connect(self._cleanup_wallpaper_source_worker)
+        self._wallpaper_sync_worker.finished_sync.connect(
+            self._finish_wallpaper_source_sync
+        )
+        self._wallpaper_sync_worker.finished.connect(
+            self._cleanup_wallpaper_source_worker
+        )
         self._wallpaper_sync_worker.start()
 
-    def _finish_wallpaper_source_sync(self, _source_key: str, ok: bool, message: str, folder_obj: object) -> None:
+    def _finish_wallpaper_source_sync(
+        self, _source_key: str, ok: bool, message: str, folder_obj: object
+    ) -> None:
         folder = folder_obj if isinstance(folder_obj, Path) else None
         if not ok or folder is None:
             if hasattr(self, "appearance_status"):
@@ -11878,12 +15554,18 @@ class SettingsWindow(QWidget):
         save_settings_state(self.settings_state)
         self._sync_wallpaper_controls()
         if hasattr(self, "appearance_status"):
-            self.appearance_status.setText(f"{message} Slideshow folder now points to {folder}.")
+            self.appearance_status.setText(
+                f"{message} Slideshow folder now points to {folder}."
+            )
 
     def _cleanup_wallpaper_source_worker(self) -> None:
         if hasattr(self, "wallpaper_sync_progress"):
             self.wallpaper_sync_progress.hide()
-        for button_name in ("sync_caelestia_button", "sync_end4_button", "sync_catholic_button"):
+        for button_name in (
+            "sync_caelestia_button",
+            "sync_end4_button",
+            "sync_catholic_button",
+        ):
             button = getattr(self, button_name, None)
             if isinstance(button, QPushButton):
                 button.setEnabled(True)
@@ -11893,10 +15575,16 @@ class SettingsWindow(QWidget):
         self._wallpaper_sync_worker = None
 
     def _apply_matugen_palette(self, force: bool = False) -> None:
-        wallpaper_path = self.wallpaper if self.wallpaper.exists() and self.wallpaper.is_file() else self._pick_wallpaper()
+        wallpaper_path = (
+            self.wallpaper
+            if self.wallpaper.exists() and self.wallpaper.is_file()
+            else self._pick_wallpaper()
+        )
         if not wallpaper_path.exists() or not wallpaper_path.is_file():
             return
-        if force and not self.settings_state["appearance"].get("use_matugen_palette", False):
+        if force and not self.settings_state["appearance"].get(
+            "use_matugen_palette", False
+        ):
             self.settings_state["appearance"]["use_matugen_palette"] = True
             self.settings_state["appearance"]["theme_choice"] = "wallpaper_aware"
             save_settings_state(self.settings_state)
@@ -11918,7 +15606,9 @@ class SettingsWindow(QWidget):
     def _apply_current_wallpaper_layout(self) -> None:
         if not self.wallpaper.exists() or not self.wallpaper.is_file():
             return
-        active_displays = [display for display in parse_xrandr_state() if display.get("enabled")]
+        active_displays = [
+            display for display in parse_xrandr_state() if display.get("enabled")
+        ]
         if not active_displays:
             if WALLPAPER_SCRIPT.exists():
                 run_bg([str(WALLPAPER_SCRIPT), str(self.wallpaper)])
@@ -11933,7 +15623,9 @@ class SettingsWindow(QWidget):
         else:
             run_bg(["feh", "--bg-fill", str(self.wallpaper)])
 
-    def _render_wallpaper_variants(self, path: Path, displays: list[dict]) -> list[Path]:
+    def _render_wallpaper_variants(
+        self, path: Path, displays: list[dict]
+    ) -> list[Path]:
         source = QImage(str(path))
         if source.isNull():
             return []
@@ -11961,7 +15653,10 @@ class SettingsWindow(QWidget):
                 self._wallpaper_mode_for_output(str(display.get("name", ""))),
             )
             painter.end()
-            target = RENDERED_WALLPAPER_DIR / f"{sanitize_output_name(str(display.get('name', 'display')))}.png"
+            target = (
+                RENDERED_WALLPAPER_DIR
+                / f"{sanitize_output_name(str(display.get('name', 'display')))}.png"
+            )
             canvas.save(str(target), "PNG")
             rendered_paths.append(target)
         return rendered_paths
@@ -11978,43 +15673,64 @@ class SettingsWindow(QWidget):
         self._save_appearance_state()
 
     def _apply_random_wallpaper(self) -> None:
-        folder = Path(self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))).expanduser()
+        folder = Path(
+            self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))
+        ).expanduser()
         choices = wallpaper_candidates(folder)
         if not choices:
             if hasattr(self, "appearance_status"):
-                self.appearance_status.setText("No images found in the current slideshow folder.")
+                self.appearance_status.setText(
+                    "No images found in the current slideshow folder."
+                )
             return
         choice = random.choice(choices)
         self._apply_wallpaper(choice)
 
     def _choose_wallpaper_file(self) -> None:
-        selected = run_text([
-            "zenity",
-            "--file-selection",
-            "--title=Choose Wallpaper",
-            "--file-filter=Images | *.png *.jpg *.jpeg *.webp *.bmp",
-        ])
+        selected = run_text(
+            [
+                "zenity",
+                "--file-selection",
+                "--title=Choose Wallpaper",
+                "--file-filter=Images | *.png *.jpg *.jpeg *.webp *.bmp",
+            ]
+        )
         if not selected:
             return
         self._apply_wallpaper(Path(selected).expanduser())
 
     def _choose_wallpaper_folder(self) -> None:
-        selected = run_text(["zenity", "--file-selection", "--directory", "--title=Choose Slideshow Folder"])
+        selected = run_text(
+            [
+                "zenity",
+                "--file-selection",
+                "--directory",
+                "--title=Choose Slideshow Folder",
+            ]
+        )
         if not selected:
             return
-        self.settings_state["appearance"]["slideshow_folder"] = str(Path(selected).expanduser())
+        self.settings_state["appearance"]["slideshow_folder"] = str(
+            Path(selected).expanduser()
+        )
         self.settings_state["appearance"]["wallpaper_mode"] = "slideshow"
         save_settings_state(self.settings_state)
         if hasattr(self, "appearance_status"):
-            self.appearance_status.setText(f"Slideshow folder updated to {Path(selected).expanduser()}.")
+            self.appearance_status.setText(
+                f"Slideshow folder updated to {Path(selected).expanduser()}."
+            )
 
     def _set_slideshow_interval(self, value: int) -> None:
         self.settings_state["appearance"]["slideshow_interval"] = int(value)
-        self.settings_state["appearance"]["local_randomizer_interval_seconds"] = int(value)
+        self.settings_state["appearance"]["local_randomizer_interval_seconds"] = int(
+            value
+        )
         save_settings_state(self.settings_state)
         self._slideshow_timer.setInterval(int(value) * 1000)
         if hasattr(self, "slideshow_interval_label"):
-            self.slideshow_interval_label.setText(self._format_slideshow_interval_text(int(value)))
+            self.slideshow_interval_label.setText(
+                self._format_slideshow_interval_text(int(value))
+            )
 
     def _toggle_slideshow(self) -> None:
         if self._slideshow_timer.isActive():
@@ -12023,13 +15739,18 @@ class SettingsWindow(QWidget):
             save_settings_state(self.settings_state)
             self._sync_wallpaper_controls()
             return
-        folder = Path(self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))).expanduser()
+        folder = Path(
+            self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))
+        ).expanduser()
         choices = wallpaper_candidates(folder)
         if not choices:
             return
         self.settings_state["appearance"]["wallpaper_mode"] = "slideshow"
         self.settings_state["appearance"]["slideshow_enabled"] = True
-        self._slideshow_timer.setInterval(max(5, int(self.settings_state["appearance"].get("slideshow_interval", 30))) * 1000)
+        self._slideshow_timer.setInterval(
+            max(5, int(self.settings_state["appearance"].get("slideshow_interval", 30)))
+            * 1000
+        )
         save_settings_state(self.settings_state)
         self._advance_slideshow()
         self._slideshow_timer.start()
@@ -12038,9 +15759,13 @@ class SettingsWindow(QWidget):
     def _advance_slideshow(self) -> None:
         if fullscreen_window_active():
             if hasattr(self, "appearance_status"):
-                self.appearance_status.setText("Slideshow is waiting for fullscreen content to close before rotating.")
+                self.appearance_status.setText(
+                    "Slideshow is waiting for fullscreen content to close before rotating."
+                )
             return
-        folder = Path(self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))).expanduser()
+        folder = Path(
+            self.settings_state["appearance"].get("slideshow_folder", str(WALLS_DIR))
+        ).expanduser()
         choices = wallpaper_candidates(folder)
         if not choices:
             self._slideshow_timer.stop()
@@ -12055,8 +15780,12 @@ class SettingsWindow(QWidget):
         self._save_appearance_state()
 
     def _save_home_assistant_settings(self) -> None:
-        self.settings_state["home_assistant"]["url"] = normalize_ha_url(self.ha_url_input.text())
-        self.settings_state["home_assistant"]["token"] = self.ha_token_input.text().strip()
+        self.settings_state["home_assistant"]["url"] = normalize_ha_url(
+            self.ha_url_input.text()
+        )
+        self.settings_state["home_assistant"]["token"] = (
+            self.ha_token_input.text().strip()
+        )
         save_settings_state(self.settings_state)
         self.ha_status.setText("Home Assistant settings saved.")
 
@@ -12077,8 +15806,12 @@ class SettingsWindow(QWidget):
             key=lambda item: str(item.get("entity_id", "")),
         )
         prefetch_entity_icons(self._ha_entities)
-        self._ha_entity_map = {str(item.get("entity_id", "")): item for item in self._ha_entities}
-        self.ha_status.setText(f"Fetched {len(self._ha_entities)} entities successfully.")
+        self._ha_entity_map = {
+            str(item.get("entity_id", "")): item for item in self._ha_entities
+        }
+        self.ha_status.setText(
+            f"Fetched {len(self._ha_entities)} entities successfully."
+        )
         self._rebuild_ha_entity_list()
 
     def _rebuild_ha_entity_list(self) -> None:
@@ -12088,7 +15821,9 @@ class SettingsWindow(QWidget):
             if widget is not None:
                 widget.deleteLater()
         if not self._ha_entities:
-            empty = QLabel("No Home Assistant entities to display. Save credentials and fetch entities.")
+            empty = QLabel(
+                "No Home Assistant entities to display. Save credentials and fetch entities."
+            )
             empty.setStyleSheet("color: rgba(246,235,247,0.62);")
             empty.setWordWrap(True)
             self.ha_entity_layout.addWidget(empty)
@@ -12103,13 +15838,21 @@ class SettingsWindow(QWidget):
             detail = f"{entity_id} • {state}"
             if secondary and secondary != entity_id:
                 detail = f"{secondary} • {state}"
-            pin_button = QPushButton(material_icon("push_pin") if entity_id in pinned else material_icon("push_pin_outline"))
+            pin_button = QPushButton(
+                material_icon("push_pin")
+                if entity_id in pinned
+                else material_icon("push_pin_outline")
+            )
             pin_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             pin_button.setProperty("iconRole", True)
             pin_button.setFont(QFont(self.icon_font, 18))
             pin_button.setMinimumSize(42, 42)
             pin_button.setObjectName("secondaryButton")
-            pin_button.clicked.connect(lambda checked=False, current=entity_id: self._toggle_pin_entity(current))
+            pin_button.clicked.connect(
+                lambda checked=False, current=entity_id: self._toggle_pin_entity(
+                    current
+                )
+            )
             row = SettingsRow(
                 material_icon(entity_icon_name(entity)),
                 name,
@@ -12144,9 +15887,15 @@ class SettingsWindow(QWidget):
         ntfy["auth_mode"] = self._ntfy_auth_mode()
         ntfy["topics"] = list(self.ntfy_selected_topics)
         ntfy["all_topics"] = bool(self.ntfy_all_topics_checkbox.isChecked())
-        ntfy["hide_notification_content"] = bool(self.ntfy_hide_content_switch.isChecked())
+        ntfy["hide_notification_content"] = bool(
+            self.ntfy_hide_content_switch.isChecked()
+        )
         existing_topic = str(ntfy.get("topic", "")).strip()
-        primary_topic = self.ntfy_selected_topics[0] if self.ntfy_selected_topics else existing_topic
+        primary_topic = (
+            self.ntfy_selected_topics[0]
+            if self.ntfy_selected_topics
+            else existing_topic
+        )
         ntfy["topic"] = primary_topic
         save_settings_state(self.settings_state)
         if hasattr(self, "ntfy_status"):
@@ -12157,7 +15906,9 @@ class SettingsWindow(QWidget):
         topic = self._resolve_ntfy_test_topic()
         if not topic:
             if hasattr(self, "ntfy_status"):
-                self.ntfy_status.setText("Select a topic before sending a test message.")
+                self.ntfy_status.setText(
+                    "Select a topic before sending a test message."
+                )
             return
         ntfy = self.settings_state.get("ntfy", {})
         auth_mode = self._ntfy_auth_mode()
@@ -12172,10 +15923,18 @@ class SettingsWindow(QWidget):
             auth_mode=auth_mode,
         )
         if hasattr(self, "ntfy_status"):
-            self.ntfy_status.setText(message if message else ("ntfy test sent." if ok else "ntfy test failed."))
+            self.ntfy_status.setText(
+                message
+                if message
+                else ("ntfy test sent." if ok else "ntfy test failed.")
+            )
 
     def _refresh_system_overview(self) -> None:
-        session = os.environ.get("XDG_SESSION_DESKTOP") or os.environ.get("DESKTOP_SESSION") or "unknown"
+        session = (
+            os.environ.get("XDG_SESSION_DESKTOP")
+            or os.environ.get("DESKTOP_SESSION")
+            or "unknown"
+        )
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             screen_text = "Unavailable"
@@ -12184,7 +15943,9 @@ class SettingsWindow(QWidget):
             screen_text = f"{geo.width()}x{geo.height()}"
         uptime_seconds = 0
         try:
-            uptime_seconds = int(float(Path("/proc/uptime").read_text(encoding="utf-8").split()[0]))
+            uptime_seconds = int(
+                float(Path("/proc/uptime").read_text(encoding="utf-8").split()[0])
+            )
         except Exception:
             uptime_seconds = 0
         values = {
@@ -12225,7 +15986,9 @@ class SettingsWindow(QWidget):
             self.picom_status.setText(f"Unable to write picom.conf: {exc}")
             return
         self.picom_state = dict(values)
-        self.picom_status.setText(f"picom.conf updated. Exception files live in {PICOM_RULES_DIR}. Restart picom to apply immediately.")
+        self.picom_status.setText(
+            f"picom.conf updated. Exception files live in {PICOM_RULES_DIR}. Restart picom to apply immediately."
+        )
 
     def _open_picom_rule_dir(self) -> None:
         ensure_picom_rule_files()
@@ -12234,11 +15997,15 @@ class SettingsWindow(QWidget):
 
     def _restart_picom(self) -> None:
         try:
-            PICOM_CONFIG_FILE.write_text(sync_picom_rule_blocks(read_picom_text()), encoding="utf-8")
+            PICOM_CONFIG_FILE.write_text(
+                sync_picom_rule_blocks(read_picom_text()), encoding="utf-8"
+            )
         except Exception as exc:
             self.picom_status.setText(f"Unable to sync picom rule files: {exc}")
             return
-        subprocess.run(["pkill", "-x", "picom"], capture_output=True, text=True, check=False)
+        subprocess.run(
+            ["pkill", "-x", "picom"], capture_output=True, text=True, check=False
+        )
         result = subprocess.run(
             ["picom", "--config", str(PICOM_CONFIG_FILE), "--daemon"],
             capture_output=True,
@@ -12246,7 +16013,9 @@ class SettingsWindow(QWidget):
             check=False,
         )
         if result.returncode != 0:
-            self.picom_status.setText((result.stderr or result.stdout or "Unable to restart picom.").strip())
+            self.picom_status.setText(
+                (result.stderr or result.stdout or "Unable to restart picom.").strip()
+            )
             return
         self.picom_status.setText("Picom restarted with the current configuration.")
 
@@ -12259,28 +16028,59 @@ class SettingsWindow(QWidget):
             return
         self.picom_state = parse_picom_settings(build_default_picom_config())
         self._sync_picom_controls()
-        self.picom_status.setText(f"picom.conf restored to the default profile. Rule files are in {PICOM_RULES_DIR}.")
+        self.picom_status.setText(
+            f"picom.conf restored to the default profile. Rule files are in {PICOM_RULES_DIR}."
+        )
 
     def _sync_picom_controls(self) -> None:
-        self.picom_backend_combo.setCurrentText(str(self.picom_state.get("backend", "glx")))
+        self.picom_backend_combo.setCurrentText(
+            str(self.picom_state.get("backend", "glx"))
+        )
         for switch, value in (
             (self.picom_vsync_switch, bool(self.picom_state.get("vsync", True))),
             (self.picom_damage_switch, bool(self.picom_state.get("use-damage", True))),
             (self.picom_shadow_switch, bool(self.picom_state.get("shadow", True))),
             (self.picom_fading_switch, bool(self.picom_state.get("fading", False))),
-            (self.picom_clip_switch, bool(self.picom_state.get("transparent-clipping", False))),
-            (self.picom_rounded_switch, bool(self.picom_state.get("detect-rounded-corners", True))),
+            (
+                self.picom_clip_switch,
+                bool(self.picom_state.get("transparent-clipping", False)),
+            ),
+            (
+                self.picom_rounded_switch,
+                bool(self.picom_state.get("detect-rounded-corners", True)),
+            ),
         ):
             switch.setChecked(value)
             switch._apply_state()
         for name, value in (
-            ("picom_shadow_radius_slider", int(self.picom_state.get("shadow-radius", 18))),
-            ("picom_shadow_opacity_slider", int(float(self.picom_state.get("shadow-opacity", 0.18)) * 100)),
-            ("picom_shadow_offset_x_slider", int(self.picom_state.get("shadow-offset-x", -12))),
-            ("picom_shadow_offset_y_slider", int(self.picom_state.get("shadow-offset-y", -12))),
-            ("picom_active_opacity_slider", int(float(self.picom_state.get("active-opacity", 1.0)) * 100)),
-            ("picom_inactive_opacity_slider", int(float(self.picom_state.get("inactive-opacity", 1.0)) * 100)),
-            ("picom_corner_radius_slider", int(self.picom_state.get("corner-radius", 18))),
+            (
+                "picom_shadow_radius_slider",
+                int(self.picom_state.get("shadow-radius", 18)),
+            ),
+            (
+                "picom_shadow_opacity_slider",
+                int(float(self.picom_state.get("shadow-opacity", 0.18)) * 100),
+            ),
+            (
+                "picom_shadow_offset_x_slider",
+                int(self.picom_state.get("shadow-offset-x", -12)),
+            ),
+            (
+                "picom_shadow_offset_y_slider",
+                int(self.picom_state.get("shadow-offset-y", -12)),
+            ),
+            (
+                "picom_active_opacity_slider",
+                int(float(self.picom_state.get("active-opacity", 1.0)) * 100),
+            ),
+            (
+                "picom_inactive_opacity_slider",
+                int(float(self.picom_state.get("inactive-opacity", 1.0)) * 100),
+            ),
+            (
+                "picom_corner_radius_slider",
+                int(self.picom_state.get("corner-radius", 18)),
+            ),
         ):
             slider = getattr(self, name, None)
             if isinstance(slider, QSlider):
@@ -12298,7 +16098,12 @@ class SettingsWindow(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         target = self._center_rect()
-        start = QRect(target.x(), target.y() + 24, int(target.width() * 0.96), int(target.height() * 0.96))
+        start = QRect(
+            target.x(),
+            target.y() + 24,
+            int(target.width() * 0.96),
+            int(target.height() * 0.96),
+        )
         self.setGeometry(start)
         QTimer.singleShot(80, self._apply_i3_window_rules)
         opacity = QPropertyAnimation(self, b"windowOpacity", self)
@@ -12350,7 +16155,11 @@ class SettingsWindow(QWidget):
         theme = self.theme_palette
         accent = self.current_accent["accent"]
         soft = self.current_accent["soft"]
-        shell_bg_end = theme.background if self.settings_state["appearance"].get("transparency", True) else theme.surface
+        shell_bg_end = (
+            theme.background
+            if self.settings_state["appearance"].get("transparency", True)
+            else theme.surface
+        )
         self.setStyleSheet(
             f"""
             QWidget#settingsWindow {{
@@ -12721,7 +16530,24 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "--page",
-        choices=("overview", "appearance", "marketplace", "display", "energy", "audio", "notifications", "input", "startup", "privacy", "networking", "storage", "region", "bar", "services", "picom"),
+        choices=(
+            "overview",
+            "appearance",
+            "marketplace",
+            "display",
+            "energy",
+            "audio",
+            "notifications",
+            "input",
+            "startup",
+            "privacy",
+            "networking",
+            "storage",
+            "region",
+            "bar",
+            "services",
+            "picom",
+        ),
         default="appearance",
     )
     parser.add_argument("--service-section", default="")
@@ -12747,7 +16573,9 @@ def main(argv: list[str] | None = None) -> int:
     sigint_timer = QTimer()
     sigint_timer.start(200)
     sigint_timer.timeout.connect(lambda: None)
-    window = SettingsWindow(initial_page=args.page, initial_service_section=str(args.service_section or ""))
+    window = SettingsWindow(
+        initial_page=args.page, initial_service_section=str(args.service_section or "")
+    )
     window.show()
     return app.exec()
 

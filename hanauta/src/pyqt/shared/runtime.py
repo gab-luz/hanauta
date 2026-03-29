@@ -29,6 +29,8 @@ ENTRYPOINT_BINARIES = {
     "pyqt/widget-religion-christian/christian_widget.py": "hanauta-christian-widget",
     "pyqt/widget-reminders/reminders_widget.py": "hanauta-reminders-widget",
     "pyqt/widget-updates/updates_widget.py": "hanauta-updates-widget",
+    "pyqt/widget-virtualization/virtualization_daemon.py": "hanauta-virtualization-daemon",
+    "pyqt/widget-virtualization/virtualization_prompt.py": "hanauta-virtualization-prompt",
     "pyqt/widget-vpn-control/vpn_control.py": "hanauta-vpn-control",
     "pyqt/widget-vps/vps_widget.py": "hanauta-vps-widget",
     "pyqt/widget-wallpaper-manager/wallpaper_manager.py": "hanauta-wallpaper-manager",
