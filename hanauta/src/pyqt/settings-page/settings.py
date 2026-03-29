@@ -476,6 +476,7 @@ WALLPAPER_SOURCE_PRESETS = {
 MATERIAL_ICONS = {
     "close": "\ue5cd",
     "menu": "\ue5d2",
+    "search": "\ue8b6",
     "palette": "\ue40a",
     "tune": "\ue429",
     "grid_view": "\ue9b0",
@@ -4260,6 +4261,7 @@ class SettingsWindow(QWidget):
         self._system_theme_install_declined: set[str] = set()
         self._theme_refresh_restart_pending = False
         self._sidebar_collapsed = False
+        self._last_page_index = 0
         self._slideshow_timer = QTimer(self)
         self._slideshow_timer.timeout.connect(self._advance_slideshow)
         self._slideshow_index = 0
@@ -4431,7 +4433,15 @@ class SettingsWindow(QWidget):
         self.sidebar_menu_button.setProperty("iconButton", True)
         self.sidebar_menu_button.clicked.connect(self._toggle_sidebar)
 
+        self.search_button = QPushButton(material_icon("search"))
+        self.search_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_button.setFixedSize(38, 36)
+        self.search_button.setFont(QFont(self.icon_font, 16))
+        self.search_button.setProperty("iconButton", True)
+        self.search_button.clicked.connect(self._toggle_search)
+
         top_row.addWidget(self.sidebar_title, 1)
+        top_row.addWidget(self.search_button, 0, Qt.AlignmentFlag.AlignRight)
         top_row.addWidget(self.sidebar_menu_button, 0, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(top_row)
 
@@ -4503,7 +4513,67 @@ class SettingsWindow(QWidget):
         self._services_page_ready = False
         self.page_stack.addWidget(self._build_services_placeholder())
         self._show_page(self.initial_page)
+
+        self._build_search_overlay()
+
         return self.page_stack
+
+    def _build_search_overlay(self) -> None:
+        self.search_container = QFrame(self.page_stack)
+        self.search_container.setObjectName("searchOverlay")
+        self.search_container.setVisible(False)
+        search_layout = QVBoxLayout(self.search_container)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(0)
+
+        search_input_container = QFrame()
+        search_input_container.setObjectName("searchInputContainer")
+        input_layout = QHBoxLayout(search_input_container)
+        input_layout.setContentsMargins(16, 12, 16, 12)
+        input_layout.setSpacing(12)
+
+        search_icon = QLabel(material_icon("search"))
+        search_icon.setFont(QFont(self.icon_font, 18))
+        search_icon.setStyleSheet("color: rgba(246,235,247,0.56);")
+        input_layout.addWidget(search_icon)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search settings...")
+        self.search_input.setObjectName("searchInputField")
+        self.search_input.setFont(QFont(self.ui_font, 14))
+        self.search_input.textChanged.connect(self._on_search_changed)
+        input_layout.addWidget(self.search_input, 1)
+
+        close_search_btn = QPushButton(material_icon("close"))
+        close_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_search_btn.setFixedSize(32, 32)
+        close_search_btn.setFont(QFont(self.icon_font, 16))
+        close_search_btn.setProperty("iconButton", True)
+        close_search_btn.clicked.connect(self._toggle_search)
+        input_layout.addWidget(close_search_btn)
+
+        search_layout.addWidget(search_input_container)
+
+        self.search_results_container = QScrollArea()
+        self.search_results_container.setObjectName("searchResultsContainer")
+        self.search_results_container.setWidgetResizable(True)
+        self.search_results_container.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.search_results_layout = QVBoxLayout()
+        self.search_results_layout.setContentsMargins(16, 8, 16, 16)
+        self.search_results_layout.setSpacing(8)
+        self.search_results_layout.addStretch(1)
+
+        results_widget = QWidget()
+        results_widget.setObjectName("searchResultsContent")
+        results_widget.setLayout(self.search_results_layout)
+        self.search_results_container.setWidget(results_widget)
+
+        search_layout.addWidget(self.search_results_container, 1)
+
+        self.search_overlay_index = self.page_stack.count()
+        self.page_stack.addWidget(self.search_container)
 
     def _build_services_placeholder(self) -> QWidget:
         placeholder = QWidget()
@@ -4536,6 +4606,235 @@ class SettingsWindow(QWidget):
             self.sidebar_section_label.setVisible(not self._sidebar_collapsed)
         for button in getattr(self, "nav_buttons", {}).values():
             button.set_compact(self._sidebar_collapsed)
+
+    SETTINGS_SEARCH_INDEX = {
+        "wallpaper": ("appearance", "Wallpaper"),
+        "theme": ("appearance", "Theme"),
+        "colors": ("appearance", "Colors"),
+        "accent": ("appearance", "Accent Color"),
+        "transparency": ("appearance", "Transparency"),
+        "notification center opacity": ("appearance", "Notification Center Opacity"),
+        "control center opacity": ("appearance", "Control Center Opacity"),
+        "card opacity": ("appearance", "Card Opacity"),
+        "toast max width": ("appearance", "Toast Max Width"),
+        "toast max height": ("appearance", "Toast Max Height"),
+        "matugen": ("appearance", "Matugen Palette"),
+        "display": ("display", "Display"),
+        "monitor": ("display", "Monitor"),
+        "screen": ("display", "Screen"),
+        "xrandr": ("display", "Xrandr"),
+        "resolution": ("display", "Resolution"),
+        "refresh rate": ("display", "Refresh Rate"),
+        "picom": ("display", "Picom"),
+        "compositor": ("display", "Compositor"),
+        "shadows": ("display", "Shadows"),
+        "shadow radius": ("display", "Shadow Radius"),
+        "shadow opacity": ("display", "Shadow Opacity"),
+        "shadow offset": ("display", "Shadow Offset"),
+        "opacity": ("display", "Opacity"),
+        "active opacity": ("display", "Active Opacity"),
+        "inactive opacity": ("display", "Inactive Opacity"),
+        "corners": ("display", "Rounded Corners"),
+        "corner radius": ("display", "Corner Radius"),
+        "backend": ("display", "Picom Backend"),
+        "vsync": ("display", "VSync"),
+        "damage": ("display", "Use Damage"),
+        "fading": ("display", "Fading"),
+        "transparent clipping": ("display", "Transparent Clipping"),
+        "energy": ("energy", "Energy"),
+        "power": ("energy", "Power"),
+        "battery": ("energy", "Battery"),
+        "brightness": ("energy", "Brightness"),
+        "sleep": ("energy", "Sleep"),
+        "suspend": ("energy", "Suspend"),
+        "lock": ("energy", "Lock"),
+        "autolock": ("energy", "Auto Lock"),
+        "idle": ("energy", "Idle"),
+        "audio": ("audio", "Audio"),
+        "sound": ("audio", "Sound"),
+        "volume": ("audio", "Volume"),
+        "speaker": ("audio", "Speaker"),
+        "microphone": ("audio", "Microphone"),
+        "mute": ("audio", "Mute"),
+        "default sink": ("audio", "Default Sink"),
+        "default source": ("audio", "Default Source"),
+        "alert sounds": ("audio", "Alert Sounds"),
+        "notifications": ("notifications", "Notifications"),
+        "dnd": ("notifications", "Do Not Disturb"),
+        "alerts": ("notifications", "Alerts"),
+        "urgency": ("notifications", "Urgency"),
+        "history": ("notifications", "History"),
+        "history limit": ("notifications", "History Limit"),
+        "pause while sharing": ("notifications", "Pause While Sharing"),
+        "per app rules": ("notifications", "Per-App Rules"),
+        "keyboard": ("input", "Keyboard"),
+        "mouse": ("input", "Mouse"),
+        "touchpad": ("input", "Touchpad"),
+        "tap to click": ("input", "Tap to Click"),
+        "natural scroll": ("input", "Natural Scroll"),
+        "mouse acceleration": ("input", "Mouse Acceleration"),
+        "layout": ("input", "Keyboard Layout"),
+        "language": ("input", "Language"),
+        "repeat delay": ("input", "Repeat Delay"),
+        "repeat rate": ("input", "Repeat Rate"),
+        "startup": ("startup", "Startup"),
+        "launch": ("startup", "Launch"),
+        "autostart": ("startup", "Autostart"),
+        "apps": ("startup", "Startup Apps"),
+        "launch bar": ("startup", "Launch Bar"),
+        "launch dock": ("startup", "Launch Dock"),
+        "restore wallpaper": ("startup", "Restore Wallpaper"),
+        "restore displays": ("startup", "Restore Displays"),
+        "restore vpn": ("startup", "Restore VPN"),
+        "delay": ("startup", "Startup Delay"),
+        "restart hooks": ("startup", "Restart Hooks"),
+        "watchdogs": ("startup", "Watchdogs"),
+        "privacy": ("privacy", "Privacy"),
+        "lockscreen": ("privacy", "Lockscreen"),
+        "blur": ("privacy", "Blur"),
+        "blur screenshot": ("privacy", "Blur Screenshot"),
+        "screenshot guard": ("privacy", "Screenshot Guard"),
+        "screen share guard": ("privacy", "Screen Share Guard"),
+        "lock on suspend": ("privacy", "Lock on Suspend"),
+        "hide content": ("privacy", "Hide Notification Content"),
+        "network": ("networking", "Network"),
+        "wifi": ("networking", "Wi-Fi"),
+        "ethernet": ("networking", "Ethernet"),
+        "vpn": ("networking", "VPN"),
+        "wireguard": ("networking", "WireGuard"),
+        "split tunnel": ("networking", "Split Tunnel Apps"),
+        "storage": ("storage", "Storage"),
+        "disk": ("storage", "Disk"),
+        "locale": ("region", "Locale"),
+        "region": ("region", "Region"),
+        "timezone": ("region", "Timezone"),
+        "clock": ("region", "Clock"),
+        "date": ("region", "Date"),
+        "date format": ("region", "Date Format"),
+        "time format": ("region", "Time Format"),
+        "calendar": ("region", "Calendar"),
+        "week numbers": ("region", "Show Week Numbers"),
+        "first day": ("region", "First Day of Week"),
+        "caldav": ("region", "Caldav"),
+        "bar": ("bar", "Bar"),
+        "polybar": ("bar", "Polybar"),
+        "polybar widgets": ("bar", "Polybar Widgets"),
+        "tray": ("bar", "System Tray"),
+        "workspaces": ("bar", "Workspaces"),
+        "workspace count": ("bar", "Workspace Count"),
+        "workspace label": ("bar", "Show Workspace Label"),
+        "bar height": ("bar", "Bar Height"),
+        "bar monitor": ("bar", "Monitor Mode"),
+        "launcher offset": ("bar", "Launcher Offset"),
+        "datetime offset": ("bar", "DateTime Offset"),
+        "media offset": ("bar", "Media Offset"),
+        "status offset": ("bar", "Status Offset"),
+        "tray offset": ("bar", "Tray Offset"),
+        "icon overrides": ("bar", "Bar Icon Overrides"),
+        "services": ("services", "Services"),
+        "kdeconnect": ("services", "KDE Connect"),
+        "home assistant": ("services", "Home Assistant"),
+        "weather": ("services", "Weather"),
+        "calendar widget": ("services", "Calendar Widget"),
+        "reminders": ("services", "Reminders"),
+        "pomodoro": ("services", "Pomodoro"),
+        "rss": ("services", "RSS"),
+        "obs": ("services", "OBS"),
+        "crypto": ("services", "Crypto"),
+        "vps": ("services", "VPS"),
+        "game mode": ("services", "Game Mode"),
+        "virtualization": ("services", "Virtualization"),
+        "icon": ("bar", "Bar Icons"),
+        "services": ("services", "Services"),
+        "kdeconnect": ("services", "KDE Connect"),
+        "home assistant": ("services", "Home Assistant"),
+        "weather": ("services", "Weather"),
+    }
+
+    def _toggle_search(self) -> None:
+        if not hasattr(self, "search_container"):
+            return
+        is_visible = self.search_container.isVisible()
+        if is_visible:
+            self.search_container.setVisible(False)
+            self.search_input.clear()
+            self._clear_search_results()
+            self.page_stack.setCurrentIndex(self._last_page_index)
+        else:
+            self._last_page_index = self.page_stack.currentIndex()
+            self.page_stack.setCurrentIndex(self.search_overlay_index)
+            self.search_container.setVisible(True)
+            self.search_input.setFocus()
+
+    def _clear_search_results(self) -> None:
+        while self.search_results_layout.count() > 1:
+            item = self.search_results_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+    def _on_search_changed(self, text: str) -> None:
+        self._clear_search_results()
+        if not text:
+            return
+        query = text.lower().strip()
+        matches = []
+        for keyword, (page, setting_name) in self.SETTINGS_SEARCH_INDEX.items():
+            if query in keyword:
+                matches.append((keyword, page, setting_name))
+        if not matches:
+            no_results = QLabel("No matching settings found")
+            no_results.setStyleSheet("color: rgba(246,235,247,0.56); padding: 16px;")
+            self.search_results_layout.insertWidget(0, no_results)
+            return
+        for keyword, page, setting_name in matches:
+            result_card = self._create_search_result_card(keyword, page, setting_name)
+            self.search_results_layout.insertWidget(
+                self.search_results_layout.count() - 1, result_card
+            )
+
+    def _create_search_result_card(
+        self, keyword: str, page: str, setting_name: str
+    ) -> QWidget:
+        card = QFrame()
+        card.setObjectName("searchResultCard")
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(12)
+
+        icon_label = QLabel(material_icon("settings"))
+        icon_label.setFont(QFont(self.icon_font, 18))
+        icon_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(icon_label)
+
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+        setting_label = QLabel(setting_name)
+        setting_label.setFont(QFont(self.ui_font, 12, QFont.Weight.Medium))
+        setting_label.setStyleSheet("color: rgba(246,235,247,0.92);")
+        text_layout.addWidget(setting_label)
+        page_label = QLabel(f"in {page.title()}")
+        page_label.setFont(QFont(self.ui_font, 10))
+        page_label.setStyleSheet("color: rgba(246,235,247,0.56);")
+        text_layout.addWidget(page_label)
+        layout.addLayout(text_layout, 1)
+
+        go_button = QPushButton("Go")
+        go_button.setObjectName("searchGoButton")
+        go_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        go_button.clicked.connect(lambda: self._navigate_to_setting(page, setting_name))
+        layout.addWidget(go_button)
+
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        card.mousePressEvent = lambda e: self._navigate_to_setting(page, setting_name)
+        return card
+
+    def _navigate_to_setting(self, page: str, setting_name: str) -> None:
+        self._show_page(page)
+        self.search_input.clear()
+        self._clear_search_results()
+        if hasattr(self, "search_container"):
+            self.search_container.setVisible(False)
+            self.page_stack.setCurrentIndex(self._last_page_index)
 
     def _scroll_page(self, *widgets: QWidget) -> QWidget:
         scroll = QScrollArea()
@@ -16707,6 +17006,52 @@ class SettingsWindow(QWidget):
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
+            }}
+            QFrame#searchOverlay {{
+                background: {rgba(theme.surface_container, 0.98)};
+                border: 1px solid {rgba(theme.outline, 0.24)};
+                border-radius: 16px;
+            }}
+            QFrame#searchInputContainer {{
+                background: {rgba(theme.surface_container_high, 0.92)};
+                border-bottom: 1px solid {rgba(theme.outline, 0.16)};
+            }}
+            QLineEdit#searchInputField {{
+                background: transparent;
+                border: none;
+                color: {theme.text};
+                font-size: 14px;
+            }}
+            QLineEdit#searchInputField::placeholder {{
+                color: {theme.text_muted};
+            }}
+            QScrollArea#searchResultsContainer {{
+                background: transparent;
+                border: none;
+            }}
+            QWidget#searchResultsContent {{
+                background: transparent;
+            }}
+            QFrame#searchResultCard {{
+                background: {rgba(theme.surface_container_high, 0.78)};
+                border: 1px solid {rgba(theme.outline, 0.12)};
+                border-radius: 12px;
+                margin-bottom: 8px;
+            }}
+            QFrame#searchResultCard:hover {{
+                background: {rgba(theme.surface_container_high, 0.92)};
+                border-color: {rgba(accent, 0.48)};
+            }}
+            QPushButton#searchGoButton {{
+                background: {rgba(accent, 0.18)};
+                color: {accent};
+                border: 1px solid {rgba(accent, 0.32)};
+                border-radius: 8px;
+                padding: 6px 14px;
+                font-weight: 500;
+            }}
+            QPushButton#searchGoButton:hover {{
+                background: {rgba(accent, 0.28)};
             }}
             """
         )
