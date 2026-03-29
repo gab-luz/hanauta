@@ -101,12 +101,43 @@ Notes:
 
 - Catalog JSON defines plugin ids/repos/branches.
 - Installing a plugin clones it into `install_dir/<plugin_id>`.
+- ZIP plugin installs are supported and must contain `hanauta_plugin.py`.
+- If a plugin target folder already exists, installer must show overwrite/update confirmation.
 - Marketplace should not require bundling all plugins in core repository.
 - Optional metadata for plugin capability/requirement disclosure:
   - `capabilities`: list (or boolean map) of feature flags such as:
     - `polkit`
     - `fullscreen_alert`
   - `requirements`: list of runtime requirements (examples: `pkexec`, `wireguard-tools`)
+
+### Installer Permission Dialog Standard
+
+All plugin installs should pass through a Hanauta-styled permission confirmation dialog before sensitive actions.
+
+- Dialog must list requested permissions with an icon per permission.
+- Dialog must support both catalog metadata permissions and plugin-local install manifest permissions.
+- Dialog should include i3/window-rule changes in the same permission list when declared.
+- Dialog should include desktop entry creation when plugin install writes `.desktop` files.
+- Privileged installs must be two-step:
+  - permission dialog confirm
+  - Polkit prompt (`pkexec`) for privileged command
+
+Recommended plugin-local install manifest:
+
+- `hanauta-install.json` at plugin root
+- fields:
+  - `requires_privileged_install: bool`
+  - `permissions: [{key, label, description}]`
+  - `i3_changes: [string]`
+  - `desktop_entries: [{id, name, comment, exec, icon, terminal, categories}]`
+  - `privileged_install.command: [argv...]` with `${PLUGIN_DIR}` token support
+  - `privileged_uninstall.command: [argv...]` with `${PLUGIN_DIR}` token support
+
+Uninstall behavior standard:
+
+- Plugin uninstall should remove files created at install time.
+- Installer should keep a receipt for created/overwritten files so uninstall can restore backups where needed.
+- When privileged install was used, plugin should also provide privileged uninstall command to revert system-level changes.
 
 ## Catalog Schema Proposal (v3 Draft)
 
