@@ -123,12 +123,46 @@ EOF
   unset GTK_THEME
   systemctl --user unset-environment GTK_THEME 2>/dev/null || true
   dbus-update-activation-environment --systemd GTK_THEME= 2>/dev/null || true
+  if command -v setxkbmap >/dev/null 2>&1; then
+    keyboard_layout="$("$PYTHON_BIN" - <<'PY'
+import json
+from pathlib import Path
+
+settings_path = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+value = "us"
+try:
+    payload = json.loads(settings_path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if isinstance(payload, dict):
+    input_settings = payload.get("input", {})
+    if isinstance(input_settings, dict):
+        candidate = str(input_settings.get("keyboard_layout", "")).strip()
+        if candidate:
+            value = " ".join(part for part in candidate.split() if part)
+print(value)
+PY
+)"
+    if [ -n "$keyboard_layout" ]; then
+      layout_name="${keyboard_layout%% *}"
+      layout_variant=""
+      if [ "$layout_name" != "$keyboard_layout" ]; then
+        layout_variant="${keyboard_layout#* }"
+      fi
+      if [ -n "$layout_variant" ]; then
+        setxkbmap "$layout_name" -variant "$layout_variant" >/dev/null 2>&1 || true
+      else
+        setxkbmap "$layout_name" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/notification-daemon/notification_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-service" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-kdeconnect/kdeconnect_battery_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-game-mode/lutris_gamemode_daemon.py" 2>/dev/null || true
+  pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-virtualization/virtualization_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-crypto/crypto_notifier.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-updates/updates_notifier.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" 2>/dev/null || true
@@ -144,6 +178,23 @@ EOF
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" >/tmp/hanauta-reminder-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-kdeconnect/kdeconnect_battery_daemon.py" >/tmp/hanauta-kdeconnect-battery-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-game-mode/lutris_gamemode_daemon.py" >/tmp/hanauta-lutris-gamemode-daemon.log 2>&1 &
+  if "$PYTHON_BIN" - <<'PY'
+import json
+from pathlib import Path
+
+settings_path = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+try:
+    payload = json.loads(settings_path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+services = payload.get("services", {}) if isinstance(payload, dict) else {}
+virtualization = services.get("virtualization", {}) if isinstance(services, dict) else {}
+enabled = bool(virtualization.get("enabled", False)) if isinstance(virtualization, dict) else False
+raise SystemExit(0 if enabled else 1)
+PY
+  then
+    "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-virtualization/virtualization_daemon.py" >/tmp/hanauta-virtualization-daemon.log 2>&1 &
+  fi
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-crypto/crypto_notifier.py" >/tmp/hanauta-crypto-notifier.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-updates/updates_notifier.py" >/tmp/hanauta-updates-notifier.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" >/tmp/hanauta-wallpaper-provider.log 2>&1 &
