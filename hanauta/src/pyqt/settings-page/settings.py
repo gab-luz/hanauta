@@ -21,6 +21,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib import error, request
@@ -43,6 +44,7 @@ from PyQt6.QtWidgets import (
     QCompleter,
     QFrame,
     QFileDialog,
+    QDialog,
     QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
@@ -53,6 +55,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QMessageBox,
+    QPlainTextEdit,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -76,9 +79,11 @@ from pyqt.shared.home_assistant import entity_friendly_name, entity_icon_name, e
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
+ASSETS_DIR = APP_DIR / "assets"
 WALLS_DIR = ROOT / "hanauta" / "walls"
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
+PLUGIN_INSTALL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "plugins" / "install-state"
 NOTIFICATION_RULES_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-rules.ini"
 QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
@@ -1405,6 +1410,13 @@ def load_settings_state() -> dict:
             "catalog_repo_url": "https://github.com/gab-luz/hanauta-plugins",
             "catalog_branch": "main",
             "catalog_manifest_path": "plugins.json",
+            "catalog_sources": [
+                {
+                    "repo_url": "https://github.com/gab-luz/hanauta-plugins",
+                    "branch": "main",
+                    "manifest_path": "plugins.json",
+                }
+            ],
             "install_dir": str(ROOT / "hanauta" / "plugins"),
             "catalog_cache": [],
             "installed_plugins": [],
@@ -1496,6 +1508,31 @@ def load_settings_state() -> dict:
     marketplace["catalog_repo_url"] = str(marketplace.get("catalog_repo_url", "https://github.com/gab-luz/hanauta-plugins")).strip() or "https://github.com/gab-luz/hanauta-plugins"
     marketplace["catalog_branch"] = str(marketplace.get("catalog_branch", "main")).strip() or "main"
     marketplace["catalog_manifest_path"] = str(marketplace.get("catalog_manifest_path", "plugins.json")).strip() or "plugins.json"
+    sources = marketplace.get("catalog_sources", [])
+    normalized_sources: list[dict[str, str]] = []
+    if isinstance(sources, list):
+        for row in sources:
+            if not isinstance(row, dict):
+                continue
+            repo_url = str(row.get("repo_url", row.get("repo", ""))).strip()
+            if not repo_url:
+                continue
+            normalized_sources.append(
+                {
+                    "repo_url": repo_url,
+                    "branch": str(row.get("branch", "main")).strip() or "main",
+                    "manifest_path": str(row.get("manifest_path", row.get("catalog_manifest_path", "plugins.json"))).strip().lstrip("/") or "plugins.json",
+                }
+            )
+    if not normalized_sources:
+        normalized_sources = [
+            {
+                "repo_url": marketplace["catalog_repo_url"],
+                "branch": marketplace["catalog_branch"],
+                "manifest_path": marketplace["catalog_manifest_path"],
+            }
+        ]
+    marketplace["catalog_sources"] = normalized_sources
     marketplace["install_dir"] = str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))).strip() or str(ROOT / "hanauta" / "plugins")
     catalog_cache = marketplace.get("catalog_cache", [])
     marketplace["catalog_cache"] = catalog_cache if isinstance(catalog_cache, list) else []
@@ -6172,7 +6209,7 @@ class SettingsWindow(QWidget):
         title = QLabel("Marketplace")
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel("Discover modular Hanauta services from GitHub catalogs so users can install only what they actually want.")
+        subtitle = QLabel("Discover modular Hanauta services from one or more GitHub catalogs, or install private plugins from local ZIP bundles.")
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
         subtitle.setWordWrap(True)
@@ -6226,6 +6263,34 @@ class SettingsWindow(QWidget):
             )
         )
 
+        sources = marketplace.get("catalog_sources", [])
+        source_lines: list[str] = []
+        if isinstance(sources, list):
+            for row in sources:
+                if not isinstance(row, dict):
+                    continue
+                repo_url = str(row.get("repo_url", "")).strip()
+                if not repo_url:
+                    continue
+                branch = str(row.get("branch", "main")).strip() or "main"
+                manifest_path = str(row.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
+                source_lines.append(f"{repo_url} | {branch} | {manifest_path}")
+        self.marketplace_sources_input = QPlainTextEdit("\n".join(source_lines))
+        self.marketplace_sources_input.setPlaceholderText(
+            "One source per line: https://github.com/owner/repo | main | plugins.json"
+        )
+        self.marketplace_sources_input.setFixedHeight(86)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("hub"),
+                "Catalog sources",
+                "Optional multi-source format: repo URL | branch | manifest path (one per line).",
+                self.icon_font,
+                self.ui_font,
+                self.marketplace_sources_input,
+            )
+        )
+
         self.marketplace_install_dir_input = QLineEdit(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))))
         self.marketplace_install_dir_input.setPlaceholderText(str(ROOT / "hanauta" / "plugins"))
         install_dir_row = QWidget()
@@ -6257,22 +6322,27 @@ class SettingsWindow(QWidget):
         self.marketplace_refresh_button.setObjectName("secondaryButton")
         self.marketplace_install_button = QPushButton("Install selected")
         self.marketplace_install_button.setObjectName("secondaryButton")
+        self.marketplace_install_zip_button = QPushButton("Install ZIP")
+        self.marketplace_install_zip_button.setObjectName("secondaryButton")
         self.marketplace_open_dir_button = QPushButton("Open plugin folder")
         self.marketplace_open_dir_button.setObjectName("secondaryButton")
         for button in (
             self.marketplace_save_button,
             self.marketplace_refresh_button,
             self.marketplace_install_button,
+            self.marketplace_install_zip_button,
             self.marketplace_open_dir_button,
         ):
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.marketplace_save_button.clicked.connect(self._marketplace_save_settings)
         self.marketplace_refresh_button.clicked.connect(self._marketplace_refresh_catalog)
         self.marketplace_install_button.clicked.connect(self._marketplace_install_selected)
+        self.marketplace_install_zip_button.clicked.connect(self._marketplace_install_zip)
         self.marketplace_open_dir_button.clicked.connect(self._marketplace_open_install_dir)
         actions.addWidget(self.marketplace_save_button)
         actions.addWidget(self.marketplace_refresh_button)
         actions.addWidget(self.marketplace_install_button)
+        actions.addWidget(self.marketplace_install_zip_button)
         actions.addWidget(self.marketplace_open_dir_button)
         actions.addStretch(1)
         layout.addLayout(actions)
@@ -6368,25 +6438,677 @@ class SettingsWindow(QWidget):
                 warnings.append("Runtime requirements: " + ", ".join(req_list))
         return "\n".join(warnings).strip()
 
+    def _permission_icon_for_key(self, key: str) -> str:
+        normalized = key.strip().lower()
+        if normalized in {"polkit", "privileged", "root", "systemd"}:
+            return material_icon("shield")
+        if normalized in {"hosts", "fs_hosts", "filesystem", "files"}:
+            return material_icon("folder_open")
+        if normalized in {"network", "vpn", "dns"}:
+            return material_icon("public")
+        if normalized in {"notifications", "alerts"}:
+            return material_icon("notifications")
+        if normalized in {"i3", "i3_config", "window_rules"}:
+            return material_icon("dashboard")
+        if normalized in {"desktop", "desktop_files", "desktop_entry"}:
+            return material_icon("desktop_windows")
+        return material_icon("settings")
+
+    def _permission_icon_asset_for_key(self, key: str) -> Path | None:
+        normalized = key.strip().lower()
+        candidates: list[str] = []
+        if normalized in {"polkit", "privileged", "root", "systemd"}:
+            candidates.extend(["permission-polkit.svg", "permission-systemd.svg", "permission-privileged.svg"])
+        elif normalized in {"hosts", "fs_hosts", "filesystem", "files"}:
+            candidates.extend(["permission-fs-hosts.svg", "permission-filesystem.svg"])
+        elif normalized in {"network", "vpn", "dns"}:
+            candidates.extend(["permission-network.svg"])
+        elif normalized in {"notifications", "alerts"}:
+            candidates.extend(["permission-notifications.svg"])
+        elif normalized in {"i3", "i3_config", "window_rules"}:
+            candidates.extend(["permission-i3-config.svg"])
+        elif normalized in {"desktop", "desktop_files", "desktop_entry"}:
+            candidates.extend(["permission-desktop-files.svg"])
+        else:
+            candidates.extend([f"permission-{normalized.replace('_', '-')}.svg"])
+        candidates.append("permission-placeholder.svg")
+        for name in candidates:
+            path = ASSETS_DIR / name
+            if path.exists():
+                return path
+        return None
+
+    def _marketplace_permission_items(self, plugin: dict[str, object], manifest: dict[str, object] | None = None) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        permissions = plugin.get("permissions", {})
+        if isinstance(permissions, dict):
+            for key, value in permissions.items():
+                if not bool(value):
+                    continue
+                items.append(
+                    {
+                        "key": str(key),
+                        "label": str(key).replace("_", " ").strip().title() or str(key),
+                        "description": "Requested by plugin metadata.",
+                    }
+                )
+        capabilities = plugin.get("capabilities", [])
+        capability_list: list[str] = []
+        if isinstance(capabilities, dict):
+            capability_list = [str(key).strip() for key, enabled in capabilities.items() if str(key).strip() and bool(enabled)]
+        elif isinstance(capabilities, list):
+            capability_list = [str(value).strip() for value in capabilities if str(value).strip()]
+        for capability in capability_list:
+            if capability in {"polkit", "fullscreen_alert", "fullscreen_overlay"}:
+                description = (
+                    "May request elevated privileges via Polkit."
+                    if capability == "polkit"
+                    else "Can present strong fullscreen alerts."
+                )
+                items.append(
+                    {
+                        "key": capability,
+                        "label": capability.replace("_", " ").title(),
+                        "description": description,
+                    }
+                )
+        if isinstance(manifest, dict):
+            explicit_permissions = manifest.get("permissions", [])
+            if isinstance(explicit_permissions, list):
+                for row in explicit_permissions:
+                    if not isinstance(row, dict):
+                        continue
+                    key = str(row.get("key", "")).strip()
+                    label = str(row.get("label", "")).strip()
+                    description = str(row.get("description", "")).strip()
+                    if not key:
+                        continue
+                    items.append(
+                        {
+                            "key": key,
+                            "label": label or key.replace("_", " ").title(),
+                            "description": description or "Requested by plugin install manifest.",
+                        }
+                    )
+            i3_changes = manifest.get("i3_changes", [])
+            if isinstance(i3_changes, list) and i3_changes:
+                for change in i3_changes:
+                    text = str(change).strip()
+                    if not text:
+                        continue
+                    items.append(
+                        {
+                            "key": "i3_config",
+                            "label": "i3 Configuration Change",
+                            "description": text,
+                        }
+                    )
+            if bool(manifest.get("requires_privileged_install", False)):
+                items.append(
+                    {
+                        "key": "privileged",
+                        "label": "Privileged Install",
+                        "description": "Installs system-level components and may create/enable systemd services.",
+                    }
+                )
+            desktop_entries = manifest.get("desktop_entries", [])
+            if isinstance(desktop_entries, list) and desktop_entries:
+                items.append(
+                    {
+                        "key": "desktop_files",
+                        "label": "Desktop Entry Files",
+                        "description": "Creates or updates .desktop launcher entries in ~/.local/share/applications.",
+                    }
+                )
+        deduped: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in items:
+            signature = f"{item.get('key', '')}|{item.get('label', '')}|{item.get('description', '')}"
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append(item)
+        return deduped
+
+    def _marketplace_show_permission_dialog(
+        self,
+        *,
+        plugin_name: str,
+        intro_text: str,
+        permission_items: list[dict[str, str]],
+        confirm_label: str = "Install",
+    ) -> bool:
+        dialog = QDialog(self)
+        dialog.setObjectName("pluginPermissionDialog")
+        dialog.setWindowTitle("Plugin Permissions")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(560)
+        dialog.setStyleSheet(
+            """
+            QDialog#pluginPermissionDialog {
+                background-color: rgba(14, 18, 26, 0.98);
+                border: 1px solid rgba(145, 160, 185, 0.34);
+                border-radius: 14px;
+            }
+            QDialog#pluginPermissionDialog QLabel {
+                color: rgba(246, 235, 247, 0.90);
+            }
+            QDialog#pluginPermissionDialog QFrame#permissionListCard {
+                background-color: rgba(26, 32, 43, 0.94);
+                border: 1px solid rgba(145, 160, 185, 0.30);
+                border-radius: 12px;
+            }
+            QDialog#pluginPermissionDialog QPushButton#permissionCancelButton {
+                background-color: rgba(96, 112, 136, 0.42);
+                color: rgba(246, 235, 247, 0.98);
+                border: 1px solid rgba(196, 208, 228, 0.62);
+                border-radius: 10px;
+                padding: 8px 14px;
+                min-width: 90px;
+            }
+            QDialog#pluginPermissionDialog QPushButton#permissionCancelButton:hover {
+                background-color: rgba(110, 126, 150, 0.56);
+            }
+            """
+        )
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel(f"Review permissions for {plugin_name}")
+        title.setFont(QFont(self.display_font, 12, QFont.Weight.DemiBold))
+        title.setStyleSheet("color: rgba(246,235,247,0.92);")
+        layout.addWidget(title)
+
+        body = QLabel(intro_text.strip() or "This plugin requests runtime/system permissions.")
+        body.setWordWrap(True)
+        body.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(body)
+
+        card = QFrame()
+        card.setObjectName("permissionListCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(8)
+
+        if permission_items:
+            for item in permission_items:
+                row = QHBoxLayout()
+                row.setSpacing(10)
+                icon_label = QLabel()
+                icon_label.setFixedSize(24, 24)
+                icon_label.setFixedWidth(24)
+                icon_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+                icon_path = self._permission_icon_asset_for_key(str(item.get("key", "")))
+                icon_pixmap = QPixmap(str(icon_path)) if icon_path is not None else QPixmap()
+                if not icon_pixmap.isNull():
+                    icon_label.setPixmap(icon_pixmap.scaled(20, 20, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                else:
+                    icon_label.setText(self._permission_icon_for_key(str(item.get("key", ""))))
+                    icon_label.setFont(QFont(self.icon_font, 14))
+                text = QLabel(
+                    f"{str(item.get('label', 'Permission'))}\n{str(item.get('description', '')).strip() or 'Requested by plugin.'}"
+                )
+                text.setWordWrap(True)
+                text.setStyleSheet("color: rgba(246,235,247,0.82);")
+                row.addWidget(icon_label, 0)
+                row.addWidget(text, 1)
+                card_layout.addLayout(row)
+        else:
+            empty = QLabel("No extra permissions declared.")
+            empty.setStyleSheet("color: rgba(246,235,247,0.72);")
+            card_layout.addWidget(empty)
+        layout.addWidget(card)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("permissionCancelButton")
+        confirm_btn = QPushButton(confirm_label)
+        confirm_btn.setObjectName("primaryButton")
+        cancel_btn.clicked.connect(dialog.reject)
+        confirm_btn.clicked.connect(dialog.accept)
+        actions.addWidget(cancel_btn)
+        actions.addWidget(confirm_btn)
+        layout.addLayout(actions)
+
+        return dialog.exec() == int(QDialog.DialogCode.Accepted)
+
+    def _load_plugin_install_manifest(self, plugin_dir: Path) -> dict[str, object]:
+        manifest_path = plugin_dir / "hanauta-install.json"
+        if not manifest_path.exists():
+            return {}
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _plugin_install_receipt_file(self, plugin_id: str) -> Path:
+        safe_id = re.sub(r"[^a-zA-Z0-9._-]+", "-", plugin_id.strip()) or "plugin"
+        return PLUGIN_INSTALL_STATE_DIR / safe_id / "install-receipt.json"
+
+    def _load_plugin_install_receipt(self, plugin_id: str) -> dict[str, object]:
+        receipt_path = self._plugin_install_receipt_file(plugin_id)
+        if not receipt_path.exists():
+            return {}
+        try:
+            payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _save_plugin_install_receipt(self, plugin_id: str, payload: dict[str, object]) -> None:
+        receipt_path = self._plugin_install_receipt_file(plugin_id)
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _clear_plugin_install_receipt(self, plugin_id: str) -> None:
+        receipt_path = self._plugin_install_receipt_file(plugin_id)
+        if receipt_path.exists():
+            try:
+                receipt_path.unlink()
+            except Exception:
+                pass
+        try:
+            if receipt_path.parent.exists():
+                shutil.rmtree(receipt_path.parent)
+        except Exception:
+            pass
+
+    def _render_desktop_entry(self, entry: dict[str, object], plugin_dir: Path) -> tuple[str, str]:
+        desktop_id = str(entry.get("id", "")).strip()
+        if not desktop_id:
+            desktop_id = f"{plugin_dir.name}.desktop"
+        if not desktop_id.endswith(".desktop"):
+            desktop_id = f"{desktop_id}.desktop"
+        name = str(entry.get("name", plugin_dir.name)).strip() or plugin_dir.name
+        comment = str(entry.get("comment", "")).strip()
+        terminal = "true" if bool(entry.get("terminal", False)) else "false"
+        categories = entry.get("categories", ["Utility"])
+        if not isinstance(categories, list):
+            categories = ["Utility"]
+        categories_str = ";".join(str(value).strip() for value in categories if str(value).strip())
+        if categories_str and not categories_str.endswith(";"):
+            categories_str += ";"
+        exec_value = ""
+        raw_exec = entry.get("exec", [])
+        if isinstance(raw_exec, list):
+            parts = [str(value).replace("${PLUGIN_DIR}", str(plugin_dir)).strip() for value in raw_exec if str(value).strip()]
+            exec_value = " ".join(parts)
+        elif isinstance(raw_exec, str):
+            exec_value = raw_exec.replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
+        if not exec_value:
+            exec_value = f"python3 {plugin_dir / 'hanauta_plugin.py'}"
+        icon = str(entry.get("icon", "")).replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
+        body = [
+            "[Desktop Entry]",
+            "Type=Application",
+            f"Name={name}",
+            f"Comment={comment}" if comment else "Comment=Hanauta plugin launcher",
+            f"Exec={exec_value}",
+            f"Terminal={terminal}",
+            f"Categories={categories_str or 'Utility;'}",
+        ]
+        if icon:
+            body.append(f"Icon={icon}")
+        body.append("")
+        return desktop_id, "\n".join(body)
+
+    def _apply_plugin_desktop_entries(self, plugin_id: str, plugin_dir: Path, manifest: dict[str, object]) -> list[dict[str, object]]:
+        actions: list[dict[str, object]] = []
+        desktop_entries = manifest.get("desktop_entries", [])
+        if not isinstance(desktop_entries, list) or not desktop_entries:
+            return actions
+        target_dir = Path.home() / ".local" / "share" / "applications"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        receipt_root = self._plugin_install_receipt_file(plugin_id).parent
+        backups_dir = receipt_root / "desktop-backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        for row in desktop_entries:
+            if not isinstance(row, dict):
+                continue
+            desktop_id, content = self._render_desktop_entry(row, plugin_dir)
+            target_path = target_dir / desktop_id
+            existed_before = target_path.exists()
+            backup_path = ""
+            if existed_before:
+                try:
+                    old_content = target_path.read_text(encoding="utf-8")
+                except Exception:
+                    old_content = ""
+                if old_content != content:
+                    backup_file = backups_dir / f"{desktop_id}.bak"
+                    backup_file.write_text(old_content, encoding="utf-8")
+                    backup_path = str(backup_file)
+            target_path.write_text(content, encoding="utf-8")
+            actions.append(
+                {
+                    "path": str(target_path),
+                    "desktop_id": desktop_id,
+                    "existed_before": existed_before,
+                    "backup_path": backup_path,
+                }
+            )
+        return actions
+
+    def _resolve_privileged_install_command(self, plugin_dir: Path, manifest: dict[str, object]) -> list[str]:
+        install = manifest.get("privileged_install", {})
+        if isinstance(install, dict):
+            command = install.get("command", [])
+            if isinstance(command, list):
+                resolved = [
+                    str(part).replace("${PLUGIN_DIR}", str(plugin_dir))
+                    for part in command
+                    if str(part).strip()
+                ]
+                if resolved:
+                    return resolved
+        fallback = plugin_dir / "bin" / "install_root_service.sh"
+        if fallback.exists():
+            return ["bash", str(fallback)]
+        return []
+
+    def _resolve_privileged_uninstall_command(self, plugin_dir: Path, manifest: dict[str, object]) -> list[str]:
+        uninstall = manifest.get("privileged_uninstall", {})
+        if isinstance(uninstall, dict):
+            command = uninstall.get("command", [])
+            if isinstance(command, list):
+                resolved = [
+                    str(part).replace("${PLUGIN_DIR}", str(plugin_dir))
+                    for part in command
+                    if str(part).strip()
+                ]
+                if resolved:
+                    return resolved
+        fallback = plugin_dir / "bin" / "uninstall_root_service.sh"
+        if fallback.exists():
+            return ["bash", str(fallback)]
+        return []
+
+    def _revert_plugin_desktop_entries(self, plugin_id: str, receipt: dict[str, object]) -> None:
+        entries = receipt.get("desktop_entries", [])
+        if not isinstance(entries, list):
+            return
+        for row in entries:
+            if not isinstance(row, dict):
+                continue
+            path_value = str(row.get("path", "")).strip()
+            if not path_value:
+                continue
+            target_path = Path(path_value).expanduser()
+            backup_path = str(row.get("backup_path", "")).strip()
+            if backup_path:
+                backup_file = Path(backup_path).expanduser()
+                if backup_file.exists():
+                    try:
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(backup_file, target_path)
+                        continue
+                    except Exception:
+                        pass
+            try:
+                if target_path.exists():
+                    target_path.unlink()
+            except Exception:
+                continue
+
+    def _run_plugin_post_install_steps(self, plugin: dict[str, object], target_dir: Path) -> bool:
+        plugin_id = str(plugin.get("id", target_dir.name)).strip() or target_dir.name
+        manifest = self._load_plugin_install_manifest(target_dir)
+        permission_items = self._marketplace_permission_items(plugin, manifest if manifest else None)
+        if permission_items:
+            accepted = self._marketplace_show_permission_dialog(
+                plugin_name=str(plugin.get("name", plugin.get("id", "Plugin"))),
+                intro_text="This plugin declares runtime/system permissions. Review and confirm before finalizing installation.",
+                permission_items=permission_items,
+                confirm_label="Proceed",
+            )
+            if not accepted:
+                self.marketplace_status.setText("Install paused: permission review was not approved.")
+                return False
+
+        desktop_actions: list[dict[str, object]] = []
+        if manifest:
+            desktop_actions = self._apply_plugin_desktop_entries(plugin_id, target_dir, manifest)
+
+        requires_privileged = bool(manifest.get("requires_privileged_install", False))
+        has_systemd_unit = bool(list((target_dir / "systemd").glob("*.service")))
+        if not requires_privileged and not has_systemd_unit:
+            self._save_plugin_install_receipt(
+                plugin_id,
+                {
+                    "plugin_id": plugin_id,
+                    "plugin_dir": str(target_dir),
+                    "desktop_entries": desktop_actions,
+                    "manifest": manifest if isinstance(manifest, dict) else {},
+                    "installed_at_epoch": int(time.time()),
+                },
+            )
+            return True
+
+        command = self._resolve_privileged_install_command(target_dir, manifest)
+        if not command:
+            self.marketplace_status.setText("Plugin install completed, but no privileged install command was found.")
+            self._save_plugin_install_receipt(
+                plugin_id,
+                {
+                    "plugin_id": plugin_id,
+                    "plugin_dir": str(target_dir),
+                    "desktop_entries": desktop_actions,
+                    "manifest": manifest if isinstance(manifest, dict) else {},
+                    "installed_at_epoch": int(time.time()),
+                    "privileged_install_skipped": True,
+                },
+            )
+            return True
+        if not polkit_available():
+            self.marketplace_status.setText(
+                "Plugin install completed. Privileged setup requires pkexec, which is not currently available."
+            )
+            self._save_plugin_install_receipt(
+                plugin_id,
+                {
+                    "plugin_id": plugin_id,
+                    "plugin_dir": str(target_dir),
+                    "desktop_entries": desktop_actions,
+                    "manifest": manifest if isinstance(manifest, dict) else {},
+                    "installed_at_epoch": int(time.time()),
+                    "privileged_install_skipped": True,
+                },
+            )
+            return True
+
+        accepted = self._marketplace_show_permission_dialog(
+            plugin_name=str(plugin.get("name", plugin.get("id", "Plugin"))),
+            intro_text=(
+                "This plugin needs privileged setup to install or update systemd services and protected files. "
+                "Continuing will show a Polkit authentication prompt."
+            ),
+            permission_items=permission_items or [
+                {
+                    "key": "privileged",
+                    "label": "Privileged Install",
+                    "description": "Installs system service files and root-managed policy files.",
+                }
+            ],
+            confirm_label="Continue to Polkit",
+        )
+        if not accepted:
+            self.marketplace_status.setText("Plugin installed. Privileged setup was skipped.")
+            return True
+
+        ok = run_with_polkit(command, detached=False, timeout=180)
+        self._save_plugin_install_receipt(
+            plugin_id,
+            {
+                "plugin_id": plugin_id,
+                "plugin_dir": str(target_dir),
+                "desktop_entries": desktop_actions,
+                "manifest": manifest if isinstance(manifest, dict) else {},
+                "installed_at_epoch": int(time.time()),
+                "privileged_install_attempted": True,
+                "privileged_install_ok": bool(ok),
+            },
+        )
+        if ok:
+            self.marketplace_status.setText(
+                "Plugin installed and privileged setup completed successfully."
+            )
+            return True
+        self.marketplace_status.setText(
+            "Plugin installed, but privileged setup failed or was cancelled in Polkit."
+        )
+        return True
+
+    def _installed_plugin_entry_by_id(self, plugin_id: str) -> dict[str, object] | None:
+        installed = self.settings_state.get("marketplace", {}).get("installed_plugins", [])
+        if not isinstance(installed, list):
+            return None
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("id", "")).strip() == plugin_id:
+                return row
+        return None
+
+    def _uninstall_plugin_from_services(self, plugin_id: str, plugin_name: str) -> None:
+        row = self._installed_plugin_entry_by_id(plugin_id)
+        if row is None:
+            QMessageBox.information(self, "Plugin Not Installed", f"{plugin_name} is not tracked as an installed plugin.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Uninstall Plugin",
+            f"Uninstall {plugin_name} ({plugin_id})?\n\nThis removes the plugin directory and clears marketplace install metadata.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        install_path = Path(str(row.get("install_path", "")).strip()).expanduser()
+        receipt = self._load_plugin_install_receipt(plugin_id)
+        manifest = self._load_plugin_install_manifest(install_path) if install_path.exists() else {}
+        if not manifest and isinstance(receipt.get("manifest", {}), dict):
+            manifest = receipt.get("manifest", {})
+
+        permission_items = self._marketplace_permission_items(row, manifest if isinstance(manifest, dict) else None)
+        uninstall_command = self._resolve_privileged_uninstall_command(install_path, manifest if isinstance(manifest, dict) else {})
+        if uninstall_command:
+            accepted = self._marketplace_show_permission_dialog(
+                plugin_name=plugin_name,
+                intro_text=(
+                    "Uninstall may revert privileged changes performed during installation. "
+                    "Continuing can open a Polkit authentication prompt."
+                ),
+                permission_items=permission_items or [
+                    {
+                        "key": "privileged",
+                        "label": "Privileged Uninstall",
+                        "description": "Reverts system-level files/services created during install.",
+                    }
+                ],
+                confirm_label="Continue to Uninstall",
+            )
+            if not accepted:
+                return
+            if not polkit_available():
+                QMessageBox.warning(self, "Uninstall Blocked", "Privileged uninstall requires pkexec, but it is unavailable.")
+                return
+            ok = run_with_polkit(uninstall_command, detached=False, timeout=180)
+            if not ok:
+                QMessageBox.warning(self, "Uninstall Failed", "Privileged uninstall failed or was cancelled.")
+                return
+
+        self._revert_plugin_desktop_entries(plugin_id, receipt)
+
+        if install_path.exists() and install_path.is_dir():
+            try:
+                shutil.rmtree(install_path)
+            except Exception as exc:
+                QMessageBox.warning(self, "Uninstall Failed", f"Unable to remove plugin folder:\n{exc}")
+                return
+        marketplace = self.settings_state.setdefault("marketplace", {})
+        installed = marketplace.get("installed_plugins", [])
+        if not isinstance(installed, list):
+            installed = []
+        installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")).strip() == plugin_id)]
+        marketplace["installed_plugins"] = installed
+        save_settings_state(self.settings_state)
+        self._clear_plugin_install_receipt(plugin_id)
+        wrapper = getattr(self, "_plugin_service_wrappers", {}).get(plugin_id)
+        if isinstance(wrapper, QWidget):
+            wrapper.setVisible(False)
+        QMessageBox.information(self, "Plugin Uninstalled", f"{plugin_name} was uninstalled.\n\nReopen Settings to refresh service sections.")
+
     def _marketplace_choose_install_dir(self) -> None:
         initial = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
         selected = QFileDialog.getExistingDirectory(self, "Choose plugin install directory", initial)
         if selected:
             self.marketplace_install_dir_input.setText(selected)
 
+    def _marketplace_catalog_sources_from_ui(self) -> list[dict[str, str]]:
+        sources: list[dict[str, str]] = []
+        primary_repo = self.marketplace_repo_input.text().strip()
+        primary_branch = self.marketplace_branch_input.text().strip() or "main"
+        primary_manifest = self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json"
+        if primary_repo:
+            sources.append(
+                {
+                    "repo_url": primary_repo,
+                    "branch": primary_branch,
+                    "manifest_path": primary_manifest,
+                }
+            )
+        lines = self.marketplace_sources_input.toPlainText().splitlines()
+        for line in lines:
+            raw = line.strip()
+            if not raw:
+                continue
+            if "|" in raw:
+                parts = [part.strip() for part in raw.split("|", 2)]
+                repo_url = parts[0] if len(parts) >= 1 else ""
+                branch = parts[1] if len(parts) >= 2 else "main"
+                manifest_path = parts[2] if len(parts) >= 3 else "plugins.json"
+            else:
+                repo_url = raw
+                branch = "main"
+                manifest_path = "plugins.json"
+            repo_url = str(repo_url).strip()
+            if not repo_url:
+                continue
+            source = {
+                "repo_url": repo_url,
+                "branch": str(branch).strip() or "main",
+                "manifest_path": str(manifest_path).strip().lstrip("/") or "plugins.json",
+            }
+            if any(
+                source["repo_url"] == existing["repo_url"]
+                and source["branch"] == existing["branch"]
+                and source["manifest_path"] == existing["manifest_path"]
+                for existing in sources
+            ):
+                continue
+            sources.append(source)
+        return sources
+
     def _marketplace_save_settings(self) -> None:
         marketplace = self.settings_state.setdefault("marketplace", {})
-        marketplace["catalog_repo_url"] = self.marketplace_repo_input.text().strip()
-        marketplace["catalog_branch"] = self.marketplace_branch_input.text().strip() or "main"
-        marketplace["catalog_manifest_path"] = self.marketplace_manifest_input.text().strip() or "plugins.json"
+        sources = self._marketplace_catalog_sources_from_ui()
+        primary = sources[0] if sources else {
+            "repo_url": self.marketplace_repo_input.text().strip(),
+            "branch": self.marketplace_branch_input.text().strip() or "main",
+            "manifest_path": self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json",
+        }
+        marketplace["catalog_repo_url"] = str(primary.get("repo_url", "")).strip()
+        marketplace["catalog_branch"] = str(primary.get("branch", "main")).strip() or "main"
+        marketplace["catalog_manifest_path"] = str(primary.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
+        marketplace["catalog_sources"] = sources
         marketplace["install_dir"] = self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")
         save_settings_state(self.settings_state)
         self.marketplace_status.setText("Marketplace configuration saved.")
 
-    def _marketplace_manifest_url(self) -> str:
-        repo_url = self.marketplace_repo_input.text().strip()
-        branch = self.marketplace_branch_input.text().strip() or "main"
-        manifest_path = self.marketplace_manifest_input.text().strip().lstrip("/") or "plugins.json"
+    def _marketplace_manifest_url_for_source(self, repo_url: str, branch: str, manifest_path: str) -> str:
         parsed = parse.urlparse(repo_url)
         if parsed.netloc.lower() == "github.com":
             parts = [part for part in parsed.path.split("/") if part]
@@ -6448,23 +7170,55 @@ class SettingsWindow(QWidget):
 
     def _marketplace_refresh_catalog(self) -> None:
         self._marketplace_save_settings()
-        manifest_url = self._marketplace_manifest_url()
-        try:
-            req = request.Request(manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"})
-            with request.urlopen(req, timeout=10) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            self.marketplace_status.setText(f"Failed to refresh catalog: {exc}")
+        sources = self._marketplace_catalog_sources_from_ui()
+        if not sources:
+            self.marketplace_status.setText("Add at least one catalog source before refreshing.")
             return
-        catalog = self._marketplace_normalize_catalog(payload)
-        if not catalog:
-            self.marketplace_status.setText("Catalog loaded but no valid plugins were found in the manifest.")
+        merged: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        source_errors: list[str] = []
+        for source in sources:
+            repo_url = str(source.get("repo_url", "")).strip()
+            branch = str(source.get("branch", "main")).strip() or "main"
+            manifest_path = str(source.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
+            if not repo_url:
+                continue
+            manifest_url = self._marketplace_manifest_url_for_source(repo_url, branch, manifest_path)
+            try:
+                req = request.Request(manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"})
+                with request.urlopen(req, timeout=10) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                source_errors.append(f"{repo_url} ({branch}/{manifest_path}): {exc}")
+                continue
+            catalog = self._marketplace_normalize_catalog(payload)
+            for plugin in catalog:
+                plugin_id = str(plugin.get("id", "")).strip()
+                if not plugin_id or plugin_id in seen_ids:
+                    continue
+                seen_ids.add(plugin_id)
+                plugin["catalog_source"] = repo_url
+                merged.append(plugin)
+        if not merged:
+            if source_errors:
+                self.marketplace_status.setText(
+                    "Failed to refresh catalogs: " + " | ".join(source_errors[:2])
+                )
+            else:
+                self.marketplace_status.setText("Catalog loaded but no valid plugins were found in the configured sources.")
             return
         marketplace = self.settings_state.setdefault("marketplace", {})
-        marketplace["catalog_cache"] = catalog
+        marketplace["catalog_cache"] = merged
         save_settings_state(self.settings_state)
-        self._marketplace_populate_catalog(catalog)
-        self.marketplace_status.setText(f"Catalog refreshed: {len(catalog)} plugin(s) available.")
+        self._marketplace_populate_catalog(merged)
+        if source_errors:
+            self.marketplace_status.setText(
+                f"Catalog refreshed: {len(merged)} plugin(s) from {len(sources) - len(source_errors)}/{len(sources)} source(s)."
+            )
+        else:
+            self.marketplace_status.setText(
+                f"Catalog refreshed: {len(merged)} plugin(s) from {len(sources)} source(s)."
+            )
 
     def _marketplace_populate_catalog(self, catalog: list[dict[str, object]]) -> None:
         installed_ids = {
@@ -6482,7 +7236,8 @@ class SettingsWindow(QWidget):
             label = f"{name}\n{badge}{secondary}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, plugin)
-            item.setData(Qt.ItemDataRole.UserRole + 1, f"{name} {plugin_id} {description}".lower())
+            source_hint = str(plugin.get("catalog_source", "")).strip()
+            item.setData(Qt.ItemDataRole.UserRole + 1, f"{name} {plugin_id} {description} {source_hint}".lower())
             item.setToolTip(str(plugin.get("repo", "")).strip())
             self.marketplace_plugin_list.addItem(item)
         if self.marketplace_plugin_list.count() > 0:
@@ -6511,6 +7266,9 @@ class SettingsWindow(QWidget):
             f"Repo: {str(plugin.get('repo', ''))}",
             f"Branch: {str(plugin.get('branch', 'main'))}",
         ]
+        catalog_source = str(plugin.get("catalog_source", "")).strip()
+        if catalog_source:
+            details.append(f"Catalog source: {catalog_source}")
         rel_path = str(plugin.get("path", "")).strip()
         if rel_path:
             details.append(f"Path: {rel_path}")
@@ -6537,6 +7295,11 @@ class SettingsWindow(QWidget):
             details.append("Permissions: " + ", ".join(sorted(str(key).strip() for key in permissions.keys() if str(key).strip())))
         self.marketplace_detail_label.setText("\n".join(details))
 
+    def _marketplace_sanitize_plugin_id(self, value: str) -> str:
+        sanitized = re.sub(r"[^a-z0-9_-]+", "-", value.strip().lower())
+        sanitized = sanitized.strip("-_")
+        return sanitized or f"plugin_{int(time.time())}"
+
     def _marketplace_install_selected(self) -> None:
         item = self.marketplace_plugin_list.currentItem()
         if item is None:
@@ -6558,20 +7321,15 @@ class SettingsWindow(QWidget):
                 f"{plugin_id} requires plugin API v{api_min_version}, but this Hanauta build supports v{HOST_PLUGIN_API_VERSION}."
             )
             return
-        warning_text = self._plugin_permissions_warning(plugin)
-        if warning_text:
-            answer = QMessageBox.question(
-                self,
-                "Plugin Permissions Warning",
-                (
-                    f"{plugin.get('name', plugin_id)} declares elevated/runtime-sensitive capabilities.\n\n"
-                    f"{warning_text}\n\n"
-                    "Do you want to continue installing this plugin?"
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+        permission_items = self._marketplace_permission_items(plugin)
+        if permission_items:
+            accepted = self._marketplace_show_permission_dialog(
+                plugin_name=str(plugin.get("name", plugin_id)),
+                intro_text="Review requested permissions before installing this plugin.",
+                permission_items=permission_items,
+                confirm_label="Install",
             )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not accepted:
                 self.marketplace_status.setText(f"Installation cancelled for {plugin_id}.")
                 return
         if shutil.which("git") is None:
@@ -6581,9 +7339,33 @@ class SettingsWindow(QWidget):
         install_root = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
         install_root.mkdir(parents=True, exist_ok=True)
         target_dir = install_root / plugin_id
+        install_mode = "clone"
+        if target_dir.exists():
+            answer = QMessageBox.question(
+                self,
+                "Plugin Already Installed",
+                (
+                    f"{plugin_id} already exists at:\n{target_dir}\n\n"
+                    "Select Yes to overwrite with a clean reinstall, or No to keep files and run a git update."
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.No,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                self.marketplace_status.setText(f"Installation cancelled for {plugin_id}.")
+                return
+            if answer == QMessageBox.StandardButton.Yes:
+                try:
+                    shutil.rmtree(target_dir)
+                except Exception as exc:
+                    self.marketplace_status.setText(f"Cannot overwrite {plugin_id}: {exc}")
+                    return
+                install_mode = "clone"
+            else:
+                install_mode = "update"
 
         try:
-            if (target_dir / ".git").exists():
+            if install_mode == "update" and (target_dir / ".git").exists():
                 result = subprocess.run(
                     ["git", "-C", str(target_dir), "pull", "--ff-only", "origin", branch],
                     capture_output=True,
@@ -6622,6 +7404,7 @@ class SettingsWindow(QWidget):
             "api_min_version": api_min_version,
             "api_target_version": api_target_version,
             "permissions": plugin.get("permissions", {}) if isinstance(plugin.get("permissions", {}), dict) else {},
+            "catalog_source": str(plugin.get("catalog_source", "")).strip(),
             "installed_at_epoch": int(time.time()),
         }
         installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)]
@@ -6630,6 +7413,89 @@ class SettingsWindow(QWidget):
         marketplace["install_dir"] = str(install_root)
         save_settings_state(self.settings_state)
         self.marketplace_status.setText(f"Installed {plugin_id} into {target_dir}.")
+        self._run_plugin_post_install_steps(plugin, target_dir)
+
+    def _marketplace_install_zip(self) -> None:
+        install_root = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
+        install_root.mkdir(parents=True, exist_ok=True)
+        archive_path_str, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Select plugin ZIP",
+            str(Path.home()),
+            "ZIP files (*.zip)",
+        )
+        if not archive_path_str:
+            return
+        archive_path = Path(archive_path_str).expanduser()
+        if not archive_path.exists():
+            self.marketplace_status.setText("Selected ZIP file does not exist.")
+            return
+        try:
+            with tempfile.TemporaryDirectory(prefix="hanauta-plugin-zip-") as temp_dir_str:
+                temp_dir = Path(temp_dir_str)
+                with zipfile.ZipFile(archive_path) as bundle:
+                    bundle.extractall(temp_dir)
+                candidates = [path.parent for path in temp_dir.rglob(PLUGIN_ENTRYPOINT)]
+                if not candidates:
+                    self.marketplace_status.setText("ZIP does not contain a plugin entrypoint (hanauta_plugin.py).")
+                    return
+                source_dir = sorted(candidates, key=lambda path: len(path.parts))[0]
+                raw_plugin_id = source_dir.name if source_dir.name else archive_path.stem
+                plugin_id = self._marketplace_sanitize_plugin_id(raw_plugin_id or archive_path.stem)
+                target_dir = install_root / plugin_id
+                plugin_meta: dict[str, object] = {
+                    "id": plugin_id,
+                    "name": plugin_id,
+                    "repo": f"zip://{archive_path.name}",
+                }
+                plugin_manifest_path = source_dir / "hanauta_plugin.py"
+                if plugin_manifest_path.exists():
+                    plugin_meta["entrypoint"] = "hanauta_plugin.py"
+                if target_dir.exists():
+                    answer = QMessageBox.question(
+                        self,
+                        "Replace Existing Plugin",
+                        f"{plugin_id} already exists at:\n{target_dir}\n\nReplace it with this ZIP package?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if answer != QMessageBox.StandardButton.Yes:
+                        self.marketplace_status.setText(f"ZIP install cancelled for {plugin_id}.")
+                        return
+                    shutil.rmtree(target_dir)
+                shutil.copytree(source_dir, target_dir)
+        except zipfile.BadZipFile:
+            self.marketplace_status.setText("The selected file is not a valid ZIP archive.")
+            return
+        except Exception as exc:
+            self.marketplace_status.setText(f"ZIP install failed: {exc}")
+            return
+
+        marketplace = self.settings_state.setdefault("marketplace", {})
+        installed = marketplace.setdefault("installed_plugins", [])
+        if not isinstance(installed, list):
+            installed = []
+            marketplace["installed_plugins"] = installed
+        record = {
+            "id": plugin_id,
+            "name": plugin_id,
+            "repo": f"zip://{archive_path.name}",
+            "branch": "local-zip",
+            "install_path": str(target_dir),
+            "capabilities": [],
+            "requirements": [],
+            "api_min_version": 1,
+            "api_target_version": HOST_PLUGIN_API_VERSION,
+            "permissions": {},
+            "installed_at_epoch": int(time.time()),
+        }
+        installed = [entry for entry in installed if not (isinstance(entry, dict) and str(entry.get("id", "")) == plugin_id)]
+        installed.append(record)
+        marketplace["installed_plugins"] = installed
+        marketplace["install_dir"] = str(install_root)
+        save_settings_state(self.settings_state)
+        self.marketplace_status.setText(f"Installed ZIP plugin {plugin_id} into {target_dir}.")
+        self._run_plugin_post_install_steps(plugin_meta, target_dir)
 
     def _marketplace_open_install_dir(self) -> None:
         install_dir = Path(self.marketplace_install_dir_input.text().strip() or str(ROOT / "hanauta" / "plugins")).expanduser()
@@ -6779,6 +7645,8 @@ class SettingsWindow(QWidget):
                 continue
             if not isinstance(payload, dict):
                 continue
+            plugin_id = str(payload.get("id", "")).strip()
+            plugin_name = str(payload.get("name", plugin_id or plugin_dir.name)).strip() or (plugin_id or plugin_dir.name)
             api_min_version, _api_target_version = self._plugin_api_versions_from_row(payload)
             if api_min_version > HOST_PLUGIN_API_VERSION:
                 continue
@@ -6795,6 +7663,8 @@ class SettingsWindow(QWidget):
                 builders[key] = {
                     "builder": builder,
                     "plugin_dir": plugin_dir,
+                    "plugin_id": plugin_id,
+                    "plugin_name": plugin_name,
                 }
         return builders
 
@@ -6818,6 +7688,7 @@ class SettingsWindow(QWidget):
 
         self.service_sections: dict[str, ExpandableServiceSection] = {}
         self.service_display_switches: dict[str, SwitchButton] = {}
+        self._plugin_service_wrappers: dict[str, QWidget] = {}
         for key, widget in (
             ("mail", self._build_mail_service_section()),
             ("kdeconnect", self._build_kdeconnect_service_section()),
@@ -6842,6 +7713,8 @@ class SettingsWindow(QWidget):
             section_meta = self.plugin_service_builders.get(key, {})
             builder = section_meta.get("builder")
             plugin_dir = section_meta.get("plugin_dir")
+            plugin_id = str(section_meta.get("plugin_id", "")).strip()
+            plugin_name = str(section_meta.get("plugin_name", plugin_id)).strip() or plugin_id
             if not callable(builder):
                 continue
             try:
@@ -6849,7 +7722,26 @@ class SettingsWindow(QWidget):
             except Exception:
                 continue
             if isinstance(widget, QWidget):
-                layout.addWidget(widget)
+                if plugin_id and self._installed_plugin_entry_by_id(plugin_id) is not None:
+                    wrapper = QWidget()
+                    wrapper_layout = QVBoxLayout(wrapper)
+                    wrapper_layout.setContentsMargins(0, 0, 0, 0)
+                    wrapper_layout.setSpacing(8)
+                    wrapper_layout.addWidget(widget)
+                    action_row = QHBoxLayout()
+                    action_row.addStretch(1)
+                    uninstall_button = QPushButton("Uninstall plugin")
+                    uninstall_button.setObjectName("secondaryButton")
+                    uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                    uninstall_button.clicked.connect(
+                        lambda _checked=False, pid=plugin_id, pname=plugin_name: self._uninstall_plugin_from_services(pid, pname)
+                    )
+                    action_row.addWidget(uninstall_button)
+                    wrapper_layout.addLayout(action_row)
+                    self._plugin_service_wrappers[plugin_id] = wrapper
+                    layout.addWidget(wrapper)
+                else:
+                    layout.addWidget(widget)
         return card
 
     def _focus_service_section(self, key: str) -> None:
