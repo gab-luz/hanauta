@@ -1,0 +1,22 @@
+[dock]
+auto_hide = false
+width = 0
+width_unit = "px"
+height = 64
+icons_left = false
+position = "center"
+transparency = 60
+monitor_mode = "primary"
+monitor_name = ""
+
+[blacklist]
+wm_class = [
+]
+desktop_id = [
+]
+window_name = [
+]
+
+[pinned]
+apps = [
+]
