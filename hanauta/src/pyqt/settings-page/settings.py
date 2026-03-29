@@ -481,6 +481,7 @@ MATERIAL_ICONS = {
     "grid_view": "\ue9b0",
     "crop_square": "\ue3be",
     "settings": "\ue8b8",
+    "apps": "\ue5c3",
     "image": "\ue3f4",
     "auto_awesome": "\ue65f",
     "photo_library": "\ue413",
@@ -570,10 +571,11 @@ DEFAULT_BAR_SETTINGS = {
     "full_bar_radius": 18,
     "monitor_mode": "primary",
     "monitor_name": "",
+    "polybar_widgets": [],
 }
 
 
-def merged_bar_settings(payload: object) -> dict[str, int | bool | str]:
+def merged_bar_settings(payload: object) -> dict[str, object]:
     current = payload if isinstance(payload, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
     offset_keys = {
@@ -600,6 +602,12 @@ def merged_bar_settings(payload: object) -> dict[str, int | bool | str]:
                 else bool(default)
             )
             continue
+        if isinstance(default, list):
+            if isinstance(current, dict) and isinstance(current.get(key), list):
+                merged[key] = list(current.get(key, []))
+            else:
+                merged[key] = list(default)
+            continue
         try:
             merged[key] = (
                 int(current.get(key, default))
@@ -623,6 +631,10 @@ def merged_bar_settings(payload: object) -> dict[str, int | bool | str]:
         else "primary"
     )
     merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
+    if "polybar_widgets" in current and isinstance(current["polybar_widgets"], list):
+        merged["polybar_widgets"] = list(current["polybar_widgets"])
+    else:
+        merged["polybar_widgets"] = []
     return merged
 
 
@@ -1604,6 +1616,7 @@ def load_settings_state() -> dict:
             "startup_delay_seconds": 0,
             "restart_hooks_enabled": True,
             "watchdog_enabled": False,
+            "startup_apps": [],
         },
         "privacy": {
             "lock_on_suspend": True,
@@ -4454,8 +4467,6 @@ class SettingsWindow(QWidget):
             ("storage", material_icon("storage"), "Storage", False),
             ("region", material_icon("public"), "Region", False),
             ("bar", material_icon("crop_square"), "Bar", False),
-            ("services", material_icon("settings"), "Services", False),
-            ("picom", material_icon("shadow"), "Picom", False),
         ]
 
         for key, glyph, label, checked in items:
@@ -4491,7 +4502,6 @@ class SettingsWindow(QWidget):
         self.services_page_index = self.page_stack.count()
         self._services_page_ready = False
         self.page_stack.addWidget(self._build_services_placeholder())
-        self.page_stack.addWidget(self._build_picom_page())
         self._show_page(self.initial_page)
         return self.page_stack
 
@@ -4589,7 +4599,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_services_card())
 
     def _build_display_page(self) -> QWidget:
-        return self._scroll_page(self._build_display_card())
+        return self._scroll_page(self._build_display_card(), self._build_picom_card())
 
     def _build_picom_page(self) -> QWidget:
         return self._scroll_page(self._build_picom_card())
@@ -4611,7 +4621,6 @@ class SettingsWindow(QWidget):
             "region": 12,
             "bar": 13,
             "services": 14,
-            "picom": 15,
         }
         resolved = key if key in order else "appearance"
         if resolved == "services":
@@ -6122,6 +6131,50 @@ class SettingsWindow(QWidget):
                 rice_button,
             )
         )
+
+        polybar_header = QHBoxLayout()
+        polybar_icon = IconLabel(
+            material_icon("widgets"), self.icon_font, 13, "#F4EAF7"
+        )
+        polybar_icon.setFixedSize(18, 18)
+        polybar_title = QLabel("Polybar Widgets")
+        polybar_title.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
+        polybar_title.setStyleSheet("color: rgba(246,235,247,0.85);")
+        polybar_header.addWidget(polybar_icon)
+        polybar_header.addWidget(polybar_title)
+        polybar_header.addStretch(1)
+        layout.addLayout(polybar_header)
+
+        polybar_subtitle = QLabel(
+            "Add polybar-compatible custom widgets to hanauta bar."
+        )
+        polybar_subtitle.setFont(QFont(self.ui_font, 9))
+        polybar_subtitle.setStyleSheet("color: rgba(246,235,247,0.56);")
+        layout.addWidget(polybar_subtitle)
+
+        self.polybar_widgets_list = QListWidget()
+        self.polybar_widgets_list.setObjectName("settingsList")
+        polybar_widgets = self.settings_state["bar"].get("polybar_widgets", [])
+        for widget in polybar_widgets:
+            item = QListWidgetItem(str(widget))
+            self.polybar_widgets_list.addItem(item)
+        layout.addWidget(self.polybar_widgets_list)
+
+        polybar_buttons = QHBoxLayout()
+        polybar_buttons.setSpacing(8)
+        add_widget_button = QPushButton("Add Widget")
+        add_widget_button.setObjectName("secondaryButton")
+        add_widget_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        add_widget_button.clicked.connect(self._add_polybar_widget)
+        remove_widget_button = QPushButton("Remove")
+        remove_widget_button.setObjectName("dangerButton")
+        remove_widget_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        remove_widget_button.clicked.connect(self._remove_polybar_widget)
+        polybar_buttons.addWidget(add_widget_button)
+        polybar_buttons.addWidget(remove_widget_button)
+        polybar_buttons.addStretch(1)
+        layout.addLayout(polybar_buttons)
+
         return card
 
     def _build_energy_card(self) -> QWidget:
@@ -7297,6 +7350,49 @@ class SettingsWindow(QWidget):
         buttons.addWidget(save_button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
+
+        startup_apps_header = QHBoxLayout()
+        startup_apps_icon = IconLabel(
+            material_icon("apps"), self.icon_font, 13, "#F4EAF7"
+        )
+        startup_apps_icon.setFixedSize(18, 18)
+        startup_apps_title = QLabel("Startup Apps")
+        startup_apps_title.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
+        startup_apps_title.setStyleSheet("color: rgba(246,235,247,0.85);")
+        startup_apps_header.addWidget(startup_apps_icon)
+        startup_apps_header.addWidget(startup_apps_title)
+        startup_apps_header.addStretch(1)
+        layout.addLayout(startup_apps_header)
+
+        startup_apps_subtitle = QLabel(
+            "Add apps or commands to run when i3/hyprland starts."
+        )
+        startup_apps_subtitle.setFont(QFont(self.ui_font, 9))
+        startup_apps_subtitle.setStyleSheet("color: rgba(246,235,247,0.56);")
+        layout.addWidget(startup_apps_subtitle)
+
+        self.startup_apps_list = QListWidget()
+        self.startup_apps_list.setObjectName("settingsList")
+        startup_apps = startup_settings.get("startup_apps", [])
+        for app in startup_apps:
+            item = QListWidgetItem(str(app))
+            self.startup_apps_list.addItem(item)
+        layout.addWidget(self.startup_apps_list)
+
+        startup_apps_buttons = QHBoxLayout()
+        startup_apps_buttons.setSpacing(8)
+        add_app_button = QPushButton("Add App/Command")
+        add_app_button.setObjectName("secondaryButton")
+        add_app_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        add_app_button.clicked.connect(self._add_startup_app)
+        remove_app_button = QPushButton("Remove")
+        remove_app_button.setObjectName("dangerButton")
+        remove_app_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        remove_app_button.clicked.connect(self._remove_startup_app)
+        startup_apps_buttons.addWidget(add_app_button)
+        startup_apps_buttons.addWidget(remove_app_button)
+        startup_apps_buttons.addStretch(1)
+        layout.addLayout(startup_apps_buttons)
 
         self.startup_status = QLabel("Startup preferences are ready.")
         self.startup_status.setWordWrap(True)
@@ -13962,11 +14058,51 @@ class SettingsWindow(QWidget):
         except Exception:
             startup["startup_delay_seconds"] = 0
             self.startup_delay_input.setText("0")
+        startup_apps = []
+        for i in range(self.startup_apps_list.count()):
+            item = self.startup_apps_list.item(i)
+            if item:
+                text = item.text().strip()
+                if text:
+                    startup_apps.append(text)
+        startup["startup_apps"] = startup_apps
         save_settings_state(self.settings_state)
         if hasattr(self, "startup_status"):
             self.startup_status.setText(
                 "Startup settings saved. They are stored for launch and restore workflows."
             )
+
+    def _add_startup_app(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Startup App/Command")
+        dialog.setMinimumWidth(400)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+        input_field = QLineEdit()
+        input_field.setPlaceholderText(
+            "e.g., firefox, ~/.config/autostart.sh, discord --start-minimized"
+        )
+        layout.addWidget(input_field)
+        buttons = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("secondaryButton")
+        cancel_btn.clicked.connect(dialog.reject)
+        add_btn = QPushButton("Add")
+        add_btn.setObjectName("primaryButton")
+        add_btn.clicked.connect(dialog.accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(add_btn)
+        layout.addLayout(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            text = input_field.text().strip()
+            if text:
+                item = QListWidgetItem(text)
+                self.startup_apps_list.addItem(item)
+
+    def _remove_startup_app(self) -> None:
+        current_row = self.startup_apps_list.currentRow()
+        if current_row >= 0:
+            self.startup_apps_list.takeItem(current_row)
 
     def _save_privacy_settings(self) -> None:
         privacy = self.settings_state.setdefault("privacy", {})
@@ -14945,10 +15081,60 @@ class SettingsWindow(QWidget):
             self.region_status.setText(f"Region settings saved for {locale_label}.")
 
     def _save_bar_settings(self) -> None:
-        self.settings_state["bar"] = merged_bar_settings(
-            self.settings_state.get("bar", {})
-        )
+        bar = merged_bar_settings(self.settings_state.get("bar", {}))
+        polybar_widgets = []
+        for i in range(self.polybar_widgets_list.count()):
+            item = self.polybar_widgets_list.item(i)
+            if item:
+                text = item.text().strip()
+                if text:
+                    polybar_widgets.append(text)
+        bar["polybar_widgets"] = polybar_widgets
+        self.settings_state["bar"] = bar
         save_settings_state(self.settings_state)
+
+    def _add_polybar_widget(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Polybar Widget")
+        dialog.setMinimumWidth(450)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("Widget name (e.g., my-weather)")
+        layout.addWidget(name_input)
+        command_input = QLineEdit()
+        command_input.setPlaceholderText(
+            "Command (e.g., ~/.config/polybar/scripts/weather.sh)"
+        )
+        layout.addWidget(command_input)
+        interval_input = QLineEdit()
+        interval_input.setPlaceholderText("Update interval in seconds (default: 30)")
+        layout.addWidget(interval_input)
+        buttons = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("secondaryButton")
+        cancel_btn.clicked.connect(dialog.reject)
+        add_btn = QPushButton("Add")
+        add_btn.setObjectName("primaryButton")
+        add_btn.clicked.connect(dialog.accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(add_btn)
+        layout.addLayout(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            name = name_input.text().strip()
+            command = command_input.text().strip()
+            interval = interval_input.text().strip() or "30"
+            if name and command:
+                widget_str = f"{name}|{command}|{interval}"
+                item = QListWidgetItem(widget_str)
+                self.polybar_widgets_list.addItem(item)
+                self._save_bar_settings()
+
+    def _remove_polybar_widget(self) -> None:
+        current_row = self.polybar_widgets_list.currentRow()
+        if current_row >= 0:
+            self.polybar_widgets_list.takeItem(current_row)
+            self._save_bar_settings()
 
     def _set_bar_launcher_offset(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["launcher_offset"] = int(value)
