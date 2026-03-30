@@ -145,6 +145,57 @@ class WifiNetwork:
 
 class WifiBackend:
     @staticmethod
+    def _run_nmcli(cmd: list[str], timeout: float = 10.0) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+    @staticmethod
+    def _connect_with_explicit_psk(ssid: str, password: str) -> tuple[bool, str]:
+        # Fixes incomplete Wi-Fi profiles that are missing wifi-sec.key-mgmt.
+        modify = WifiBackend._run_nmcli(
+            [
+                "nmcli",
+                "connection",
+                "modify",
+                ssid,
+                "wifi-sec.key-mgmt",
+                "wpa-psk",
+                "wifi-sec.psk",
+                password,
+            ]
+        )
+        if modify.returncode != 0:
+            WifiBackend._run_nmcli(
+                [
+                    "nmcli",
+                    "connection",
+                    "add",
+                    "type",
+                    "wifi",
+                    "ifname",
+                    "*",
+                    "con-name",
+                    ssid,
+                    "ssid",
+                    ssid,
+                    "wifi-sec.key-mgmt",
+                    "wpa-psk",
+                    "wifi-sec.psk",
+                    password,
+                ]
+            )
+
+        up = WifiBackend._run_nmcli(["nmcli", "connection", "up", "id", ssid])
+        if up.returncode == 0:
+            return True, up.stdout.strip() or f"Connected to {ssid}"
+        return False, up.stderr.strip() or up.stdout.strip() or "Connection failed."
+
+    @staticmethod
     def current_ssid() -> str:
         device_status = run_cmd(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"], timeout=4.0)
         for line in device_status.splitlines():
@@ -234,10 +285,17 @@ class WifiBackend:
         cmd = ["nmcli", "dev", "wifi", "connect", ssid]
         if password:
             cmd.extend(["password", password])
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = WifiBackend._run_nmcli(cmd)
         if result.returncode == 0:
             return True, result.stdout.strip() or f"Connected to {ssid}"
-        return False, result.stderr.strip() or result.stdout.strip() or "Connection failed."
+        error_text = result.stderr.strip() or result.stdout.strip() or "Connection failed."
+
+        # Some saved profiles are missing key management and need explicit PSK fields.
+        lowered = error_text.lower()
+        if password and "wireless-security" in lowered and "key-mgmt" in lowered:
+            return WifiBackend._connect_with_explicit_psk(ssid, password)
+
+        return False, error_text
 
     @staticmethod
     def disconnect() -> tuple[bool, str]:
