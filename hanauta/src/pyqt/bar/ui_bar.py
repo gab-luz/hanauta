@@ -1157,6 +1157,7 @@ class StatusNotifierItemButton(QPushButton):
         self.item_id = item_id
         self.bus = bus
         self._icon_tint_getter = icon_tint_getter
+        self._last_title = ""
         self.service, self.path = self._parse_item_id(item_id)
         self.iface = QDBusInterface(self.service, self.path, "org.kde.StatusNotifierItem", self.bus)
         self.setObjectName("trayButton")
@@ -1225,6 +1226,68 @@ class StatusNotifierItemButton(QPushButton):
         point = event.globalPosition().toPoint()
         return point.x(), point.y()
 
+    def _call_item_action(self, method: str, x: int, y: int) -> bool:
+        if not self.iface.isValid():
+            return False
+        try:
+            reply = self.iface.call(method, x, y)
+        except Exception:
+            return False
+        return reply.type() != QDBusMessage.MessageType.ErrorMessage
+
+    def _looks_like_zulucrypt(self) -> bool:
+        haystack = " ".join(
+            [
+                str(self.item_id or ""),
+                str(self.service or ""),
+                str(self._last_title or ""),
+                str(self.toolTip() or ""),
+            ]
+        ).strip().lower()
+        return "zulucrypt" in haystack or "zulu" in haystack
+
+    def _x11_right_click_fallback(self) -> bool:
+        if shutil.which("xdotool") is None:
+            return False
+        window_id = self._dbus_property("WindowId", 0)
+        try:
+            win = int(window_id or 0)
+        except Exception:
+            return False
+        if win <= 0:
+            return False
+        # Try a context-menu key first (non-intrusive), then a direct RMB click.
+        try:
+            key_result = subprocess.run(
+                ["xdotool", "key", "--window", str(win), "Menu"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if key_result.returncode == 0:
+                return True
+            click_result = subprocess.run(
+                ["xdotool", "mousemove", "--window", str(win), "6", "6", "click", "3"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            return click_result.returncode == 0
+        except Exception:
+            return False
+
+    def _dispatch_right_click(self, x: int, y: int) -> None:
+        handled = self._call_item_action("ContextMenu", x, y)
+        if not handled:
+            # Compatibility fallback for some legacy/bridged tray apps.
+            handled = self._call_item_action("ContextMenu", 0, 0)
+        if not handled:
+            handled = self._call_item_action("SecondaryActivate", x, y)
+        if not handled:
+            handled = self._call_item_action("Activate", x, y)
+        if not handled and self._looks_like_zulucrypt():
+            self._x11_right_click_fallback()
+
     @pyqtSlot()
     def refresh(self) -> None:
         tooltip = self._dbus_property("ToolTip", ("", [], "", ""))
@@ -1239,6 +1302,7 @@ class StatusNotifierItemButton(QPushButton):
             or (tooltip[0] if isinstance(tooltip, tuple) and len(tooltip) > 0 else "")
         )
         status = str(self._dbus_property("Status", "Active") or "Active")
+        self._last_title = str(title)
         self.setToolTip(str(title))
         icon = QIcon.fromTheme(str(icon_name))
         if icon.isNull():
@@ -1255,15 +1319,17 @@ class StatusNotifierItemButton(QPushButton):
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
         x, y = self._event_position(event)
         if event.button() == Qt.MouseButton.RightButton:
-            self.iface.call("ContextMenu", x, y)
+            self._dispatch_right_click(x, y)
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton:
-            self.iface.call("SecondaryActivate", x, y)
+            handled = self._call_item_action("SecondaryActivate", x, y)
+            if not handled:
+                self._call_item_action("Activate", x, y)
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton:
-            self.iface.call("Activate", x, y)
+            self._call_item_action("Activate", x, y)
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -2736,9 +2802,15 @@ class CyberBar(QWidget):
     def _create_status_overflow(self) -> None:
         if self._status_overflow_popup is not None:
             return
-        popup = QFrame(None, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        popup = QFrame(
+            None,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
         popup.setObjectName("statusOverflowPopup")
         popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        popup.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         shadow = QGraphicsDropShadowEffect(popup)
         shadow.setBlurRadius(26)
         shadow.setOffset(0, 10)
