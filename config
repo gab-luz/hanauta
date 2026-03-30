@@ -51,12 +51,12 @@ gaps top 5
 
 # Colors
 # format: client.<state> border background text indicator child_border
-client.focused          #84d2e7 #84d2e7 #dee3e5 #84d2e7 #84d2e7
-client.focused_inactive #899295 #899295 #dee3e5 #899295 #899295
-client.unfocused        #899295 #899295 #dee3e5 #899295 #899295
-client.urgent           #ffb4ab #ffb4ab #0f1416 #ffb4ab #ffb4ab
-client.placeholder      #899295 #899295 #dee3e5 #899295 #899295
-client.background       #0f1416
+client.focused          #8ad0ee #8ad0ee #dee3e6 #8ad0ee #8ad0ee
+client.focused_inactive #8a9296 #8a9296 #dee3e6 #8a9296 #8a9296
+client.unfocused        #8a9296 #8a9296 #dee3e6 #8a9296 #8a9296
+client.urgent           #ffb4ab #ffb4ab #0f1417 #ffb4ab #ffb4ab
+client.placeholder      #8a9296 #8a9296 #dee3e6 #8a9296 #8a9296
+client.background       #0f1417
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
