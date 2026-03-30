@@ -9778,6 +9778,190 @@ class SettingsWindow(QWidget):
         sanitized = sanitized.strip("-_")
         return sanitized or f"plugin_{int(time.time())}"
 
+    def _marketplace_show_overwrite_dialog(
+        self, plugin_id: str, target_dir: Path, *, allow_update: bool
+    ) -> str:
+        dialog = QDialog(self)
+        dialog.setObjectName("pluginOverwriteDialog")
+        dialog.setWindowTitle("Plugin Already Installed")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(560)
+        dialog.setStyleSheet(
+            """
+            QDialog#pluginOverwriteDialog {
+                background-color: rgba(14, 18, 26, 0.98);
+                border: 1px solid rgba(145, 160, 185, 0.34);
+                border-radius: 14px;
+            }
+            QDialog#pluginOverwriteDialog QLabel {
+                color: rgba(246, 235, 247, 0.90);
+            }
+            QDialog#pluginOverwriteDialog QFrame#overwriteCard {
+                background-color: rgba(26, 32, 43, 0.94);
+                border: 1px solid rgba(145, 160, 185, 0.30);
+                border-radius: 12px;
+            }
+            QDialog#pluginOverwriteDialog QPushButton#overwriteCancelButton {
+                background-color: rgba(96, 112, 136, 0.42);
+                color: rgba(246, 235, 247, 0.98);
+                border: 1px solid rgba(196, 208, 228, 0.62);
+                border-radius: 10px;
+                padding: 8px 14px;
+                min-width: 90px;
+            }
+            QDialog#pluginOverwriteDialog QPushButton#overwriteCancelButton:hover {
+                background-color: rgba(110, 126, 150, 0.56);
+            }
+            """
+        )
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel(f"{plugin_id} already exists")
+        title.setFont(QFont(self.display_font, 12, QFont.Weight.DemiBold))
+        layout.addWidget(title)
+
+        body = QLabel(
+            (
+                f"Current location:\n{target_dir}\n\n"
+                "Choose how to continue with this extension."
+            )
+        )
+        body.setWordWrap(True)
+        body.setStyleSheet("color: rgba(246,235,247,0.74);")
+        layout.addWidget(body)
+
+        card = QFrame()
+        card.setObjectName("overwriteCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(6)
+        if allow_update:
+            mode_text = (
+                "Overwrite: delete and reinstall from scratch.\n"
+                "Update: keep files and run git pull --ff-only."
+            )
+        else:
+            mode_text = "Overwrite: replace the existing extension with the ZIP package."
+        hint = QLabel(mode_text)
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: rgba(246,235,247,0.80);")
+        card_layout.addWidget(hint)
+        layout.addWidget(card)
+
+        choice = {"mode": "cancel"}
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("overwriteCancelButton")
+        actions.addWidget(cancel_btn)
+        if allow_update:
+            update_btn = QPushButton("Update")
+            update_btn.setObjectName("secondaryButton")
+            actions.addWidget(update_btn)
+        overwrite_btn = QPushButton("Overwrite")
+        overwrite_btn.setObjectName("primaryButton")
+        actions.addWidget(overwrite_btn)
+        layout.addLayout(actions)
+
+        cancel_btn.clicked.connect(dialog.reject)
+        if allow_update:
+            update_btn.clicked.connect(
+                lambda: (choice.__setitem__("mode", "update"), dialog.accept())
+            )
+        overwrite_btn.clicked.connect(
+            lambda: (choice.__setitem__("mode", "overwrite"), dialog.accept())
+        )
+
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return "cancel"
+        return str(choice.get("mode", "cancel"))
+
+    def _marketplace_show_install_result_dialog(
+        self, plugin_label: str, success: bool, detail: str
+    ) -> None:
+        box = QMessageBox(self)
+        box.setObjectName("pluginInstallResultDialog")
+        box.setWindowTitle(
+            "Extension Installation Successful"
+            if success
+            else "Extension Installation Failed"
+        )
+        box.setIcon(
+            QMessageBox.Icon.Information if success else QMessageBox.Icon.Warning
+        )
+        box.setText(plugin_label)
+        box.setInformativeText(detail)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setStyleSheet(
+            """
+            QMessageBox#pluginInstallResultDialog {
+                background-color: rgba(14, 18, 26, 0.98);
+            }
+            QMessageBox#pluginInstallResultDialog QLabel {
+                color: rgba(246, 235, 247, 0.90);
+                min-width: 360px;
+            }
+            QMessageBox#pluginInstallResultDialog QPushButton {
+                min-height: 34px;
+                min-width: 90px;
+                border-radius: 10px;
+                padding: 0 12px;
+                background: rgba(74, 110, 245, 0.78);
+                color: rgba(247, 247, 255, 0.98);
+                border: 1px solid rgba(164, 186, 255, 0.72);
+            }
+            QMessageBox#pluginInstallResultDialog QPushButton:hover {
+                background: rgba(93, 127, 255, 0.86);
+            }
+            """
+        )
+        box.exec()
+
+    def _marketplace_enable_plugin_services(self, plugin_dir: Path) -> list[str]:
+        entrypoint = plugin_dir / PLUGIN_ENTRYPOINT
+        if not entrypoint.exists():
+            return []
+        try:
+            module_name = f"hanauta_plugin_install_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
+            spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
+            if spec is None or spec.loader is None:
+                return []
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            register = getattr(module, "register_hanauta_plugin", None)
+            if not callable(register):
+                return []
+            payload = register()
+        except Exception:
+            return []
+        if not isinstance(payload, dict):
+            return []
+        sections = payload.get("service_sections", [])
+        if not isinstance(sections, list):
+            return []
+        services_state = self.settings_state.setdefault("services", {})
+        if not isinstance(services_state, dict):
+            services_state = {}
+            self.settings_state["services"] = services_state
+        enabled_keys: list[str] = []
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            key = str(section.get("key", "")).strip()
+            if not key:
+                continue
+            service = services_state.get(key, {})
+            if not isinstance(service, dict):
+                service = {}
+            service["enabled"] = True
+            if "show_in_notification_center" not in service:
+                service["show_in_notification_center"] = False
+            services_state[key] = service
+            enabled_keys.append(key)
+        return sorted(set(enabled_keys))
+
     def _marketplace_install_selected(self) -> None:
         item = self.marketplace_plugin_list.currentItem()
         if item is None:
@@ -9830,34 +10014,35 @@ class SettingsWindow(QWidget):
         target_dir = install_root / plugin_id
         install_mode = "clone"
         if target_dir.exists():
-            answer = QMessageBox.question(
-                self,
-                "Plugin Already Installed",
-                (
-                    f"{plugin_id} already exists at:\n{target_dir}\n\n"
-                    "Select Yes to overwrite with a clean reinstall, or No to keep files and run a git update."
-                ),
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.No
-                | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.No,
+            install_mode = self._marketplace_show_overwrite_dialog(
+                plugin_id, target_dir, allow_update=True
             )
-            if answer == QMessageBox.StandardButton.Cancel:
+            if install_mode == "cancel":
                 self.marketplace_status.setText(
                     f"Installation cancelled for {plugin_id}."
                 )
                 return
-            if answer == QMessageBox.StandardButton.Yes:
+            if install_mode == "overwrite":
                 try:
                     shutil.rmtree(target_dir)
                 except Exception as exc:
                     self.marketplace_status.setText(
                         f"Cannot overwrite {plugin_id}: {exc}"
                     )
+                    self._marketplace_show_install_result_dialog(
+                        f"{plugin.get('name', plugin_id)} ({plugin_id})",
+                        False,
+                        f"Could not overwrite the existing extension folder.\n\n{exc}",
+                    )
                     return
                 install_mode = "clone"
-            else:
+            elif install_mode == "update":
                 install_mode = "update"
+            else:
+                self.marketplace_status.setText(
+                    f"Installation cancelled for {plugin_id}."
+                )
+                return
 
         try:
             if install_mode == "update" and (target_dir / ".git").exists():
@@ -9893,12 +10078,22 @@ class SettingsWindow(QWidget):
                 )
         except Exception as exc:
             self.marketplace_status.setText(f"Failed to install {plugin_id}: {exc}")
+            self._marketplace_show_install_result_dialog(
+                f"{plugin.get('name', plugin_id)} ({plugin_id})",
+                False,
+                f"Install failed while running git.\n\n{exc}",
+            )
             return
 
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             self.marketplace_status.setText(
                 f"Install failed for {plugin_id}: {stderr or 'git returned an error.'}"
+            )
+            self._marketplace_show_install_result_dialog(
+                f"{plugin.get('name', plugin_id)} ({plugin_id})",
+                False,
+                stderr or "Git returned an error while installing/updating the extension.",
             )
             return
 
@@ -9931,9 +10126,31 @@ class SettingsWindow(QWidget):
         installed.append(record)
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
+        enabled_keys = self._marketplace_enable_plugin_services(target_dir)
+        post_install_ok = self._run_plugin_post_install_steps(plugin, target_dir)
         save_settings_state(self.settings_state)
-        self.marketplace_status.setText(f"Installed {plugin_id} into {target_dir}.")
-        self._run_plugin_post_install_steps(plugin, target_dir)
+        if post_install_ok:
+            status = f"Installed {plugin_id} into {target_dir}."
+            if enabled_keys:
+                status += f" Enabled: {', '.join(enabled_keys)}."
+            self.marketplace_status.setText(status)
+            self._marketplace_show_install_result_dialog(
+                f"{plugin.get('name', plugin_id)} ({plugin_id})",
+                True,
+                status,
+            )
+        else:
+            status = (
+                f"Installed {plugin_id}, but post-install setup was cancelled or failed."
+            )
+            if enabled_keys:
+                status += f" Service enablement applied: {', '.join(enabled_keys)}."
+            self.marketplace_status.setText(status)
+            self._marketplace_show_install_result_dialog(
+                f"{plugin.get('name', plugin_id)} ({plugin_id})",
+                False,
+                status,
+            )
 
     def _marketplace_install_zip(self) -> None:
         install_root = Path(
@@ -9983,14 +10200,10 @@ class SettingsWindow(QWidget):
                 if plugin_manifest_path.exists():
                     plugin_meta["entrypoint"] = "hanauta_plugin.py"
                 if target_dir.exists():
-                    answer = QMessageBox.question(
-                        self,
-                        "Replace Existing Plugin",
-                        f"{plugin_id} already exists at:\n{target_dir}\n\nReplace it with this ZIP package?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        QMessageBox.StandardButton.No,
+                    decision = self._marketplace_show_overwrite_dialog(
+                        plugin_id, target_dir, allow_update=False
                     )
-                    if answer != QMessageBox.StandardButton.Yes:
+                    if decision != "overwrite":
                         self.marketplace_status.setText(
                             f"ZIP install cancelled for {plugin_id}."
                         )
@@ -10001,9 +10214,19 @@ class SettingsWindow(QWidget):
             self.marketplace_status.setText(
                 "The selected file is not a valid ZIP archive."
             )
+            self._marketplace_show_install_result_dialog(
+                archive_path.name,
+                False,
+                "The selected extension file is not a valid ZIP archive.",
+            )
             return
         except Exception as exc:
             self.marketplace_status.setText(f"ZIP install failed: {exc}")
+            self._marketplace_show_install_result_dialog(
+                archive_path.name,
+                False,
+                f"ZIP install failed.\n\n{exc}",
+            )
             return
 
         marketplace = self.settings_state.setdefault("marketplace", {})
@@ -10032,11 +10255,31 @@ class SettingsWindow(QWidget):
         installed.append(record)
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
+        enabled_keys = self._marketplace_enable_plugin_services(target_dir)
+        post_install_ok = self._run_plugin_post_install_steps(plugin_meta, target_dir)
         save_settings_state(self.settings_state)
-        self.marketplace_status.setText(
-            f"Installed ZIP plugin {plugin_id} into {target_dir}."
-        )
-        self._run_plugin_post_install_steps(plugin_meta, target_dir)
+        if post_install_ok:
+            status = f"Installed ZIP plugin {plugin_id} into {target_dir}."
+            if enabled_keys:
+                status += f" Enabled: {', '.join(enabled_keys)}."
+            self.marketplace_status.setText(status)
+            self._marketplace_show_install_result_dialog(
+                f"{plugin_id} (ZIP)",
+                True,
+                status,
+            )
+        else:
+            status = (
+                f"Installed ZIP plugin {plugin_id}, but post-install setup was cancelled or failed."
+            )
+            if enabled_keys:
+                status += f" Service enablement applied: {', '.join(enabled_keys)}."
+            self.marketplace_status.setText(status)
+            self._marketplace_show_install_result_dialog(
+                f"{plugin_id} (ZIP)",
+                False,
+                status,
+            )
 
     def _marketplace_open_install_dir(self) -> None:
         install_dir = Path(
