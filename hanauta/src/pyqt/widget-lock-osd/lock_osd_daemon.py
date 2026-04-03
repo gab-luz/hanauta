@@ -58,12 +58,17 @@ def parse_lock_states(raw: str) -> tuple[bool | None, bool | None]:
     return caps, num
 
 
-def load_lock_osd_position() -> str:
+def load_lock_osd_settings() -> tuple[bool, str]:
     try:
         payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except Exception:
         payload = {}
     notifications = payload.get("notifications", {}) if isinstance(payload, dict) else {}
+    enabled = (
+        bool(notifications.get("lock_osd_enabled", True))
+        if isinstance(notifications, dict)
+        else True
+    )
     value = (
         str(notifications.get("lock_osd_position", "bottom_center")).strip()
         if isinstance(notifications, dict)
@@ -80,7 +85,8 @@ def load_lock_osd_position() -> str:
         "bottom_center",
         "bottom_right",
     }
-    return value if value in allowed else "bottom_center"
+    position = value if value in allowed else "bottom_center"
+    return enabled, position
 
 
 def load_fonts() -> tuple[str, str]:
@@ -202,6 +208,9 @@ class LockOsd(QWidget):
         )
 
     def show_state(self, key: str, enabled: bool) -> None:
+        lock_osd_enabled, position = load_lock_osd_settings()
+        if not lock_osd_enabled:
+            return
         if key == "caps":
             self.icon_label.setText(MATERIAL_ICONS["keyboard_capslock"])
             self.title_label.setText("Caps Lock")
@@ -215,7 +224,6 @@ class LockOsd(QWidget):
         if screen is not None:
             geo = screen.availableGeometry()
             margin = 24
-            position = load_lock_osd_position()
             if position.endswith("left"):
                 x = geo.x() + margin
             elif position.endswith("right"):
