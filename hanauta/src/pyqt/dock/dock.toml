@@ -20,7 +20,9 @@ apps = [
 
 [blacklist]
 wm_class = [
-  "Plank Eww *polybar* *conky* *deadd* *screenkey* *ukui* *xfce4-power-manager* *notification_center* *stalonetray* *hanauta-notifyd*"
+  "Plank Eww *polybar* *conky* *deadd* *screenkey* *ukui* *xfce4-power-manager* *notification_center* *stalonetray* *hanauta-notifyd*",
+  "*hanauta-notifyd*",
+  "*HanautaNotification*"
 ]
 
 desktop_id = [
@@ -40,6 +42,7 @@ window_name = [
   "Hanauta Launcher",
   "Hanauta Desktop Clock",
   "hanauta-notifyd",
+  "Hanauta Notification *",
   "Hanauta AI",
   "Hanauta Notification 3",
   "Hanauta Notification 2",
