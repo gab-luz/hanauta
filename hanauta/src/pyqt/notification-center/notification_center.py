@@ -72,14 +72,24 @@ HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
-WIFI_NOTIFICATION_ICON = (
-    "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg"
+def _preferred_icon_path(asset_name: str, system_path: str) -> str:
+    local_icon = ASSETS_DIR / asset_name
+    if local_icon.exists():
+        return str(local_icon)
+    return system_path
+
+
+WIFI_NOTIFICATION_ICON = _preferred_icon_path(
+    "network-wireless-connected-100.svg",
+    "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg",
 )
-BLUETOOTH_NOTIFICATION_ICON = (
-    "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg"
+BLUETOOTH_NOTIFICATION_ICON = _preferred_icon_path(
+    "bluetooth-active.svg",
+    "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg",
 )
-AIRPLANE_NOTIFICATION_ICON = (
-    "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg"
+AIRPLANE_NOTIFICATION_ICON = _preferred_icon_path(
+    "airplane-mode-on.svg",
+    "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg",
 )
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
