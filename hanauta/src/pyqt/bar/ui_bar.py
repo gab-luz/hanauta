@@ -5818,6 +5818,7 @@ class CyberBar(QWidget):
         *,
         python_bin: Optional[str] = None,
         extra_env: Optional[dict[str, str]] = None,
+        cleanup_patterns: bool = True,
     ) -> bool:
         if (
             not script_path.exists()
@@ -5825,7 +5826,13 @@ class CyberBar(QWidget):
         ):
             setattr(self, attr_name, None)
             return False
-        self._terminate_singleton_process(attr_name, script_path)
+        process = getattr(self, attr_name, None)
+        if process is not None and process.poll() is None:
+            self._terminate_singleton_process(attr_name, script_path)
+        elif cleanup_patterns:
+            self._terminate_singleton_process(attr_name, script_path)
+        else:
+            setattr(self, attr_name, None)
         try:
             if script_path.suffix == ".py":
                 if python_bin is not None:
@@ -5862,12 +5869,17 @@ class CyberBar(QWidget):
         *,
         python_bin: Optional[str] = None,
         extra_env: Optional[dict[str, str]] = None,
+        cleanup_patterns: bool = True,
     ) -> bool:
         if self._singleton_active(getattr(self, attr_name, None), script_path):
             self._terminate_singleton_process(attr_name, script_path)
             return False
         return self._launch_singleton_process(
-            attr_name, script_path, python_bin=python_bin, extra_env=extra_env
+            attr_name,
+            script_path,
+            python_bin=python_bin,
+            extra_env=extra_env,
+            cleanup_patterns=cleanup_patterns,
         )
 
     def _toggle_weather_popup(self) -> None:
@@ -5903,7 +5915,10 @@ class CyberBar(QWidget):
             self.ai_button.setChecked(False)
             return
         active = self._toggle_singleton_process(
-            "_ai_popup_process", AI_POPUP, python_bin=self._python_bin()
+            "_ai_popup_process",
+            AI_POPUP,
+            python_bin=self._python_bin(),
+            cleanup_patterns=False,
         )
         self.ai_button.setChecked(active)
 

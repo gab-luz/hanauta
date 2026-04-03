@@ -198,6 +198,17 @@ def _load_category_icon_pixmap(category_key: str, fallback_icon_key: str, size: 
     return None
 
 
+def _load_launcher_icon_pixmap(icon_key: str, size: int) -> QPixmap | None:
+    candidate = LAUNCHER_ICON_DIR / f"{icon_key}.svg"
+    if not candidate.is_file():
+        return None
+    icon = QIcon(str(candidate))
+    if icon.isNull():
+        return None
+    pix = icon.pixmap(size, size)
+    return pix if not pix.isNull() else None
+
+
 def _svg_fallback_pixmap(app: DesktopApp, size: int, theme=None, use_matugen: bool = False) -> QPixmap | None:
     category = app_category_key(app)
     icon_key = FALLBACK_CATEGORY_ICON.get(category, "apps")
@@ -728,8 +739,10 @@ class LauncherWindow(QWidget):
         sidebar_layout.setSpacing(8)
 
         brand = QHBoxLayout()
-        self.brand_icon = QLabel(material_icon("apps"))
+        self.brand_icon = QLabel("")
         self.brand_icon.setObjectName("brandIcon")
+        self.brand_icon.setFixedSize(22, 22)
+        self.brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.brand_icon.setFont(QFont(self.material_font, 20))
         self.brand_label = QLabel("Hanauta Launcher")
         self.brand_label.setObjectName("brandLabel")
@@ -766,8 +779,10 @@ class LauncherWindow(QWidget):
         search_layout = QHBoxLayout(search_wrap)
         search_layout.setContentsMargins(14, 10, 14, 10)
         search_layout.setSpacing(10)
-        self.search_icon = QLabel(material_icon("search"))
+        self.search_icon = QLabel("")
         self.search_icon.setObjectName("searchIcon")
+        self.search_icon.setFixedSize(22, 22)
+        self.search_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.search_icon.setFont(QFont(self.material_font, 20))
         self.search_input = SearchLineEdit()
         self.search_input.setPlaceholderText("Type to search applications…")
@@ -806,6 +821,33 @@ class LauncherWindow(QWidget):
 
         shell.addWidget(main, 1)
         self._apply_styles()
+        self._refresh_header_icons()
+
+    def _refresh_header_icons(self) -> None:
+        if self.use_matugen:
+            icon_color = QColor(self.theme.primary)
+        else:
+            icon_color = QColor("#d0bcff")
+
+        brand_pix = _load_launcher_icon_pixmap("apps", 20)
+        if brand_pix is not None:
+            self.brand_icon.setPixmap(_tint_pixmap(brand_pix, icon_color))
+            self.brand_icon.setText("")
+            self.brand_icon.setStyleSheet("background: transparent;")
+        else:
+            self.brand_icon.setPixmap(QPixmap())
+            self.brand_icon.setText(material_icon("apps"))
+            self.brand_icon.setStyleSheet(f"color: {icon_color.name()};")
+
+        search_pix = _load_launcher_icon_pixmap("search", 20)
+        if search_pix is not None:
+            self.search_icon.setPixmap(_tint_pixmap(search_pix, icon_color))
+            self.search_icon.setText("")
+            self.search_icon.setStyleSheet("background: transparent;")
+        else:
+            self.search_icon.setPixmap(QPixmap())
+            self.search_icon.setText(material_icon("search"))
+            self.search_icon.setStyleSheet(f"color: {icon_color.name()};")
 
     def _apply_shadow(self) -> None:
         shadow = QGraphicsDropShadowEffect(self)
@@ -971,6 +1013,7 @@ class LauncherWindow(QWidget):
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
         self._apply_styles()
+        self._refresh_header_icons()
         for button in self.category_buttons.values():
             button.update_theme(self.theme, self.use_matugen)
         self._render_results()
