@@ -177,6 +177,7 @@ PY
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_thumbnail_service.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-home-assistant/home_assistant_icon_prefetch.py" 2>/dev/null || true
+  pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-lock-osd/lock_osd_daemon.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" 2>/dev/null || true
   pkill -x volnoti 2>/dev/null || true
   pkill -x dunst 2>/dev/null || true
@@ -219,6 +220,7 @@ PY
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_provider_daemon.py" >/tmp/hanauta-wallpaper-provider.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_thumbnail_service.py" >/tmp/hanauta-wallpaper-thumbnails.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-home-assistant/home_assistant_icon_prefetch.py" >/tmp/hanauta-ha-icon-prefetch.log 2>&1 &
+  "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-lock-osd/lock_osd_daemon.py" >/tmp/hanauta-lock-osd.log 2>&1 &
   if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" ]; then
     "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" >/tmp/hanauta-wallcache.log 2>&1 &
   fi

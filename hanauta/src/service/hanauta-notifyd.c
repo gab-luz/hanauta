@@ -22,6 +22,10 @@ typedef struct {
     guint id;
     gchar *app_name;
     gchar *app_icon;
+    gchar *desktop_entry;
+    gchar *image_path;
+    GdkPixbuf *image_pixbuf;
+    guint sender_pid;
     gchar *summary;
     gchar *body;
     gint expire_timeout;
@@ -53,6 +57,8 @@ typedef struct {
 } NotifyDaemon;
 
 static NotifyDaemon g_daemon = {0};
+
+static gchar *settings_file_path(void);
 
 typedef struct {
     gboolean use_matugen;
@@ -207,6 +213,51 @@ static gboolean json_bool_value(const gchar *json, const gchar *key, gboolean fa
     return result;
 }
 
+static gint json_int_value(const gchar *json, const gchar *key, gint fallback) {
+    gchar *pattern = g_strdup_printf("\"%s\"", key);
+    const gchar *found = g_strstr_len(json, -1, pattern);
+    const gchar *cursor = NULL;
+    gchar *endptr = NULL;
+    long parsed = 0;
+    g_free(pattern);
+    if (found == NULL) {
+        return fallback;
+    }
+    cursor = strchr(found, ':');
+    if (cursor == NULL) {
+        return fallback;
+    }
+    cursor += 1;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor += 1;
+    }
+    parsed = strtol(cursor, &endptr, 10);
+    if (endptr == cursor || parsed < G_MININT || parsed > G_MAXINT) {
+        return fallback;
+    }
+    return (gint)parsed;
+}
+
+static gint load_default_notification_duration_ms(void) {
+    gchar *path = settings_file_path();
+    gchar *contents = NULL;
+    gint value = 10000;
+    if (!g_file_get_contents(path, &contents, NULL, NULL) || contents == NULL) {
+        g_free(path);
+        g_free(contents);
+        return 10000;
+    }
+    value = json_int_value(contents, "default_duration_ms", 10000);
+    if (value < 2000) {
+        value = 2000;
+    } else if (value > 120000) {
+        value = 120000;
+    }
+    g_free(path);
+    g_free(contents);
+    return value;
+}
+
 static gchar *hex_to_rgba(const gchar *hex, gdouble alpha) {
     guint red = 0;
     guint green = 0;
@@ -292,6 +343,10 @@ static gchar *notification_rules_file_path(void) {
     return g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-rules.ini", NULL);
 }
 
+static gchar *settings_file_path(void) {
+    return g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-center", "settings.json", NULL);
+}
+
 static gchar *control_file_path(void) {
     gchar *dir = state_dir_path();
     gchar *path = g_build_filename(dir, "control.json", NULL);
@@ -308,6 +363,13 @@ static gchar *toast_override_file_path(void) {
 
 static gchar *toast_default_file_path(void) {
     return g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "hanauta-notifyd.css", NULL);
+}
+
+static gchar *app_aliases_file_path(void) {
+    gchar *dir = state_dir_path();
+    gchar *path = g_build_filename(dir, "app-aliases.toon", NULL);
+    g_free(dir);
+    return path;
 }
 
 static void ensure_state_dir(void) {
@@ -361,12 +423,85 @@ static void payload_free(NotificationPayload *payload) {
     }
     g_free(payload->app_name);
     g_free(payload->app_icon);
+    g_free(payload->desktop_entry);
+    g_free(payload->image_path);
+    if (payload->image_pixbuf != NULL) {
+        g_object_unref(payload->image_pixbuf);
+    }
     g_free(payload->summary);
     g_free(payload->body);
     if (payload->actions != NULL) {
         g_ptr_array_free(payload->actions, TRUE);
     }
     g_free(payload);
+}
+
+static void pixbuf_pixels_destroy(guchar *pixels, gpointer data) {
+    (void)data;
+    g_free(pixels);
+}
+
+static GdkPixbuf *pixbuf_from_image_data_variant(GVariant *variant) {
+    gint32 width = 0;
+    gint32 height = 0;
+    gint32 rowstride = 0;
+    gboolean has_alpha = FALSE;
+    gint32 bits_per_sample = 0;
+    gint32 channels = 0;
+    GVariant *bytes_variant = NULL;
+    gconstpointer raw = NULL;
+    gsize data_len = 0;
+    guchar *pixels = NULL;
+    GdkPixbuf *pixbuf = NULL;
+
+    if (variant == NULL || !g_variant_is_of_type(variant, G_VARIANT_TYPE("(iiibiiay)"))) {
+        return NULL;
+    }
+
+    g_variant_get(
+        variant,
+        "(iiibii@ay)",
+        &width,
+        &height,
+        &rowstride,
+        &has_alpha,
+        &bits_per_sample,
+        &channels,
+        &bytes_variant
+    );
+    if (bytes_variant == NULL) {
+        return NULL;
+    }
+    raw = g_variant_get_fixed_array(bytes_variant, &data_len, sizeof(guchar));
+    if (raw == NULL || data_len == 0 || width <= 0 || height <= 0 || rowstride <= 0) {
+        g_variant_unref(bytes_variant);
+        return NULL;
+    }
+    if (!(channels == 3 || channels == 4)) {
+        g_variant_unref(bytes_variant);
+        return NULL;
+    }
+    if (bits_per_sample != 8) {
+        g_variant_unref(bytes_variant);
+        return NULL;
+    }
+    pixels = g_memdup2(raw, data_len);
+    pixbuf = gdk_pixbuf_new_from_data(
+        pixels,
+        GDK_COLORSPACE_RGB,
+        has_alpha,
+        bits_per_sample,
+        width,
+        height,
+        rowstride,
+        pixbuf_pixels_destroy,
+        NULL
+    );
+    if (pixbuf == NULL) {
+        g_free(pixels);
+    }
+    g_variant_unref(bytes_variant);
+    return pixbuf;
 }
 
 static void history_entry_free(gpointer data) {
@@ -637,6 +772,123 @@ static gboolean csv_text_matches(const gchar *text, const gchar *csv) {
     return matched;
 }
 
+static gboolean csv_exact_ci_match(const gchar *text, const gchar *csv) {
+    gchar **parts = NULL;
+    gboolean matched = FALSE;
+    if (text == NULL || *text == '\0' || csv == NULL || *csv == '\0') {
+        return FALSE;
+    }
+    parts = g_strsplit(csv, ",", -1);
+    for (guint i = 0; parts[i] != NULL; ++i) {
+        gchar *trimmed = g_strstrip(parts[i]);
+        if (*trimmed == '\0') {
+            continue;
+        }
+        if (g_ascii_strcasecmp(trimmed, text) == 0) {
+            matched = TRUE;
+            break;
+        }
+    }
+    g_strfreev(parts);
+    return matched;
+}
+
+static void ensure_app_aliases_file(void) {
+    gchar *path = app_aliases_file_path();
+    static const gchar *template_text =
+        "# Hanauta notification aliases (.toon)\n"
+        "#\n"
+        "# Each section maps noisy app IDs into friendly titles/icons.\n"
+        "#\n"
+        "# Match keys (comma-separated):\n"
+        "#   app_names        = raw DBus app_name values\n"
+        "#   desktop_entries  = desktop-entry hint values\n"
+        "#   contains         = case-insensitive substrings against app_name\n"
+        "#\n"
+        "# Output keys:\n"
+        "#   title = display title for toast/history\n"
+        "#   icon  = icon name OR absolute path (.png/.svg/.gif/.webp)\n"
+        "#          Animated images are supported when the decoder supports it.\n"
+        "#\n"
+        "[youtube_music]\n"
+        "app_names = com.github.th_ch.youtube_music\n"
+        "desktop_entries = youtube-music\n"
+        "contains = youtube_music,youtube-music\n"
+        "title = YouTube Music\n"
+        "# icon = /home/you/.local/share/icons/youtube-music.gif\n";
+    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+        ensure_state_dir();
+        g_file_set_contents(path, template_text, -1, NULL);
+    }
+    g_free(path);
+}
+
+static void apply_app_aliases(NotificationPayload *payload) {
+    gchar *path = NULL;
+    GKeyFile *key_file = NULL;
+    gsize group_count = 0;
+    gchar **groups = NULL;
+    if (payload == NULL) {
+        return;
+    }
+    ensure_app_aliases_file();
+    path = app_aliases_file_path();
+    key_file = g_key_file_new();
+    if (!g_key_file_load_from_file(key_file, path, G_KEY_FILE_NONE, NULL)) {
+        g_key_file_free(key_file);
+        g_free(path);
+        return;
+    }
+
+    groups = g_key_file_get_groups(key_file, &group_count);
+    for (gsize i = 0; i < group_count; ++i) {
+        const gchar *group = groups[i];
+        gchar *app_names = g_key_file_get_string(key_file, group, "app_names", NULL);
+        gchar *desktop_entries = g_key_file_get_string(key_file, group, "desktop_entries", NULL);
+        gchar *contains = g_key_file_get_string(key_file, group, "contains", NULL);
+        gchar *title = g_key_file_get_string(key_file, group, "title", NULL);
+        gchar *icon = g_key_file_get_string(key_file, group, "icon", NULL);
+        gboolean matched = FALSE;
+
+        if (app_names != NULL && *app_names != '\0' && csv_exact_ci_match(payload->app_name, app_names)) {
+            matched = TRUE;
+        }
+        if (!matched && desktop_entries != NULL && *desktop_entries != '\0' &&
+            csv_exact_ci_match(payload->desktop_entry, desktop_entries)) {
+            matched = TRUE;
+        }
+        if (!matched && contains != NULL && *contains != '\0' &&
+            csv_text_matches(payload->app_name, contains)) {
+            matched = TRUE;
+        }
+
+        if (matched) {
+            if (title != NULL && *title != '\0') {
+                g_free(payload->app_name);
+                payload->app_name = g_strdup(title);
+            }
+            if (icon != NULL && *icon != '\0') {
+                g_free(payload->app_icon);
+                payload->app_icon = g_strdup(icon);
+            }
+            g_free(app_names);
+            g_free(desktop_entries);
+            g_free(contains);
+            g_free(title);
+            g_free(icon);
+            break;
+        }
+        g_free(app_names);
+        g_free(desktop_entries);
+        g_free(contains);
+        g_free(title);
+        g_free(icon);
+    }
+    g_strfreev(groups);
+    g_key_file_free(key_file);
+    g_free(path);
+}
+
 static gboolean process_list_match(const gchar *csv) {
     gchar **parts = NULL;
     gboolean matched = FALSE;
@@ -787,16 +1039,17 @@ static void save_history(void) {
     g_free(path);
 }
 
-static void execute_action_entry(const ActionEntry *entry) {
+static gboolean execute_action_entry(const ActionEntry *entry) {
     if (entry == NULL || entry->action == NULL || *entry->action == '\0') {
-        return;
+        return FALSE;
     }
     if (g_strcmp0(entry->action, "view") == 0) {
         if (entry->url != NULL && *entry->url != '\0') {
             const gchar *argv[] = {"xdg-open", entry->url, NULL};
             g_spawn_async(NULL, (gchar **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+            return TRUE;
         }
-        return;
+        return FALSE;
     }
     if (g_strcmp0(entry->action, "http") == 0) {
         if (entry->url != NULL && *entry->url != '\0') {
@@ -813,8 +1066,9 @@ static void execute_action_entry(const ActionEntry *entry) {
                 NULL,
                 NULL
             );
+            return TRUE;
         }
-        return;
+        return FALSE;
     }
     if (g_strcmp0(entry->action, "copy") == 0) {
         const gchar *value = entry->value != NULL ? entry->value : "";
@@ -823,8 +1077,147 @@ static void execute_action_entry(const ActionEntry *entry) {
         gtk_clipboard_set_text(clipboard, value, -1);
         gtk_clipboard_store(clipboard);
         gtk_clipboard_set_text(primary, value, -1);
-        return;
+        return TRUE;
     }
+    return FALSE;
+}
+
+static gboolean str_eq_ci(const gchar *left, const gchar *right) {
+    if (left == NULL || right == NULL) {
+        return FALSE;
+    }
+    return g_ascii_strcasecmp(left, right) == 0;
+}
+
+static gboolean action_looks_like_view(const gchar *key, const gchar *label) {
+    if (str_eq_ci(key, "default") || str_eq_ci(key, "view") || str_eq_ci(key, "open")) {
+        return TRUE;
+    }
+    if (label == NULL || *label == '\0') {
+        return FALSE;
+    }
+    return str_eq_ci(label, "view") || str_eq_ci(label, "open") || str_eq_ci(label, "show");
+}
+
+static gboolean i3_focus_criteria(const gchar *criteria) {
+    const gchar *argv[] = {"i3-msg", criteria, NULL};
+    gchar *stdout_data = NULL;
+    gchar *stderr_data = NULL;
+    gint exit_status = 1;
+    gboolean focused = FALSE;
+    if (criteria == NULL || *criteria == '\0') {
+        return FALSE;
+    }
+    if (g_spawn_sync(
+            NULL,
+            (gchar **)argv,
+            NULL,
+            G_SPAWN_SEARCH_PATH,
+            NULL,
+            NULL,
+            &stdout_data,
+            &stderr_data,
+            &exit_status,
+            NULL
+        )) {
+        if (exit_status == 0 && stdout_data != NULL && g_strstr_len(stdout_data, -1, "\"success\":true") != NULL) {
+            focused = TRUE;
+        }
+    }
+    g_free(stdout_data);
+    g_free(stderr_data);
+    return focused;
+}
+
+static gchar *criteria_fragment_from_text(const gchar *text) {
+    GString *fragment = NULL;
+    const gchar *cursor = NULL;
+    if (text == NULL || *text == '\0') {
+        return g_strdup("");
+    }
+    fragment = g_string_new("");
+    for (cursor = text; *cursor != '\0'; ++cursor) {
+        gchar ch = *cursor;
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) {
+            g_string_append_c(fragment, ch);
+        } else if (ch == ' ' || ch == '-' || ch == '_' || ch == '.') {
+            g_string_append(fragment, ".*");
+        }
+    }
+    if (fragment->len == 0) {
+        g_string_assign(fragment, ".*");
+    }
+    return g_string_free(fragment, FALSE);
+}
+
+static gboolean activate_notification_source(guint sender_pid, const gchar *desktop_entry, const gchar *app_name) {
+    gboolean launched = FALSE;
+    if (sender_pid > 0) {
+        gchar *criteria = g_strdup_printf("[pid=\"%u\"] focus", sender_pid);
+        launched = i3_focus_criteria(criteria);
+        g_free(criteria);
+    }
+    if (!launched && desktop_entry != NULL && *desktop_entry != '\0') {
+        gchar *base = g_strdup(desktop_entry);
+        gchar *fragment = NULL;
+        if (g_str_has_suffix(base, ".desktop")) {
+            base[strlen(base) - strlen(".desktop")] = '\0';
+        }
+        fragment = criteria_fragment_from_text(base);
+        if (fragment != NULL && *fragment != '\0') {
+            gchar *class_criteria = g_strdup_printf("[class=\"(?i)%s\"] focus", fragment);
+            gchar *instance_criteria = g_strdup_printf("[instance=\"(?i)%s\"] focus", fragment);
+            launched = i3_focus_criteria(class_criteria);
+            if (!launched) {
+                launched = i3_focus_criteria(instance_criteria);
+            }
+            g_free(class_criteria);
+            g_free(instance_criteria);
+        }
+        g_free(fragment);
+        g_free(base);
+    }
+    if (!launched && app_name != NULL && *app_name != '\0') {
+        gchar *fragment = criteria_fragment_from_text(app_name);
+        if (fragment != NULL && *fragment != '\0') {
+            gchar *title_criteria = g_strdup_printf("[title=\"(?i)%s\"] focus", fragment);
+            launched = i3_focus_criteria(title_criteria);
+            g_free(title_criteria);
+        }
+        g_free(fragment);
+    }
+    if (!launched && desktop_entry != NULL && *desktop_entry != '\0') {
+        gchar *desktop_id = g_strdup(desktop_entry);
+        if (g_str_has_suffix(desktop_id, ".desktop")) {
+            desktop_id[strlen(desktop_id) - strlen(".desktop")] = '\0';
+        }
+        const gchar *argv_launch[] = {"gtk-launch", desktop_id, NULL};
+        launched = g_spawn_async(
+            NULL,
+            (gchar **)argv_launch,
+            NULL,
+            G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL
+        );
+        g_free(desktop_id);
+    }
+    if (!launched && app_name != NULL && *app_name != '\0') {
+        const gchar *argv_open[] = {"xdg-open", app_name, NULL};
+        launched = g_spawn_async(
+            NULL,
+            (gchar **)argv_open,
+            NULL,
+            G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL
+        );
+    }
+    return launched;
 }
 
 static void append_history(const NotificationPayload *payload) {
@@ -946,6 +1339,10 @@ static void close_button_clicked(GtkButton *button, gpointer user_data) {
 static void action_button_clicked(GtkButton *button, gpointer user_data) {
     guint id = GPOINTER_TO_UINT(user_data);
     const gchar *action_key = g_object_get_data(G_OBJECT(button), "action-key");
+    const gchar *action_label = gtk_button_get_label(button);
+    const gchar *desktop_entry = g_object_get_data(G_OBJECT(button), "action-desktop-entry");
+    const gchar *app_name = g_object_get_data(G_OBJECT(button), "action-app-name");
+    guint sender_pid = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(button), "action-sender-pid"));
     ActionEntry entry = {0};
     entry.key = (gchar *)action_key;
     entry.action = g_object_get_data(G_OBJECT(button), "action-type");
@@ -954,7 +1351,10 @@ static void action_button_clicked(GtkButton *button, gpointer user_data) {
     entry.body = g_object_get_data(G_OBJECT(button), "action-body");
     entry.value = g_object_get_data(G_OBJECT(button), "action-value");
     entry.clear = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "action-clear")) != 0;
-    execute_action_entry(&entry);
+    gboolean executed = execute_action_entry(&entry);
+    if (!executed && action_looks_like_view(action_key, action_label)) {
+        activate_notification_source(sender_pid, desktop_entry, app_name);
+    }
     emit_action(id, action_key);
     if (entry.clear) {
         dismiss_toast(id, 2);
@@ -972,21 +1372,66 @@ static GtkWidget *make_label(const gchar *name, const gchar *text, gdouble xalig
     return label;
 }
 
-static GtkWidget *make_notification_icon(const gchar *icon_name) {
+static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *image_pixbuf, gint target_size) {
+    if (image_pixbuf != NULL) {
+        gint width = gdk_pixbuf_get_width(image_pixbuf);
+        gint height = gdk_pixbuf_get_height(image_pixbuf);
+        gint target = MAX(16, target_size);
+        GdkPixbuf *scaled = NULL;
+        GtkWidget *image = NULL;
+        if (width > 0 && height > 0) {
+            if (width > height) {
+                scaled = gdk_pixbuf_scale_simple(
+                    image_pixbuf,
+                    target,
+                    MAX(1, (height * target) / width),
+                    GDK_INTERP_BILINEAR
+                );
+            } else {
+                scaled = gdk_pixbuf_scale_simple(
+                    image_pixbuf,
+                    MAX(1, (width * target) / height),
+                    target,
+                    GDK_INTERP_BILINEAR
+                );
+            }
+        }
+        image = gtk_image_new_from_pixbuf(scaled != NULL ? scaled : image_pixbuf);
+        if (scaled != NULL) {
+            g_object_unref(scaled);
+        }
+        gtk_widget_set_name(image, "toastIcon");
+        gtk_widget_set_size_request(image, target, target);
+        return image;
+    }
     if (icon_name == NULL || *icon_name == '\0') {
         return NULL;
     }
     GtkWidget *image = NULL;
-    if (g_file_test(icon_name, G_FILE_TEST_EXISTS)) {
-        image = gtk_image_new_from_file(icon_name);
-    } else {
-        image = gtk_image_new_from_icon_name(icon_name, GTK_ICON_SIZE_DIALOG);
+    gchar *resolved_path = NULL;
+    if (g_str_has_prefix(icon_name, "file://")) {
+        resolved_path = g_filename_from_uri(icon_name, NULL, NULL);
     }
+    const gchar *effective_icon = (resolved_path != NULL && *resolved_path != '\0') ? resolved_path : icon_name;
+    if (g_file_test(effective_icon, G_FILE_TEST_EXISTS)) {
+        GError *error = NULL;
+        GdkPixbufAnimation *animation = gdk_pixbuf_animation_new_from_file(effective_icon, &error);
+        if (animation != NULL) {
+            image = gtk_image_new_from_animation(animation);
+            g_object_unref(animation);
+        } else {
+            g_clear_error(&error);
+            image = gtk_image_new_from_file(effective_icon);
+        }
+    } else {
+        image = gtk_image_new_from_icon_name(effective_icon, GTK_ICON_SIZE_DIALOG);
+    }
+    g_free(resolved_path);
     if (image == NULL) {
         return NULL;
     }
     gtk_widget_set_name(image, "toastIcon");
-    gtk_widget_set_size_request(image, 28, 28);
+    gtk_widget_set_size_request(image, MAX(16, target_size), MAX(16, target_size));
     return image;
 }
 
@@ -1040,7 +1485,7 @@ static void show_toast(const NotificationPayload *payload) {
     GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_pack_start(GTK_BOX(content), top, FALSE, FALSE, 0);
 
-    GtkWidget *icon = make_notification_icon(payload->app_icon);
+    GtkWidget *icon = make_notification_icon(payload->app_icon, NULL, 28);
     if (icon != NULL) {
         gtk_box_pack_start(GTK_BOX(top), icon, FALSE, FALSE, 0);
     }
@@ -1056,6 +1501,17 @@ static void show_toast(const NotificationPayload *payload) {
 
     GtkWidget *summary = make_label("summaryLabel", payload->summary, 0.0);
     gtk_box_pack_start(GTK_BOX(content), summary, FALSE, FALSE, 0);
+
+    if ((payload->image_pixbuf != NULL) || (payload->image_path != NULL && payload->image_path[0] != '\0')) {
+        GtkWidget *art_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        GtkWidget *art = make_notification_icon(payload->image_path, payload->image_pixbuf, 84);
+        if (art != NULL) {
+            gtk_box_pack_start(GTK_BOX(art_row), art, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(content), art_row, FALSE, FALSE, 0);
+        } else {
+            gtk_widget_destroy(art_row);
+        }
+    }
 
     if (payload->body != NULL && payload->body[0] != '\0') {
         GtkWidget *body = make_label("bodyLabel", payload->body, 0.0);
@@ -1075,6 +1531,9 @@ static void show_toast(const NotificationPayload *payload) {
             g_object_set_data_full(G_OBJECT(button), "action-method", g_strdup(action->method), g_free);
             g_object_set_data_full(G_OBJECT(button), "action-body", g_strdup(action->body), g_free);
             g_object_set_data_full(G_OBJECT(button), "action-value", g_strdup(action->value), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-desktop-entry", g_strdup(payload->desktop_entry), g_free);
+            g_object_set_data_full(G_OBJECT(button), "action-app-name", g_strdup(payload->app_name), g_free);
+            g_object_set_data(G_OBJECT(button), "action-sender-pid", GUINT_TO_POINTER(payload->sender_pid));
             g_object_set_data(G_OBJECT(button), "action-clear", GINT_TO_POINTER(action->clear ? 1 : 0));
             apply_emoji_fallback_to_label(gtk_bin_get_child(GTK_BIN(button)));
             apply_text_with_emoji_markup(gtk_bin_get_child(GTK_BIN(button)), action->label != NULL ? action->label : "Action");
@@ -1239,6 +1698,35 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
         while (g_variant_iter_next(&hints_iter, "{&sv}", &hint_key, &hint_value)) {
             if (g_strcmp0(hint_key, "x-hanauta-ntfy-actions") == 0 && g_variant_is_of_type(hint_value, G_VARIANT_TYPE_STRING)) {
                 actions_json = g_strdup(g_variant_get_string(hint_value, NULL));
+            } else if (g_strcmp0(hint_key, "desktop-entry") == 0 && g_variant_is_of_type(hint_value, G_VARIANT_TYPE_STRING)) {
+                g_free(payload->desktop_entry);
+                payload->desktop_entry = g_strdup(g_variant_get_string(hint_value, NULL));
+            } else if (g_strcmp0(hint_key, "sender-pid") == 0 && g_variant_is_of_type(hint_value, G_VARIANT_TYPE_UINT32)) {
+                payload->sender_pid = g_variant_get_uint32(hint_value);
+            } else if (g_strcmp0(hint_key, "sender-pid") == 0 && g_variant_is_of_type(hint_value, G_VARIANT_TYPE_INT32)) {
+                gint32 raw_pid = g_variant_get_int32(hint_value);
+                payload->sender_pid = raw_pid > 0 ? (guint)raw_pid : 0;
+            } else if (
+                (g_strcmp0(hint_key, "image-path") == 0 || g_strcmp0(hint_key, "image_path") == 0) &&
+                g_variant_is_of_type(hint_value, G_VARIANT_TYPE_STRING)
+            ) {
+                const gchar *image_path = g_variant_get_string(hint_value, NULL);
+                if (image_path != NULL && *image_path != '\0') {
+                    g_free(payload->image_path);
+                    payload->image_path = g_strdup(image_path);
+                }
+            } else if (
+                g_strcmp0(hint_key, "image-data") == 0 ||
+                g_strcmp0(hint_key, "image_data") == 0 ||
+                g_strcmp0(hint_key, "icon_data") == 0
+            ) {
+                GdkPixbuf *pixbuf = pixbuf_from_image_data_variant(hint_value);
+                if (pixbuf != NULL) {
+                    if (payload->image_pixbuf != NULL) {
+                        g_object_unref(payload->image_pixbuf);
+                    }
+                    payload->image_pixbuf = pixbuf;
+                }
             }
             g_variant_unref(hint_value);
         }
@@ -1269,12 +1757,19 @@ static NotificationPayload *payload_from_variant(GVariant *parameters) {
         g_free(actions_json);
         g_variant_unref(hints_variant);
     }
+    {
+        gint minimum_duration_ms = load_default_notification_duration_ms();
+        if (payload->expire_timeout <= 0 || payload->expire_timeout < minimum_duration_ms) {
+            payload->expire_timeout = minimum_duration_ms;
+        }
+    }
     return payload;
 }
 
 static void handle_notify(GDBusMethodInvocation *invocation, GVariant *parameters) {
     NotificationPayload *payload = payload_from_variant(parameters);
     if (!should_ignore_notification(payload)) {
+        apply_app_aliases(payload);
         append_history(payload);
         if (!is_paused()) {
             dismiss_toast(payload->id, 3);
