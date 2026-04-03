@@ -1652,6 +1652,7 @@ def load_settings_state() -> dict:
             "pause_while_sharing": True,
             "per_app_rules_enabled": True,
             "default_duration_ms": 10000,
+            "lock_osd_enabled": True,
             "lock_osd_position": "bottom_center",
         },
         "input": {
@@ -2194,6 +2195,9 @@ def load_settings_state() -> dict:
     )
     notifications["per_app_rules_enabled"] = bool(
         notifications.get("per_app_rules_enabled", True)
+    )
+    notifications["lock_osd_enabled"] = bool(
+        notifications.get("lock_osd_enabled", True)
     )
     try:
         notifications["default_duration_ms"] = max(
@@ -7913,6 +7917,21 @@ class SettingsWindow(QWidget):
         )
         self.notifications_lock_osd_position_combo.setCurrentIndex(
             max(0, lock_osd_index)
+        )
+        self.notifications_lock_osd_enabled_switch = SwitchButton(
+            bool(
+                self.settings_state["notifications"].get("lock_osd_enabled", True)
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("toggle_on"),
+                "Caps/Num lock OSD",
+                "Enable lock-state on-screen popups for Caps Lock and Num Lock.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_lock_osd_enabled_switch,
+            )
         )
         layout.addWidget(
             SettingsRow(
@@ -15610,6 +15629,9 @@ class SettingsWindow(QWidget):
         notifications["lock_osd_position"] = str(
             self.notifications_lock_osd_position_combo.currentData()
             or "bottom_center"
+        )
+        notifications["lock_osd_enabled"] = bool(
+            self.notifications_lock_osd_enabled_switch.isChecked()
         )
         try:
             self.settings_state["appearance"]["notification_toast_max_width"] = max(
