@@ -1651,6 +1651,8 @@ def load_settings_state() -> dict:
             "urgency_policy": "normal",
             "pause_while_sharing": True,
             "per_app_rules_enabled": True,
+            "default_duration_ms": 10000,
+            "lock_osd_position": "bottom_center",
         },
         "input": {
             "keyboard_layout": "us",
@@ -2192,6 +2194,31 @@ def load_settings_state() -> dict:
     )
     notifications["per_app_rules_enabled"] = bool(
         notifications.get("per_app_rules_enabled", True)
+    )
+    try:
+        notifications["default_duration_ms"] = max(
+            2000, min(120000, int(notifications.get("default_duration_ms", 10000)))
+        )
+    except Exception:
+        notifications["default_duration_ms"] = 10000
+    lock_osd_position = str(
+        notifications.get("lock_osd_position", "bottom_center")
+    ).strip()
+    notifications["lock_osd_position"] = (
+        lock_osd_position
+        if lock_osd_position
+        in {
+            "top_left",
+            "top_center",
+            "top_right",
+            "center_left",
+            "center",
+            "center_right",
+            "bottom_left",
+            "bottom_center",
+            "bottom_right",
+        }
+        else "bottom_center"
     )
     input_settings = dict(payload.get("input", {}))
     input_settings["keyboard_layout"] = (
@@ -7825,6 +7852,76 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.notifications_rules_switch,
+            )
+        )
+
+        self.notifications_default_duration_input = QLineEdit(
+            str(
+                int(
+                    self.settings_state["notifications"].get(
+                        "default_duration_ms", 10000
+                    )
+                )
+            )
+        )
+        self.notifications_default_duration_input.setValidator(
+            QIntValidator(2000, 120000, self)
+        )
+        self.notifications_default_duration_input.setFixedWidth(96)
+        self.notifications_default_duration_input.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Default toast duration (ms)",
+                "Minimum time desktop notifications stay visible before auto-dismiss.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_default_duration_input,
+            )
+        )
+
+        self.notifications_lock_osd_position_combo = QComboBox()
+        self.notifications_lock_osd_position_combo.setObjectName("settingsCombo")
+        self.notifications_lock_osd_position_combo.addItem("Top left", "top_left")
+        self.notifications_lock_osd_position_combo.addItem("Top center", "top_center")
+        self.notifications_lock_osd_position_combo.addItem("Top right", "top_right")
+        self.notifications_lock_osd_position_combo.addItem(
+            "Center left", "center_left"
+        )
+        self.notifications_lock_osd_position_combo.addItem("Center", "center")
+        self.notifications_lock_osd_position_combo.addItem(
+            "Center right", "center_right"
+        )
+        self.notifications_lock_osd_position_combo.addItem(
+            "Bottom left", "bottom_left"
+        )
+        self.notifications_lock_osd_position_combo.addItem(
+            "Bottom center", "bottom_center"
+        )
+        self.notifications_lock_osd_position_combo.addItem(
+            "Bottom right", "bottom_right"
+        )
+        lock_osd_position = str(
+            self.settings_state["notifications"].get(
+                "lock_osd_position", "bottom_center"
+            )
+        )
+        lock_osd_index = self.notifications_lock_osd_position_combo.findData(
+            lock_osd_position
+        )
+        self.notifications_lock_osd_position_combo.setCurrentIndex(
+            max(0, lock_osd_index)
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Caps/Num OSD position",
+                "Choose where lock-state popups appear on screen.",
+                self.icon_font,
+                self.ui_font,
+                self.notifications_lock_osd_position_combo,
             )
         )
 
@@ -15495,6 +15592,24 @@ class SettingsWindow(QWidget):
         )
         notifications["per_app_rules_enabled"] = bool(
             self.notifications_rules_switch.isChecked()
+        )
+        try:
+            notifications["default_duration_ms"] = max(
+                2000,
+                min(
+                    120000,
+                    int(
+                        self.notifications_default_duration_input.text().strip()
+                        or "10000"
+                    ),
+                ),
+            )
+        except Exception:
+            notifications["default_duration_ms"] = 10000
+            self.notifications_default_duration_input.setText("10000")
+        notifications["lock_osd_position"] = str(
+            self.notifications_lock_osd_position_combo.currentData()
+            or "bottom_center"
         )
         try:
             self.settings_state["appearance"]["notification_toast_max_width"] = max(
