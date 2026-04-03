@@ -67,7 +67,7 @@ Item {
                         color: root.colors.text
                         font.family: paneBackend.uiFontFamily
                         font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        font.weight: Font.Medium
                     }
 
                     Text {
@@ -130,7 +130,7 @@ Item {
                         color: active ? root.colors.onPrimary : root.colors.text
                         font.family: paneBackend.uiFontFamily
                         font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        font.weight: Font.Medium
                     }
                 }
             }
@@ -168,7 +168,7 @@ Item {
                     color: root.colors.text
                     font.family: paneBackend.uiFontFamily
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
             }
         }

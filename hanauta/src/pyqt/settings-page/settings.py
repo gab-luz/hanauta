@@ -101,6 +101,7 @@ from pyqt.shared.plugin_bridge import (
     run_with_polkit,
     trigger_fullscreen_alert,
 )
+from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.weather import WeatherCity, configured_city, search_cities
 from pyqt.shared.gamemode import summary as gamemode_summary
 from pyqt.shared.home_assistant import (
@@ -122,7 +123,6 @@ PLUGIN_INSTALL_STATE_DIR = (
 NOTIFICATION_RULES_FILE = (
     Path.home() / ".local" / "state" / "hanauta" / "notification-rules.ini"
 )
-QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
 WALLPAPER_SCRIPT = ROOT / "hanauta" / "scripts" / "set_wallpaper.sh"
 MATUGEN_SCRIPT = ROOT / "hanauta" / "scripts" / "run_matugen.sh"
 LOCK_SCRIPT = ROOT / "hanauta" / "scripts" / "lock"
@@ -135,6 +135,26 @@ PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
 NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
 HOST_PLUGIN_API_VERSION = 1
+
+
+def resolve_qcal_wrapper() -> Path | None:
+    return resolve_plugin_script("qcal-wrapper.py", ["calendar"])
+
+
+def resolve_desktop_clock_widget() -> Path | None:
+    return resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
+
+
+def resolve_study_tracker_app() -> Path | None:
+    return resolve_plugin_script("study_tracker.py", ["study-tracker"])
+
+
+def resolve_virtualization_daemon() -> Path | None:
+    return resolve_plugin_script("virtualization_daemon.py", ["virtualization"])
+
+
+def resolve_email_client_app() -> Path | None:
+    return resolve_plugin_script("email_client.py", ["email-client", "mail"])
 
 
 def apply_antialias_font(widget: QWidget) -> None:
@@ -318,13 +338,6 @@ BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
 BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
 HOME_ASSISTANT_LOGO = ROOT / "hanauta" / "src" / "assets" / "home-assistant-dark.svg"
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
-DESKTOP_CLOCK_WIDGET = (
-    APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
-)
-STUDY_TRACKER_APP = APP_DIR / "pyqt" / "study-tracker" / "study_tracker.py"
-VIRTUALIZATION_DAEMON_SCRIPT = (
-    APP_DIR / "pyqt" / "widget-virtualization" / "virtualization_daemon.py"
-)
 PLUGIN_ENTRYPOINT = "hanauta_plugin.py"
 PLUGIN_DEV_ROOT = Path.home() / "dev"
 MAIL_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "email-client"
@@ -2643,8 +2656,10 @@ def build_display_command(
             continue
         resolution = str(display.get("resolution", "")).strip()
         modes = [str(mode) for mode in display.get("modes", [])]
+        if resolution and modes and resolution not in modes:
+            resolution = ""
         if not resolution and modes:
-            resolution = modes[0]
+            resolution = sorted(modes, key=resolution_area, reverse=True)[0]
         if resolution:
             cmd.extend(["--mode", resolution])
         refresh = str(display.get("refresh", "")).strip()
@@ -2730,6 +2745,11 @@ def restore_saved_displays() -> None:
                     "modes": list(current_item.get("modes", [])),
                 }
             )
+            if restored and restored[-1]["resolution"] not in restored[-1]["modes"]:
+                modes = [str(mode) for mode in restored[-1]["modes"]]
+                restored[-1]["resolution"] = (
+                    sorted(modes, key=resolution_area, reverse=True)[0] if modes else ""
+                )
         if not restored:
             time.sleep(retry_delay_sec)
             continue
@@ -12057,7 +12077,8 @@ class SettingsWindow(QWidget):
         self.mail_status.setText("Mail account deleted.")
 
     def _launch_mail_client(self) -> None:
-        command = entry_command(APP_DIR / "pyqt" / "email-client" / "email_client.py")
+        email_client_script = resolve_email_client_app()
+        command = entry_command(email_client_script) if email_client_script else []
         if not command:
             self.mail_status.setText("Hanauta Mail launch script is unavailable.")
             return
@@ -15399,11 +15420,12 @@ class SettingsWindow(QWidget):
         run_bg(["xdg-open", str(BAR_ICON_CONFIG_FILE)])
 
     def _open_study_tracker_app(self) -> None:
-        if not STUDY_TRACKER_APP.exists():
+        study_tracker_script = resolve_study_tracker_app()
+        if study_tracker_script is None:
             if hasattr(self, "study_tracker_status"):
                 self.study_tracker_status.setText("Study Tracker app is unavailable.")
             return
-        command = entry_command(STUDY_TRACKER_APP)
+        command = entry_command(study_tracker_script)
         if not command:
             if hasattr(self, "study_tracker_status"):
                 self.study_tracker_status.setText(
@@ -15415,17 +15437,18 @@ class SettingsWindow(QWidget):
             self.study_tracker_status.setText("Study Tracker launched.")
 
     def _start_virtualization_daemon(self) -> None:
-        if not VIRTUALIZATION_DAEMON_SCRIPT.exists():
+        daemon_script = resolve_virtualization_daemon()
+        if daemon_script is None:
             if hasattr(self, "virtualization_status"):
                 self.virtualization_status.setText(
                     "Virtualization daemon script is missing."
                 )
             return
-        for pattern in entry_patterns(VIRTUALIZATION_DAEMON_SCRIPT):
+        for pattern in entry_patterns(daemon_script):
             subprocess.run(
                 ["pkill", "-f", pattern], capture_output=True, text=True, check=False
             )
-        command = entry_command(VIRTUALIZATION_DAEMON_SCRIPT)
+        command = entry_command(daemon_script)
         if not command:
             if hasattr(self, "virtualization_status"):
                 self.virtualization_status.setText(
@@ -15437,7 +15460,10 @@ class SettingsWindow(QWidget):
             self.virtualization_status.setText("Virtualization daemon started.")
 
     def _stop_virtualization_daemon(self) -> None:
-        for pattern in entry_patterns(VIRTUALIZATION_DAEMON_SCRIPT):
+        daemon_script = resolve_virtualization_daemon()
+        if daemon_script is None:
+            return
+        for pattern in entry_patterns(daemon_script):
             subprocess.run(
                 ["pkill", "-f", pattern], capture_output=True, text=True, check=False
             )
@@ -16105,10 +16131,11 @@ class SettingsWindow(QWidget):
                 "CalDAV URL, username, and password are required."
             )
             return
-        if not QCAL_WRAPPER.exists():
+        qcal_wrapper = resolve_qcal_wrapper()
+        if qcal_wrapper is None:
             self.calendar_status.setText("qcal wrapper is missing.")
             return
-        command = entry_command(QCAL_WRAPPER, "discover", url, username, password)
+        command = entry_command(qcal_wrapper, "discover", url, username, password)
         if not command:
             self.calendar_status.setText("qcal wrapper is missing.")
             return
@@ -16428,8 +16455,9 @@ class SettingsWindow(QWidget):
             self.clock_status.setText("Desktop clock position reset.")
 
     def _desktop_clock_command(self) -> list[str]:
-        if DESKTOP_CLOCK_WIDGET.exists():
-            return entry_command(DESKTOP_CLOCK_WIDGET)
+        desktop_clock_script = resolve_desktop_clock_widget()
+        if desktop_clock_script is not None:
+            return entry_command(desktop_clock_script)
         if DESKTOP_CLOCK_BINARY.exists():
             return [str(DESKTOP_CLOCK_BINARY)]
         return []

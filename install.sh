@@ -807,7 +807,7 @@ install_rich() {
   
   if ! python3 -c "import rich" 2>/dev/null; then
     info "Installing rich for colorful output..."
-    pip install rich --quiet 2>/dev/null || pip3 install rich --quiet 2>/dev/null || true
+    uv pip install --system rich --quiet 2>/dev/null || true
   fi
 }
 
