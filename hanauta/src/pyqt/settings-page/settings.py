@@ -4238,6 +4238,8 @@ class SettingsWindow(QWidget):
         self.settings_state = load_settings_state()
         self.plugin_service_builders: dict[str, dict[str, object]] = {}
         self._plugin_builders_loaded = False
+        self._plugin_dir_scan_in_progress = False
+        self._plugin_dirs_to_scan: list[Path] = []
         self.mail_account_store = MailAccountStore(
             Path(load_mail_storage_config()["db_path"]).expanduser()
         )
@@ -10015,7 +10017,7 @@ class SettingsWindow(QWidget):
         install_mode = "clone"
         if target_dir.exists():
             install_mode = self._marketplace_show_overwrite_dialog(
-                plugin_id, target_dir, allow_update=True
+                plugin_id, target_dir, allow_update=False
             )
             if install_mode == "cancel":
                 self.marketplace_status.setText(
@@ -10036,8 +10038,6 @@ class SettingsWindow(QWidget):
                     )
                     return
                 install_mode = "clone"
-            elif install_mode == "update":
-                install_mode = "update"
             else:
                 self.marketplace_status.setText(
                     f"Installation cancelled for {plugin_id}."
@@ -10045,37 +10045,21 @@ class SettingsWindow(QWidget):
                 return
 
         try:
-            if install_mode == "update" and (target_dir / ".git").exists():
-                result = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(target_dir),
-                        "pull",
-                        "--ff-only",
-                        "origin",
-                        branch,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            else:
-                result = subprocess.run(
-                    [
-                        "git",
-                        "clone",
-                        "--depth",
-                        "1",
-                        "--branch",
-                        branch,
-                        repo,
-                        str(target_dir),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
+            result = subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    branch,
+                    repo,
+                    str(target_dir),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
         except Exception as exc:
             self.marketplace_status.setText(f"Failed to install {plugin_id}: {exc}")
             self._marketplace_show_install_result_dialog(
@@ -10127,6 +10111,8 @@ class SettingsWindow(QWidget):
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
         enabled_keys = self._marketplace_enable_plugin_services(target_dir)
+        for key in enabled_keys:
+            self._set_service_enabled(key, True)
         post_install_ok = self._run_plugin_post_install_steps(plugin, target_dir)
         save_settings_state(self.settings_state)
         if post_install_ok:
@@ -10256,6 +10242,8 @@ class SettingsWindow(QWidget):
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
         enabled_keys = self._marketplace_enable_plugin_services(target_dir)
+        for key in enabled_keys:
+            self._set_service_enabled(key, True)
         post_install_ok = self._run_plugin_post_install_steps(plugin_meta, target_dir)
         save_settings_state(self.settings_state)
         if post_install_ok:
@@ -10419,55 +10407,83 @@ class SettingsWindow(QWidget):
             "trigger_fullscreen_alert": trigger_fullscreen_alert,
         }
 
-    def _load_plugin_service_builders(self) -> dict[str, dict[str, object]]:
+    def _collect_plugin_builders_from_dir(
+        self, plugin_dir: Path
+    ) -> dict[str, dict[str, object]]:
         builders: dict[str, dict[str, object]] = {}
-        for plugin_dir in self._discover_plugin_dirs():
-            entrypoint = plugin_dir / PLUGIN_ENTRYPOINT
-            if not entrypoint.exists():
+        entrypoint = plugin_dir / PLUGIN_ENTRYPOINT
+        if not entrypoint.exists():
+            return builders
+        module_name = f"hanauta_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
+            if spec is None or spec.loader is None:
+                return builders
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            register = getattr(module, "register_hanauta_plugin", None)
+            if not callable(register):
+                return builders
+            payload = register()
+        except Exception:
+            return builders
+        if not isinstance(payload, dict):
+            return builders
+        plugin_id = str(payload.get("id", "")).strip()
+        plugin_name = str(
+            payload.get("name", plugin_id or plugin_dir.name)
+        ).strip() or (plugin_id or plugin_dir.name)
+        api_min_version, _api_target_version = self._plugin_api_versions_from_row(payload)
+        if api_min_version > HOST_PLUGIN_API_VERSION:
+            return builders
+        sections = payload.get("service_sections", [])
+        if not isinstance(sections, list):
+            return builders
+        for section in sections:
+            if not isinstance(section, dict):
                 continue
-            module_name = f"hanauta_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    module_name, str(entrypoint)
-                )
-                if spec is None or spec.loader is None:
-                    continue
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                register = getattr(module, "register_hanauta_plugin", None)
-                if not callable(register):
-                    continue
-                payload = register()
-            except Exception:
+            key = str(section.get("key", "")).strip()
+            builder = section.get("builder")
+            if not key or not callable(builder):
                 continue
-            if not isinstance(payload, dict):
-                continue
-            plugin_id = str(payload.get("id", "")).strip()
-            plugin_name = str(
-                payload.get("name", plugin_id or plugin_dir.name)
-            ).strip() or (plugin_id or plugin_dir.name)
-            api_min_version, _api_target_version = self._plugin_api_versions_from_row(
-                payload
-            )
-            if api_min_version > HOST_PLUGIN_API_VERSION:
-                continue
-            sections = payload.get("service_sections", [])
-            if not isinstance(sections, list):
-                continue
-            for section in sections:
-                if not isinstance(section, dict):
-                    continue
-                key = str(section.get("key", "")).strip()
-                builder = section.get("builder")
-                if not key or not callable(builder):
-                    continue
-                builders[key] = {
-                    "builder": builder,
-                    "plugin_dir": plugin_dir,
-                    "plugin_id": plugin_id,
-                    "plugin_name": plugin_name,
-                }
+            builders[key] = {
+                "builder": builder,
+                "plugin_dir": plugin_dir,
+                "plugin_id": plugin_id,
+                "plugin_name": plugin_name,
+            }
         return builders
+
+    def _queue_plugin_builders(self) -> None:
+        plugin_queue: list[dict[str, object]] = []
+        for key in sorted(self.plugin_service_builders.keys()):
+            section_meta = self.plugin_service_builders.get(key, {})
+            if not isinstance(section_meta, dict):
+                continue
+            section_meta = dict(section_meta)
+            section_meta["_key"] = key
+            plugin_queue.append(section_meta)
+        self._services_plugin_queue = plugin_queue
+
+    def _process_next_plugin_dir(self) -> None:
+        if not getattr(self, "_plugin_dirs_to_scan", []):
+            self._plugin_dir_scan_in_progress = False
+            self._plugin_builders_loaded = True
+            self._queue_plugin_builders()
+            QTimer.singleShot(0, self._build_next_services_section)
+            return
+        plugin_dir = self._plugin_dirs_to_scan.pop(0)
+        builders = self._collect_plugin_builders_from_dir(plugin_dir)
+        if builders:
+            self.plugin_service_builders.update(builders)
+        QTimer.singleShot(0, self._process_next_plugin_dir)
+
+    def _start_plugin_dir_scan(self) -> None:
+        self._plugin_dirs_to_scan = self._discover_plugin_dirs()
+        self.plugin_service_builders = {}
+        self._services_plugin_queue = []
+        self._plugin_dir_scan_in_progress = True
+        QTimer.singleShot(0, self._process_next_plugin_dir)
 
     def _build_services_card(self) -> QWidget:
         card = QFrame()
@@ -10574,17 +10590,9 @@ class SettingsWindow(QWidget):
             return
 
         if not getattr(self, "_plugin_builders_loaded", False):
-            self.plugin_service_builders = self._load_plugin_service_builders()
-            self._plugin_builders_loaded = True
-            plugin_queue: list[dict[str, object]] = []
-            for key in sorted(self.plugin_service_builders.keys()):
-                section_meta = self.plugin_service_builders.get(key, {})
-                section_meta = (
-                    dict(section_meta) if isinstance(section_meta, dict) else {}
-                )
-                section_meta["_key"] = key
-                plugin_queue.append(section_meta)
-            self._services_plugin_queue = plugin_queue
+            if not getattr(self, "_plugin_dir_scan_in_progress", False):
+                self._start_plugin_dir_scan()
+            return
 
         plugin_queue = getattr(self, "_services_plugin_queue", [])
         if plugin_queue:
