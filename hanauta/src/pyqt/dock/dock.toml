@@ -5,7 +5,7 @@ width_unit = "%"
 height = 64
 icons_left = false
 
-position = "center"
+position = "right"
 transparency = 60
 monitor_mode = "primary"
 monitor_name = ""
@@ -45,5 +45,6 @@ window_name = [
   "Hanauta Notification 2",
   "Hanauta Notification 8",
   "Hanauta Notification 198",
-  "WireGuard"
+  "WireGuard",
+  "ui_bar.py"
 ]

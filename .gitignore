@@ -1,6 +1,7 @@
 # Python
 .venv/
 venv/
+i3.code-workspace
 env/
 .cache-src
 uv.lock
@@ -11,6 +12,7 @@ main.py
 hanauta/src/pyqt/overview
 hanauta_lock.build
 .nuitka-cache
+hanauta/src/html_mockups
 *.py[cod]
 *$py.class
 *.egg-info/
@@ -81,3 +83,6 @@ hanauta-life-sync/data/
 
 # Marketplace plugin clones (separate repos)
 hanauta/plugins/
+
+# Vendored repositories
+vendor/i3-volume/.git/

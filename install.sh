@@ -16,6 +16,7 @@ INSTALL_NOTIFICATION_DAEMON_ONLY=false
 INSTALL_QUICKSHELL_ONLY=false
 INSTALL_WIREGUARD_SYSTEMD_ONLY=false
 INSTALL_SDDM_ONLY=false
+INSTALL_I3_VOLUME_ONLY=false
 INSTALL_CUSTOM_THEMES=false
 CUSTOM_THEMES_SELECTION=""
 INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
@@ -25,6 +26,8 @@ INSTALL_GTK_THEME_ONLY=false
 INSTALL_RUBIK_FONT_ONLY=false
 GTK_THEME_SELECTION=""
 ADW_GTK_REPO="lassekongo83/adw-gtk3"
+I3_VOLUME_REPO_URL="https://github.com/hastinbe/i3-volume.git"
+I3_VOLUME_REPO_BRANCH="master"
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -133,6 +136,7 @@ Options:
   --notification-daemon         Install only Hanauta notification daemon components
   --quickshell                  Install only Quickshell runtime dependencies
   --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
+  --i3-volume                   Install only i3-volume + volnoti integration
   --sddm                        Install and configure SilentSDDM only
   --custom-themes               Install all vendored custom themes (retrowave + dracula)
   --custom-themes=NAME          Install custom themes by selection: retrowave, dracula, all
@@ -206,6 +210,9 @@ parse_args() {
         ;;
       --wireguard-systemd)
         INSTALL_WIREGUARD_SYSTEMD_ONLY=true
+        ;;
+      --i3-volume)
+        INSTALL_I3_VOLUME_ONLY=true
         ;;
       --sddm)
         INSTALL_SDDM_ONLY=true
@@ -862,6 +869,8 @@ install_packages_debian() {
     xdg-user-dirs
     libgtk-3-bin
     dbus-x11
+    volnoti
+    bc
   )
   local -a optional_pkgs=(
     copyq clipit plank ukui-window-switch
@@ -905,6 +914,8 @@ install_packages_arch() {
     xorg-xcursorgen
     xdg-user-dirs
     gtk3
+    volnoti
+    bc
   )
   local -a optional_pkgs=(
     copyq clipit plank ukui-window-switch
@@ -1125,6 +1136,198 @@ install_local_binaries() {
     success "Bundled binaries linked into $target_dir: ${linked[*]}"
   else
     warn "No bundled public binaries were linked"
+  fi
+}
+
+install_volnoti_build_deps_debian() {
+  local pixbuf_dev_pkg=""
+
+  echo -e "${CYAN}[*]${NC} Updating package lists..."
+  sudo apt-get update -qq
+  install_apt_group "volnoti source build deps" \
+    git build-essential pkg-config autoconf automake libtool \
+    libdbus-1-dev libdbus-glib-1-dev libgtk2.0-dev
+
+  pixbuf_dev_pkg="$(pick_first_available_apt_package libgdk-pixbuf-2.0-dev libgdk-pixbuf2.0-dev)" || true
+  if [ -n "$pixbuf_dev_pkg" ]; then
+    install_apt_group "volnoti gdk-pixbuf dev" "$pixbuf_dev_pkg"
+  else
+    warn "No Debian package found for GDK Pixbuf development headers."
+  fi
+}
+
+install_volnoti_build_deps_arch() {
+  install_pacman_group "volnoti source build deps" \
+    git base-devel pkgconf autoconf automake libtool dbus dbus-glib gtk2 gdk-pixbuf2
+}
+
+build_and_install_volnoti_from_source() {
+  local tmp_root=""
+  local repo_root=""
+
+  if ! need_cmd git; then
+    error "git is required to build volnoti from source."
+    return 1
+  fi
+  if ! need_cmd sudo; then
+    error "sudo is required to install volnoti to /usr."
+    return 1
+  fi
+
+  tmp_root="$(mktemp -d)"
+  repo_root="$tmp_root/volnoti"
+
+  info "Cloning volnoti source..."
+  if ! git clone --depth 1 https://github.com/brazdil/volnoti.git "$repo_root" >/dev/null 2>&1; then
+    rm -rf "$tmp_root"
+    error "Failed to clone volnoti repository."
+    return 1
+  fi
+
+  # Upstream compatibility patch:
+  # newer generated DBus client stubs accept notify(proxy, volume, error)
+  # while some source snapshots still call notify(proxy, volume, muted, error).
+  if [ -f "$repo_root/src/client.c" ] && [ -f "$repo_root/src/value-client-stub.h" ]; then
+    if rg -q 'uk_ac_cam_db538_VolumeNotification_notify\s*\([^,]+,\s*[^,]+,\s*GError \*\*error\)' "$repo_root/src/value-client-stub.h" 2>/dev/null; then
+      perl -0pi -e 's/uk_ac_cam_db538_VolumeNotification_notify\s*\(\s*proxy\s*,\s*volume\s*,\s*muted\s*,\s*&error\s*\)\s*;/uk_ac_cam_db538_VolumeNotification_notify(proxy, volume, \&error);/g' "$repo_root/src/client.c"
+    fi
+  fi
+
+  info "Building volnoti from source..."
+  if ! (cd "$repo_root" && ./prepare.sh && ./configure --prefix=/usr && make); then
+    rm -rf "$tmp_root"
+    error "Failed to build volnoti from source."
+    return 1
+  fi
+
+  info "Installing volnoti system-wide..."
+  if ! (cd "$repo_root" && sudo make install); then
+    rm -rf "$tmp_root"
+    error "Failed to install volnoti from source."
+    return 1
+  fi
+
+  rm -rf "$tmp_root"
+  success "volnoti installed from source"
+}
+
+ensure_volnoti_available() {
+  if need_cmd volnoti; then
+    return 0
+  fi
+
+  warn "volnoti was not found after package installation. Falling back to source build."
+  if detect_debian_like; then
+    install_volnoti_build_deps_debian
+  elif detect_arch; then
+    install_volnoti_build_deps_arch
+  else
+    warn "Unknown distro; cannot auto-install volnoti build dependencies."
+    return 1
+  fi
+
+  if ! pkg-config --exists dbus-glib-1; then
+    error "dbus-glib-1 development files were not found (pkg-config lookup failed)."
+    error "On Debian/Ubuntu, install libdbus-glib-1-dev and rerun: ./install.sh --i3-volume"
+    return 1
+  fi
+
+  build_and_install_volnoti_from_source
+  if need_cmd volnoti; then
+    return 0
+  fi
+
+  error "volnoti is still unavailable after source build."
+  return 1
+}
+
+apply_i3_volume_compat_patches() {
+  local repo_root="${1:?repo path is required}"
+  local audio_file="$repo_root/lib/audio.sh"
+  local output_file="$repo_root/lib/output.sh"
+  local volnoti_plugin="$repo_root/plugins/notify/volnoti"
+
+  if [ -f "$audio_file" ]; then
+    perl -0pi -e 's@get_volume\(\) \{ wpctl get-volume "\$NODE_ID" \| awk '\''\{printf "%.2f", \$2 \* 100\}'\''; \}@get_volume() {\n    local raw\n    raw=\$(wpctl get-volume "\$NODE_ID" 2>/dev/null | awk '\''{print \$2}'\'')\n    if [[ "\$raw" =~ ^[0-9]+([.][0-9]+)?\$ ]]; then\n        awk -v v="\$raw" '\''BEGIN { printf "%.2f", v * 100 }'\''\n    else\n        # Always return a valid numeric value for downstream formatters.\n        echo "0.00"\n    fi\n}@g' "$audio_file"
+  fi
+
+  if [ -f "$output_file" ]; then
+    if ! rg -q 'Ensure formatting always receives a valid numeric value\.' "$output_file" 2>/dev/null; then
+      perl -0pi -e 's@local unit=\$\{2:-percent\}  # "percent" or "db"@local unit=\$\{2:-percent\}  # "percent" or "db"\n    # Ensure formatting always receives a valid numeric value.\n    if ! [[ "\$vol" =~ ^[0-9]+([.][0-9]+)?\$ ]]; then\n        vol="0"\n    fi@g' "$output_file"
+    fi
+  fi
+
+  if [ -f "$volnoti_plugin" ] && ! rg -q 'Do not fall back to libnotify/notify-send when volnoti is selected\.' "$volnoti_plugin" 2>/dev/null; then
+    perl -0pi -e 's@if is_muted; then "\$executable" -m "\$vol"\n    else "\$executable" "\$vol"; fi@if is_muted; then "\$executable" -m "\$vol" || true\n    else "\$executable" "\$vol" || true\n    fi\n    # Do not fall back to libnotify/notify-send when volnoti is selected.\n    return 0@' "$volnoti_plugin"
+  fi
+
+  if [ -f "$volnoti_plugin" ] && ! rg -q 'vol_int=' "$volnoti_plugin" 2>/dev/null; then
+    perl -0pi -e 's@local vol=\$1 icon=\$2 summary=\$3 body=\$\{\*:4\}\n    local executable@local vol=\$1 icon=\$2 summary=\$3 body=\$\{\*:4\}\n    local vol_int\n    local executable@' "$volnoti_plugin"
+    perl -0pi -e 's@command_exists "\$executable" \|\| \{ error "\$executable not found\. Please install it or set VOLNOTI_PATH to the correct path\."; exit "\$EX_UNAVAILABLE"; \}@command_exists "\$executable" || { error "\$executable not found. Please install it or set VOLNOTI_PATH to the correct path."; exit "$EX_UNAVAILABLE"; }\n    vol_int=\$(awk -v v="\${vol:-0}" '\''BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; print n }'\'')@' "$volnoti_plugin"
+    perl -0pi -e 's@"\$executable" -m "\$vol"@"\$executable" -m "\$vol_int"@g; s@"\$executable" "\$vol"@"\$executable" "\$vol_int"@g' "$volnoti_plugin"
+  fi
+}
+
+install_i3_volume() {
+  local repo_root="$HOME/.config/i3/vendor/i3-volume"
+  local bin_dir="$HOME/.local/bin"
+  local config_dir="$HOME/.config/i3-volume"
+  local config_file="$config_dir/config"
+
+  if ! need_cmd git; then
+    error "git is required to install i3-volume."
+    return 1
+  fi
+  ensure_volnoti_available || return 1
+
+  if [ -d "$repo_root/.git" ]; then
+    info "Updating i3-volume at $repo_root..."
+    git -C "$repo_root" fetch --depth 1 origin "$I3_VOLUME_REPO_BRANCH" >/dev/null 2>&1 || {
+      warn "Failed to fetch latest i3-volume updates; keeping current checkout."
+    }
+    git -C "$repo_root" checkout -q "$I3_VOLUME_REPO_BRANCH" >/dev/null 2>&1 || true
+    git -C "$repo_root" pull --ff-only >/dev/null 2>&1 || {
+      warn "Could not fast-forward i3-volume checkout; keeping existing version."
+    }
+  else
+    info "Cloning i3-volume into $repo_root..."
+    mkdir -p "$(dirname "$repo_root")"
+    rm -rf "$repo_root"
+    if ! git clone --depth 1 --branch "$I3_VOLUME_REPO_BRANCH" "$I3_VOLUME_REPO_URL" "$repo_root" >/dev/null 2>&1; then
+      error "Failed to clone i3-volume from $I3_VOLUME_REPO_URL"
+      return 1
+    fi
+  fi
+
+  apply_i3_volume_compat_patches "$repo_root"
+
+  mkdir -p "$bin_dir"
+  ln -sfn "$repo_root/volume" "$bin_dir/volume"
+  chmod +x "$repo_root/volume" >/dev/null 2>&1 || true
+  success "Installed i3-volume command at $bin_dir/volume"
+
+  mkdir -p "$config_dir"
+  if [ ! -f "$config_file" ]; then
+    cat > "$config_file" <<'EOF'
+NOTIFICATION_METHOD="volnoti"
+DISPLAY_NOTIFICATIONS=true
+DEFAULT_STEP=5
+MAX_VOL=100
+EOF
+    success "Created default i3-volume config at $config_file"
+  else
+    if rg -q '^[[:space:]]*NOTIFICATION_METHOD=' "$config_file" 2>/dev/null; then
+      sed -i 's/^[[:space:]]*NOTIFICATION_METHOD=.*/NOTIFICATION_METHOD="volnoti"/' "$config_file"
+    else
+      printf '\nNOTIFICATION_METHOD="volnoti"\n' >> "$config_file"
+    fi
+
+    if rg -q '^[[:space:]]*DISPLAY_NOTIFICATIONS=' "$config_file" 2>/dev/null; then
+      sed -i 's/^[[:space:]]*DISPLAY_NOTIFICATIONS=.*/DISPLAY_NOTIFICATIONS=true/' "$config_file"
+    else
+      printf 'DISPLAY_NOTIFICATIONS=true\n' >> "$config_file"
+    fi
+    success "Updated i3-volume config to use volnoti"
   fi
 }
 
@@ -1569,6 +1772,7 @@ print_summary() {
   echo -e "  ${GREEN}✓${NC} Bundled binaries"
   echo -e "  ${GREEN}✓${NC} Rubik fonts"
   echo -e "  ${GREEN}✓${NC} Sweet cursor theme"
+  echo -e "  ${GREEN}✓${NC} i3-volume + volnoti"
   echo -e "  ${GREEN}✓${NC} Optional custom themes"
   echo ""
 }
@@ -1579,6 +1783,7 @@ post_notes() {
   echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
   echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
   echo -e "  • Cursor defaults are set to ${BOLD}${SWEET_CURSOR_THEME_NAME}${NC} (${BOLD}${SWEET_CURSOR_THEME_SIZE}${NC}) to match Caelestia"
+  echo -e "  • Volume keys are wired through ${BOLD}i3-volume${NC} with ${BOLD}volnoti${NC} notifications"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
   echo -e "  • PyQt6 notification center opens from the bar"
   echo ""
@@ -1597,11 +1802,27 @@ main() {
        [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
        [ "$INSTALL_VSCODE_ONLY" = true ] || \
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ]; }; then
     error "--sddm must be used by itself."
+    return 1
+  fi
+
+  if [ "$INSTALL_I3_VOLUME_ONLY" = true ] && \
+     { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \
+       [ "$INSTALL_CURSOR_ONLY" = true ] || \
+       [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
+       [ "$INSTALL_VSCODE_ONLY" = true ] || \
+       [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
+       [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
+       [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
+       [ "$INSTALL_SDDM_ONLY" = true ]; }; then
+    error "--i3-volume must be used by itself."
     return 1
   fi
 
@@ -1672,6 +1893,22 @@ main() {
     return 0
   fi
 
+  if [ "$INSTALL_I3_VOLUME_ONLY" = true ]; then
+    print_banner
+    if detect_debian_like; then
+      echo -e "${CYAN}[*]${NC} Updating package lists..."
+      sudo apt-get update -qq
+      install_apt_group "i3-volume + volnoti" volnoti bc
+    elif detect_arch; then
+      install_pacman_group "i3-volume + volnoti" volnoti bc
+    else
+      warn "Unknown distro; skipping package install for volnoti/bc."
+    fi
+    install_i3_volume
+    info "Done!"
+    return 0
+  fi
+
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] && [ "$INSTALL_QUICKSHELL_ONLY" = true ]; then
     error "Use only one of --notification-daemon or --quickshell."
     return 1
@@ -1722,6 +1959,9 @@ main() {
   link_configs
   make_exec
   install_local_binaries
+  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
+    install_i3_volume
+  fi
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ] && [ "$INSTALL_EDITOR_EXTENSIONS_AUTO" = true ]; then
     install_detected_editor_extensions
   fi
