@@ -1,0 +1,17 @@
+#!/bin/bash
+# Built-in volnoti notification plugin
+notify_volume_volnoti() {
+    # shellcheck disable=SC2034  # icon, summary, and body are part of the plugin interface but unused by volnoti
+    local vol=$1 icon=$2 summary=$3 body=${*:4}
+    local vol_int
+    local executable="${VOLNOTI_PATH:+${VOLNOTI_PATH%/}/}volnoti-show"
+
+    command_exists "$executable" || { error "$executable not found. Please install it or set VOLNOTI_PATH to the correct path."; exit "$EX_UNAVAILABLE"; }
+    vol_int=$(awk -v v="${vol:-0}" 'BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; print n }')
+
+    if is_muted; then "$executable" -m "$vol_int" || true
+    else "$executable" "$vol_int" || true
+    fi
+    # Do not fall back to libnotify/notify-send when volnoti is selected.
+    return 0
+}

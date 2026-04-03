@@ -199,6 +199,70 @@ Because of those results, the repository keeps PyQt6 widgets as the active deskt
 ./install.sh
 ```
 
+### i3-volume + volnoti Only (Standalone)
+```bash
+./install.sh --i3-volume
+```
+
+This mode installs and wires `i3-volume` + `volnoti` only, without running the full desktop install.
+
+### Build & Install `volnoti` from Source (Fallback)
+
+If `volnoti` is unavailable in your distro repos, the installer now falls back to building it from source automatically.  
+You can also run the manual steps below.
+
+#### Debian 13 (`trixie`)
+1. Install build deps:
+```bash
+sudo apt update
+sudo apt install -y git build-essential pkg-config autoconf automake libtool \
+libdbus-1-dev libdbus-glib-1-dev libgtk2.0-dev libgdk-pixbuf-2.0-dev
+```
+2. Get source and prepare:
+```bash
+git clone https://github.com/brazdil/volnoti.git
+cd volnoti
+./prepare.sh
+```
+3. Configure, build, install:
+```bash
+./configure --prefix=/usr
+make
+sudo make install
+```
+4. Test:
+```bash
+volnoti
+```
+
+If `libgdk-pixbuf-2.0-dev` is unavailable on your mirror, try:
+```bash
+sudo apt install -y libgdk-pixbuf2.0-dev
+```
+
+#### Arch Linux
+1. Install build deps:
+```bash
+sudo pacman -S --needed --noconfirm \
+git base-devel pkgconf autoconf automake libtool dbus dbus-glib gtk2 gdk-pixbuf2
+```
+2. Get source and prepare:
+```bash
+git clone https://github.com/brazdil/volnoti.git
+cd volnoti
+./prepare.sh
+```
+3. Configure, build, install:
+```bash
+./configure --prefix=/usr
+make
+sudo make install
+```
+4. Test:
+```bash
+volnoti
+```
+
 ### Editor Theme Only
 ```bash
 ./install.sh --vscode    # VS Code

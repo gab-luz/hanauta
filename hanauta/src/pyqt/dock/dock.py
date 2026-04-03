@@ -65,6 +65,7 @@ FONTS_DIR = fonts_root()
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
 VOLUME_SCRIPT = scripts_root() / "volume.sh"
+I3_VOLUME_BIN = Path.home() / ".local" / "bin" / "volume"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "hanauta-dock"
 ICON_CACHE_PATH = CACHE_DIR / "icon_cache.json"
 STATE_PATH = CACHE_DIR / "state.json"
@@ -1016,10 +1017,24 @@ class VolumeButton(QPushButton):
 
     def wheelEvent(self, event) -> None:  # type: ignore[override]
         delta = event.angleDelta().y()
+        if delta == 0:
+            event.accept()
+            return
+
+        # Prefer i3-volume so wheel changes also show volnoti notifications.
+        if I3_VOLUME_BIN.exists():
+            if delta > 0:
+                run_bg([str(I3_VOLUME_BIN), "-n", "up", "5"])
+            else:
+                run_bg([str(I3_VOLUME_BIN), "-n", "down", "5"])
+            event.accept()
+            return
+
+        # Fallback for environments without i3-volume installed.
         current = int(run_cmd([str(VOLUME_SCRIPT), "vol"]) or "0")
         if delta > 0:
             current = min(100, current + 5)
-        elif delta < 0:
+        else:
             current = max(0, current - 5)
         run_bg([str(VOLUME_SCRIPT), "set", str(current)])
         event.accept()

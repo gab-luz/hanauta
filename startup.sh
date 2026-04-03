@@ -169,8 +169,12 @@ PY
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-wallpaper-manager/wallpaper_thumbnail_service.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/src/pyqt/widget-home-assistant/home_assistant_icon_prefetch.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" 2>/dev/null || true
+  pkill -x volnoti 2>/dev/null || true
   pkill -x dunst 2>/dev/null || true
   pkill -x deadd-notification-center 2>/dev/null || true
+  if command -v volnoti >/dev/null 2>&1; then
+    volnoti >/tmp/volnoti.log 2>&1 &
+  fi
   "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" >/tmp/hanauta-notification-daemon.log 2>&1 &
   if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-service" ]; then
     "$HOME/.config/i3/hanauta/bin/hanauta-service" >/tmp/hanauta-service.log 2>&1 &
