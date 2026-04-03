@@ -10,7 +10,9 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
@@ -27,7 +29,7 @@ try:
 except Exception:  # pragma: no cover
     tomllib = None
 
-from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QTimer
+from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap, QScreen
 from PyQt6.QtWidgets import (
     QApplication,
@@ -237,6 +239,48 @@ def sh(cmd: list[str], timeout: float = 4.0) -> subprocess.CompletedProcess[str]
         timeout=timeout,
         check=False,
     )
+
+
+def parse_pactl_devices(kind: str) -> list[dict[str, object]]:
+    result = sh(["pactl", "list", kind], timeout=6.0)
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    rows: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("Sink #", "Source #")):
+            if isinstance(current, dict):
+                rows.append(current)
+            current = {
+                "index": int(stripped.split("#", 1)[1] or 0),
+                "name": "",
+                "description": "",
+                "mute": False,
+                "volume": 0,
+            }
+            continue
+        if not isinstance(current, dict):
+            continue
+        if stripped.startswith("Name:"):
+            current["name"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Description:"):
+            current["description"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Mute:"):
+            current["mute"] = stripped.split(":", 1)[1].strip().lower() == "yes"
+        elif stripped.startswith("Volume:"):
+            match = re.search(r"(\d+)%", stripped)
+            if match is not None:
+                try:
+                    current["volume"] = max(0, min(150, int(match.group(1))))
+                except Exception:
+                    current["volume"] = 0
+    if isinstance(current, dict):
+        rows.append(current)
+    return rows
 
 
 def i3_tree() -> dict:
@@ -1003,6 +1047,8 @@ class DockAppButton(QFrame):
 
 
 class VolumeButton(QPushButton):
+    rightClicked = pyqtSignal(object)
+
     def __init__(self, material_font: str, theme) -> None:
         super().__init__(material_icon("volume_up"))
         self.material_font = material_font
@@ -1038,6 +1084,412 @@ class VolumeButton(QPushButton):
             current = max(0, current - 5)
         run_bg([str(VOLUME_SCRIPT), "set", str(current)])
         event.accept()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.RightButton:
+            self.rightClicked.emit(event.globalPosition().toPoint())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
+class AudioDevicePopup(QDialog):
+    def __init__(self, theme, ui_font: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.theme = theme
+        self.ui_font = ui_font
+        self._sink_rows: list[dict[str, object]] = []
+        self._source_rows: list[dict[str, object]] = []
+        self.setObjectName("dockAudioPopup")
+        self.setWindowTitle("Audio Devices")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setModal(False)
+        self.setMinimumWidth(360)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 14)
+        layout.setSpacing(10)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+        title = QLabel("Audio Devices")
+        title.setFont(QFont(ui_font, 11, QFont.Weight.DemiBold))
+        header_row.addWidget(title, 1)
+        self.close_button = QPushButton("×")
+        self.close_button.setObjectName("audioPopupCloseButton")
+        self.close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.close_button.clicked.connect(self.hide)
+        header_row.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignRight)
+        subtitle = QLabel("Switch output/input and adjust microphone quickly.")
+        subtitle.setObjectName("popupSubtitle")
+        subtitle.setWordWrap(True)
+        layout.addLayout(header_row)
+        layout.addWidget(subtitle)
+
+        output_section = QFrame()
+        output_section.setObjectName("audioPopupSection")
+        output_layout = QVBoxLayout(output_section)
+        output_layout.setContentsMargins(12, 10, 12, 10)
+        output_layout.setSpacing(8)
+        out_label = QLabel("Output device")
+        self.sink_combo = QComboBox()
+        self.sink_combo.setObjectName("audioDeviceCombo")
+        self.sink_combo.view().setObjectName("audioDeviceComboView")
+        self.sink_combo.currentIndexChanged.connect(self._set_default_sink)
+        output_layout.addWidget(out_label)
+        output_layout.addWidget(self.sink_combo)
+
+        self.sink_volume_label = QLabel("Output volume: 0%")
+        self.sink_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.sink_volume_slider.setRange(0, 150)
+        self.sink_volume_slider.sliderReleased.connect(self._apply_sink_volume)
+        self.sink_mute_check = QCheckBox("Mute output")
+        self.sink_mute_check.stateChanged.connect(self._set_sink_mute)
+        output_layout.addWidget(self.sink_volume_label)
+        output_layout.addWidget(self.sink_volume_slider)
+        output_layout.addWidget(self.sink_mute_check)
+        layout.addWidget(output_section)
+
+        input_section = QFrame()
+        input_section.setObjectName("audioPopupSection")
+        input_layout = QVBoxLayout(input_section)
+        input_layout.setContentsMargins(12, 10, 12, 10)
+        input_layout.setSpacing(8)
+        in_label = QLabel("Input device")
+        self.source_combo = QComboBox()
+        self.source_combo.setObjectName("audioDeviceCombo")
+        self.source_combo.view().setObjectName("audioDeviceComboView")
+        self.source_combo.currentIndexChanged.connect(self._set_default_source)
+        input_layout.addWidget(in_label)
+        input_layout.addWidget(self.source_combo)
+
+        self.source_volume_label = QLabel("Input volume: 0%")
+        self.source_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.source_volume_slider.setRange(0, 150)
+        self.source_volume_slider.sliderReleased.connect(self._apply_source_volume)
+        self.source_mute_check = QCheckBox("Mute microphone")
+        self.source_mute_check.stateChanged.connect(self._set_source_mute)
+        input_layout.addWidget(self.source_volume_label)
+        input_layout.addWidget(self.source_volume_slider)
+        input_layout.addWidget(self.source_mute_check)
+        layout.addWidget(input_section)
+
+        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.setObjectName("refreshButton")
+        self.refresh_button.clicked.connect(self.refresh_devices)
+        layout.addWidget(self.refresh_button, 0, Qt.AlignmentFlag.AlignRight)
+
+        self._apply_styles()
+        self.refresh_devices()
+
+    def _build_stylesheet(self) -> str:
+        theme = self.theme
+        return f"""
+            QDialog#dockAudioPopup {{
+                background: {rgba(theme.surface_container, 0.98)};
+                border: 1px solid {rgba(theme.outline, 0.22)};
+                border-radius: 18px;
+                color: {theme.text};
+            }}
+            QFrame#audioPopupSection {{
+                background: {rgba(theme.surface, 0.90)};
+                border: 1px solid {rgba(theme.outline, 0.18)};
+                border-radius: 14px;
+            }}
+            QLabel {{
+                color: {theme.text};
+                font-family: "{self.ui_font}";
+            }}
+            QLabel#popupSubtitle {{
+                color: {theme.text_muted};
+                font-size: 11px;
+            }}
+            QPushButton#audioPopupCloseButton {{
+                min-width: 28px;
+                max-width: 28px;
+                min-height: 28px;
+                max-height: 28px;
+                border-radius: 14px;
+                border: 1px solid {rgba(theme.outline, 0.26)};
+                background: {rgba(theme.surface, 0.92)};
+                color: {theme.text};
+                font-family: "{self.ui_font}";
+                font-weight: 700;
+                padding: 0;
+            }}
+            QPushButton#audioPopupCloseButton:hover {{
+                background: {rgba(theme.on_surface, 0.08)};
+            }}
+            QPushButton#audioPopupCloseButton:pressed {{
+                background: {rgba(theme.on_surface, 0.14)};
+            }}
+            QComboBox, QSlider, QCheckBox {{
+                font-family: "{self.ui_font}";
+            }}
+            QComboBox#audioDeviceCombo {{
+                background: {rgba(theme.surface, 0.94)};
+                border: 1px solid {rgba(theme.outline, 0.24)};
+                border-radius: 12px;
+                padding: 6px 10px;
+                color: {theme.text};
+            }}
+            QComboBox#audioDeviceCombo:focus {{
+                border: 1px solid {rgba(theme.primary, 0.72)};
+            }}
+            QComboBox#audioDeviceCombo QAbstractItemView,
+            QAbstractItemView#audioDeviceComboView,
+            QListView#audioDeviceComboView {{
+                background: {rgba(theme.surface_container, 0.98)};
+                color: {theme.text};
+                selection-background-color: {rgba(theme.primary, 0.24)};
+                selection-color: {theme.text};
+                border: 1px solid {rgba(theme.outline, 0.28)};
+                border-radius: 10px;
+                outline: none;
+                padding: 4px;
+            }}
+            QAbstractItemView#audioDeviceComboView::item,
+            QListView#audioDeviceComboView::item {{
+                min-height: 28px;
+                border-radius: 8px;
+                padding: 4px 8px;
+            }}
+            QCheckBox {{
+                color: {theme.text};
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 5px;
+                border: 1px solid {rgba(theme.outline, 0.36)};
+                background: {rgba(theme.surface, 0.90)};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {theme.primary};
+                border: 1px solid {rgba(theme.primary, 0.9)};
+            }}
+            QSlider::groove:horizontal {{
+                height: 6px;
+                border-radius: 999px;
+                background: {rgba(theme.outline, 0.25)};
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {theme.primary};
+                border-radius: 999px;
+            }}
+            QSlider::handle:horizontal {{
+                width: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+                background: {theme.primary};
+            }}
+            QPushButton#refreshButton {{
+                min-height: 34px;
+                border-radius: 12px;
+                background: {rgba(theme.primary, 0.16)};
+                border: 1px solid {rgba(theme.primary, 0.25)};
+                color: {theme.text};
+                font-family: "{self.ui_font}";
+                font-weight: 600;
+                padding: 0 12px;
+            }}
+            QPushButton#refreshButton:hover {{
+                background: {rgba(theme.primary, 0.22)};
+            }}
+            """
+
+    def _apply_styles(self) -> None:
+        self.setStyleSheet(self._build_stylesheet())
+        self._style_combo_popup_views()
+
+    def _style_combo_popup_views(self) -> None:
+        view_stylesheet = f"""
+            QAbstractItemView#audioDeviceComboView,
+            QListView#audioDeviceComboView {{
+                background: {rgba(self.theme.surface_container, 0.98)};
+                color: {self.theme.text};
+                selection-background-color: {rgba(self.theme.primary, 0.24)};
+                selection-color: {self.theme.text};
+                border: 1px solid {rgba(self.theme.outline, 0.28)};
+                border-radius: 10px;
+                outline: none;
+                padding: 4px;
+            }}
+            QAbstractItemView#audioDeviceComboView::item,
+            QListView#audioDeviceComboView::item {{
+                min-height: 28px;
+                border-radius: 8px;
+                padding: 4px 8px;
+                background: transparent;
+            }}
+            QAbstractItemView#audioDeviceComboView::item:selected,
+            QListView#audioDeviceComboView::item:selected {{
+                background: {rgba(self.theme.primary, 0.24)};
+            }}
+            """
+        base_color = QColor(rgba(self.theme.surface_container, 0.98))
+        alt_color = QColor(rgba(self.theme.surface, 0.94))
+        text_color = QColor(self.theme.text)
+        highlight_color = QColor(rgba(self.theme.primary, 0.24))
+        for combo in (getattr(self, "sink_combo", None), getattr(self, "source_combo", None)):
+            if not isinstance(combo, QComboBox):
+                continue
+            view = combo.view()
+            if view is None:
+                continue
+            view.setObjectName("audioDeviceComboView")
+            view.setAutoFillBackground(True)
+            view.setStyleSheet(view_stylesheet)
+            palette = view.palette()
+            palette.setColor(QPalette.ColorRole.Base, base_color)
+            palette.setColor(QPalette.ColorRole.AlternateBase, alt_color)
+            palette.setColor(QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorRole.Highlight, highlight_color)
+            palette.setColor(QPalette.ColorRole.HighlightedText, text_color)
+            view.setPalette(palette)
+            viewport = view.viewport()
+            if viewport is not None:
+                viewport.setAutoFillBackground(True)
+                viewport.setStyleSheet(f"background: {rgba(self.theme.surface_container, 0.98)};")
+
+    def apply_theme(self, theme) -> None:
+        self.theme = theme
+        self._apply_styles()
+
+    def popup_at(self, global_pos) -> None:
+        self.refresh_devices()
+        self.adjustSize()
+        x = int(global_pos.x() - self.width() + 36)
+        y = int(global_pos.y() - self.height() - 8)
+        self.move(x, y)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _combo_find_name(self, combo: QComboBox, name: str) -> int:
+        for i in range(combo.count()):
+            if str(combo.itemData(i) or "") == name:
+                return i
+        return -1
+
+    def refresh_devices(self) -> None:
+        if not shutil.which("pactl"):
+            self.sink_combo.clear()
+            self.source_combo.clear()
+            self.sink_combo.addItem("pactl not available", "")
+            self.source_combo.addItem("pactl not available", "")
+            return
+        default_sink = run_cmd(["pactl", "get-default-sink"]).strip()
+        default_source = run_cmd(["pactl", "get-default-source"]).strip()
+        self._sink_rows = parse_pactl_devices("sinks")
+        self._source_rows = parse_pactl_devices("sources")
+
+        self.sink_combo.blockSignals(True)
+        self.sink_combo.clear()
+        for row in self._sink_rows:
+            name = str(row.get("name", "")).strip()
+            label = str(row.get("description", "")).strip() or name
+            if name:
+                self.sink_combo.addItem(label, name)
+        sink_index = self._combo_find_name(self.sink_combo, default_sink)
+        self.sink_combo.setCurrentIndex(0 if sink_index < 0 else sink_index)
+        self.sink_combo.blockSignals(False)
+
+        self.source_combo.blockSignals(True)
+        self.source_combo.clear()
+        for row in self._source_rows:
+            name = str(row.get("name", "")).strip()
+            if ".monitor" in name:
+                continue
+            label = str(row.get("description", "")).strip() or name
+            if name:
+                self.source_combo.addItem(label, name)
+        source_index = self._combo_find_name(self.source_combo, default_source)
+        self.source_combo.setCurrentIndex(0 if source_index < 0 else source_index)
+        self.source_combo.blockSignals(False)
+
+        self._sync_sink_controls()
+        self._sync_source_controls()
+
+    def _selected_sink_name(self) -> str:
+        return str(self.sink_combo.currentData() or "").strip()
+
+    def _selected_source_name(self) -> str:
+        return str(self.source_combo.currentData() or "").strip()
+
+    def _row_by_name(self, rows: list[dict[str, object]], name: str) -> dict[str, object] | None:
+        for row in rows:
+            if str(row.get("name", "")).strip() == name:
+                return row
+        return None
+
+    def _sync_sink_controls(self) -> None:
+        row = self._row_by_name(self._sink_rows, self._selected_sink_name()) or {}
+        vol = int(row.get("volume", 0) or 0)
+        muted = bool(row.get("mute", False))
+        self.sink_volume_label.setText(f"Output volume: {vol}%")
+        self.sink_volume_slider.blockSignals(True)
+        self.sink_volume_slider.setValue(max(0, min(150, vol)))
+        self.sink_volume_slider.blockSignals(False)
+        self.sink_mute_check.blockSignals(True)
+        self.sink_mute_check.setChecked(muted)
+        self.sink_mute_check.blockSignals(False)
+
+    def _sync_source_controls(self) -> None:
+        row = self._row_by_name(self._source_rows, self._selected_source_name()) or {}
+        vol = int(row.get("volume", 0) or 0)
+        muted = bool(row.get("mute", False))
+        self.source_volume_label.setText(f"Input volume: {vol}%")
+        self.source_volume_slider.blockSignals(True)
+        self.source_volume_slider.setValue(max(0, min(150, vol)))
+        self.source_volume_slider.blockSignals(False)
+        self.source_mute_check.blockSignals(True)
+        self.source_mute_check.setChecked(muted)
+        self.source_mute_check.blockSignals(False)
+
+    def _set_default_sink(self) -> None:
+        sink = self._selected_sink_name()
+        if sink and shutil.which("pactl"):
+            subprocess.run(["pactl", "set-default-sink", sink], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        self.refresh_devices()
+
+    def _set_default_source(self) -> None:
+        source = self._selected_source_name()
+        if source and shutil.which("pactl"):
+            subprocess.run(["pactl", "set-default-source", source], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        self.refresh_devices()
+
+    def _apply_sink_volume(self) -> None:
+        sink = self._selected_sink_name()
+        value = int(self.sink_volume_slider.value())
+        self.sink_volume_label.setText(f"Output volume: {value}%")
+        if sink and shutil.which("pactl"):
+            subprocess.run(["pactl", "set-sink-volume", sink, f"{value}%"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    def _apply_source_volume(self) -> None:
+        source = self._selected_source_name()
+        value = int(self.source_volume_slider.value())
+        self.source_volume_label.setText(f"Input volume: {value}%")
+        if source and shutil.which("pactl"):
+            subprocess.run(["pactl", "set-source-volume", source, f"{value}%"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    def _set_sink_mute(self) -> None:
+        sink = self._selected_sink_name()
+        state = "1" if self.sink_mute_check.isChecked() else "0"
+        if sink and shutil.which("pactl"):
+            subprocess.run(["pactl", "set-sink-mute", sink, state], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    def _set_source_mute(self) -> None:
+        source = self._selected_source_name()
+        state = "1" if self.source_mute_check.isChecked() else "0"
+        if source and shutil.which("pactl"):
+            subprocess.run(["pactl", "set-source-mute", source, state], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
 class DockAppsScrollArea(QScrollArea):
@@ -1674,6 +2126,8 @@ class CyberDock(QWidget):
 
         self.volume_button = VolumeButton(self.material_font, self.theme)
         self.volume_button.clicked.connect(self._toggle_volume_mute)
+        self.volume_button.rightClicked.connect(self._open_audio_popup)
+        self.audio_popup = AudioDevicePopup(self.theme, self.ui_font, self)
 
         self.settings_button = QPushButton(material_icon("settings"))
         self.settings_button.setObjectName("dockUtilityButton")
@@ -1895,6 +2349,8 @@ class CyberDock(QWidget):
         self.launcher_separator.setStyleSheet(f"background: {theme.separator};")
         self.utility_separator.setStyleSheet(f"background: {theme.separator};")
         self.volume_button.apply_theme(theme)
+        if hasattr(self, "audio_popup") and isinstance(self.audio_popup, AudioDevicePopup):
+            self.audio_popup.apply_theme(theme)
         for index in range(self.apps_layout.count()):
             widget = self.apps_layout.itemAt(index).widget()
             if isinstance(widget, DockAppButton):
@@ -1951,6 +2407,9 @@ class CyberDock(QWidget):
             run_bg([str(I3_VOLUME_BIN), "-n", "-N", "volnoti", "mute"])
             return
         run_bg([str(VOLUME_SCRIPT), "toggle-muted"])
+
+    def _open_audio_popup(self, global_pos) -> None:
+        self.audio_popup.popup_at(global_pos)
 
     def _open_launcher(self) -> None:
         if LAUNCHER_APP.exists():
