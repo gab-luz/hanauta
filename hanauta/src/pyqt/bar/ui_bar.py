@@ -220,6 +220,7 @@ DEFAULT_BAR_SETTINGS = {
     "full_bar_radius": 18,
     "monitor_mode": MONITOR_MODE_PRIMARY,
     "monitor_name": "",
+    "service_icon_order": [],
 }
 
 
@@ -740,12 +741,19 @@ def load_region_settings_from_payload(settings: object) -> dict[str, object]:
     }
 
 
-def load_bar_settings_from_payload(settings: object) -> dict[str, int | bool | str]:
+def load_bar_settings_from_payload(settings: object) -> dict[str, object]:
     current = settings.get("bar", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
     offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
+        if isinstance(default, list):
+            raw = current.get(key, default)
+            if isinstance(raw, list):
+                merged[key] = [str(item).strip() for item in raw if str(item).strip()]
+            else:
+                merged[key] = list(default)
+            continue
         if isinstance(default, str):
             merged[key] = str(current.get(key, default)).strip()
             continue
@@ -776,7 +784,7 @@ def load_region_settings() -> dict[str, object]:
     return load_region_settings_from_payload(load_runtime_settings())
 
 
-def load_bar_settings() -> dict[str, int | bool]:
+def load_bar_settings() -> dict[str, object]:
     return load_bar_settings_from_payload(load_runtime_settings())
 
 
@@ -2863,6 +2871,27 @@ class CyberBar(QWidget):
                 overflow_manual.append(widget)
             else:
                 visible_candidates.append(widget)
+
+        service_order_raw = self.bar_settings.get("service_icon_order", [])
+        service_order = (
+            [str(item).strip() for item in service_order_raw if str(item).strip()]
+            if isinstance(service_order_raw, list)
+            else []
+        )
+        if service_order:
+            rank = {key: index for index, key in enumerate(service_order)}
+            slots: list[int] = []
+            sortable: list[tuple[QWidget, int, int]] = []
+            for index, widget in enumerate(visible_candidates):
+                status_key = str(widget.property("statusKey") or "").strip()
+                service_key = status_key.split(":", 1)[-1] if status_key else ""
+                if service_key in rank:
+                    slots.append(index)
+                    sortable.append((widget, rank[service_key], len(sortable)))
+            if slots and sortable:
+                sortable.sort(key=lambda item: (item[1], item[2]))
+                for index, slot in enumerate(slots):
+                    visible_candidates[slot] = sortable[index][0]
 
         main_widgets = visible_candidates[:limit]
         overflow_widgets = overflow_manual + visible_candidates[limit:]
