@@ -33,9 +33,39 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from PyQt6.QtCore import QByteArray, QEasingCurve, QFileSystemWatcher, QObject, QPoint, QProcess, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QThread, pyqtClassInfo, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import (
+    QByteArray,
+    QEasingCurve,
+    QFileSystemWatcher,
+    QObject,
+    QPoint,
+    QProcess,
+    QPropertyAnimation,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    QThread,
+    pyqtClassInfo,
+    pyqtProperty,
+    pyqtSignal,
+    pyqtSlot,
+)
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
-from PyQt6.QtGui import QAction, QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QIcon, QImage, QPainter, QPalette, QPixmap, QRegion
+from PyQt6.QtGui import (
+    QAction,
+    QColor,
+    QCursor,
+    QFont,
+    QFontDatabase,
+    QFontMetrics,
+    QIcon,
+    QImage,
+    QPainter,
+    QPalette,
+    QPixmap,
+    QRegion,
+)
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -51,17 +81,53 @@ from PyQt6.QtWidgets import (
     QMenu,
 )
 
-from pyqt.shared.runtime import entry_command, entry_patterns, entry_target, fonts_root, hanauta_root, project_root, python_executable, scripts_root, source_root
-from pyqt.shared.plugin_bridge import build_polkit_command, polkit_available, run_with_polkit, trigger_fullscreen_alert
+from pyqt.shared.runtime import (
+    entry_command,
+    entry_patterns,
+    entry_target,
+    fonts_root,
+    hanauta_root,
+    project_root,
+    python_executable,
+    scripts_root,
+    source_root,
+)
+from pyqt.shared.plugin_bridge import (
+    build_polkit_command,
+    polkit_available,
+    run_with_polkit,
+    trigger_fullscreen_alert,
+)
+from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.rss import collect_entries as collect_rss_entries
 from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
 from pyqt.shared.rss import load_cache as load_rss_cache
 from pyqt.shared.rss import save_cache as save_rss_cache
-from pyqt.shared.cap_alerts import CapAlert, configured_alert_location, fallback_tip, fetch_active_alerts, relative_expiry, test_mode_enabled, top_alert
-from pyqt.shared.weather import AnimatedWeatherIcon, WeatherForecast, animated_icon_path, configured_city, fetch_forecast
+from pyqt.shared.cap_alerts import (
+    CapAlert,
+    configured_alert_location,
+    fallback_tip,
+    fetch_active_alerts,
+    relative_expiry,
+    test_mode_enabled,
+    top_alert,
+)
+from pyqt.shared.weather import (
+    AnimatedWeatherIcon,
+    WeatherForecast,
+    animated_icon_path,
+    configured_city,
+    fetch_forecast,
+)
 from pyqt.shared.updates import collect_update_payload
-from pyqt.shared.health import format_steps_short, health_tooltip, load_current_snapshot, load_health_service_settings, poll_health_reminders
+from pyqt.shared.health import (
+    format_steps_short,
+    health_tooltip,
+    load_current_snapshot,
+    load_health_service_settings,
+    poll_health_reminders,
+)
 from pyqt.shared.crypto import (
     build_price_alerts as build_crypto_price_alerts,
     fetch_prices as fetch_crypto_prices,
@@ -82,38 +148,60 @@ HANAUTA_ROOT = hanauta_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
-AI_POPUP = APP_DIR / "pyqt" / "ai-popup" / "ai_popup.py"
-WIFI_CONTROL_PY = APP_DIR / "pyqt" / "widget-wifi-control" / "wifi_control.py"
+NOTIFICATION_CENTER = (
+    APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
+)
+AI_POPUP: Path | None = resolve_plugin_script("ai_popup.py", ["ai-popup"])
+WIFI_CONTROL_PY: Path | None = resolve_plugin_script(
+    "wifi_control.py", ["wifi-control", "wifi"]
+)
 WIFI_CONTROL_BINARY = HANAUTA_ROOT / "bin" / "hanauta-wifi-control"
 WIFI_CONTROL = WIFI_CONTROL_PY
-VPN_CONTROL = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
-CHRISTIAN_WIDGET = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
-HEALTH_WIDGET = APP_DIR / "pyqt" / "widget-health" / "health_widget.py"
-REMINDERS_WIDGET = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
-POMODORO_WIDGET = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
-RSS_WIDGET = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
-HOME_ASSISTANT_WIDGET = APP_DIR / "pyqt" / "widget-home-assistant" / "home_assistant_widget.py"
+VPN_CONTROL: Path | None = resolve_plugin_script(
+    "vpn_control.py", ["vpn-control", "vpn"]
+)
+CHRISTIAN_WIDGET: Path | None = resolve_plugin_script(
+    "christian_widget.py", ["religion-christian", "christian"]
+)
+HEALTH_WIDGET: Path | None = resolve_plugin_script("health_widget.py", ["health"])
+REMINDERS_WIDGET: Path | None = resolve_plugin_script(
+    "reminders_widget.py", ["reminders"]
+)
+POMODORO_WIDGET: Path | None = resolve_plugin_script("pomodoro_widget.py", ["pomodoro"])
+RSS_WIDGET: Path | None = resolve_plugin_script("rss_widget.py", ["rss"])
+HOME_ASSISTANT_WIDGET: Path | None = resolve_plugin_script(
+    "home_assistant_widget.py", ["home-assistant", "homeassistant"]
+)
 POWERMENU_WIDGET = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
-OBS_WIDGET = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
-OBS_STATUS = APP_DIR / "pyqt" / "widget-obs" / "obs_status.py"
-UPDATES_WIDGET = APP_DIR / "pyqt" / "widget-updates" / "updates_widget.py"
-CRYPTO_WIDGET = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
-VPS_WIDGET = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
-DESKTOP_CLOCK_WIDGET = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+OBS_WIDGET: Path | None = resolve_plugin_script("obs_widget.py", ["obs"])
+OBS_STATUS: Path | None = resolve_plugin_script("obs_status.py", ["obs"])
+UPDATES_WIDGET: Path | None = resolve_plugin_script("updates_widget.py", ["updates"])
+CRYPTO_WIDGET: Path | None = resolve_plugin_script("crypto_widget.py", ["crypto"])
+VPS_WIDGET: Path | None = resolve_plugin_script("vps_widget.py", ["vps"])
+DESKTOP_CLOCK_WIDGET: Path | None = resolve_plugin_script(
+    "desktop_clock_widget.py", ["desktop-clock", "clock"]
+)
 DESKTOP_CLOCK_BINARY = HANAUTA_ROOT / "bin" / "hanauta-clock"
-NTFY_POPUP = APP_DIR / "pyqt" / "widget-ntfy-control" / "ntfy_popup.py"
-WEATHER_POPUP = APP_DIR / "pyqt" / "widget-weather" / "weather_popup.py"
-CAP_ALERTS_POPUP = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alerts_popup.py"
-CAP_ALERTS_OVERLAY = APP_DIR / "pyqt" / "widget-cap-alerts" / "cap_alert_overlay.py"
-CALENDAR_POPUP = APP_DIR / "pyqt" / "widget-calendar" / "calendar_popup.py"
-GAME_MODE_POPUP = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
+NTFY_POPUP: Path | None = resolve_plugin_script("ntfy_popup.py", ["ntfy"])
+WEATHER_POPUP: Path | None = resolve_plugin_script("weather_popup.py", ["weather"])
+CAP_ALERTS_POPUP: Path | None = resolve_plugin_script(
+    "cap_alerts_popup.py", ["cap-alerts", "alerts"]
+)
+CAP_ALERTS_OVERLAY: Path | None = resolve_plugin_script(
+    "cap_alert_overlay.py", ["cap-alerts", "alerts"]
+)
+CALENDAR_POPUP: Path | None = resolve_plugin_script("calendar_popup.py", ["calendar"])
+GAME_MODE_POPUP: Path | None = resolve_plugin_script(
+    "game_mode_popup.py", ["game-mode", "gamemode"]
+)
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 CAVA_BAR_CONFIG = APP_DIR / "pyqt" / "bar" / "cava_bar.conf"
 STATUS_NOTIFIER_WATCHER = APP_DIR / "pyqt" / "bar" / "status_notifier_watcher.py"
-EMAIL_CLIENT = APP_DIR / "pyqt" / "email-client" / "email_client.py"
+EMAIL_CLIENT: Path | None = resolve_plugin_script(
+    "email_client.py", ["email-client", "mail"]
+)
 OPEN_MAIL_MESSAGE = APP_DIR / "pyqt" / "shared" / "open_mail_message.py"
 SCRIPTS_DIR = scripts_root()
 LAUNCHER_SCRIPT = SCRIPTS_DIR / "open_launcher.sh"
@@ -132,7 +220,17 @@ RSS_ICON = ASSETS_DIR / "rss-feed.svg"
 REMINDER_ICON = ASSETS_DIR / "reminder-widget.svg"
 POMODORO_ICON = ASSETS_DIR / "pomodoro.svg"
 NTFY_ICON = ASSETS_DIR / "ntfy.svg"
-SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+CLIPBOARD_ICON = ASSETS_DIR / "clipboard.svg"
+GAME_MODE_ICON = ASSETS_DIR / "game-mode.svg"
+CRYPTO_ICON = ASSETS_DIR / "bitcoin.svg"
+SETTINGS_FILE = (
+    Path.home()
+    / ".local"
+    / "state"
+    / "hanauta"
+    / "notification-center"
+    / "settings.json"
+)
 BAR_ICON_CONFIG_DIR = Path.home() / ".config" / "hanauta"
 BAR_ICON_CONFIG_FILE = BAR_ICON_CONFIG_DIR / "bar-icons.json"
 BAR_ICON_EXAMPLE_FILE = ROOT / "hanauta" / "config" / "bar-icons.example.json"
@@ -150,10 +248,14 @@ BAR_PLUGIN_ENTRYPOINT = "hanauta_bar_plugin.py"
 HOST_PLUGIN_API_VERSION = 1
 PLUGIN_DEV_ROOT = Path.home() / "dev"
 HAS_DBUS_NEXT = importlib.util.find_spec("dbus_next") is not None
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 if not HAS_DBUS_NEXT:
-    logger.warning("dbus_next is not installed; action notifications will fall back to notify-send.")
+    logger.warning(
+        "dbus_next is not installed; action notifications will fall back to notify-send."
+    )
 
 MATERIAL_ICONS = {
     "battery_2_bar": "\uebe0",
@@ -261,7 +363,12 @@ def run_bg_detached(cmd: list[str]) -> bool:
     except Exception:
         pass
     try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
         return True
     except Exception:
         return False
@@ -372,7 +479,9 @@ def _screen_by_name(output_name: str) -> QScreen | None:
     return None
 
 
-def preferred_bar_screen(monitor_mode: str = MONITOR_MODE_PRIMARY, monitor_name: str = "") -> QScreen | None:
+def preferred_bar_screen(
+    monitor_mode: str = MONITOR_MODE_PRIMARY, monitor_name: str = ""
+) -> QScreen | None:
     screens = QApplication.screens()
     if not screens:
         return None
@@ -439,7 +548,10 @@ def focused_workspace_has_real_windows() -> bool:
     def find_workspace(node: dict) -> dict | None:
         if not isinstance(node, dict):
             return None
-        if node.get("type") == "workspace" and str(node.get("name", "")).strip() == current_workspace:
+        if (
+            node.get("type") == "workspace"
+            and str(node.get("name", "")).strip() == current_workspace
+        ):
             return node
         for key in ("nodes", "floating_nodes"):
             children = node.get(key, [])
@@ -481,7 +593,7 @@ def focused_workspace_has_real_windows() -> bool:
 
 
 def desktop_clock_target() -> Path | None:
-    if DESKTOP_CLOCK_WIDGET.exists():
+    if DESKTOP_CLOCK_WIDGET is not None and DESKTOP_CLOCK_WIDGET.exists():
         return DESKTOP_CLOCK_WIDGET
     if DESKTOP_CLOCK_BINARY.exists():
         return DESKTOP_CLOCK_BINARY
@@ -512,7 +624,9 @@ def ensure_bar_icon_config() -> None:
     try:
         BAR_ICON_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         if not BAR_ICON_CONFIG_FILE.exists() and BAR_ICON_EXAMPLE_FILE.exists():
-            BAR_ICON_CONFIG_FILE.write_text(BAR_ICON_EXAMPLE_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+            BAR_ICON_CONFIG_FILE.write_text(
+                BAR_ICON_EXAMPLE_FILE.read_text(encoding="utf-8"), encoding="utf-8"
+            )
     except OSError:
         return
 
@@ -611,6 +725,18 @@ def tinted_raster_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
     return QIcon(tinted)
 
 
+def native_svg_icon(path: Path, size: int = 16) -> QIcon:
+    if not path.exists():
+        return QIcon()
+    icon = QIcon(str(path))
+    if icon.isNull():
+        return QIcon()
+    pixmap = icon.pixmap(size, size)
+    if pixmap.isNull():
+        return QIcon()
+    return QIcon(pixmap)
+
+
 def load_service_settings() -> dict[str, dict[str, object]]:
     try:
         raw = SETTINGS_FILE.read_text(encoding="utf-8")
@@ -624,7 +750,11 @@ def load_service_settings() -> dict[str, dict[str, object]]:
 def discover_bar_plugin_entrypoints() -> list[Path]:
     settings = load_runtime_settings()
     marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
-    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+    installed = (
+        marketplace.get("installed_plugins", [])
+        if isinstance(marketplace, dict)
+        else []
+    )
     entrypoints: list[Path] = []
     seen: set[str] = set()
     if isinstance(installed, list):
@@ -649,7 +779,13 @@ def discover_bar_plugin_entrypoints() -> list[Path]:
             seen.add(key)
             entrypoints.append(entrypoint)
 
-    install_root = Path(str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))).expanduser() if isinstance(marketplace, dict) else ROOT / "hanauta" / "plugins"
+    install_root = (
+        Path(
+            str(marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins")))
+        ).expanduser()
+        if isinstance(marketplace, dict)
+        else ROOT / "hanauta" / "plugins"
+    )
     search_roots = [install_root, ROOT / "hanauta" / "plugins"]
     for root in search_roots:
         if not root.exists() or not root.is_dir():
@@ -690,26 +826,55 @@ def discover_bar_plugin_entrypoints() -> list[Path]:
     return entrypoints
 
 
-def resolve_rss_widget_script() -> Path:
-    if RSS_WIDGET.exists():
-        return RSS_WIDGET
+def resolve_rss_widget_script() -> Path | None:
+    return RSS_WIDGET
+
+
+def resolve_ntfy_popup_script() -> Path | None:
+    return NTFY_POPUP
+
+
+def resolve_ntfy_icon_path() -> Path:
     settings = load_runtime_settings()
     marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
-    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
-    if isinstance(installed, list):
-        for row in installed:
-            if not isinstance(row, dict):
-                continue
-            plugin_id = str(row.get("id", "")).strip()
-            if plugin_id != "rss_widget":
-                continue
-            install_path = str(row.get("install_path", "")).strip()
-            if not install_path:
-                continue
-            candidate = Path(install_path).expanduser() / "rss_widget.py"
-            if candidate.exists():
-                return candidate
-    return RSS_WIDGET
+    install_dir = str(marketplace.get("install_dir", "")).strip()
+    roots: list[Path] = []
+    if install_dir:
+        roots.append(Path(install_dir).expanduser())
+    roots.extend(
+        [
+            ROOT / "hanauta" / "plugins",
+            Path.home() / ".config" / "i3" / "hanauta" / "plugins",
+            PLUGIN_DEV_ROOT,
+        ]
+    )
+    for root in roots:
+        if not root.exists():
+            continue
+        if root.is_dir():
+            children = (
+                sorted(root.iterdir())
+                if root != PLUGIN_DEV_ROOT
+                else [root / "hanauta-plugin-ntfy"]
+            )
+            for child in children:
+                if not child.exists() or not child.is_dir():
+                    continue
+                if "ntfy" not in child.name.lower():
+                    continue
+                color_icon = child / "assets" / "icon_color.svg"
+                if color_icon.exists():
+                    return color_icon
+                mono_icon = child / "assets" / "icon.svg"
+                if mono_icon.exists():
+                    return mono_icon
+                root_color = child / "icon_color.svg"
+                if root_color.exists():
+                    return root_color
+                root_mono = child / "icon.svg"
+                if root_mono.exists():
+                    return root_mono
+    return NTFY_ICON
 
 
 def load_runtime_settings() -> dict[str, object]:
@@ -745,7 +910,14 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, object]:
     current = settings.get("bar", {}) if isinstance(settings, dict) else {}
     current = current if isinstance(current, dict) else {}
     merged = dict(DEFAULT_BAR_SETTINGS)
-    offset_keys = {"launcher_offset", "workspace_offset", "datetime_offset", "media_offset", "status_offset", "tray_offset"}
+    offset_keys = {
+        "launcher_offset",
+        "workspace_offset",
+        "datetime_offset",
+        "media_offset",
+        "status_offset",
+        "tray_offset",
+    }
     for key, default in DEFAULT_BAR_SETTINGS.items():
         if isinstance(default, list):
             raw = current.get(key, default)
@@ -775,7 +947,12 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, object]:
         else:
             merged[key] = max(0, min(32, int(merged[key])))
     monitor_mode = str(merged.get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
-    merged["monitor_mode"] = monitor_mode if monitor_mode in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED} else MONITOR_MODE_PRIMARY
+    merged["monitor_mode"] = (
+        monitor_mode
+        if monitor_mode
+        in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED}
+        else MONITOR_MODE_PRIMARY
+    )
     merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
     return merged
 
@@ -821,7 +998,8 @@ def mail_storage_config() -> dict[str, str]:
     except Exception:
         payload = {}
     return {
-        "db_path": str(payload.get("db_path", default["db_path"])).strip() or default["db_path"],
+        "db_path": str(payload.get("db_path", default["db_path"])).strip()
+        or default["db_path"],
     }
 
 
@@ -835,7 +1013,9 @@ def mail_settings_from_payload(settings: object) -> dict[str, bool]:
     return {
         "notify_new_messages": bool(current.get("notify_new_messages", True)),
         "play_notification_sound": bool(current.get("play_notification_sound", False)),
-        "hide_notification_content": bool(current.get("hide_notification_content", False)),
+        "hide_notification_content": bool(
+            current.get("hide_notification_content", False)
+        ),
     }
 
 
@@ -1002,7 +1182,9 @@ class WorkspaceDot(QPushButton):
             "empty": "rgba(255,255,255,0.14)",
         }
         self.setFlat(True)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; padding: 0; }")
+        self.setStyleSheet(
+            "QPushButton { background: transparent; border: none; padding: 0; }"
+        )
 
     def set_colors(self, colors: dict[str, str]) -> None:
         self.colors = dict(colors)
@@ -1032,7 +1214,11 @@ class WorkspaceDot(QPushButton):
         dot_size = 14 if self.state == "focused" else 10
         inset = (self.width() - dot_size) / 2.0
         rect = QRectF(inset + 0.5, inset + 0.5, dot_size - 1.0, dot_size - 1.0)
-        fill = QColor("#e8def8") if self._hovered else QColor(self.colors.get(self.state, self.colors["empty"]))
+        fill = (
+            QColor("#e8def8")
+            if self._hovered
+            else QColor(self.colors.get(self.state, self.colors["empty"]))
+        )
         border = QColor(255, 255, 255, 46)
 
         pen = painter.pen()
@@ -1111,7 +1297,9 @@ class EqualizerBar(QFrame):
 @pyqtClassInfo("D-Bus Interface", "org.kde.StatusNotifierWatcher")
 class StatusNotifierWatcher(QObject):
     statusNotifierItemRegistered = pyqtSignal(str, name="StatusNotifierItemRegistered")
-    statusNotifierItemUnregistered = pyqtSignal(str, name="StatusNotifierItemUnregistered")
+    statusNotifierItemUnregistered = pyqtSignal(
+        str, name="StatusNotifierItemUnregistered"
+    )
     statusNotifierHostRegistered = pyqtSignal(name="StatusNotifierHostRegistered")
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -1167,14 +1355,22 @@ class StatusNotifierItemButton(QPushButton):
         self._icon_tint_getter = icon_tint_getter
         self._last_title = ""
         self.service, self.path = self._parse_item_id(item_id)
-        self.iface = QDBusInterface(self.service, self.path, "org.kde.StatusNotifierItem", self.bus)
+        self.iface = QDBusInterface(
+            self.service, self.path, "org.kde.StatusNotifierItem", self.bus
+        )
         self.setObjectName("trayButton")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setIconSize(QSize(16, 16))
         self.setFixedSize(22, 22)
         self.refresh()
         for signal_name in ("NewIcon", "NewTitle", "NewToolTip", "NewStatus"):
-            self.bus.connect(self.service, self.path, "org.kde.StatusNotifierItem", signal_name, self.refresh)
+            self.bus.connect(
+                self.service,
+                self.path,
+                "org.kde.StatusNotifierItem",
+                signal_name,
+                self.refresh,
+            )
 
     @staticmethod
     def _parse_item_id(item_id: str) -> tuple[str, str]:
@@ -1200,8 +1396,12 @@ class StatusNotifierItemButton(QPushButton):
             return QIcon()
         best = max(
             (
-                entry for entry in pixmaps
-                if isinstance(entry, tuple) and len(entry) == 3 and entry[0] > 0 and entry[1] > 0
+                entry
+                for entry in pixmaps
+                if isinstance(entry, tuple)
+                and len(entry) == 3
+                and entry[0] > 0
+                and entry[1] > 0
             ),
             key=lambda entry: entry[0] * entry[1],
             default=None,
@@ -1209,7 +1409,9 @@ class StatusNotifierItemButton(QPushButton):
         if best is None:
             return QIcon()
         width, height, data = best
-        image = QImage(bytes(data), int(width), int(height), QImage.Format.Format_ARGB32)
+        image = QImage(
+            bytes(data), int(width), int(height), QImage.Format.Format_ARGB32
+        )
         if image.isNull():
             return QIcon()
         return QIcon(QPixmap.fromImage(image.copy()))
@@ -1244,14 +1446,18 @@ class StatusNotifierItemButton(QPushButton):
         return reply.type() != QDBusMessage.MessageType.ErrorMessage
 
     def _looks_like_zulucrypt(self) -> bool:
-        haystack = " ".join(
-            [
-                str(self.item_id or ""),
-                str(self.service or ""),
-                str(self._last_title or ""),
-                str(self.toolTip() or ""),
-            ]
-        ).strip().lower()
+        haystack = (
+            " ".join(
+                [
+                    str(self.item_id or ""),
+                    str(self.service or ""),
+                    str(self._last_title or ""),
+                    str(self.toolTip() or ""),
+                ]
+            )
+            .strip()
+            .lower()
+        )
         return "zulucrypt" in haystack or "zulu" in haystack
 
     def _x11_right_click_fallback(self) -> bool:
@@ -1305,9 +1511,8 @@ class StatusNotifierItemButton(QPushButton):
             or self._dbus_property("Id", "")
             or self.service
         )
-        icon_name = (
-            self._dbus_property("IconName", "")
-            or (tooltip[0] if isinstance(tooltip, tuple) and len(tooltip) > 0 else "")
+        icon_name = self._dbus_property("IconName", "") or (
+            tooltip[0] if isinstance(tooltip, tuple) and len(tooltip) > 0 else ""
         )
         status = str(self._dbus_property("Status", "Active") or "Active")
         self._last_title = str(title)
@@ -1455,11 +1660,17 @@ class StatusNotifierTray(QFrame):
         self._sync_visibility()
 
     @pyqtSlot(str, str, str)
-    def _handle_name_owner_changed(self, name: str, _old_owner: str, new_owner: str) -> None:
+    def _handle_name_owner_changed(
+        self, name: str, _old_owner: str, new_owner: str
+    ) -> None:
         if not name.startswith("org.") and not name.startswith(":"):
             return
         if not new_owner:
-            to_remove = [item_id for item_id, button in self.buttons.items() if button.service == name]
+            to_remove = [
+                item_id
+                for item_id, button in self.buttons.items()
+                if button.service == name
+            ]
             for item_id in to_remove:
                 self._unregister_item(item_id)
 
@@ -1604,7 +1815,9 @@ class CavaWorker(QThread):
     frame_ready = pyqtSignal(object)
     stream_ended = pyqtSignal()
 
-    def __init__(self, config_path: Path, bars: int, parent: QObject | None = None) -> None:
+    def __init__(
+        self, config_path: Path, bars: int, parent: QObject | None = None
+    ) -> None:
         super().__init__(parent)
         self._config_path = config_path
         self._bars = max(1, bars)
@@ -1679,7 +1892,9 @@ class CavaWorker(QThread):
 class SystemStateWorker(QThread):
     loaded = pyqtSignal(object)
 
-    def __init__(self, battery_base: Optional[Path], parent: QObject | None = None) -> None:
+    def __init__(
+        self, battery_base: Optional[Path], parent: QObject | None = None
+    ) -> None:
         super().__init__(parent)
         self._battery_base = battery_base
 
@@ -1703,13 +1918,19 @@ class SystemStateWorker(QThread):
                 vpn_payload = {}
             if isinstance(vpn_payload, dict):
                 payload["wg_active"] = vpn_payload.get("wireguard") == "on"
-                payload["selected_iface"] = str(vpn_payload.get("wg_selected", "")).strip()
+                payload["selected_iface"] = str(
+                    vpn_payload.get("wg_selected", "")
+                ).strip()
 
         if self._battery_base is not None:
             try:
-                with open(self._battery_base / "capacity", "r", encoding="utf-8") as handle:
+                with open(
+                    self._battery_base / "capacity", "r", encoding="utf-8"
+                ) as handle:
                     payload["battery_capacity"] = int(handle.read().strip())
-                with open(self._battery_base / "status", "r", encoding="utf-8") as handle:
+                with open(
+                    self._battery_base / "status", "r", encoding="utf-8"
+                ) as handle:
                     payload["battery_status"] = handle.read().strip()
                 payload["battery_present"] = True
             except Exception:
@@ -1766,38 +1987,69 @@ class MailPollWorker(QThread):
         conn.row_factory = sqlite3.Row
         try:
             self._ensure_schema(conn)
-            accounts = [dict(row) for row in conn.execute("SELECT * FROM accounts ORDER BY lower(label), lower(email_address)").fetchall()]
+            accounts = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM accounts ORDER BY lower(label), lower(email_address)"
+                ).fetchall()
+            ]
             payload["available"] = bool(accounts)
             if not accounts:
                 self.loaded.emit(payload)
                 return
             notifications: list[dict[str, str | int]] = []
             synced_account_ids: list[int] = []
-            logger.debug("MailPollWorker scanning %d accounts (%d due)", len(accounts), len(self._due_account_ids))
+            logger.debug(
+                "MailPollWorker scanning %d accounts (%d due)",
+                len(accounts),
+                len(self._due_account_ids),
+            )
             for account in accounts:
                 account_id = int(account.get("id", 0) or 0)
                 if account_id <= 0 or account_id not in self._due_account_ids:
                     continue
                 try:
-                    folder_state = json.loads(str(account.get("folder_state_json", "{}")) or "{}")
+                    folder_state = json.loads(
+                        str(account.get("folder_state_json", "{}")) or "{}"
+                    )
                 except Exception:
                     folder_state = {}
                 if not isinstance(folder_state, dict):
                     folder_state = {}
                 inbox_name = "INBOX"
-                account_label = str(account.get("label", "")).strip() or str(account.get("email_address", "")).strip() or f"id-{account_id}"
-                account_notifications = self._sync_account(conn, account, inbox_name, folder_state)
+                account_label = (
+                    str(account.get("label", "")).strip()
+                    or str(account.get("email_address", "")).strip()
+                    or f"id-{account_id}"
+                )
+                account_notifications = self._sync_account(
+                    conn, account, inbox_name, folder_state
+                )
                 notifications.extend(account_notifications)
                 if account_notifications:
-                    logger.info("Account %s produced %d notification(s)", account_label, len(account_notifications))
+                    logger.info(
+                        "Account %s produced %d notification(s)",
+                        account_label,
+                        len(account_notifications),
+                    )
                 conn.execute(
                     "UPDATE accounts SET folders_json = ?, folder_state_json = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps([inbox_name]), json.dumps(folder_state), mail_now_iso(), account_id),
+                    (
+                        json.dumps([inbox_name]),
+                        json.dumps(folder_state),
+                        mail_now_iso(),
+                        account_id,
+                    ),
                 )
                 conn.commit()
                 synced_account_ids.append(account_id)
 
-            account_rows = [dict(row) for row in conn.execute("SELECT id, label, display_name, email_address FROM accounts ORDER BY lower(label), lower(email_address)").fetchall()]
+            account_rows = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT id, label, display_name, email_address FROM accounts ORDER BY lower(label), lower(email_address)"
+                ).fetchall()
+            ]
             counts = {
                 int(row["account_id"]): int(row["unread_count"])
                 for row in conn.execute(
@@ -1807,14 +2059,18 @@ class MailPollWorker(QThread):
             payload["accounts"] = [
                 {
                     "id": int(account["id"]),
-                    "label": str(account.get("label", "")).strip() or str(account.get("email_address", "")).strip() or "Mailbox",
+                    "label": str(account.get("label", "")).strip()
+                    or str(account.get("email_address", "")).strip()
+                    or "Mailbox",
                     "display_name": str(account.get("display_name", "")).strip(),
                     "email_address": str(account.get("email_address", "")).strip(),
                     "unread_count": counts.get(int(account["id"]), 0),
                 }
                 for account in account_rows
             ]
-            payload["total_unread"] = sum(int(item["unread_count"]) for item in payload["accounts"])
+            payload["total_unread"] = sum(
+                int(item["unread_count"]) for item in payload["accounts"]
+            )
             payload["notifications"] = notifications
             payload["synced_account_ids"] = synced_account_ids
         except Exception:
@@ -1906,7 +2162,9 @@ class MailPollWorker(QThread):
         client: imaplib.IMAP4 | None = None
         try:
             if use_ssl:
-                client = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
+                client = imaplib.IMAP4_SSL(
+                    host, port, ssl_context=ssl.create_default_context()
+                )
             else:
                 client = imaplib.IMAP4(host, port)
             client.login(username, password)
@@ -1922,7 +2180,9 @@ class MailPollWorker(QThread):
 
             latest_uids = uids[-40:]
             fetched_messages: dict[str, dict[str, str]] = {}
-            status, fetch_data = client.uid("fetch", ",".join(latest_uids), "(RFC822 FLAGS)")
+            status, fetch_data = client.uid(
+                "fetch", ",".join(latest_uids), "(RFC822 FLAGS)"
+            )
             if status == "OK":
                 for i in range(0, len(fetch_data or []), 2):
                     item = fetch_data[i]
@@ -1945,7 +2205,11 @@ class MailPollWorker(QThread):
                         raw_bytes,
                         flags_seen,
                         flags_flagged,
-                        any("attachment" in (part.get("Content-Disposition") or "").lower() for part in msg.walk()),
+                        any(
+                            "attachment"
+                            in (part.get("Content-Disposition") or "").lower()
+                            for part in msg.walk()
+                        ),
                     )
                     if row_payload:
                         fetched_messages[uid] = row_payload
@@ -1954,31 +2218,52 @@ class MailPollWorker(QThread):
             latest_uid = uids[-1]
             last_uid = str(folder_state.get(folder, "")).strip()
             folder_state[folder] = latest_uid
-            notify_enabled = bool(self._mail_settings.get("notify_new_messages", True)) and bool(account.get("notify_enabled", True))
+            notify_enabled = bool(
+                self._mail_settings.get("notify_new_messages", True)
+            ) and bool(account.get("notify_enabled", True))
             if last_uid and notify_enabled:
-                new_uids = [uid for uid in uids if uid.isdigit() and int(uid) > int(last_uid)][-3:]
+                new_uids = [
+                    uid for uid in uids if uid.isdigit() and int(uid) > int(last_uid)
+                ][-3:]
                 if new_uids:
-                    logger.info("MailPollWorker detected %d new messages for account %s", len(new_uids), account.get("label") or account.get("email_address"))
+                    logger.info(
+                        "MailPollWorker detected %d new messages for account %s",
+                        len(new_uids),
+                        account.get("label") or account.get("email_address"),
+                    )
                     for uid in new_uids:
                         if uid not in fetched_messages:
-                            row_payload = self._fetch_and_store_single_message(conn, client, account_id, folder, uid)
+                            row_payload = self._fetch_and_store_single_message(
+                                conn, client, account_id, folder, uid
+                            )
                             if row_payload:
                                 fetched_messages[uid] = row_payload
                 for uid in new_uids:
                     row = fetched_messages.get(uid)
                     if not row:
-                        row = self._fetch_and_store_single_message(conn, client, account_id, folder, uid)
+                        row = self._fetch_and_store_single_message(
+                            conn, client, account_id, folder, uid
+                        )
                         if row:
                             fetched_messages[uid] = row
                     if not row:
-                        logger.warning("MailPollWorker missing stored row for uid %s/%s (%s)", uid, folder, account_label)
+                        logger.warning(
+                            "MailPollWorker missing stored row for uid %s/%s (%s)",
+                            uid,
+                            folder,
+                            account_label,
+                        )
                         continue
                     notifications.append(
                         {
                             "account_id": account_id,
                             "folder": folder,
-                            "message_key": build_mail_message_key(account_id, folder, uid),
-                            "account_label": str(account.get("display_name", "")).strip()
+                            "message_key": build_mail_message_key(
+                                account_id, folder, uid
+                            ),
+                            "account_label": str(
+                                account.get("display_name", "")
+                            ).strip()
                             or str(account.get("label", "")).strip()
                             or str(account.get("email_address", "")).strip()
                             or "Mailbox",
@@ -1989,7 +2274,9 @@ class MailPollWorker(QThread):
                         }
                     )
         except Exception as exc:
-            logger.exception("MailPollWorker failed to sync account %s: %s", account_label, exc)
+            logger.exception(
+                "MailPollWorker failed to sync account %s: %s", account_label, exc
+            )
             return []
         finally:
             if client is not None:
@@ -2050,7 +2337,9 @@ class MailPollWorker(QThread):
                     json.dumps(
                         [
                             decode_mail_text(item)
-                            for item in decode_mail_text(msg.get("References", "")).split()
+                            for item in decode_mail_text(
+                                msg.get("References", "")
+                            ).split()
                             if item
                         ]
                     ),
@@ -2072,7 +2361,9 @@ class MailPollWorker(QThread):
                 ),
             )
         except Exception:
-            logger.exception("Failed to persist message %s/%s/%s", account_id, folder, uid)
+            logger.exception(
+                "Failed to persist message %s/%s/%s", account_id, folder, uid
+            )
             return None
         return {
             "subject": subject,
@@ -2092,7 +2383,13 @@ class MailPollWorker(QThread):
         try:
             status, fetch_data = client.uid("fetch", uid, "(RFC822 FLAGS)")
         except Exception as exc:
-            logger.exception("Single-message fetch failed for %s/%s/%s: %s", account_id, folder, uid, exc)
+            logger.exception(
+                "Single-message fetch failed for %s/%s/%s: %s",
+                account_id,
+                folder,
+                uid,
+                exc,
+            )
             return None
         if status != "OK" or not fetch_data:
             logger.warning("IMAP fetch for uid %s/%s failed", uid, folder)
@@ -2117,7 +2414,10 @@ class MailPollWorker(QThread):
                 raw_bytes,
                 flags_seen,
                 flags_flagged,
-                any("attachment" in (part.get("Content-Disposition") or "").lower() for part in msg.walk()),
+                any(
+                    "attachment" in (part.get("Content-Disposition") or "").lower()
+                    for part in msg.walk()
+                ),
             )
         return None
 
@@ -2129,13 +2429,17 @@ class CyberBar(QWidget):
         self.loaded_fonts = load_app_fonts()
         self.theme = load_theme_palette()
         self._theme_mtime = palette_mtime()
-        self._settings_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
+        self._settings_mtime = (
+            SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
+        )
         self.runtime_settings = normalize_runtime_settings(load_runtime_settings())
         services = self.runtime_settings.get("services", {})
         self.service_settings = services if isinstance(services, dict) else {}
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
         self.region_settings = load_region_settings_from_payload(self.runtime_settings)
-        self.autolock_settings = load_autolock_settings_from_payload(self.runtime_settings)
+        self.autolock_settings = load_autolock_settings_from_payload(
+            self.runtime_settings
+        )
         self.ui_font = detect_font(
             theme_font_family("ui"),
             "Rubik",
@@ -2273,7 +2577,11 @@ class CyberBar(QWidget):
         self._position_on_target_screen(int(self.bar_settings.get("bar_height", 40)))
 
     def _target_screen(self) -> QScreen | None:
-        monitor_mode = str(self.bar_settings.get("monitor_mode", MONITOR_MODE_PRIMARY)).strip().lower()
+        monitor_mode = (
+            str(self.bar_settings.get("monitor_mode", MONITOR_MODE_PRIMARY))
+            .strip()
+            .lower()
+        )
         monitor_name = str(self.bar_settings.get("monitor_name", "")).strip()
         return preferred_bar_screen(monitor_mode, monitor_name)
 
@@ -2307,7 +2615,9 @@ class CyberBar(QWidget):
         self.launcher_chip = QFrame()
         self.launcher_chip.setObjectName("launcherChip")
         self.launcher_layout = QHBoxLayout(self.launcher_chip)
-        self.launcher_layout.setContentsMargins(8, 4, 8, 4)  # top/bottom margins move the row vertically
+        self.launcher_layout.setContentsMargins(
+            8, 4, 8, 4
+        )  # top/bottom margins move the row vertically
         self.launcher_layout.setSpacing(6)  # spacing only changes the horizontal gap
         self.launcher_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.ai_button = self._icon_button("auto_awesome")
@@ -2317,28 +2627,38 @@ class CyberBar(QWidget):
         self.launcher_trigger = ClickableFrame()
         self.launcher_trigger.setObjectName("launcherTrigger")
         self.launcher_trigger.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.launcher_trigger.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self.launcher_trigger.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+        )
         self.launcher_trigger.setFixedHeight(20)
         self.launcher_trigger.clicked.connect(self._open_launcher)
-        self.launcher_trigger.hoveredChanged.connect(self._update_launcher_wordmark_colors)
+        self.launcher_trigger.hoveredChanged.connect(
+            self._update_launcher_wordmark_colors
+        )
         self.launcher_trigger_layout = QHBoxLayout(self.launcher_trigger)
         self.launcher_trigger_layout.setContentsMargins(10, 0, 10, 0)
         self.launcher_trigger_layout.setSpacing(5)
         self.launcher_trigger_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.launcher_note = QLabel("♪")
         self.launcher_note.setObjectName("launcherNote")
-        self.launcher_note.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
+        self.launcher_note.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter
+        )
         self.launcher_note.setFixedSize(12, 16)
         self.launcher_text = QLabel("hanauta")
         self.launcher_text.setObjectName("launcherText")
-        self.launcher_text.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.launcher_text.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
         self.launcher_text.setFixedHeight(16)
         self.launcher_trigger_layout.addWidget(self.launcher_note)
         self.launcher_trigger_layout.addWidget(self.launcher_text)
         self.launcher_layout.addWidget(self.ai_button)
         self.launcher_layout.addWidget(self.launcher_trigger)
         self.launcher_layout.setAlignment(self.ai_button, Qt.AlignmentFlag.AlignVCenter)
-        self.launcher_layout.setAlignment(self.launcher_trigger, Qt.AlignmentFlag.AlignVCenter)
+        self.launcher_layout.setAlignment(
+            self.launcher_trigger, Qt.AlignmentFlag.AlignVCenter
+        )
         self.ai_wrap = self._wrap_movable(self.launcher_chip)
         self.left_layout.addWidget(self.ai_wrap)
         self.launcher_wrap = self.ai_wrap
@@ -2475,7 +2795,9 @@ class CyberBar(QWidget):
         self._equalizer_levels: list[float] = [0.08] * len(self.equalizer_bars)
         self.media_text = QLabel("Nothing playing")
         self.media_text.setObjectName("mediaText")
-        self.media_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.media_text.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         self.media_prev = self._icon_button("skip_previous")
         self.media_play = self._icon_button("play_arrow")
         self.media_next = self._icon_button("skip_next")
@@ -2513,7 +2835,9 @@ class CyberBar(QWidget):
         self.cap_alert_icon = AnimatedWeatherIcon(32)
         self.cap_alert_text = QLabel("Local weather alerts")
         self.cap_alert_text.setObjectName("capAlertText")
-        self.cap_alert_text.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        self.cap_alert_text.setSizePolicy(
+            QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred
+        )
         self.cap_alert_text_shadow = QGraphicsDropShadowEffect(self.cap_alert_text)
         self.cap_alert_text_shadow.setBlurRadius(2.8)
         self.cap_alert_text_shadow.setOffset(0, 1.8)
@@ -2526,7 +2850,9 @@ class CyberBar(QWidget):
         self.cap_alert_glow_frame = QFrame(self.cap_alert_chip)
         self.cap_alert_glow_frame.setObjectName("capAlertGlow")
         self.cap_alert_glow_frame.lower()
-        self.cap_alert_glow_frame.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.cap_alert_glow_frame.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
         self.cap_alert_glow_frame.hide()
 
         self.status_chip = QFrame()
@@ -2603,7 +2929,20 @@ class CyberBar(QWidget):
         self.caffeine_icon.setObjectName("statusIcon")
         self.battery_value = QLabel("100")
         self.battery_value.setObjectName("batteryValue")
-        for label in (self.net_icon, self.vpn_icon, self.home_assistant_button, self.pomodoro_button, self.rss_button, self.obs_button, self.crypto_button, self.mail_button, self.ntfy_button, self.game_mode_button, self.battery_icon, self.caffeine_icon):
+        for label in (
+            self.net_icon,
+            self.vpn_icon,
+            self.home_assistant_button,
+            self.pomodoro_button,
+            self.rss_button,
+            self.obs_button,
+            self.crypto_button,
+            self.mail_button,
+            self.ntfy_button,
+            self.game_mode_button,
+            self.battery_icon,
+            self.caffeine_icon,
+        ):
             label.setFont(QFont(self.material_font, 16))
         self.reminders_button.setFont(QFont(self.reminders_font, 16))
         self.caps_lock_button.setFont(QFont(self.ui_font, 10, QFont.Weight.Bold))
@@ -2642,8 +2981,12 @@ class CyberBar(QWidget):
         self.status_overflow_button.setCheckable(True)
         self.status_overflow_button.setVisible(False)
         self.status_overflow_button.clicked.connect(self._toggle_status_overflow)
-        self.status_overflow_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.status_overflow_button.customContextMenuRequested.connect(self._show_overflow_button_menu)
+        self.status_overflow_button.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.status_overflow_button.customContextMenuRequested.connect(
+            self._show_overflow_button_menu
+        )
         self._status_overflow_button = self.status_overflow_button
         self.status_layout.addWidget(self.btn_clip)
         self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -2707,7 +3050,9 @@ class CyberBar(QWidget):
     def _icon_text(self, icon_name: str) -> str:
         return self._bar_icon_overrides.get(icon_name, material_icon(icon_name))
 
-    def _register_bar_plugin_hook(self, kind: str, callback: Callable[[], None]) -> None:
+    def _register_bar_plugin_hook(
+        self, kind: str, callback: Callable[[], None]
+    ) -> None:
         hooks = self._bar_plugin_hooks.get(kind)
         if hooks is None or not callable(callback):
             return
@@ -2767,7 +3112,9 @@ class CyberBar(QWidget):
         if widget.property("statusMenuHooked") != True:
             widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             widget.customContextMenuRequested.connect(
-                lambda point, current=widget: self._show_status_context_menu(current, point)
+                lambda point, current=widget: self._show_status_context_menu(
+                    current, point
+                )
             )
             widget.setProperty("statusMenuHooked", True)
 
@@ -2776,7 +3123,9 @@ class CyberBar(QWidget):
             return
         menu = QMenu(self)
         tray_in_overflow = "tray_wrap" in self._status_manual_overflow
-        tray_action = QAction("Move tray to bar" if tray_in_overflow else "Move tray to dropdown", menu)
+        tray_action = QAction(
+            "Move tray to bar" if tray_in_overflow else "Move tray to dropdown", menu
+        )
         menu.addAction(tray_action)
         selected = menu.exec(self._status_overflow_button.mapToGlobal(point))
         if selected != tray_action:
@@ -2796,7 +3145,9 @@ class CyberBar(QWidget):
             and self._status_overflow_layout.indexOf(widget) >= 0
         )
         menu = QMenu(self)
-        move_action = QAction("Move to bar" if in_overflow else "Move to overflow", menu)
+        move_action = QAction(
+            "Move to bar" if in_overflow else "Move to overflow", menu
+        )
         menu.addAction(move_action)
         selected = menu.exec(widget.mapToGlobal(point))
         if selected != move_action:
@@ -2833,7 +3184,10 @@ class CyberBar(QWidget):
     def _toggle_status_overflow(self) -> None:
         if self._status_overflow_popup is None or self._status_overflow_button is None:
             return
-        if self._status_overflow_layout is None or self._status_overflow_layout.count() == 0:
+        if (
+            self._status_overflow_layout is None
+            or self._status_overflow_layout.count() == 0
+        ):
             return
         if self._status_overflow_open:
             self._status_overflow_popup.hide()
@@ -2896,11 +3250,15 @@ class CyberBar(QWidget):
         main_widgets = visible_candidates[:limit]
         overflow_widgets = overflow_manual + visible_candidates[limit:]
 
-        insert_anchor = self.btn_clip if hasattr(self, "btn_clip") else self._status_overflow_button
+        insert_anchor = (
+            self.btn_clip if hasattr(self, "btn_clip") else self._status_overflow_button
+        )
         for widget in main_widgets:
             anchor_index = self.status_layout.indexOf(insert_anchor)
             if anchor_index < 0:
-                anchor_index = max(0, self.status_layout.indexOf(self._status_overflow_button))
+                anchor_index = max(
+                    0, self.status_layout.indexOf(self._status_overflow_button)
+                )
             self.status_layout.insertWidget(
                 max(0, anchor_index),
                 widget,
@@ -2943,7 +3301,9 @@ class CyberBar(QWidget):
                 continue
             module_name = f"hanauta_bar_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
             try:
-                spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
+                spec = importlib.util.spec_from_file_location(
+                    module_name, str(entrypoint)
+                )
                 if spec is None or spec.loader is None:
                     continue
                 module = importlib.util.module_from_spec(spec)
@@ -2993,7 +3353,9 @@ class CyberBar(QWidget):
                 return font
         return None
 
-    def _icon_font_for_text(self, icon_key: str, text: str, fallback_text: str, size: int) -> tuple[QFont, bool, str]:
+    def _icon_font_for_text(
+        self, icon_key: str, text: str, fallback_text: str, size: int
+    ) -> tuple[QFont, bool, str]:
         override = self._bar_icon_overrides.get(icon_key, "").strip()
         if override and text == override:
             if icon_key == "launcher_note":
@@ -3005,7 +3367,9 @@ class CyberBar(QWidget):
             return QFont(self.material_font, size), False, fallback_text
         return QFont(self.material_font, size), False, text
 
-    def _apply_icon_to_widget(self, widget: QWidget, icon_key: str, fallback_text: str, size: int = 16) -> None:
+    def _apply_icon_to_widget(
+        self, widget: QWidget, icon_key: str, fallback_text: str, size: int = 16
+    ) -> None:
         override = self._bar_icon_overrides.get(icon_key, "").strip()
         if override:
             path = Path(os.path.expanduser(override))
@@ -3021,12 +3385,19 @@ class CyberBar(QWidget):
                 if isinstance(widget, QLabel):
                     widget.setProperty("iconKey", icon_key)
                     widget.setFont(QFont(self.material_font, size))
-                    pixmap = QPixmap(str(path)).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    pixmap = QPixmap(str(path)).scaled(
+                        size,
+                        size,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
                     widget.setPixmap(pixmap)
                     return
         if isinstance(widget, QPushButton):
             text = override or fallback_text
-            font, nerd_icon, resolved_text = self._icon_font_for_text(icon_key, text, fallback_text, size)
+            font, nerd_icon, resolved_text = self._icon_font_for_text(
+                icon_key, text, fallback_text, size
+            )
             widget.setProperty("iconKey", icon_key)
             widget.setProperty("nerdIcon", nerd_icon)
             widget.setFont(font)
@@ -3034,7 +3405,9 @@ class CyberBar(QWidget):
             widget.setText(resolved_text)
         elif isinstance(widget, QLabel):
             text = override or fallback_text
-            font, _, resolved_text = self._icon_font_for_text(icon_key, text, fallback_text, size)
+            font, _, resolved_text = self._icon_font_for_text(
+                icon_key, text, fallback_text, size
+            )
             widget.setProperty("iconKey", icon_key)
             widget.setFont(font)
             widget.setPixmap(QPixmap())
@@ -3163,7 +3536,9 @@ class CyberBar(QWidget):
     def _apply_bar_settings(self) -> None:
         self.bar_settings = load_bar_settings()
         self._rebuild_workspace_buttons()
-        self.workspace_label.setVisible(bool(self.bar_settings.get("show_workspace_label", False)))
+        self.workspace_label.setVisible(
+            bool(self.bar_settings.get("show_workspace_label", False))
+        )
         merge_all_chips = bool(self.bar_settings.get("merge_all_chips", False))
         bar_height = int(self.bar_settings.get("bar_height", 40))
         outer_vertical_margin = 4
@@ -3171,7 +3546,9 @@ class CyberBar(QWidget):
         chip_height = max(22, surface_height - 2)
         chip_vertical_padding = max(4, min(14, (surface_height - 22) // 2))
         self._position_on_target_screen(bar_height)
-        self.outer_layout.setContentsMargins(12, outer_vertical_margin, 12, outer_vertical_margin)
+        self.outer_layout.setContentsMargins(
+            12, outer_vertical_margin, 12, outer_vertical_margin
+        )
         self.bar_surface.setFixedHeight(surface_height)
         self.root_layout.setSpacing(0 if merge_all_chips else 14)
         self.left_layout.setSpacing(0 if merge_all_chips else 10)
@@ -3187,19 +3564,43 @@ class CyberBar(QWidget):
             self.status_chip,
         ):
             chip.setFixedHeight(chip_height)
-        self.launcher_layout.setContentsMargins(8, chip_vertical_padding, 8, chip_vertical_padding)
-        self.workspace_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
-        self.datetime_layout.setContentsMargins(12, chip_vertical_padding, 12, chip_vertical_padding)
-        self.media_layout.setContentsMargins(14, chip_vertical_padding, 14, chip_vertical_padding)
-        self.status_layout.setContentsMargins(10, chip_vertical_padding, 10, chip_vertical_padding)
+        self.launcher_layout.setContentsMargins(
+            8, chip_vertical_padding, 8, chip_vertical_padding
+        )
+        self.workspace_layout.setContentsMargins(
+            12, chip_vertical_padding, 12, chip_vertical_padding
+        )
+        self.datetime_layout.setContentsMargins(
+            12, chip_vertical_padding, 12, chip_vertical_padding
+        )
+        self.media_layout.setContentsMargins(
+            14, chip_vertical_padding, 14, chip_vertical_padding
+        )
+        self.status_layout.setContentsMargins(
+            10, chip_vertical_padding, 10, chip_vertical_padding
+        )
         self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
-        self._apply_vertical_offset(self.ai_wrap, self.bar_settings.get("launcher_offset", 0))
-        self._apply_vertical_offset(self.launcher_wrap, self.bar_settings.get("launcher_offset", 0))
-        self._apply_vertical_offset(self.workspace_wrap, self.bar_settings.get("workspace_offset", 0))
-        self._apply_vertical_offset(self.datetime_wrap, self.bar_settings.get("datetime_offset", 0))
-        self._apply_vertical_offset(self.media_wrap, self.bar_settings.get("media_offset", 0))
-        self._apply_vertical_offset(self.status_wrap, self.bar_settings.get("status_offset", 0))
-        self._apply_vertical_offset(self.tray_wrap, self.bar_settings.get("tray_offset", 0))
+        self._apply_vertical_offset(
+            self.ai_wrap, self.bar_settings.get("launcher_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.launcher_wrap, self.bar_settings.get("launcher_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.workspace_wrap, self.bar_settings.get("workspace_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.datetime_wrap, self.bar_settings.get("datetime_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.media_wrap, self.bar_settings.get("media_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.status_wrap, self.bar_settings.get("status_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.tray_wrap, self.bar_settings.get("tray_offset", 0)
+        )
         self._sync_status_overflow()
 
     def _rebuild_workspace_buttons(self) -> None:
@@ -3227,14 +3628,26 @@ class CyberBar(QWidget):
         status_icon_color = theme.primary
         status_hover_color = theme.text
         status_active_color = theme.primary
-        tint_tray_icons = bool(self.bar_settings.get("tray_tint_with_matugen", True)) and bool(theme.use_matugen)
+        tint_tray_icons = bool(
+            self.bar_settings.get("tray_tint_with_matugen", True)
+        ) and bool(theme.use_matugen)
         self.tray_host.set_icon_tint(QColor(theme.primary) if tint_tray_icons else None)
-        chip_bg = "transparent" if merge_all_chips else rgba(theme.surface_container_high, 0.78)
+        chip_bg = (
+            "transparent"
+            if merge_all_chips
+            else rgba(theme.surface_container_high, 0.78)
+        )
         chip_border = "transparent" if merge_all_chips else rgba(theme.outline, 0.18)
-        media_bg = "transparent" if merge_all_chips else rgba(theme.surface_container, 0.86)
+        media_bg = (
+            "transparent" if merge_all_chips else rgba(theme.surface_container, 0.86)
+        )
         media_border = "transparent" if merge_all_chips else rgba(theme.outline, 0.20)
-        full_bar_bg = rgba(theme.surface_container, 0.90) if merge_all_chips else "transparent"
-        full_bar_border = rgba(theme.outline, 0.20) if merge_all_chips else "transparent"
+        full_bar_bg = (
+            rgba(theme.surface_container, 0.90) if merge_all_chips else "transparent"
+        )
+        full_bar_border = (
+            rgba(theme.outline, 0.20) if merge_all_chips else "transparent"
+        )
         self.setStyleSheet(
             f"""
             QWidget {{
@@ -3610,18 +4023,30 @@ class CyberBar(QWidget):
         label = locale_code or "System locale"
         self.locale_button.setToolTip(f"Region & locale: {label}")
 
-    def _set_lock_button_state(self, button: QPushButton, active: bool, title: str) -> None:
+    def _set_lock_button_state(
+        self, button: QPushButton, active: bool, title: str
+    ) -> None:
         button.setProperty("active", active)
         button.setVisible(active)
         button.setToolTip(f"{title}: {'On' if active else 'Off'}")
         self.style().unpolish(button)
         self.style().polish(button)
 
-    def _send_lock_notification(self, title: str, enabled: bool, replace_id: int) -> None:
+    def _send_lock_notification(
+        self, title: str, enabled: bool, replace_id: int
+    ) -> None:
         state_text = "Enabled" if enabled else "Disabled"
         try:
             subprocess.Popen(
-                ["notify-send", "-a", "Hanauta Bar", "-r", str(replace_id), title, state_text],
+                [
+                    "notify-send",
+                    "-a",
+                    "Hanauta Bar",
+                    "-r",
+                    str(replace_id),
+                    title,
+                    state_text,
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -3667,7 +4092,11 @@ class CyberBar(QWidget):
 
     def _reload_settings_if_needed(self, force: bool = False) -> None:
         current_mtime = SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
-        icon_mtime = BAR_ICON_CONFIG_FILE.stat().st_mtime if BAR_ICON_CONFIG_FILE.exists() else 0.0
+        icon_mtime = (
+            BAR_ICON_CONFIG_FILE.stat().st_mtime
+            if BAR_ICON_CONFIG_FILE.exists()
+            else 0.0
+        )
         icon_changed = getattr(self, "_bar_icon_mtime", 0.0) != icon_mtime
         if not force and current_mtime == self._settings_mtime and not icon_changed:
             return
@@ -3679,7 +4108,9 @@ class CyberBar(QWidget):
         self.service_settings = services if isinstance(services, dict) else {}
         self.region_settings = load_region_settings()
         self.bar_settings = load_bar_settings_from_payload(self.runtime_settings)
-        self.autolock_settings = load_autolock_settings_from_payload(self.runtime_settings)
+        self.autolock_settings = load_autolock_settings_from_payload(
+            self.runtime_settings
+        )
         self._load_bar_plugins()
         self._apply_bar_settings()
         self._apply_bar_icon_overrides()
@@ -3702,21 +4133,32 @@ class CyberBar(QWidget):
         self._update_locale_button()
 
     def _apply_bar_icon_overrides(self) -> None:
-        self._apply_icon_to_widget(self.locale_button, "public", material_icon("public"), 16)
-        self._apply_icon_to_widget(self.media_icon, "music_note", material_icon("music_note"), 16)
+        self._apply_icon_to_widget(
+            self.locale_button, "public", material_icon("public"), 16
+        )
+        self._apply_icon_to_widget(
+            self.media_icon, "music_note", material_icon("music_note"), 16
+        )
         self._set_home_assistant_button_icon()
         self._set_pomodoro_button_icon()
         self._set_reminders_button_icon()
         self._set_rss_button_icon()
         self._set_obs_button_icon()
-        self._apply_icon_to_widget(self.crypto_button, "show_chart", material_icon("md-bitcoin"), 20)
+        self._set_crypto_button_icon()
         self._apply_icon_to_widget(self.mail_button, "mail", material_icon("mail"), 16)
         self._set_ntfy_button_icon()
-        self._apply_icon_to_widget(self.game_mode_button, "sports_esports", material_icon("sports_esports"), 20)
+        self._set_game_mode_button_icon()
         self._run_bar_plugin_hooks("icons")
-        self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
-        self._apply_icon_to_widget(self.btn_clip, "content_paste", material_icon("content_paste"), 16)
-        self._apply_icon_to_widget(self.btn_power, "power_settings_new", material_icon("power_settings_new"), 20)
+        self._apply_icon_to_widget(
+            self.caffeine_icon, "coffee", material_icon("coffee"), 16
+        )
+        self._set_clipboard_button_icon()
+        self._apply_icon_to_widget(
+            self.btn_power,
+            "power_settings_new",
+            material_icon("power_settings_new"),
+            20,
+        )
         self._apply_icon_to_widget(self.launcher_note, "launcher_note", "♪", 14)
         self._set_vpn_button_icon(self.vpn_icon.property("active") == True)
         self._set_christian_button_icon()
@@ -3791,7 +4233,9 @@ class CyberBar(QWidget):
         self.game_mode_popup_timer.start(2000)
 
         self.plugin_poll_timer = QTimer(self)
-        self.plugin_poll_timer.timeout.connect(lambda: self._run_bar_plugin_hooks("poll"))
+        self.plugin_poll_timer.timeout.connect(
+            lambda: self._run_bar_plugin_hooks("poll")
+        )
         self.plugin_poll_timer.start(2000)
 
         self.weather_popup_timer = QTimer(self)
@@ -3841,8 +4285,9 @@ class CyberBar(QWidget):
         self._start_cava()
 
     def _clear_game_mode_popup_process(self) -> None:
-        for pattern in entry_patterns(GAME_MODE_POPUP):
-            terminate_background_matches(pattern)
+        if GAME_MODE_POPUP is not None:
+            for pattern in entry_patterns(GAME_MODE_POPUP):
+                terminate_background_matches(pattern)
 
     def _poll_all(self) -> None:
         self._poll_clock()
@@ -3917,9 +4362,13 @@ class CyberBar(QWidget):
     def _apply_workspace_state(self, payload_obj: object) -> None:
         payload = payload_obj if isinstance(payload_obj, dict) else {}
         focused_num = int(payload.get("focused_num", 1) or 1)
-        occupied = {int(item) for item in payload.get("occupied", []) if str(item).strip()}
+        occupied = {
+            int(item) for item in payload.get("occupied", []) if str(item).strip()
+        }
         urgent = {int(item) for item in payload.get("urgent", []) if str(item).strip()}
-        self._focused_workspace_has_real_windows = bool(payload.get("has_real_windows", False))
+        self._focused_workspace_has_real_windows = bool(
+            payload.get("has_real_windows", False)
+        )
         self.workspace_label.setText(f"Workspace {focused_num}")
         for ws_num, button in self.workspace_buttons.items():
             if ws_num in urgent:
@@ -3944,8 +4393,12 @@ class CyberBar(QWidget):
 
         if has_media:
             display = f"{artist} - {title}" if artist else title
-            self.media_text.setText(display[:42] + "…" if len(display) > 42 else display)
-            self.media_play.setText(material_icon("pause" if status == "Playing" else "play_arrow"))
+            self.media_text.setText(
+                display[:42] + "…" if len(display) > 42 else display
+            )
+            self.media_play.setText(
+                material_icon("pause" if status == "Playing" else "play_arrow")
+            )
         else:
             self.media_text.setText("Nothing playing")
             self.media_play.setText(material_icon("play_arrow"))
@@ -4046,7 +4499,10 @@ class CyberBar(QWidget):
         QTimer.singleShot(1000, self._start_cava)
 
     def _poll_system(self) -> None:
-        if self._system_state_worker is not None and self._system_state_worker.isRunning():
+        if (
+            self._system_state_worker is not None
+            and self._system_state_worker.isRunning()
+        ):
             return
         self._system_state_worker = SystemStateWorker(self._battery_base, self)
         self._system_state_worker.loaded.connect(self._apply_system_state)
@@ -4088,7 +4544,9 @@ class CyberBar(QWidget):
 
         caffeine_on = bool(payload.get("caffeine_on", False))
         self.caffeine_icon.setVisible(caffeine_on)
-        self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
+        self._apply_icon_to_widget(
+            self.caffeine_icon, "coffee", material_icon("coffee"), 16
+        )
 
         caps_on = bool(payload.get("caps_on", False))
         num_on = bool(payload.get("num_on", False))
@@ -4138,8 +4596,14 @@ class CyberBar(QWidget):
 
     def _apply_updates_count_payload(self, payload_obj: object) -> None:
         payload = payload_obj if isinstance(payload_obj, dict) else {}
-        system_updates = [str(item) for item in payload.get("system_updates", []) if str(item).strip()]
-        flatpak_updates = [str(item) for item in payload.get("flatpak_updates", []) if str(item).strip()]
+        system_updates = [
+            str(item) for item in payload.get("system_updates", []) if str(item).strip()
+        ]
+        flatpak_updates = [
+            str(item)
+            for item in payload.get("flatpak_updates", [])
+            if str(item).strip()
+        ]
         self._pending_updates_total = len(system_updates) + len(flatpak_updates)
         self._sync_updates_pill()
 
@@ -4171,7 +4635,9 @@ class CyberBar(QWidget):
     def _sync_updates_pill(self) -> None:
         total = max(0, int(self._pending_updates_total))
         self.updates_pill_count.setText("99+" if total > 99 else str(total))
-        tooltip = "System is up to date." if total == 0 else f"{total} update(s) pending."
+        tooltip = (
+            "System is up to date." if total == 0 else f"{total} update(s) pending."
+        )
         self.updates_pill.setToolTip(tooltip)
         self.updates_pill_icon.setToolTip(tooltip)
         self.updates_pill_count.setToolTip(tooltip)
@@ -4179,7 +4645,11 @@ class CyberBar(QWidget):
     def _sync_health_pill(self) -> None:
         steps = int(self._health_snapshot.get("steps", 0) or 0)
         self.health_pill_value.setText(format_steps_short(steps))
-        tooltip = health_tooltip(self._health_snapshot) if self._health_snapshot else "Health tracking"
+        tooltip = (
+            health_tooltip(self._health_snapshot)
+            if self._health_snapshot
+            else "Health tracking"
+        )
         self.health_pill.setToolTip(tooltip)
         self.health_pill_icon.setToolTip(tooltip)
         self.health_pill_value.setToolTip(tooltip)
@@ -4203,7 +4673,9 @@ class CyberBar(QWidget):
         self._weather_worker.start()
 
     def _apply_weather_forecast(self, forecast: object) -> None:
-        self._weather_forecast = forecast if isinstance(forecast, WeatherForecast) else None
+        self._weather_forecast = (
+            forecast if isinstance(forecast, WeatherForecast) else None
+        )
         if self._weather_forecast is not None:
             current = self._weather_forecast.current
             self.weather_icon.set_icon_path(animated_icon_path(current.icon_name))
@@ -4220,7 +4692,9 @@ class CyberBar(QWidget):
         service = services.get("cap_alerts", {})
         if not isinstance(service, dict):
             service = {}
-        return bool(service.get("enabled", True)) and bool(service.get("show_in_bar", True))
+        return bool(service.get("enabled", True)) and bool(
+            service.get("show_in_bar", True)
+        )
 
     def _poll_cap_alerts(self) -> None:
         if not self._cap_alerts_service_visible():
@@ -4242,7 +4716,9 @@ class CyberBar(QWidget):
 
     def _apply_cap_alerts(self, alerts_obj: object) -> None:
         alerts = list(alerts_obj) if isinstance(alerts_obj, list) else []
-        active_ids = {alert.identifier for alert in alerts if isinstance(alert, CapAlert)}
+        active_ids = {
+            alert.identifier for alert in alerts if isinstance(alert, CapAlert)
+        }
         new_ids = active_ids - self._cap_alert_seen_ids
         self._cap_alerts = alerts
         if active_ids:
@@ -4282,10 +4758,14 @@ class CyberBar(QWidget):
             f"Source: {alert.sender_name}",
         ]
         if test_mode_enabled():
-            tooltip_parts.append("Demo mode is enabled. These are sample alerts for UI testing.")
+            tooltip_parts.append(
+                "Demo mode is enabled. These are sample alerts for UI testing."
+            )
         if location is not None:
             tooltip_parts.append(f"Location: {location.label}")
-        self.cap_alert_chip.setToolTip("\n".join(part for part in tooltip_parts if part))
+        self.cap_alert_chip.setToolTip(
+            "\n".join(part for part in tooltip_parts if part)
+        )
         self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
         self.cap_alert_glow_frame.show()
         self.cap_alert_chip.show()
@@ -4318,10 +4798,12 @@ class CyberBar(QWidget):
                 pass
 
     def _show_cap_alert_overlay(self, alert: CapAlert) -> None:
-        if not CAP_ALERTS_OVERLAY.exists():
+        if CAP_ALERTS_OVERLAY is None or not CAP_ALERTS_OVERLAY.exists():
             return
         if self._singleton_active(self._cap_alert_overlay_process, CAP_ALERTS_OVERLAY):
-            self._terminate_singleton_process("_cap_alert_overlay_process", CAP_ALERTS_OVERLAY)
+            self._terminate_singleton_process(
+                "_cap_alert_overlay_process", CAP_ALERTS_OVERLAY
+            )
         command = entry_command(
             CAP_ALERTS_OVERLAY,
             "--title",
@@ -4342,7 +4824,12 @@ class CyberBar(QWidget):
         if not command:
             return
         try:
-            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
         except Exception:
             return
 
@@ -4450,8 +4937,12 @@ class CyberBar(QWidget):
         if not isinstance(service, dict):
             service = {}
         enabled = bool(service.get("enabled", True))
-        worker_running = bool(self._mail_worker is not None and self._mail_worker.isRunning())
-        logger.debug("Mail poll triggered enabled=%s worker_running=%s", enabled, worker_running)
+        worker_running = bool(
+            self._mail_worker is not None and self._mail_worker.isRunning()
+        )
+        logger.debug(
+            "Mail poll triggered enabled=%s worker_running=%s", enabled, worker_running
+        )
         if not enabled:
             self._mail_account_summary = []
             self._mail_unread_total = 0
@@ -4464,7 +4955,9 @@ class CyberBar(QWidget):
         try:
             conn = sqlite3.connect(mail_db_path())
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT id, poll_interval_seconds FROM accounts").fetchall()
+            rows = conn.execute(
+                "SELECT id, poll_interval_seconds FROM accounts"
+            ).fetchall()
         except Exception:
             rows = []
         finally:
@@ -4480,7 +4973,9 @@ class CyberBar(QWidget):
             if last_sync <= 0 or (now_ts - last_sync) >= interval:
                 due_account_ids.add(account_id)
         logger.debug("Mail poll due accounts=%s", sorted(due_account_ids))
-        self._mail_worker = MailPollWorker(due_account_ids, mail_settings_from_payload(self.runtime_settings), self)
+        self._mail_worker = MailPollWorker(
+            due_account_ids, mail_settings_from_payload(self.runtime_settings), self
+        )
         self._mail_worker.loaded.connect(self._apply_mail_state)
         self._mail_worker.finished.connect(self._finish_mail_worker)
         self._mail_worker.start()
@@ -4488,18 +4983,40 @@ class CyberBar(QWidget):
 
     def _apply_mail_state(self, payload_obj: object) -> None:
         payload = payload_obj if isinstance(payload_obj, dict) else {}
-        self._mail_account_summary = list(payload.get("accounts", [])) if isinstance(payload.get("accounts", []), list) else []
+        self._mail_account_summary = (
+            list(payload.get("accounts", []))
+            if isinstance(payload.get("accounts", []), list)
+            else []
+        )
         self._mail_unread_total = max(0, int(payload.get("total_unread", 0) or 0))
-        for account_id in payload.get("synced_account_ids", []) if isinstance(payload.get("synced_account_ids", []), list) else []:
+        for account_id in (
+            payload.get("synced_account_ids", [])
+            if isinstance(payload.get("synced_account_ids", []), list)
+            else []
+        ):
             self._mail_last_sync_at[int(account_id)] = datetime.now().timestamp()
         notifications = payload.get("notifications", [])
-        logger.debug("Mail state payload notifications=%d total_unread=%d", len(notifications) if isinstance(notifications, list) else 0, self._mail_unread_total)
-        logger.debug("Mail account summary=%d accounts notification sound=%s", len(self._mail_account_summary), bool(mail_settings_from_payload(self.runtime_settings).get("play_notification_sound", False)))
+        logger.debug(
+            "Mail state payload notifications=%d total_unread=%d",
+            len(notifications) if isinstance(notifications, list) else 0,
+            self._mail_unread_total,
+        )
+        logger.debug(
+            "Mail account summary=%d accounts notification sound=%s",
+            len(self._mail_account_summary),
+            bool(
+                mail_settings_from_payload(self.runtime_settings).get(
+                    "play_notification_sound", False
+                )
+            ),
+        )
         if isinstance(notifications, list):
             for item in notifications:
                 if isinstance(item, dict):
                     self._send_mail_notification(item)
-            if notifications and mail_settings_from_payload(self.runtime_settings).get("play_notification_sound", False):
+            if notifications and mail_settings_from_payload(self.runtime_settings).get(
+                "play_notification_sound", False
+            ):
                 self._play_mail_notification_sound()
         if not notifications:
             logger.debug("Mail poll produced no notification payload")
@@ -4515,12 +5032,19 @@ class CyberBar(QWidget):
         for account in self._mail_account_summary:
             if not isinstance(account, dict):
                 continue
-            label = str(account.get("display_name", "")).strip() or str(account.get("label", "")).strip() or str(account.get("email_address", "")).strip() or "Mailbox"
+            label = (
+                str(account.get("display_name", "")).strip()
+                or str(account.get("label", "")).strip()
+                or str(account.get("email_address", "")).strip()
+                or "Mailbox"
+            )
             lines.append(f"{label}: {int(account.get('unread_count', 0) or 0)}")
         return "\n".join(lines)
 
     @pyqtSlot(int, str)
-    def _handle_mail_notification_action(self, notification_id: int, action_key: str) -> None:
+    def _handle_mail_notification_action(
+        self, notification_id: int, action_key: str
+    ) -> None:
         if action_key != MAIL_NOTIFICATION_ACTION_KEY:
             return
         command = self._mail_notification_actions.pop(int(notification_id), None)
@@ -4528,7 +5052,9 @@ class CyberBar(QWidget):
             run_bg_detached(command)
 
     @pyqtSlot(int, int)
-    def _handle_mail_notification_closed(self, notification_id: int, reason: int) -> None:
+    def _handle_mail_notification_closed(
+        self, notification_id: int, reason: int
+    ) -> None:
         self._mail_notification_actions.pop(int(notification_id), None)
 
     def _sync_mail_button_visibility(self) -> None:
@@ -4538,9 +5064,17 @@ class CyberBar(QWidget):
         enabled = bool(service.get("enabled", True))
         has_accounts = bool(self._mail_account_summary)
         visible = enabled and has_accounts
-        logger.debug("Sync mail visibility enabled=%s has_accounts=%s unread=%d visible=%s", enabled, has_accounts, self._mail_unread_total, visible)
+        logger.debug(
+            "Sync mail visibility enabled=%s has_accounts=%s unread=%d visible=%s",
+            enabled,
+            has_accounts,
+            self._mail_unread_total,
+            visible,
+        )
         self.mail_wrap.setVisible(visible)
-        self.mail_count.setText("99+" if self._mail_unread_total > 99 else str(self._mail_unread_total))
+        self.mail_count.setText(
+            "99+" if self._mail_unread_total > 99 else str(self._mail_unread_total)
+        )
         tooltip = self._mail_button_tooltip()
         self.mail_wrap.setToolTip(tooltip)
         self.mail_button.setToolTip(tooltip)
@@ -4554,10 +5088,14 @@ class CyberBar(QWidget):
             return
         run_bg_detached(command)
 
-    def _show_mail_notification_with_action(self, summary: str, body: str, command: list[str], replace_id: int) -> bool:
+    def _show_mail_notification_with_action(
+        self, summary: str, body: str, command: list[str], replace_id: int
+    ) -> bool:
         interface = self._mail_notification_interface
         if interface is None:
-            logger.debug("Mail notification interface is unavailable; falling back to notify-send")
+            logger.debug(
+                "Mail notification interface is unavailable; falling back to notify-send"
+            )
             return False
         try:
             response = interface.call(
@@ -4575,7 +5113,9 @@ class CyberBar(QWidget):
             logger.debug("Mail notification bus call failed: %s", exc)
             return False
         if response.type() == QDBusMessage.MessageType.ErrorMessage:
-            logger.debug("Mail notification bus call error: %s", response.errorMessage())
+            logger.debug(
+                "Mail notification bus call error: %s", response.errorMessage()
+            )
             return False
         args = response.arguments()
         if not args:
@@ -4587,7 +5127,9 @@ class CyberBar(QWidget):
         if notification_id <= 0:
             return False
         self._mail_notification_actions[notification_id] = list(command)
-        logger.debug("Mail notification registered id=%d command=%s", notification_id, command)
+        logger.debug(
+            "Mail notification registered id=%d command=%s", notification_id, command
+        )
         return True
 
     def _send_mail_notification(self, item: dict[str, object]) -> None:
@@ -4601,7 +5143,9 @@ class CyberBar(QWidget):
             summary = f"{account_label}: New email message received"
             body = ""
         else:
-            subject = truncate_mail_text(str(item.get("subject", "")).strip() or "(No subject)", 56)
+            subject = truncate_mail_text(
+                str(item.get("subject", "")).strip() or "(No subject)", 56
+            )
             detail = truncate_mail_text(str(item.get("snippet", "")).strip(), 120)
             summary = f"{account_label}: {subject}"
             body = detail
@@ -4614,9 +5158,13 @@ class CyberBar(QWidget):
         command = entry_command(OPEN_MAIL_MESSAGE, "--message-key", message_key)
         replace_id = 26000 + abs(hash(message_key)) % 1000
         logger.debug("Mail notification command=%s replace_id=%d", command, replace_id)
-        if command and self._show_mail_notification_with_action(summary, body, command, replace_id):
+        if command and self._show_mail_notification_with_action(
+            summary, body, command, replace_id
+        ):
             return
-        logger.debug("Action notification failed, falling back to notify-send for %s", summary)
+        logger.debug(
+            "Action notification failed, falling back to notify-send for %s", summary
+        )
         try:
             subprocess.Popen(
                 ["notify-send", "-a", "Hanauta Mail", summary, body],
@@ -4652,7 +5200,12 @@ class CyberBar(QWidget):
 
     def _poll_network(self) -> None:
         connected = run_script("network.sh", "status") == "Connected"
-        self._apply_icon_to_widget(self.net_icon, "wifi" if connected else "wifi_off", material_icon("wifi" if connected else "wifi_off"), 16)
+        self._apply_icon_to_widget(
+            self.net_icon,
+            "wifi" if connected else "wifi_off",
+            material_icon("wifi" if connected else "wifi_off"),
+            16,
+        )
         vpn_payload = {}
         raw = run_script("vpn.sh", "--status")
         if raw:
@@ -4670,7 +5223,7 @@ class CyberBar(QWidget):
 
     def _set_vpn_button_icon(self, active: bool) -> None:
         icon_path = VPN_ICON_ON if active else VPN_ICON_OFF
-        icon = tinted_svg_icon(icon_path, QColor(self.theme.primary), 16)
+        icon = native_svg_icon(icon_path, 16)
         self.vpn_icon.setProperty("iconKey", "vpn_key" if active else "vpn_key_off")
         self.vpn_icon.setProperty("nerdIcon", False)
         self.vpn_icon.setFont(QFont(self.material_font, 16))
@@ -4683,17 +5236,21 @@ class CyberBar(QWidget):
         self.vpn_icon.setText(self._icon_text("vpn_key" if active else "shield"))
 
     def _set_christian_button_icon(self) -> None:
-        icon = tinted_svg_icon(CHRISTIAN_ICON, QColor(self.theme.primary), 16)
+        icon = native_svg_icon(CHRISTIAN_ICON, 16)
         if not icon.isNull():
             self.christian_button.setIcon(icon)
             self.christian_button.setText("")
             return
         self.christian_button.setIcon(QIcon())
-        self.christian_button.setText(self._bar_icon_overrides.get("christian_widget", material_icon("auto_awesome")))
+        self.christian_button.setText(
+            self._bar_icon_overrides.get(
+                "christian_widget", material_icon("auto_awesome")
+            )
+        )
         self.christian_button.setFont(QFont(self.material_font, 16))
 
     def _set_home_assistant_button_icon(self) -> None:
-        icon = tinted_svg_icon(HOME_ASSISTANT_ICON, QColor(self.theme.primary), 18)
+        icon = native_svg_icon(HOME_ASSISTANT_ICON, 18)
         self.home_assistant_button.setProperty("iconKey", "home")
         self.home_assistant_button.setProperty("nerdIcon", False)
         self.home_assistant_button.setFont(QFont(self.material_font, 16))
@@ -4706,7 +5263,7 @@ class CyberBar(QWidget):
         self.home_assistant_button.setText(material_icon("home"))
 
     def _set_reminders_button_icon(self) -> None:
-        icon = tinted_svg_icon(REMINDER_ICON, QColor(self.theme.primary), 20)
+        icon = native_svg_icon(REMINDER_ICON, 20)
         self.reminders_button.setProperty("iconKey", "reminder_widget")
         self.reminders_button.setProperty("nerdIcon", False)
         self.reminders_button.setFont(QFont(self.material_font, 16))
@@ -4719,7 +5276,7 @@ class CyberBar(QWidget):
         self.reminders_button.setText(REMINDERS_BAR_GLYPH)
 
     def _set_pomodoro_button_icon(self) -> None:
-        icon = tinted_svg_icon(POMODORO_ICON, QColor(self.theme.primary), 20)
+        icon = native_svg_icon(POMODORO_ICON, 20)
         self.pomodoro_button.setProperty("iconKey", "pomodoro_widget")
         self.pomodoro_button.setProperty("nerdIcon", False)
         self.pomodoro_button.setFont(QFont(self.material_font, 16))
@@ -4732,7 +5289,7 @@ class CyberBar(QWidget):
         self.pomodoro_button.setText(self._icon_text("timer"))
 
     def _set_rss_button_icon(self) -> None:
-        icon = tinted_svg_icon(RSS_ICON, QColor(self.theme.primary), 16)
+        icon = native_svg_icon(RSS_ICON, 16)
         self.rss_button.setProperty("iconKey", "rss_feed")
         self.rss_button.setProperty("nerdIcon", False)
         self.rss_button.setFont(QFont(self.material_font, 16))
@@ -4742,10 +5299,12 @@ class CyberBar(QWidget):
             self.rss_button.setText("")
             return
         self.rss_button.setIcon(QIcon())
-        self.rss_button.setText(self._bar_icon_overrides.get("rss_feed", material_icon("public")))
+        self.rss_button.setText(
+            self._bar_icon_overrides.get("rss_feed", material_icon("public"))
+        )
 
     def _set_ntfy_button_icon(self) -> None:
-        icon = tinted_svg_icon(NTFY_ICON, QColor(self.theme.primary), 16)
+        icon = native_svg_icon(resolve_ntfy_icon_path(), 16)
         self.ntfy_button.setProperty("iconKey", "notifications")
         self.ntfy_button.setProperty("nerdIcon", False)
         self.ntfy_button.setFont(QFont(self.material_font, 16))
@@ -4755,16 +5314,77 @@ class CyberBar(QWidget):
             self.ntfy_button.setText("")
             return
         self.ntfy_button.setIcon(QIcon())
-        self.ntfy_button.setText(self._bar_icon_overrides.get("notifications", material_icon("notifications")))
+        self.ntfy_button.setText(
+            self._bar_icon_overrides.get(
+                "notifications", material_icon("notifications")
+            )
+        )
+
+    def _set_crypto_button_icon(self) -> None:
+        icon = native_svg_icon(CRYPTO_ICON, 20)
+        self.crypto_button.setProperty("iconKey", "show_chart")
+        self.crypto_button.setProperty("nerdIcon", False)
+        self.crypto_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.crypto_button.setIcon(icon)
+            self.crypto_button.setIconSize(QSize(20, 20))
+            self.crypto_button.setText("")
+            return
+        self.crypto_button.setIcon(QIcon())
+        self.crypto_button.setText(
+            self._bar_icon_overrides.get("show_chart", material_icon("md-bitcoin"))
+        )
+
+    def _set_game_mode_button_icon(self) -> None:
+        icon = native_svg_icon(GAME_MODE_ICON, 20)
+        self.game_mode_button.setProperty("iconKey", "sports_esports")
+        self.game_mode_button.setProperty("nerdIcon", False)
+        self.game_mode_button.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.game_mode_button.setIcon(icon)
+            self.game_mode_button.setIconSize(QSize(20, 20))
+            self.game_mode_button.setText("")
+            return
+        self.game_mode_button.setIcon(QIcon())
+        self.game_mode_button.setText(
+            self._bar_icon_overrides.get(
+                "sports_esports", material_icon("sports_esports")
+            )
+        )
+
+    def _set_clipboard_button_icon(self) -> None:
+        icon = native_svg_icon(CLIPBOARD_ICON, 16)
+        self.btn_clip.setProperty("iconKey", "content_paste")
+        self.btn_clip.setProperty("nerdIcon", False)
+        self.btn_clip.setFont(QFont(self.material_font, 16))
+        if not icon.isNull():
+            self.btn_clip.setIcon(icon)
+            self.btn_clip.setIconSize(QSize(16, 16))
+            self.btn_clip.setText("")
+            return
+        self.btn_clip.setIcon(QIcon())
+        self.btn_clip.setText(
+            self._bar_icon_overrides.get(
+                "content_paste", material_icon("content_paste")
+            )
+        )
 
     def _set_obs_button_icon(self) -> None:
         if self._obs_recording:
-            icon_path = OBS_RECORDING_ACTIVE_ICON if self._obs_flash_visible else OBS_RECORDING_INACTIVE_ICON
+            icon_path = (
+                OBS_RECORDING_ACTIVE_ICON
+                if self._obs_flash_visible
+                else OBS_RECORDING_INACTIVE_ICON
+            )
             icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
         elif self._obs_streaming:
-            icon = QIcon(str(OBS_STREAMING_ACTIVE_ICON)) if OBS_STREAMING_ACTIVE_ICON.exists() else QIcon()
+            icon = (
+                QIcon(str(OBS_STREAMING_ACTIVE_ICON))
+                if OBS_STREAMING_ACTIVE_ICON.exists()
+                else QIcon()
+            )
         else:
-            icon = tinted_svg_icon(OBS_ICON, QColor(self.theme.primary), 16)
+            icon = native_svg_icon(OBS_ICON, 16)
         self.obs_button.setProperty("iconKey", "videocam")
         self.obs_button.setProperty("nerdIcon", False)
         self.obs_button.setFont(QFont(self.material_font, 16))
@@ -4774,7 +5394,9 @@ class CyberBar(QWidget):
             self.obs_button.setText("")
             return
         self.obs_button.setIcon(QIcon())
-        self.obs_button.setText(self._bar_icon_overrides.get("videocam", material_icon("videocam")))
+        self.obs_button.setText(
+            self._bar_icon_overrides.get("videocam", material_icon("videocam"))
+        )
 
     def _tick_obs_recording_flash(self) -> None:
         if not self._obs_recording:
@@ -4786,7 +5408,7 @@ class CyberBar(QWidget):
         self._set_obs_button_icon()
 
     def _poll_obs_state(self) -> None:
-        if not OBS_STATUS.exists():
+        if OBS_STATUS is None or not OBS_STATUS.exists():
             return
         raw = run_cmd(entry_command(OBS_STATUS), timeout=4.0)
         if not raw:
@@ -4811,7 +5433,11 @@ class CyberBar(QWidget):
         if not isinstance(service, dict):
             service = {}
         enabled = bool(service.get("enabled", True))
-        show_in_bar = bool(service.get("show_in_bar", service.get("show_in_notification_center", False)))
+        show_in_bar = bool(
+            service.get(
+                "show_in_bar", service.get("show_in_notification_center", False)
+            )
+        )
         self.christian_button.setVisible(enabled and show_in_bar)
 
     def _sync_home_assistant_button_visibility(self) -> None:
@@ -4893,18 +5519,28 @@ class CyberBar(QWidget):
         enabled = bool(service.get("enabled", True))
         target = desktop_clock_target()
         if has_real_windows is None:
-            has_real_windows = bool(getattr(self, "_focused_workspace_has_real_windows", False))
+            has_real_windows = bool(
+                getattr(self, "_focused_workspace_has_real_windows", False)
+            )
         should_run = enabled and target is not None and not has_real_windows
         if not should_run:
-            terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
+            if DESKTOP_CLOCK_WIDGET:
+                terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
             terminate_background_matches(str(DESKTOP_CLOCK_BINARY))
-            if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+            if (
+                self._desktop_clock_process is not None
+                and self._desktop_clock_process.poll() is None
+            ):
                 self._desktop_clock_process.terminate()
             self._desktop_clock_process = None
             return
-        if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+        if (
+            self._desktop_clock_process is not None
+            and self._desktop_clock_process.poll() is None
+        ):
             return
-        terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
+        if DESKTOP_CLOCK_WIDGET:
+            terminate_background_matches(str(DESKTOP_CLOCK_WIDGET))
         terminate_background_matches(str(DESKTOP_CLOCK_BINARY))
         command = desktop_clock_command()
         if not command:
@@ -4935,7 +5571,9 @@ class CyberBar(QWidget):
     def _poll_caffeine(self) -> None:
         caffeine_on = run_script("caffeine.sh", "status") == "on"
         self.caffeine_icon.setVisible(caffeine_on)
-        self._apply_icon_to_widget(self.caffeine_icon, "coffee", material_icon("coffee"), 16)
+        self._apply_icon_to_widget(
+            self.caffeine_icon, "coffee", material_icon("coffee"), 16
+        )
 
     def _current_idle_milliseconds(self) -> int | None:
         idle_text = run_cmd(["xssstate", "-i"], timeout=1.0)
@@ -4959,7 +5597,9 @@ class CyberBar(QWidget):
         return False
 
     def _poll_autolock(self) -> None:
-        settings = self.autolock_settings if isinstance(self.autolock_settings, dict) else {}
+        settings = (
+            self.autolock_settings if isinstance(self.autolock_settings, dict) else {}
+        )
         if not bool(settings.get("enabled", True)):
             self._autolock_armed = True
             return
@@ -5050,13 +5690,22 @@ class CyberBar(QWidget):
     def _toggle_notifications(self) -> None:
         if self._control_center_launch_pending:
             return
-        active = self._control_center_process is not None and self._control_center_process.poll() is None
+        active = (
+            self._control_center_process is not None
+            and self._control_center_process.poll() is None
+        )
         if not active:
-            active = any(background_match_exists(pattern) for pattern in entry_patterns(NOTIFICATION_CENTER))
+            active = any(
+                background_match_exists(pattern)
+                for pattern in entry_patterns(NOTIFICATION_CENTER)
+            )
         if active:
             for pattern in entry_patterns(NOTIFICATION_CENTER):
                 terminate_background_matches(pattern)
-            if self._control_center_process is not None and self._control_center_process.poll() is None:
+            if (
+                self._control_center_process is not None
+                and self._control_center_process.poll() is None
+            ):
                 self._control_center_process.terminate()
             self._control_center_process = None
             self.btn_control_center.setChecked(False)
@@ -5105,7 +5754,9 @@ class CyberBar(QWidget):
             env["PYTHONPATH"] = source_path
         return env
 
-    def _singleton_active(self, process: Optional[subprocess.Popen], script_path: Path) -> bool:
+    def _singleton_active(
+        self, process: Optional[subprocess.Popen], script_path: Path
+    ) -> bool:
         if process is not None and process.poll() is None:
             return True
         return False
@@ -5126,7 +5777,10 @@ class CyberBar(QWidget):
         python_bin: Optional[str] = None,
         extra_env: Optional[dict[str, str]] = None,
     ) -> bool:
-        if not script_path.exists() and entry_target(script_path) == script_path.resolve():
+        if (
+            not script_path.exists()
+            and entry_target(script_path) == script_path.resolve()
+        ):
             setattr(self, attr_name, None)
             return False
         self._terminate_singleton_process(attr_name, script_path)
@@ -5170,33 +5824,45 @@ class CyberBar(QWidget):
         if self._singleton_active(getattr(self, attr_name, None), script_path):
             self._terminate_singleton_process(attr_name, script_path)
             return False
-        return self._launch_singleton_process(attr_name, script_path, python_bin=python_bin, extra_env=extra_env)
+        return self._launch_singleton_process(
+            attr_name, script_path, python_bin=python_bin, extra_env=extra_env
+        )
 
     def _toggle_weather_popup(self) -> None:
-        self._toggle_singleton_process("_weather_popup_process", WEATHER_POPUP, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_weather_popup_process", WEATHER_POPUP, python_bin=self._python_bin()
+        )
 
     def _toggle_calendar_popup(self) -> None:
-        self._toggle_singleton_process("_calendar_popup_process", CALENDAR_POPUP, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_calendar_popup_process", CALENDAR_POPUP, python_bin=self._python_bin()
+        )
 
     def _toggle_wifi_popup(self) -> None:
         if not WIFI_CONTROL.exists():
             self.net_icon.setChecked(False)
             return
-        self._toggle_singleton_process("_wifi_popup_process", WIFI_CONTROL, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_wifi_popup_process", WIFI_CONTROL, python_bin=self._python_bin()
+        )
         QTimer.singleShot(150, self._sync_wifi_button)
 
     def _toggle_vpn_popup(self) -> None:
         if not VPN_CONTROL.exists():
             self.vpn_icon.setChecked(False)
             return
-        self._toggle_singleton_process("_vpn_popup_process", VPN_CONTROL, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_vpn_popup_process", VPN_CONTROL, python_bin=self._python_bin()
+        )
         QTimer.singleShot(150, self._sync_vpn_button)
 
     def _toggle_ai_popup(self) -> None:
-        active = self._toggle_singleton_process("_ai_popup_process", AI_POPUP, python_bin=self._python_bin())
-        if not AI_POPUP.exists():
+        if AI_POPUP is None or not AI_POPUP.exists():
             self.ai_button.setChecked(False)
             return
+        active = self._toggle_singleton_process(
+            "_ai_popup_process", AI_POPUP, python_bin=self._python_bin()
+        )
         self.ai_button.setChecked(active)
 
     def _open_region_settings(self) -> None:
@@ -5228,16 +5894,20 @@ class CyberBar(QWidget):
         QTimer.singleShot(180, self._poll_lock_states)
 
     def _open_christian_widget(self) -> None:
-        if not CHRISTIAN_WIDGET.exists():
+        if CHRISTIAN_WIDGET is None or not CHRISTIAN_WIDGET.exists():
             return
-        self._toggle_singleton_process("_christian_widget_process", CHRISTIAN_WIDGET, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_christian_widget_process", CHRISTIAN_WIDGET, python_bin=self._python_bin()
+        )
 
     def _open_health_widget(self) -> None:
-        if not HEALTH_WIDGET.exists():
+        if HEALTH_WIDGET is None or not HEALTH_WIDGET.exists():
             return
         anchor = self.datetime_chip.mapToGlobal(self.datetime_chip.rect().bottomLeft())
         extra_env = {
-            "HANAUTA_HEALTH_ANCHOR_X": str(anchor.x() + (self.datetime_chip.width() // 2)),
+            "HANAUTA_HEALTH_ANCHOR_X": str(
+                anchor.x() + (self.datetime_chip.width() // 2)
+            ),
             "HANAUTA_HEALTH_ANCHOR_Y": str(anchor.y() + 10),
         }
         self._toggle_singleton_process(
@@ -5248,58 +5918,78 @@ class CyberBar(QWidget):
         )
 
     def _open_home_assistant_widget(self) -> None:
-        if not HOME_ASSISTANT_WIDGET.exists():
+        if HOME_ASSISTANT_WIDGET is None or not HOME_ASSISTANT_WIDGET.exists():
             return
-        self._toggle_singleton_process("_home_assistant_widget_process", HOME_ASSISTANT_WIDGET, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_home_assistant_widget_process",
+            HOME_ASSISTANT_WIDGET,
+            python_bin=self._python_bin(),
+        )
 
     def _open_reminders_widget(self) -> None:
-        if not REMINDERS_WIDGET.exists():
+        if REMINDERS_WIDGET is None or not REMINDERS_WIDGET.exists():
             return
-        self._toggle_singleton_process("_reminders_widget_process", REMINDERS_WIDGET, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_reminders_widget_process", REMINDERS_WIDGET, python_bin=self._python_bin()
+        )
 
     def _open_pomodoro_widget(self) -> None:
-        if not POMODORO_WIDGET.exists():
+        if POMODORO_WIDGET is None or not POMODORO_WIDGET.exists():
             return
         self._toggle_singleton_process("_pomodoro_widget_process", POMODORO_WIDGET)
 
     def _open_rss_widget(self) -> None:
         rss_widget_script = resolve_rss_widget_script()
-        if not rss_widget_script.exists():
+        if rss_widget_script is None or not rss_widget_script.exists():
             return
-        self._toggle_singleton_process("_rss_widget_process", rss_widget_script, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_rss_widget_process", rss_widget_script, python_bin=self._python_bin()
+        )
 
     def _open_obs_widget(self) -> None:
-        if not OBS_WIDGET.exists():
+        if OBS_WIDGET is None or not OBS_WIDGET.exists():
             return
-        self._toggle_singleton_process("_obs_widget_process", OBS_WIDGET, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_obs_widget_process", OBS_WIDGET, python_bin=self._python_bin()
+        )
 
     def _open_crypto_widget(self) -> None:
-        if not CRYPTO_WIDGET.exists():
+        if CRYPTO_WIDGET is None or not CRYPTO_WIDGET.exists():
             return
-        self._toggle_singleton_process("_crypto_widget_process", CRYPTO_WIDGET, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_crypto_widget_process", CRYPTO_WIDGET, python_bin=self._python_bin()
+        )
 
     def _open_cap_alerts_popup(self) -> None:
-        if not CAP_ALERTS_POPUP.exists():
+        if CAP_ALERTS_POPUP is None or not CAP_ALERTS_POPUP.exists():
             return
-        self._toggle_singleton_process("_cap_alerts_popup_process", CAP_ALERTS_POPUP, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_cap_alerts_popup_process", CAP_ALERTS_POPUP, python_bin=self._python_bin()
+        )
 
     def _open_vps_widget(self) -> None:
-        if not VPS_WIDGET.exists():
+        if VPS_WIDGET is None or not VPS_WIDGET.exists():
             return
         self._toggle_singleton_process("_vps_widget_process", VPS_WIDGET)
 
     def _toggle_ntfy_popup(self) -> None:
-        if not NTFY_POPUP.exists():
+        ntfy_popup_script = resolve_ntfy_popup_script()
+        self._ntfy_popup_script = ntfy_popup_script
+        if ntfy_popup_script is None or not ntfy_popup_script.exists():
             self.ntfy_button.setChecked(False)
             return
-        active = self._toggle_singleton_process("_ntfy_popup_process", NTFY_POPUP, python_bin=self._python_bin())
+        active = self._toggle_singleton_process(
+            "_ntfy_popup_process", ntfy_popup_script, python_bin=self._python_bin()
+        )
         self.ntfy_button.setChecked(active)
 
     def _toggle_game_mode_popup(self) -> None:
-        if not GAME_MODE_POPUP.exists():
+        if GAME_MODE_POPUP is None or not GAME_MODE_POPUP.exists():
             self.game_mode_button.setChecked(False)
             return
-        self._toggle_singleton_process("_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_game_mode_popup_process", GAME_MODE_POPUP, python_bin=self._python_bin()
+        )
         QTimer.singleShot(150, self._sync_game_mode_button)
 
     def _open_launcher(self) -> None:
@@ -5308,13 +5998,17 @@ class CyberBar(QWidget):
             return
         if not LAUNCHER_APP.exists():
             return
-        self._toggle_singleton_process("_launcher_process", LAUNCHER_APP, python_bin=self._python_bin())
+        self._toggle_singleton_process(
+            "_launcher_process", LAUNCHER_APP, python_bin=self._python_bin()
+        )
 
     def _toggle_powermenu(self) -> None:
         if not POWERMENU_WIDGET.exists():
             self.btn_power.setChecked(False)
             return
-        active = self._toggle_singleton_process("_powermenu_process", POWERMENU_WIDGET, python_bin=self._python_bin())
+        active = self._toggle_singleton_process(
+            "_powermenu_process", POWERMENU_WIDGET, python_bin=self._python_bin()
+        )
         self.btn_power.setChecked(active)
 
     def _open_clipboard(self) -> None:
@@ -5323,7 +6017,9 @@ class CyberBar(QWidget):
     def _check_updates(self) -> None:
         anchor = self.datetime_chip.mapToGlobal(self.datetime_chip.rect().bottomLeft())
         extra_env = {
-            "HANAUTA_UPDATES_ANCHOR_X": str(anchor.x() + (self.datetime_chip.width() // 2)),
+            "HANAUTA_UPDATES_ANCHOR_X": str(
+                anchor.x() + (self.datetime_chip.width() // 2)
+            ),
             "HANAUTA_UPDATES_ANCHOR_Y": str(anchor.y() + 10),
         }
         self._toggle_singleton_process(
@@ -5341,7 +6037,8 @@ class CyberBar(QWidget):
 
     def _sync_control_center_button(self) -> None:
         active = self._control_center_launch_pending or (
-            self._control_center_process is not None and self._control_center_process.poll() is None
+            self._control_center_process is not None
+            and self._control_center_process.poll() is None
         )
         if not active:
             self._control_center_process = None
@@ -5386,7 +6083,10 @@ class CyberBar(QWidget):
             self._weather_popup_process = None
 
     def _sync_ntfy_button(self) -> None:
-        active = self._singleton_active(self._ntfy_popup_process, NTFY_POPUP)
+        ntfy_popup_script = getattr(
+            self, "_ntfy_popup_script", resolve_ntfy_popup_script()
+        )
+        active = self._singleton_active(self._ntfy_popup_process, ntfy_popup_script)
         if not active:
             self._ntfy_popup_process = None
         self.ntfy_button.setChecked(active)
@@ -5417,42 +6117,96 @@ class CyberBar(QWidget):
             self._mail_worker.wait(500)
         if self._ai_popup_process is not None and self._ai_popup_process.poll() is None:
             self._ai_popup_process.terminate()
-        if self._control_center_process is not None and self._control_center_process.poll() is None:
+        if (
+            self._control_center_process is not None
+            and self._control_center_process.poll() is None
+        ):
             self._control_center_process.terminate()
-        if self._wifi_popup_process is not None and self._wifi_popup_process.poll() is None:
+        if (
+            self._wifi_popup_process is not None
+            and self._wifi_popup_process.poll() is None
+        ):
             self._wifi_popup_process.terminate()
-        if self._vpn_popup_process is not None and self._vpn_popup_process.poll() is None:
+        if (
+            self._vpn_popup_process is not None
+            and self._vpn_popup_process.poll() is None
+        ):
             self._vpn_popup_process.terminate()
-        if self._weather_popup_process is not None and self._weather_popup_process.poll() is None:
+        if (
+            self._weather_popup_process is not None
+            and self._weather_popup_process.poll() is None
+        ):
             self._weather_popup_process.terminate()
-        if self._christian_widget_process is not None and self._christian_widget_process.poll() is None:
+        if (
+            self._christian_widget_process is not None
+            and self._christian_widget_process.poll() is None
+        ):
             self._christian_widget_process.terminate()
-        if self._health_widget_process is not None and self._health_widget_process.poll() is None:
+        if (
+            self._health_widget_process is not None
+            and self._health_widget_process.poll() is None
+        ):
             self._health_widget_process.terminate()
-        if self._pomodoro_widget_process is not None and self._pomodoro_widget_process.poll() is None:
+        if (
+            self._pomodoro_widget_process is not None
+            and self._pomodoro_widget_process.poll() is None
+        ):
             self._pomodoro_widget_process.terminate()
-        if self._rss_widget_process is not None and self._rss_widget_process.poll() is None:
+        if (
+            self._rss_widget_process is not None
+            and self._rss_widget_process.poll() is None
+        ):
             self._rss_widget_process.terminate()
-        if self._obs_widget_process is not None and self._obs_widget_process.poll() is None:
+        if (
+            self._obs_widget_process is not None
+            and self._obs_widget_process.poll() is None
+        ):
             self._obs_widget_process.terminate()
-        if self._updates_widget_process is not None and self._updates_widget_process.poll() is None:
+        if (
+            self._updates_widget_process is not None
+            and self._updates_widget_process.poll() is None
+        ):
             self._updates_widget_process.terminate()
-        if self._crypto_widget_process is not None and self._crypto_widget_process.poll() is None:
+        if (
+            self._crypto_widget_process is not None
+            and self._crypto_widget_process.poll() is None
+        ):
             self._crypto_widget_process.terminate()
-        if self._cap_alerts_popup_process is not None and self._cap_alerts_popup_process.poll() is None:
+        if (
+            self._cap_alerts_popup_process is not None
+            and self._cap_alerts_popup_process.poll() is None
+        ):
             self._cap_alerts_popup_process.terminate()
-        if self._cap_alert_overlay_process is not None and self._cap_alert_overlay_process.poll() is None:
+        if (
+            self._cap_alert_overlay_process is not None
+            and self._cap_alert_overlay_process.poll() is None
+        ):
             self._cap_alert_overlay_process.terminate()
-        if self._vps_widget_process is not None and self._vps_widget_process.poll() is None:
+        if (
+            self._vps_widget_process is not None
+            and self._vps_widget_process.poll() is None
+        ):
             self._vps_widget_process.terminate()
-        if self._desktop_clock_process is not None and self._desktop_clock_process.poll() is None:
+        if (
+            self._desktop_clock_process is not None
+            and self._desktop_clock_process.poll() is None
+        ):
             self._desktop_clock_process.terminate()
-        if self._ntfy_popup_process is not None and self._ntfy_popup_process.poll() is None:
+        if (
+            self._ntfy_popup_process is not None
+            and self._ntfy_popup_process.poll() is None
+        ):
             self._ntfy_popup_process.terminate()
-        if self._game_mode_popup_process is not None and self._game_mode_popup_process.poll() is None:
+        if (
+            self._game_mode_popup_process is not None
+            and self._game_mode_popup_process.poll() is None
+        ):
             self._game_mode_popup_process.terminate()
         self._run_bar_plugin_hooks("close")
-        if self._powermenu_process is not None and self._powermenu_process.poll() is None:
+        if (
+            self._powermenu_process is not None
+            and self._powermenu_process.poll() is None
+        ):
             self._powermenu_process.terminate()
         super().closeEvent(event)
 
@@ -5481,11 +6235,31 @@ class CyberBar(QWidget):
         try:
             wid = int(self.winId())
             subprocess.run(
-                ["xprop", "-id", hex(wid), "-f", "_NET_WM_NAME", "8t", "-set", "_NET_WM_NAME", "CyberBar"],
+                [
+                    "xprop",
+                    "-id",
+                    hex(wid),
+                    "-f",
+                    "_NET_WM_NAME",
+                    "8t",
+                    "-set",
+                    "_NET_WM_NAME",
+                    "CyberBar",
+                ],
                 check=False,
             )
             subprocess.run(
-                ["xprop", "-id", hex(wid), "-f", "WM_CLASS", "8s", "-set", "WM_CLASS", "CyberBar"],
+                [
+                    "xprop",
+                    "-id",
+                    hex(wid),
+                    "-f",
+                    "WM_CLASS",
+                    "8s",
+                    "-set",
+                    "WM_CLASS",
+                    "CyberBar",
+                ],
                 check=False,
             )
         except Exception:

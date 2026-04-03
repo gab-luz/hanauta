@@ -22,8 +22,29 @@ A plugin directory should contain at least:
 - `hanauta_plugin.py` (entrypoint used by Settings)
 - `hanauta_bar_plugin.py` (optional entrypoint used by Bar integrations)
 - `hanauta-service-plugin.json` (optional manifest for background tasks via `hanauta-service`)
-- `icon.svg` or `icon.png` at plugin root (used in Services section header icon)
+- `icon.svg` at plugin root (tintable monochrome/base icon)
+- `icon_color.svg` at plugin root (original full-color icon, never tinted)
 - plugin runtime files (`study_tracker_popup.py`, assets, etc.)
+
+## Plugin Icon Standard
+
+All new plugins must ship **two icon files** at plugin root:
+
+- `icon.svg`
+  - Intended for tinting by Hanauta UI/theme logic.
+  - Prefer single-color, clean paths, and consistent silhouette.
+- `icon_color.svg`
+  - Original brand/app colors.
+  - Must not be tinted.
+  - Used in dark/light theme flows when Hanauta wants the authentic icon colors.
+
+Recommended behavior for plugin builders:
+
+- Keep both files square (24x24 or 32x32 viewbox works well).
+- Keep `icon.svg` simple and high-contrast for reliable tinting.
+- Keep `icon_color.svg` as the authoritative visual identity.
+- If only one icon is temporarily available during development:
+  - use `icon.svg` as fallback, but add `icon_color.svg` before release.
 
 ## Settings Integration Contract
 
@@ -326,7 +347,8 @@ RSS widget shell files were decoupled from core and moved to a plugin repository
 
 1. Create repo `hanauta-plugin-<name>`.
 2. Add `hanauta_plugin.py` with `register_hanauta_plugin()`.
-3. Add plugin to `hanauta-plugins/plugins.json` catalog.
-4. Install from Marketplace.
-5. Verify plugin section appears in Services tab.
-6. Keep plugin updates in plugin repo, not core Hanauta repo.
+3. Add both icons at plugin root: `icon.svg` (tintable) and `icon_color.svg` (original colors, non-tinted).
+4. Add plugin to `hanauta-plugins/plugins.json` catalog.
+5. Install from Marketplace.
+6. Verify plugin section appears in Services tab.
+7. Keep plugin updates in plugin repo, not core Hanauta repo.

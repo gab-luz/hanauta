@@ -12,7 +12,7 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
   exit 1
 fi
 
-"$VENV_PYTHON" -m pip install --disable-pip-version-check -q nuitka ordered-set zstandard
+uv pip install --quiet nuitka ordered-set zstandard
 
 mkdir -p "$NUITKA_DIR"
 

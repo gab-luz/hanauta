@@ -6,10 +6,13 @@ import subprocess
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from pyqt.shared.runtime import entry_command, source_root
+from pyqt.shared.runtime import entry_command
+from pyqt.shared.plugin_runtime import resolve_plugin_script
 
 
-REMINDER_ALERT_SCRIPT = source_root() / "pyqt" / "widget-reminders" / "reminder_alert.py"
+REMINDER_ALERT_SCRIPT = (
+    resolve_plugin_script("reminder_alert.py", ["reminders"]) or Path()
+)
 
 
 def _normalize_command(command: Sequence[str]) -> list[str]:
@@ -67,6 +70,8 @@ def run_with_polkit(
 
 def fullscreen_alert_command(title: str, body: str, severity: str = "discrete") -> list[str]:
     script_path = Path(REMINDER_ALERT_SCRIPT)
+    if not script_path.exists():
+        return []
     return entry_command(
         script_path,
         "--title",

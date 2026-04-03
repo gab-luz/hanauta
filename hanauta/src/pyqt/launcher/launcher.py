@@ -239,14 +239,20 @@ def resolve_app_icon_pixmap(app: DesktopApp, size: int, theme=None, use_matugen:
     return _svg_fallback_pixmap(app, size, theme=theme, use_matugen=use_matugen)
 
 
-def matugen_enabled() -> bool:
+def launcher_theme_enabled() -> bool:
     try:
         payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return False
+        return True
     appearance = payload.get("appearance", {})
     if not isinstance(appearance, dict):
-        return False
+        return True
+    theme_choice = str(appearance.get("theme_choice", "")).strip().lower()
+    theme_mode = str(appearance.get("theme_mode", "")).strip().lower()
+    if theme_choice in {"light", "dark", "custom", "wallpaper_aware"}:
+        return True
+    if theme_mode in {"light", "dark", "custom"}:
+        return True
     return bool(appearance.get("use_matugen_palette", False))
 
 
@@ -667,7 +673,7 @@ class LauncherWindow(QWidget):
         self.ui_font = detect_font(theme_font_family("ui"), "Rubik", "Inter", "Noto Sans", "DejaVu Sans", "Sans Serif")
         self.mono_font = detect_font(theme_font_family("mono"), "JetBrains Mono", "DejaVu Sans Mono", "Monospace")
         self.theme = load_theme_palette()
-        self.use_matugen = matugen_enabled()
+        self.use_matugen = launcher_theme_enabled()
         self._theme_mtime = palette_mtime()
         self.apps = load_cached_desktop_apps()
         self.filtered_apps: list[DesktopApp] = []
@@ -957,9 +963,9 @@ class LauncherWindow(QWidget):
         )
 
     def _reload_theme_if_needed(self) -> None:
-        current_use_matugen = matugen_enabled()
+        current_use_matugen = launcher_theme_enabled()
         current_mtime = palette_mtime()
-        if current_use_matugen == self.use_matugen and (not current_use_matugen or current_mtime == self._theme_mtime):
+        if current_use_matugen == self.use_matugen and current_mtime == self._theme_mtime:
             return
         self.use_matugen = current_use_matugen
         self._theme_mtime = current_mtime

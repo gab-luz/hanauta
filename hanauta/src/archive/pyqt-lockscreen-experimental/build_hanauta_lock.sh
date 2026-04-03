@@ -34,8 +34,8 @@ python3 -m venv "$VENV_DIR"
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-python -m pip install --upgrade pip wheel setuptools
-python -m pip install nuitka ordered-set zstandard pyqt6
+uv pip install --upgrade pip wheel setuptools
+uv pip install nuitka ordered-set zstandard pyqt6
 
 rm -rf "$OUT_DIR" "$BUILD_CACHE_GLOB" .nuitka-cache
 

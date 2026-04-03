@@ -51,12 +51,12 @@ gaps top 5
 
 # Colors
 # format: client.<state> border background text indicator child_border
-client.focused          #82d3e0 #82d3e0 #dee3e5 #82d3e0 #82d3e0
-client.focused_inactive #899294 #899294 #dee3e5 #899294 #899294
-client.unfocused        #899294 #899294 #dee3e5 #899294 #899294
-client.urgent           #ffb4ab #ffb4ab #0e1415 #ffb4ab #ffb4ab
-client.placeholder      #899294 #899294 #dee3e5 #899294 #899294
-client.background       #0e1415
+client.focused          #97ccf9 #97ccf9 #e0e3e8 #97ccf9 #97ccf9
+client.focused_inactive #8b9198 #8b9198 #e0e3e8 #8b9198 #8b9198
+client.unfocused        #8b9198 #8b9198 #e0e3e8 #8b9198 #8b9198
+client.urgent           #ffb4ab #ffb4ab #101417 #ffb4ab #ffb4ab
+client.placeholder      #8b9198 #8b9198 #e0e3e8 #8b9198 #8b9198
+client.background       #101417
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
@@ -64,19 +64,20 @@ exec_always --no-startup-id xsetroot -cursor_name left_ptr
 # Notifications are handled by Hanauta's native PyQt notification daemon from startup.sh
 
 # Startup apps (run once per i3 start)
-exec --no-startup-id sh -c 'sleep 10 && "$HOME/.config/i3/scripts/bspfloat" floating 5 > "$HOME/.log.bspfloat.txt" 2>&1'
+# bspfloat is for bspwm, not i3 - disabled
+# exec --no-startup-id sh -c 'sleep 10 && "$HOME/.config/i3/scripts/bspfloat" floating 5 > "$HOME/.log.bspfloat.txt" 2>&1'
 # exec --no-startup-id sh -c "$HOME/.config/conky/Auva/start.sh"
 exec --no-startup-id sh -c 'command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent'
 exec --no-startup-id sh -c 'command -v xfce4-power-manager >/dev/null 2>&1 && xfce4-power-manager'
 exec --no-startup-id sh -c 'if command -v clipit >/dev/null 2>&1; then clipit; elif command -v copyq >/dev/null 2>&1; then copyq; fi'
-exec_always --no-startup-id sh -c 'pkill -x fastcompmgr 2>/dev/null; pkill -x picom 2>/dev/null; picom --config "$HOME/.config/i3/picom.conf" --daemon'
-exec_always --no-startup-id ~/.config/i3/startup.sh
+# Picom is managed by startup.sh for consistent behavior on login and safe restarts.
+exec_always --no-startup-id sh -c '"$HOME/.config/i3/startup.sh" >/tmp/i3-startup-wrapper.log 2>&1 &'
 
 # CyberDock
-exec_always --no-startup-id sh -c 'pkill -x hanauta-dock 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/dock/dock.py"; fi'
+exec_always --no-startup-id sh -c '"$HOME/.config/i3/hanauta/scripts/open_dock.sh" >/tmp/hanauta-dock-launcher.log 2>&1 &'
 
 # CyberBar (PyQt6 top bar)
-exec_always --no-startup-id sh -c 'pkill -x hanauta-bar 2>/dev/null || true; pkill -x hanauta-game-mode-popup 2>/dev/null || true; pkill -x hanauta-ai-popup 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true; pkill -f "$HOME/.config/i3/hanauta/src/pyqt/ai-popup/ai_popup.py" 2>/dev/null || true; export PYTHONPATH="$HOME/.config/i3/hanauta/src${PYTHONPATH:+:$PYTHONPATH}"; if [ -x "$HOME/.config/i3/.venv/bin/python" ]; then exec "$HOME/.config/i3/.venv/bin/python" "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; else exec python3 "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui"; fi'
+exec_always --no-startup-id sh -c '"$HOME/.config/i3/hanauta/scripts/open_bar.sh" >/tmp/hanauta-bar-launcher.log 2>&1 &'
 
 # Window rules (translated from bspwm rules)
 for_window [class=Peek] floating enable
@@ -168,4 +169,4 @@ bindsym $mod+v split v
 bindsym $mod+b split h
 bindsym $mod+f fullscreen toggle
 bindsym $mod+Shift+c reload
-bindsym $mod+Shift+r restart
+bindsym $mod+Shift+r exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/safe_i3_restart.sh"
