@@ -7,18 +7,24 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets import QWidget
 
+from pyqt.shared.plugin_runtime import discover_plugin_dirs
 from pyqt.shared.theme import blend, load_theme_palette, rgba
 
 
-LEGACY_QML_FILE = Path(__file__).resolve().parents[1] / "widget-rss" / "rss_settings.qml"
-PLUGIN_INSTALL_QML_FILE = Path.home() / ".config" / "i3" / "hanauta" / "plugins" / "rss_widget" / "rss_settings.qml"
+PLUGIN_INSTALL_QML_FILE = (
+    Path.home() / ".config" / "i3" / "hanauta" / "plugins" / "rss_widget" / "rss_settings.qml"
+)
 
 
 def _rss_settings_qml_file() -> Path:
-    for candidate in (LEGACY_QML_FILE, PLUGIN_INSTALL_QML_FILE):
+    for plugin_dir in discover_plugin_dirs(["rss"], require_entrypoint=False):
+        candidate = plugin_dir / "rss_settings.qml"
         if candidate.exists():
             return candidate
-    return LEGACY_QML_FILE
+    for candidate in (PLUGIN_INSTALL_QML_FILE,):
+        if candidate.exists():
+            return candidate
+    return PLUGIN_INSTALL_QML_FILE
 
 
 class RssSettingsBridge(QObject):

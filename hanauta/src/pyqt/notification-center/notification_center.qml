@@ -120,7 +120,7 @@ Window {
                                     color: colors.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 18
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                 }
 
                                 Text {
@@ -212,7 +212,7 @@ Window {
                                                 color: modelData.active ? colors.onPrimary : colors.text
                                                 font.family: backend.uiFontFamily
                                                 font.pixelSize: 12
-                                                font.weight: Font.DemiBold
+                                                font.weight: Font.Medium
                                             }
 
                                             Text {
@@ -393,7 +393,7 @@ Window {
                                             color: colors.text
                                             font.family: backend.uiFontFamily
                                             font.pixelSize: 15
-                                            font.weight: Font.DemiBold
+                                            font.weight: Font.Medium
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
                                         }
@@ -501,7 +501,7 @@ Window {
                                     color: colors.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 12
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                     Layout.fillWidth: true
                                 }
 
@@ -611,7 +611,7 @@ Window {
                                                     color: colors.text
                                                     font.family: backend.uiFontFamily
                                                     font.pixelSize: 10
-                                                    font.weight: Font.DemiBold
+                                                    font.weight: Font.Medium
                                                 }
 
                                                 Text {
@@ -662,7 +662,7 @@ Window {
                                             color: colors.text
                                             font.family: backend.uiFontFamily
                                             font.pixelSize: 12
-                                            font.weight: Font.DemiBold
+                                            font.weight: Font.Medium
                                         }
 
                                         Text {
@@ -716,7 +716,7 @@ Window {
                                     color: colors.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 15
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                 }
                             }
 
@@ -757,7 +757,7 @@ Window {
                                             color: index === settingsSection ? colors.onPrimary : colors.text
                                             font.family: backend.uiFontFamily
                                             font.pixelSize: 12
-                                            font.weight: Font.DemiBold
+                                            font.weight: Font.Medium
                                         }
                                     }
                                 }
@@ -794,7 +794,7 @@ Window {
                                     color: colors.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 16
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                 }
 
                                 Text {
@@ -840,7 +840,7 @@ Window {
                                                     color: colors.text
                                                     font.family: backend.uiFontFamily
                                                     font.pixelSize: 12
-                                                    font.weight: Font.DemiBold
+                                                    font.weight: Font.Medium
                                                     wrapMode: Text.WordWrap
                                                 }
                                             }
@@ -857,7 +857,7 @@ Window {
                                     color: colors.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 16
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                 }
 
                                 Text {
@@ -897,7 +897,7 @@ Window {
                                     color: colors.text
                                     font.family: backend.uiFontFamily
                                     font.pixelSize: 16
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                 }
 
                                 Text {
@@ -975,7 +975,7 @@ Window {
                                                     color: colors.text
                                                     font.family: backend.uiFontFamily
                                                     font.pixelSize: 12
-                                                    font.weight: Font.DemiBold
+                                                    font.weight: Font.Medium
                                                     elide: Text.ElideRight
                                                     Layout.fillWidth: true
                                                 }

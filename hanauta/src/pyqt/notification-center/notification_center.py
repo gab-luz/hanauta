@@ -20,7 +20,18 @@ from time import monotonic
 from urllib import error, parse, request
 
 from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTextCharFormat
+from PyQt6.QtGui import (
+    QColor,
+    QCursor,
+    QFont,
+    QFontDatabase,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QTextCharFormat,
+)
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -48,6 +59,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 ROOT = APP_DIR.parents[1]
@@ -60,27 +72,55 @@ HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
-WIFI_NOTIFICATION_ICON = "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg"
-BLUETOOTH_NOTIFICATION_ICON = "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg"
-AIRPLANE_NOTIFICATION_ICON = "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg"
+WIFI_NOTIFICATION_ICON = (
+    "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg"
+)
+BLUETOOTH_NOTIFICATION_ICON = (
+    "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg"
+)
+AIRPLANE_NOTIFICATION_ICON = (
+    "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg"
+)
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
-NOTIFICATION_HISTORY_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon" / "history.json"
-QCAL_WRAPPER = APP_DIR / "pyqt" / "widget-calendar" / "qcal-wrapper.py"
+NOTIFICATION_HISTORY_FILE = (
+    Path.home()
+    / ".local"
+    / "state"
+    / "hanauta"
+    / "notification-daemon"
+    / "history.json"
+)
+QCAL_WRAPPER = resolve_plugin_script("qcal-wrapper.py", ["calendar"]) or Path()
 LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
 LUTRIS_COVERART_DIR = Path.home() / ".local" / "share" / "lutris" / "coverart"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
-VPN_CONTROL_SCRIPT = APP_DIR / "pyqt" / "widget-vpn-control" / "vpn_control.py"
-CHRISTIAN_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-religion-christian" / "christian_widget.py"
-REMINDERS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-reminders" / "reminders_widget.py"
-POMODORO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-pomodoro" / "pomodoro_widget.py"
-RSS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-rss" / "rss_widget.py"
-OBS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-obs" / "obs_widget.py"
-CRYPTO_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-crypto" / "crypto_widget.py"
-VPS_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-vps" / "vps_widget.py"
-DESKTOP_CLOCK_WIDGET_SCRIPT = APP_DIR / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py"
+VPN_CONTROL_SCRIPT = (
+    resolve_plugin_script("vpn_control.py", ["vpn-control", "vpn"]) or Path()
+)
+CHRISTIAN_WIDGET_SCRIPT = (
+    resolve_plugin_script("christian_widget.py", ["religion-christian", "christian"])
+    or Path()
+)
+REMINDERS_WIDGET_SCRIPT = (
+    resolve_plugin_script("reminders_widget.py", ["reminders"]) or Path()
+)
+POMODORO_WIDGET_SCRIPT = (
+    resolve_plugin_script("pomodoro_widget.py", ["pomodoro"]) or Path()
+)
+RSS_WIDGET_SCRIPT = resolve_plugin_script("rss_widget.py", ["rss"]) or Path()
+OBS_WIDGET_SCRIPT: Path | None = resolve_plugin_script("obs_widget.py", ["obs"])
+CRYPTO_WIDGET_SCRIPT: Path | None = resolve_plugin_script(
+    "crypto_widget.py", ["crypto"]
+)
+VPS_WIDGET_SCRIPT: Path | None = resolve_plugin_script("vps_widget.py", ["vps"])
+DESKTOP_CLOCK_WIDGET_SCRIPT: Path | None = resolve_plugin_script(
+    "desktop_clock_widget.py", ["desktop-clock", "clock"]
+)
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
-GAME_MODE_POPUP_SCRIPT = APP_DIR / "pyqt" / "widget-game-mode" / "game_mode_popup.py"
+GAME_MODE_POPUP_SCRIPT: Path | None = resolve_plugin_script(
+    "game_mode_popup.py", ["game-mode", "gamemode"]
+)
 POWERMENU_SCRIPT = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 PROFILE_PHOTO_CANDIDATES = [Path.home() / ".face.png", Path.home() / ".face.jpg"]
 
@@ -271,7 +311,7 @@ def run_bg_singleton(script_path: Path, *args: str) -> None:
 
 
 def desktop_clock_command() -> list[str]:
-    if DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
+    if DESKTOP_CLOCK_WIDGET_SCRIPT is not None and DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
         return entry_command(DESKTOP_CLOCK_WIDGET_SCRIPT)
     if DESKTOP_CLOCK_BINARY.exists():
         return [str(DESKTOP_CLOCK_BINARY)]
@@ -357,10 +397,20 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             try:
                 merged[key]["low_battery_threshold"] = max(
                     1,
-                    min(100, int(current.get("low_battery_threshold", defaults.get("low_battery_threshold", 20)))),
+                    min(
+                        100,
+                        int(
+                            current.get(
+                                "low_battery_threshold",
+                                defaults.get("low_battery_threshold", 20),
+                            )
+                        ),
+                    ),
                 )
             except Exception:
-                merged[key]["low_battery_threshold"] = int(defaults.get("low_battery_threshold", 20))
+                merged[key]["low_battery_threshold"] = int(
+                    defaults.get("low_battery_threshold", 20)
+                )
         elif key == "christian_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
@@ -427,7 +477,9 @@ def load_notification_settings() -> dict:
     home_assistant.setdefault("url", "")
     home_assistant.setdefault("token", "")
     pinned = [
-        item for item in home_assistant.get("pinned_entities", []) if isinstance(item, str)
+        item
+        for item in home_assistant.get("pinned_entities", [])
+        if isinstance(item, str)
     ][:5]
     home_assistant["pinned_entities"] = pinned
     services = merged_service_settings(payload.get("services", {}))
@@ -439,7 +491,9 @@ def load_notification_settings() -> dict:
     autolock = dict(payload.get("autolock", {}))
     autolock["enabled"] = bool(autolock.get("enabled", True))
     try:
-        autolock["timeout_minutes"] = max(1, min(60, int(autolock.get("timeout_minutes", 2))))
+        autolock["timeout_minutes"] = max(
+            1, min(60, int(autolock.get("timeout_minutes", 2)))
+        )
     except Exception:
         autolock["timeout_minutes"] = 2
     weather = dict(payload.get("weather", {}))
@@ -461,7 +515,9 @@ def load_notification_settings() -> dict:
     ntfy.setdefault("auth_mode", "token")
     ntfy.setdefault("topics", [])
     ntfy.setdefault("all_topics", False)
-    ntfy["hide_notification_content"] = bool(ntfy.get("hide_notification_content", False))
+    ntfy["hide_notification_content"] = bool(
+        ntfy.get("hide_notification_content", False)
+    )
     topics = [
         str(item).strip()
         for item in ntfy.get("topics", [])
@@ -524,9 +580,21 @@ def render_theme_icon_pixmap(names: list[str], size: int = 18) -> QPixmap:
 
 def accent_palette(name: str) -> dict[str, str]:
     palettes = {
-        "orchid": {"accent": "#D0BCFF", "on_accent": "#381E72", "soft": "rgba(208,188,255,0.18)"},
-        "mint": {"accent": "#8FE3CF", "on_accent": "#11352D", "soft": "rgba(143,227,207,0.18)"},
-        "sunset": {"accent": "#FFB59E", "on_accent": "#4D2418", "soft": "rgba(255,181,158,0.18)"},
+        "orchid": {
+            "accent": "#D0BCFF",
+            "on_accent": "#381E72",
+            "soft": "rgba(208,188,255,0.18)",
+        },
+        "mint": {
+            "accent": "#8FE3CF",
+            "on_accent": "#11352D",
+            "soft": "rgba(143,227,207,0.18)",
+        },
+        "sunset": {
+            "accent": "#FFB59E",
+            "on_accent": "#4D2418",
+            "soft": "rgba(255,181,158,0.18)",
+        },
     }
     return palettes.get(name, palettes["orchid"])
 
@@ -535,7 +603,9 @@ def normalize_ha_url(url: str) -> str:
     return url.strip().rstrip("/")
 
 
-def fetch_home_assistant_json(base_url: str, token: str, path: str) -> tuple[object | None, str]:
+def fetch_home_assistant_json(
+    base_url: str, token: str, path: str
+) -> tuple[object | None, str]:
     if not base_url or not token:
         return None, "Home Assistant URL and token are required."
     try:
@@ -554,7 +624,9 @@ def fetch_home_assistant_json(base_url: str, token: str, path: str) -> tuple[obj
         return None, "Unable to reach Home Assistant."
 
 
-def post_home_assistant_json(base_url: str, token: str, path: str, payload: dict) -> tuple[object | None, str]:
+def post_home_assistant_json(
+    base_url: str, token: str, path: str, payload: dict
+) -> tuple[object | None, str]:
     if not base_url or not token:
         return None, "Home Assistant URL and token are required."
     data = json.dumps(payload).encode("utf-8")
@@ -640,11 +712,17 @@ def load_notification_history(limit: int = 3) -> list[dict]:
                 history.append(
                     {
                         "id": _value(item.get("id", 0)),
-                        "app_name": str(_value(item.get("app_name", item.get("appname", ""))) or ""),
+                        "app_name": str(
+                            _value(item.get("app_name", item.get("appname", ""))) or ""
+                        ),
                         "summary": str(_value(item.get("summary", "")) or ""),
                         "body": str(_value(item.get("body", "")) or ""),
-                        "icon": str(_value(item.get("app_icon", item.get("icon", ""))) or ""),
-                        "desktop_entry": str(_value(item.get("desktop_entry", "")) or ""),
+                        "icon": str(
+                            _value(item.get("app_icon", item.get("icon", ""))) or ""
+                        ),
+                        "desktop_entry": str(
+                            _value(item.get("desktop_entry", "")) or ""
+                        ),
                         "timestamp": _value(item.get("timestamp", 0)),
                     }
                 )
@@ -658,7 +736,11 @@ def resolve_rss_widget_script(settings_state: dict | None = None) -> Path:
         return RSS_WIDGET_SCRIPT
     state = settings_state if isinstance(settings_state, dict) else {}
     marketplace = state.get("marketplace", {}) if isinstance(state, dict) else {}
-    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+    installed = (
+        marketplace.get("installed_plugins", [])
+        if isinstance(marketplace, dict)
+        else []
+    )
     if isinstance(installed, list):
         for row in installed:
             if not isinstance(row, dict):
@@ -761,7 +843,13 @@ def _candidate_steam_roots() -> list[Path]:
     roots = [
         Path.home() / ".steam",
         Path.home() / ".local" / "share" / "Steam",
-        Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam",
+        Path.home()
+        / ".var"
+        / "app"
+        / "com.valvesoftware.Steam"
+        / ".local"
+        / "share"
+        / "Steam",
         Path.home() / "snap" / "steam" / "common" / ".local" / "share" / "Steam",
     ]
     unique: list[Path] = []
@@ -781,7 +869,9 @@ def _steam_localconfig_paths() -> list[Path]:
 
 
 def load_steam_game_slides(limit: int = 2) -> list[dict]:
-    app_pattern = re.compile(r'"(\d+)"\s*\{[^{}]*?"name"\s*"([^"]+)"[^{}]*?"Playtime"\s*"(\d+)"', re.DOTALL)
+    app_pattern = re.compile(
+        r'"(\d+)"\s*\{[^{}]*?"name"\s*"([^"]+)"[^{}]*?"Playtime"\s*"(\d+)"', re.DOTALL
+    )
     slides: list[dict] = []
     for config_path in _steam_localconfig_paths():
         try:
@@ -843,9 +933,15 @@ class QuickSettingButton(QFrame):
         self.title_label.setObjectName("quickTileTitle")
         self.subtitle_label = QLabel("Off")
         self.subtitle_label.setObjectName("quickTileSubtitle")
-        self.icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.icon_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.title_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.subtitle_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
         text_wrap.addWidget(self.title_label)
         text_wrap.addWidget(self.subtitle_label)
 
@@ -876,7 +972,9 @@ class QuickSettingButton(QFrame):
         else:
             icon_color = "#381E72" if self.active else "rgba(255,255,255,0.82)"
             title_color = "#381E72" if self.active else "#ffffff"
-            sub_color = "rgba(56,30,114,0.78)" if self.active else "rgba(255,255,255,0.54)"
+            sub_color = (
+                "rgba(56,30,114,0.78)" if self.active else "rgba(255,255,255,0.54)"
+            )
             bg = "#D0BCFF" if self.active else "rgba(255,255,255,0.05)"
             hover = "#ddcbff" if self.active else "rgba(255,255,255,0.10)"
         self.setStyleSheet(
@@ -894,7 +992,7 @@ class QuickSettingButton(QFrame):
         self.icon_label.setText(material_icon(self._icon_text))
         self.icon_label.setStyleSheet(f"color: {icon_color};")
         self.title_label.setText(self.title)
-        self.title_label.setStyleSheet(f"color: {title_color}; font-weight: 700;")
+        self.title_label.setStyleSheet(f"color: {title_color}; font-weight: 600;")
         self.subtitle_label.setText(self._subtitle)
         self.subtitle_label.setStyleSheet(f"color: {sub_color}; font-size: 10px;")
 
@@ -925,7 +1023,9 @@ class SidebarItemButton(QPushButton):
         layout.addWidget(self.text_label, 1)
         self.apply_state(False, "#D0BCFF", "#381E72")
 
-    def apply_state(self, active: bool, accent: str, on_accent: str, theme=None) -> None:
+    def apply_state(
+        self, active: bool, accent: str, on_accent: str, theme=None
+    ) -> None:
         self.setChecked(active)
         if active:
             self.setStyleSheet(
@@ -937,12 +1037,14 @@ class SidebarItemButton(QPushButton):
                 }}
                 QLabel#sidebarItemIcon, QLabel#sidebarItemText {{
                     color: {on_accent};
-                    font-weight: 700;
+                    font-weight: 600;
                 }}
                 """
             )
         else:
-            inactive_bg = theme.app_running_bg if theme is not None else "rgba(255,255,255,0.04)"
+            inactive_bg = (
+                theme.app_running_bg if theme is not None else "rgba(255,255,255,0.04)"
+            )
             hover_bg = theme.hover_bg if theme is not None else "rgba(255,255,255,0.08)"
             icon_color = theme.icon if theme is not None else "rgba(255,255,255,0.80)"
             text_color = theme.text if theme is not None else "rgba(255,255,255,0.90)"
@@ -961,7 +1063,7 @@ class SidebarItemButton(QPushButton):
                 }}
                 QLabel#sidebarItemText {{
                     color: {text_color};
-                    font-weight: 600;
+                    font-weight: 500;
                 }}
                 """
             )
@@ -987,9 +1089,15 @@ class ActionTile(QFrame):
         self.subtitle_label.setObjectName("actionTileSubtitle")
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setWordWrap(True)
-        self.icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.icon_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.title_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.subtitle_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
         layout.addWidget(self.icon_label)
         layout.addWidget(self.title_label)
         layout.addWidget(self.subtitle_label)
@@ -1058,7 +1166,9 @@ class ServiceLauncherCard(QFrame):
         subtitle_label.setWordWrap(True)
         icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        subtitle_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
         text.addWidget(title_label)
         text.addWidget(subtitle_label)
 
@@ -1201,7 +1311,15 @@ class GameCarouselCard(QFrame):
         painter.end()
         return rounded
 
-    def add_slide(self, title: str, stats: list[str], logo_path: Path, platform: str, accent: str, cover_path: Path | None = None) -> None:
+    def add_slide(
+        self,
+        title: str,
+        stats: list[str],
+        logo_path: Path,
+        platform: str,
+        accent: str,
+        cover_path: Path | None = None,
+    ) -> None:
         slide = QFrame()
         slide.setObjectName("gameSlideInner")
         slide.setProperty("accentColor", accent)
@@ -1250,7 +1368,9 @@ class GameCarouselCard(QFrame):
         logo = QLabel()
         logo.setObjectName("gamePlatformLogo")
         logo.setPixmap(render_svg_pixmap(logo_path, 22))
-        bottom.addWidget(logo, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        bottom.addWidget(
+            logo, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom
+        )
         slide_layout.addLayout(bottom)
 
         self.stack.addWidget(slide)
@@ -1387,7 +1507,10 @@ class NotificationCenter(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.screen_geo = QApplication.primaryScreen().availableGeometry()
         self.compact_size = (884, min(804, self.screen_geo.height() - 72))
-        self.settings_size = (min(864, self.screen_geo.width() - 72), self.compact_size[1])
+        self.settings_size = (
+            min(864, self.screen_geo.width() - 72),
+            self.compact_size[1],
+        )
         self._apply_window_mode("compact")
 
     def _apply_window_mode(self, mode: str) -> None:
@@ -1396,7 +1519,9 @@ class NotificationCenter(QWidget):
         else:
             width, height = self.compact_size
         self.resize(width, height)
-        self.move(self.screen_geo.center().x() - self.width() // 2, self.screen_geo.y() + 28)
+        self.move(
+            self.screen_geo.center().x() - self.width() // 2, self.screen_geo.y() + 28
+        )
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -1459,7 +1584,9 @@ class NotificationCenter(QWidget):
         self._sync_service_card_visibility()
         return page
 
-    def _section_shell(self, title: str, subtitle: str, object_name: str = "overviewSection") -> tuple[QFrame, QVBoxLayout]:
+    def _section_shell(
+        self, title: str, subtitle: str, object_name: str = "overviewSection"
+    ) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()
         card.setObjectName(object_name)
         layout = QVBoxLayout(card)
@@ -1487,14 +1614,36 @@ class NotificationCenter(QWidget):
         grid.setVerticalSpacing(6)
 
         self.quick_buttons = {
-            "wifi": QuickSettingButton(self.material_font, "Wi-Fi", "wifi", self._toggle_wifi),
-            "bluetooth": QuickSettingButton(self.material_font, "Bluetooth", "bluetooth", self._toggle_bluetooth),
-            "dnd": QuickSettingButton(self.material_font, "DND", "do_not_disturb_on", self._toggle_dnd),
-            "airplane": QuickSettingButton(self.material_font, "Airplane", "airplanemode_active", self._toggle_airplane),
-            "night": QuickSettingButton(self.material_font, "Night", "nightlight", self._toggle_night),
-            "caffeine": QuickSettingButton(self.material_font, "Caffeine", "coffee", self._toggle_caffeine),
+            "wifi": QuickSettingButton(
+                self.material_font, "Wi-Fi", "wifi", self._toggle_wifi
+            ),
+            "bluetooth": QuickSettingButton(
+                self.material_font, "Bluetooth", "bluetooth", self._toggle_bluetooth
+            ),
+            "dnd": QuickSettingButton(
+                self.material_font, "DND", "do_not_disturb_on", self._toggle_dnd
+            ),
+            "airplane": QuickSettingButton(
+                self.material_font,
+                "Airplane",
+                "airplanemode_active",
+                self._toggle_airplane,
+            ),
+            "night": QuickSettingButton(
+                self.material_font, "Night", "nightlight", self._toggle_night
+            ),
+            "caffeine": QuickSettingButton(
+                self.material_font, "Caffeine", "coffee", self._toggle_caffeine
+            ),
         }
-        positions = [("wifi", 0, 0), ("bluetooth", 0, 1), ("dnd", 0, 2), ("airplane", 1, 0), ("night", 1, 1), ("caffeine", 1, 2)]
+        positions = [
+            ("wifi", 0, 0),
+            ("bluetooth", 0, 1),
+            ("dnd", 0, 2),
+            ("airplane", 1, 0),
+            ("night", 1, 1),
+            ("caffeine", 1, 2),
+        ]
         for key, row, col in positions:
             button = self.quick_buttons[key]
             button.setMinimumHeight(62)
@@ -1504,7 +1653,9 @@ class NotificationCenter(QWidget):
 
     def _build_compact_sliders_card(self) -> QFrame:
         card, layout = self._section_shell("Levels", "")
-        self.brightness_slider = self._slider_row("brightness_medium", "brightness", compact=True)
+        self.brightness_slider = self._slider_row(
+            "brightness_medium", "brightness", compact=True
+        )
         self.volume_slider = self._slider_row("volume_up", "volume", compact=True)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
@@ -1536,7 +1687,11 @@ class NotificationCenter(QWidget):
                 },
             ]
         for slide in slides[:4]:
-            accent = self.theme_palette.primary if slide.get("accent") == "primary" else self.theme_palette.secondary
+            accent = (
+                self.theme_palette.primary
+                if slide.get("accent") == "primary"
+                else self.theme_palette.secondary
+            )
             self.game_carousel.add_slide(
                 str(slide.get("title", "Game")),
                 list(slide.get("stats", [])),
@@ -1562,14 +1717,18 @@ class NotificationCenter(QWidget):
         self.calendar_settings_btn.setFixedSize(30, 30)
         self.calendar_settings_btn.setFont(QFont(self.material_font, 16))
         self.calendar_settings_btn.setToolTip("Open calendar service settings")
-        self.calendar_settings_btn.clicked.connect(lambda: self._launch_settings_page("services", "calendar_widget"))
+        self.calendar_settings_btn.clicked.connect(
+            lambda: self._launch_settings_page("services", "calendar_widget")
+        )
         header.addWidget(title_label)
         header.addStretch(1)
         header.addWidget(self.calendar_settings_btn)
         layout.addLayout(header)
         self.calendar_widget = QCalendarWidget()
         self.calendar_widget.setObjectName("miniCalendar")
-        self.calendar_widget.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        self.calendar_widget.setVerticalHeaderFormat(
+            QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
+        )
         self.calendar_widget.setGridVisible(False)
         layout.addWidget(self.calendar_widget)
         return card
@@ -1588,7 +1747,9 @@ class NotificationCenter(QWidget):
 
     def _build_events_card(self) -> QFrame:
         card, layout = self._section_shell("Upcoming events", "")
-        self.events_scroll, self.events_container, self.events_layout = self._hidden_scroll("eventsScroll")
+        self.events_scroll, self.events_container, self.events_layout = (
+            self._hidden_scroll("eventsScroll")
+        )
         layout.addWidget(self.events_scroll, 1)
         return card
 
@@ -1605,7 +1766,9 @@ class NotificationCenter(QWidget):
         title_label.setObjectName("sectionTitle")
         self.clear_notifications_btn = QPushButton(material_icon("delete_sweep"))
         self.clear_notifications_btn.setObjectName("compactIconAction")
-        self.clear_notifications_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.clear_notifications_btn.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.clear_notifications_btn.setFont(QFont(self.material_font, 16))
         self.clear_notifications_btn.setFixedSize(28, 28)
         self.clear_notifications_btn.setToolTip("Clear all notifications")
@@ -1614,7 +1777,11 @@ class NotificationCenter(QWidget):
         header.addStretch(1)
         header.addWidget(self.clear_notifications_btn)
         layout.addLayout(header)
-        self.notifications_scroll, self.notifications_container, self.notifications_layout = self._hidden_scroll("notificationsScroll")
+        (
+            self.notifications_scroll,
+            self.notifications_container,
+            self.notifications_layout,
+        ) = self._hidden_scroll("notificationsScroll")
         layout.addWidget(self.notifications_scroll, 1)
         return card
 
@@ -1654,7 +1821,9 @@ class NotificationCenter(QWidget):
         right.setSpacing(6)
         self.settings_btn = self._circle_icon_button("settings", rounded_rect=True)
         self.settings_btn.clicked.connect(self._open_settings)
-        self.power_btn = self._circle_icon_button("power_settings_new", accent="power", rounded_rect=True)
+        self.power_btn = self._circle_icon_button(
+            "power_settings_new", accent="power", rounded_rect=True
+        )
         self.power_btn.clicked.connect(self._open_powermenu)
         right.addWidget(self.settings_btn)
         right.addWidget(self.power_btn)
@@ -1718,7 +1887,9 @@ class NotificationCenter(QWidget):
         layout.addWidget(self.volume_slider["wrap"])
         return layout
 
-    def _slider_row(self, icon: str, kind: str, compact: bool = False) -> dict[str, QWidget | QSlider]:
+    def _slider_row(
+        self, icon: str, kind: str, compact: bool = False
+    ) -> dict[str, QWidget | QSlider]:
         wrap = QFrame()
         wrap.setObjectName("compactSliderWrap" if compact else "sliderWrap")
         row = QHBoxLayout(wrap)
@@ -1769,18 +1940,24 @@ class NotificationCenter(QWidget):
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         text_wrap = QWidget()
-        text_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        text_wrap.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         text = QVBoxLayout(text_wrap)
         text.setContentsMargins(0, 2, 0, 0)
         text.setSpacing(2)
         self.media_title = QLabel("No music")
         self.media_title.setObjectName("mediaTitle")
-        self.media_title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.media_title.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         self.media_title.setMinimumWidth(1)
         self.media_title.setWordWrap(False)
         self.media_artist = QLabel("No artist")
         self.media_artist.setObjectName("mediaArtist")
-        self.media_artist.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.media_artist.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         self.media_artist.setMinimumWidth(1)
         self.media_artist.setWordWrap(False)
         text.addWidget(self.media_title)
@@ -1844,18 +2021,30 @@ class NotificationCenter(QWidget):
         self.phone_status_dot = QLabel("●")
         self.phone_status_dot.setObjectName("phoneStatusDot")
         self.phone_switch_btn = CompactIconAction(self.material_font, "chevron_right")
-        self.phone_switch_btn.clicked.connect(lambda: run_script_bg("phone_info.sh", "--next"))
-        self.phone_clipboard_btn = CompactIconAction(self.material_font, "content_paste")
-        self.phone_clipboard_btn.clicked.connect(lambda: run_script_bg("phone_info.sh", "--toggle-clip"))
+        self.phone_switch_btn.clicked.connect(
+            lambda: run_script_bg("phone_info.sh", "--next")
+        )
+        self.phone_clipboard_btn = CompactIconAction(
+            self.material_font, "content_paste"
+        )
+        self.phone_clipboard_btn.clicked.connect(
+            lambda: run_script_bg("phone_info.sh", "--toggle-clip")
+        )
         self.phone_name_value = QLabel("Disconnected")
         self.phone_state_value = QLabel("Offline")
         self.phone_battery_value = QLabel("0%")
-        for label in (self.phone_name_value, self.phone_state_value, self.phone_battery_value):
+        for label in (
+            self.phone_name_value,
+            self.phone_state_value,
+            self.phone_battery_value,
+        ):
             label.setObjectName("metricValue")
         self.phone_name_value.setObjectName("inlineMetricPrimary")
         self.phone_state_value.setObjectName("inlineMetric")
         self.phone_battery_value.setObjectName("inlineMetric")
-        self.phone_name_value.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.phone_name_value.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
 
         layout.addWidget(icon)
         layout.addWidget(self.phone_name_value, 1)
@@ -1876,7 +2065,11 @@ class NotificationCenter(QWidget):
         icon = QLabel()
         icon.setObjectName("sectionIcon")
         icon.setFixedWidth(20)
-        icon.setPixmap(tinted_svg_pixmap(HOME_ASSISTANT_ICON, QColor(self.current_accent["accent"]), 18))
+        icon.setPixmap(
+            tinted_svg_pixmap(
+                HOME_ASSISTANT_ICON, QColor(self.current_accent["accent"]), 18
+            )
+        )
         self.ha_summary_label = QLabel("")
         self.ha_summary_label.setObjectName("statusHint")
         self.ha_open_settings_btn = CompactIconAction(self.material_font, "settings")
@@ -2032,7 +2225,9 @@ class NotificationCenter(QWidget):
         title.setObjectName("settingsSectionTitle")
         card_layout.addWidget(title)
 
-        subtitle = QLabel("The notification center now opens the standalone Hanauta Settings window so there is only one active settings UI.")
+        subtitle = QLabel(
+            "The notification center now opens the standalone Hanauta Settings window so there is only one active settings UI."
+        )
         subtitle.setObjectName("settingsSectionSubtitle")
         subtitle.setWordWrap(True)
         card_layout.addWidget(subtitle)
@@ -2063,11 +2258,15 @@ class NotificationCenter(QWidget):
         self.system_overview_grid.setHorizontalSpacing(12)
         self.system_overview_grid.setVerticalSpacing(12)
         self.system_overview_labels: dict[str, QLabel] = {}
-        for index, key in enumerate(("Host", "Kernel", "Session", "Python", "Uptime", "Screen")):
+        for index, key in enumerate(
+            ("Host", "Kernel", "Session", "Python", "Uptime", "Screen")
+        ):
             label = QLabel("...")
             label.setObjectName("metricValue")
             self.system_overview_labels[key] = label
-            self.system_overview_grid.addWidget(self._metric_block(key, label), index // 2, index % 2)
+            self.system_overview_grid.addWidget(
+                self._metric_block(key, label), index // 2, index % 2
+            )
         layout.addLayout(self.system_overview_grid)
         layout.addStretch(1)
         return page
@@ -2095,7 +2294,9 @@ class NotificationCenter(QWidget):
             button = QPushButton(key.title())
             button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             button.setObjectName("appearancePreset")
-            button.clicked.connect(lambda checked=False, current=key: self._set_accent(current))
+            button.clicked.connect(
+                lambda checked=False, current=key: self._set_accent(current)
+            )
             self.appearance_buttons[key] = button
             row.addWidget(button)
         layout.addLayout(row)
@@ -2109,15 +2310,21 @@ class NotificationCenter(QWidget):
         layout.setSpacing(12)
         header = QLabel("Home Assistant")
         header.setObjectName("settingsSectionTitle")
-        sub = QLabel("Connect to your instance, browse entities, and pin up to five controls.")
+        sub = QLabel(
+            "Connect to your instance, browse entities, and pin up to five controls."
+        )
         sub.setObjectName("settingsSectionSubtitle")
         layout.addWidget(header)
         layout.addWidget(sub)
 
-        self.ha_url_input = QLineEdit(self.settings_state["home_assistant"].get("url", ""))
+        self.ha_url_input = QLineEdit(
+            self.settings_state["home_assistant"].get("url", "")
+        )
         self.ha_url_input.setPlaceholderText("https://homeassistant.local:8123")
         self.ha_url_input.setObjectName("settingsInput")
-        self.ha_token_input = QLineEdit(self.settings_state["home_assistant"].get("token", ""))
+        self.ha_token_input = QLineEdit(
+            self.settings_state["home_assistant"].get("token", "")
+        )
         self.ha_token_input.setPlaceholderText("Long-lived access token")
         self.ha_token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.ha_token_input.setObjectName("settingsInput")
@@ -2182,17 +2389,26 @@ class NotificationCenter(QWidget):
         return button
 
     def _service_enabled(self, key: str) -> bool:
-        return bool(self.settings_state.get("services", {}).get(key, {}).get("enabled", True))
+        return bool(
+            self.settings_state.get("services", {}).get(key, {}).get("enabled", True)
+        )
 
     def _service_visible_in_notification_center(self, key: str) -> bool:
         service = self.settings_state.get("services", {}).get(key, {})
-        return bool(service.get("enabled", True) and service.get("show_in_notification_center", False))
+        return bool(
+            service.get("enabled", True)
+            and service.get("show_in_notification_center", False)
+        )
 
     def _sync_service_card_visibility(self) -> None:
         if hasattr(self, "ha_card"):
-            self.ha_card.setVisible(self._service_visible_in_notification_center("home_assistant"))
+            self.ha_card.setVisible(
+                self._service_visible_in_notification_center("home_assistant")
+            )
         if hasattr(self, "vpn_launcher_card"):
-            self.vpn_launcher_card.setVisible(self._service_visible_in_notification_center("vpn_control"))
+            self.vpn_launcher_card.setVisible(
+                self._service_visible_in_notification_center("vpn_control")
+            )
         if hasattr(self, "christian_launcher_card"):
             self.christian_launcher_card.setVisible(
                 self._service_visible_in_notification_center("christian_widget")
@@ -2236,17 +2452,26 @@ class NotificationCenter(QWidget):
         run_bg_singleton(VPN_CONTROL_SCRIPT)
 
     def _open_christian_widget(self) -> None:
-        if not self._service_enabled("christian_widget") or not CHRISTIAN_WIDGET_SCRIPT.exists():
+        if (
+            not self._service_enabled("christian_widget")
+            or not CHRISTIAN_WIDGET_SCRIPT.exists()
+        ):
             return
         run_bg_singleton(CHRISTIAN_WIDGET_SCRIPT)
 
     def _open_reminders_widget(self) -> None:
-        if not self._service_enabled("reminders_widget") or not REMINDERS_WIDGET_SCRIPT.exists():
+        if (
+            not self._service_enabled("reminders_widget")
+            or not REMINDERS_WIDGET_SCRIPT.exists()
+        ):
             return
         run_bg_singleton(REMINDERS_WIDGET_SCRIPT)
 
     def _open_pomodoro_widget(self) -> None:
-        if not self._service_enabled("pomodoro_widget") or not POMODORO_WIDGET_SCRIPT.exists():
+        if (
+            not self._service_enabled("pomodoro_widget")
+            or not POMODORO_WIDGET_SCRIPT.exists()
+        ):
             return
         run_bg_singleton(POMODORO_WIDGET_SCRIPT)
 
@@ -2262,7 +2487,10 @@ class NotificationCenter(QWidget):
         run_bg_singleton(OBS_WIDGET_SCRIPT)
 
     def _open_crypto_widget(self) -> None:
-        if not self._service_enabled("crypto_widget") or not CRYPTO_WIDGET_SCRIPT.exists():
+        if (
+            not self._service_enabled("crypto_widget")
+            or not CRYPTO_WIDGET_SCRIPT.exists()
+        ):
             return
         run_bg_singleton(CRYPTO_WIDGET_SCRIPT)
 
@@ -2288,11 +2516,16 @@ class NotificationCenter(QWidget):
             pass
 
     def _open_game_mode_popup(self) -> None:
-        if not self._service_enabled("game_mode") or not GAME_MODE_POPUP_SCRIPT.exists():
+        if (
+            not self._service_enabled("game_mode")
+            or not GAME_MODE_POPUP_SCRIPT.exists()
+        ):
             return
         run_bg_singleton(GAME_MODE_POPUP_SCRIPT)
 
-    def _circle_icon_button(self, icon: str, accent: str = "default", rounded_rect: bool = False) -> QPushButton:
+    def _circle_icon_button(
+        self, icon: str, accent: str = "default", rounded_rect: bool = False
+    ) -> QPushButton:
         button = QPushButton(material_icon(icon))
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setFont(QFont(self.material_font, 18))
@@ -2347,7 +2580,7 @@ class NotificationCenter(QWidget):
             }}
             #userLabel {{
                 font-size: 17px;
-                font-weight: 700;
+                font-weight: 600;
                 color: {theme.text};
             }}
             #uptimeLabel {{
@@ -2382,7 +2615,7 @@ class NotificationCenter(QWidget):
             }}
             #sectionTitle, #settingsTitle, #settingsSectionTitle {{
                 font-size: 15px;
-                font-weight: 700;
+                font-weight: 600;
                 color: {theme.text};
             }}
             #sectionSubtitle, #settingsSectionSubtitle, #statusHint {{
@@ -2402,17 +2635,17 @@ class NotificationCenter(QWidget):
             #metricValue {{
                 color: {theme.text};
                 font-size: 12px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #inlineMetricPrimary {{
                 color: {theme.text};
                 font-size: 12px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #inlineMetric {{
                 color: {theme.text_muted};
                 font-size: 11px;
-                font-weight: 600;
+                font-weight: 500;
             }}
             #softButton {{
                 background: {rgba(theme.surface_container_high, 0.88)};
@@ -2420,7 +2653,7 @@ class NotificationCenter(QWidget):
                 border-radius: 999px;
                 color: {theme.text};
                 padding: 8px 12px;
-                font-weight: 600;
+                font-weight: 500;
             }}
             #softButton:hover {{
                 background: {theme.hover_bg};
@@ -2440,7 +2673,7 @@ class NotificationCenter(QWidget):
             #actionTileTitle {{
                 color: {theme.text};
                 font-size: 10px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #actionTileSubtitle {{
                 color: {theme.text_muted};
@@ -2552,19 +2785,19 @@ class NotificationCenter(QWidget):
             #gameKicker {{
                 color: {theme.text};
                 font-size: 11px;
-                font-weight: 700;
+                font-weight: 600;
                 letter-spacing: 1px;
                 text-transform: uppercase;
             }}
             #gameCarouselTitle, #gameSlideTitle {{
                 color: {theme.text};
                 font-size: 14px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #gameSlidePlatform, #gameCaption, #feedCardMeta {{
                 color: {theme.text_muted};
                 font-size: 9px;
-                font-weight: 600;
+                font-weight: 500;
             }}
             #gameStatChip {{
                 background: {theme.primary};
@@ -2572,7 +2805,7 @@ class NotificationCenter(QWidget):
                 border-radius: 10px;
                 padding: 3px 8px;
                 font-size: 9px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #gameStatLabel {{
                 color: {theme.primary};
@@ -2581,7 +2814,7 @@ class NotificationCenter(QWidget):
                 border-radius: 10px;
                 padding: 4px 8px;
                 font-size: 9px;
-                font-weight: 600;
+                font-weight: 500;
             }}
             #gameSlideHint {{
                 color: {theme.inactive};
@@ -2615,7 +2848,7 @@ class NotificationCenter(QWidget):
             }}
             #miniCalendar QToolButton {{
                 color: {theme.text};
-                font-weight: 700;
+                font-weight: 600;
                 background: transparent;
                 border: none;
                 border-radius: 10px;
@@ -2682,7 +2915,7 @@ class NotificationCenter(QWidget):
             #feedCardTitle {{
                 color: {theme.text};
                 font-size: 11px;
-                font-weight: 700;
+                font-weight: 600;
             }}
             #feedCardBody {{
                 color: {theme.text_muted};
@@ -2722,7 +2955,7 @@ class NotificationCenter(QWidget):
             }}
             #mediaTitle {{
                 font-size: 13px;
-                font-weight: 600;
+                font-weight: 500;
                 color: {theme.text};
             }}
             #mediaArtist {{
@@ -2757,9 +2990,15 @@ class NotificationCenter(QWidget):
         )
         self._apply_calendar_formats()
         for quick_button in getattr(self, "quick_buttons", {}).values():
-            quick_button.apply_theme(theme, self.current_accent["accent"], self.current_accent["on_accent"])
+            quick_button.apply_theme(
+                theme, self.current_accent["accent"], self.current_accent["on_accent"]
+            )
         for button_key, button in getattr(self, "settings_nav_buttons", {}).items():
-            current_index = self.settings_stack.currentIndex() if hasattr(self, "settings_stack") else 0
+            current_index = (
+                self.settings_stack.currentIndex()
+                if hasattr(self, "settings_stack")
+                else 0
+            )
             key_to_index = {"overview": 0, "appearance": 1, "homeassistant": 2}
             button.apply_state(
                 key_to_index.get(button_key, -1) == current_index,
@@ -2813,7 +3052,9 @@ class NotificationCenter(QWidget):
             """
         )
         self.progress_fill.setStyleSheet(f"background: {accent}; border-radius: 2px;")
-        self.media_title.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {theme.text};")
+        self.media_title.setStyleSheet(
+            f"font-size: 14px; font-weight: 600; color: {theme.text};"
+        )
         self.media_artist.setStyleSheet(f"font-size: 12px; color: {accent};")
         self.play_btn.setStyleSheet(
             f"""
@@ -3012,7 +3253,9 @@ class NotificationCenter(QWidget):
         row.setContentsMargins(12, 12, 12, 12)
         row.setSpacing(10)
 
-        icon = QLabel(material_icon(kind) if icon_pixmap is None or icon_pixmap.isNull() else "")
+        icon = QLabel(
+            material_icon(kind) if icon_pixmap is None or icon_pixmap.isNull() else ""
+        )
         icon.setObjectName("feedCardIcon")
         icon.setFont(QFont(self.material_font, 16))
         icon.setFixedWidth(20)
@@ -3038,7 +3281,9 @@ class NotificationCenter(QWidget):
             row.addWidget(action_button, 0, Qt.AlignmentFlag.AlignTop)
         return card
 
-    def _notification_icon_pixmap(self, app_name: str, desktop_entry: str = "", icon_name: str = "") -> QPixmap:
+    def _notification_icon_pixmap(
+        self, app_name: str, desktop_entry: str = "", icon_name: str = ""
+    ) -> QPixmap:
         normalized = app_name.strip().lower()
         known_assets = {
             "kde connect": KDECONNECT_ICON,
@@ -3134,7 +3379,9 @@ class NotificationCenter(QWidget):
                 meta = start_text or "Upcoming"
             location = str(event.get("location", "")).strip()
             subtitle = location or "Calendar event"
-            self.events_layout.addWidget(self._list_item_card(title, subtitle, meta, "calendar_today"))
+            self.events_layout.addWidget(
+                self._list_item_card(title, subtitle, meta, "calendar_today")
+            )
         self.events_layout.addStretch(1)
 
     def _poll_notification_history(self) -> None:
@@ -3155,7 +3402,9 @@ class NotificationCenter(QWidget):
             return
         for item in self._notification_history:
             title = str(item.get("summary", "Notification")).strip() or "Notification"
-            body = str(item.get("body", "")).replace("\n", " ").strip() or str(item.get("app_name", "No details"))
+            body = str(item.get("body", "")).replace("\n", " ").strip() or str(
+                item.get("app_name", "No details")
+            )
             app_name = str(item.get("app_name", "System")).strip() or "System"
             desktop_entry = str(item.get("desktop_entry", "")).strip()
             icon_name = str(item.get("icon", "")).strip()
@@ -3165,7 +3414,11 @@ class NotificationCenter(QWidget):
             dismiss_btn.setFont(QFont(self.material_font, 14))
             dismiss_btn.setFixedSize(20, 20)
             dismiss_btn.setToolTip("Dismiss notification")
-            dismiss_btn.clicked.connect(lambda checked=False, current=dict(item): self._dismiss_notification(current))
+            dismiss_btn.clicked.connect(
+                lambda checked=False, current=dict(item): self._dismiss_notification(
+                    current
+                )
+            )
             self.notifications_layout.addWidget(
                 self._list_item_card(
                     title,
@@ -3279,7 +3532,14 @@ class NotificationCenter(QWidget):
         lowered = player.lower()
         return any(
             name in lowered
-            for name in ("firefox", "librewolf", "chromium", "brave", "chrome", "vivaldi")
+            for name in (
+                "firefox",
+                "librewolf",
+                "chromium",
+                "brave",
+                "chrome",
+                "vivaldi",
+            )
         )
 
     def _duration_ms_from_media_url(self, url: str) -> int | None:
@@ -3310,7 +3570,11 @@ class NotificationCenter(QWidget):
 
     def _request_media_url_duration(self, url: str) -> None:
         url = url.strip()
-        if not url or url in self._media_duration_cache or url in self._media_duration_pending:
+        if (
+            not url
+            or url in self._media_duration_cache
+            or url in self._media_duration_pending
+        ):
             return
         self._media_duration_pending.add(url)
 
@@ -3557,7 +3821,11 @@ class NotificationCenter(QWidget):
             mtime_ns = photo_path.stat().st_mtime_ns
         except OSError:
             mtime_ns = -1
-        if not force and self._avatar_source == photo_path and self._avatar_mtime_ns == mtime_ns:
+        if (
+            not force
+            and self._avatar_source == photo_path
+            and self._avatar_mtime_ns == mtime_ns
+        ):
             return
         rounded = self._rounded_avatar_pixmap(photo_path, self.avatar.width())
         if rounded.isNull():
@@ -3578,7 +3846,9 @@ class NotificationCenter(QWidget):
     def _open_profile_photo_picker(self) -> None:
         run_script_bg("chpfp.sh")
         for delay in (1200, 3000, 7000):
-            QTimer.singleShot(delay, lambda force=True: self._refresh_profile_avatar(force=force))
+            QTimer.singleShot(
+                delay, lambda force=True: self._refresh_profile_avatar(force=force)
+            )
 
     def _open_settings(self) -> None:
         self._launch_settings_page("overview")
@@ -3589,7 +3859,9 @@ class NotificationCenter(QWidget):
 
     def _show_settings_section(self, key: str) -> None:
         if not hasattr(self, "settings_stack") or not self.settings_nav_buttons:
-            self._launch_settings_page(key if key in {"overview", "appearance"} else "services")
+            self._launch_settings_page(
+                key if key in {"overview", "appearance"} else "services"
+            )
             return
         order = {"overview": 0, "appearance": 1, "homeassistant": 2}
         self.settings_stack.setCurrentIndex(order.get(key, 0))
@@ -3644,8 +3916,12 @@ class NotificationCenter(QWidget):
         if self.ha_url_input is None or self.ha_token_input is None:
             self._launch_settings_page("services")
             return
-        self.settings_state["home_assistant"]["url"] = normalize_ha_url(self.ha_url_input.text())
-        self.settings_state["home_assistant"]["token"] = self.ha_token_input.text().strip()
+        self.settings_state["home_assistant"]["url"] = normalize_ha_url(
+            self.ha_url_input.text()
+        )
+        self.settings_state["home_assistant"]["token"] = (
+            self.ha_token_input.text().strip()
+        )
         save_notification_settings(self.settings_state)
         if self.ha_settings_status is not None:
             self.ha_settings_status.setText("Home Assistant settings saved.")
@@ -3657,7 +3933,9 @@ class NotificationCenter(QWidget):
             self._ha_entity_map = {}
             self._render_home_assistant_tiles()
             return
-        base_url = normalize_ha_url(self.settings_state["home_assistant"].get("url", ""))
+        base_url = normalize_ha_url(
+            self.settings_state["home_assistant"].get("url", "")
+        )
         token = self.settings_state["home_assistant"].get("token", "")
         payload, error_text = fetch_home_assistant_json(base_url, token, "/api/states")
         self._ha_last_error = error_text
@@ -3667,7 +3945,9 @@ class NotificationCenter(QWidget):
             if self.ha_status_label is not None:
                 self.ha_status_label.setText(error_text or "No entities available.")
             if self.ha_settings_status is not None:
-                self.ha_settings_status.setText(error_text or "Unable to fetch entities.")
+                self.ha_settings_status.setText(
+                    error_text or "Unable to fetch entities."
+                )
             self._ha_entities = []
             self._ha_entity_map = {}
             self._rebuild_ha_entity_list()
@@ -3677,7 +3957,9 @@ class NotificationCenter(QWidget):
             [item for item in payload if isinstance(item, dict)],
             key=lambda item: str(item.get("entity_id", "")),
         )
-        self._ha_entity_map = {str(item.get("entity_id", "")): item for item in self._ha_entities}
+        self._ha_entity_map = {
+            str(item.get("entity_id", "")): item for item in self._ha_entities
+        }
         if self.ha_summary_label is not None:
             self.ha_summary_label.setText("")
         if self.ha_status_label is not None:
@@ -3723,7 +4005,11 @@ class NotificationCenter(QWidget):
             text.addWidget(subtitle)
             layout.addLayout(text, 1)
             pin_button = self._soft_button("Unpin" if entity_id in pinned else "Pin")
-            pin_button.clicked.connect(lambda checked=False, current=entity_id: self._toggle_pin_entity(current))
+            pin_button.clicked.connect(
+                lambda checked=False, current=entity_id: self._toggle_pin_entity(
+                    current
+                )
+            )
             layout.addWidget(pin_button)
             self.ha_entity_layout.addWidget(row)
         self.ha_entity_layout.addStretch(1)
@@ -3758,7 +4044,11 @@ class NotificationCenter(QWidget):
             entity = self._ha_entity_map.get(entity_id, {})
             attrs = entity.get("attributes", {}) if isinstance(entity, dict) else {}
             name = str(attrs.get("friendly_name", entity_id))
-            state = str(entity.get("state", "Unavailable")) if isinstance(entity, dict) else "Unavailable"
+            state = (
+                str(entity.get("state", "Unavailable"))
+                if isinstance(entity, dict)
+                else "Unavailable"
+            )
             domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
             icon_name = {
                 "light": "lightbulb",
@@ -3803,7 +4093,9 @@ class NotificationCenter(QWidget):
             f"/api/services/{service_domain}/{service}",
             payload,
         )
-        self.ha_status_label.setText(error_text or f"Triggered {service} for {entity_id}.")
+        self.ha_status_label.setText(
+            error_text or f"Triggered {service} for {entity_id}."
+        )
         QTimer.singleShot(900, self._refresh_home_assistant_entities)
 
     def _toggle_wifi(self) -> None:
@@ -3815,7 +4107,9 @@ class NotificationCenter(QWidget):
                 "Wi-Fi",
                 "Wi-Fi connected",
                 "Wi-Fi disconnected",
-                WIFI_NOTIFICATION_ICON if Path(WIFI_NOTIFICATION_ICON).exists() else "network-wireless",
+                WIFI_NOTIFICATION_ICON
+                if Path(WIFI_NOTIFICATION_ICON).exists()
+                else "network-wireless",
             ),
         )
 
@@ -3828,7 +4122,9 @@ class NotificationCenter(QWidget):
                 "Bluetooth",
                 "Bluetooth enabled",
                 "Bluetooth disabled",
-                BLUETOOTH_NOTIFICATION_ICON if Path(BLUETOOTH_NOTIFICATION_ICON).exists() else "bluetooth",
+                BLUETOOTH_NOTIFICATION_ICON
+                if Path(BLUETOOTH_NOTIFICATION_ICON).exists()
+                else "bluetooth",
             ),
         )
 
@@ -3841,7 +4137,9 @@ class NotificationCenter(QWidget):
                 "Airplane Mode",
                 "Airplane mode enabled",
                 "Airplane mode disabled",
-                AIRPLANE_NOTIFICATION_ICON if Path(AIRPLANE_NOTIFICATION_ICON).exists() else "airplane-mode-symbolic",
+                AIRPLANE_NOTIFICATION_ICON
+                if Path(AIRPLANE_NOTIFICATION_ICON).exists()
+                else "airplane-mode-symbolic",
             ),
         )
 
@@ -3900,7 +4198,9 @@ class NotificationCenter(QWidget):
         run_cmd(notification_control_command("set-paused", "true"))
         self._poll_quick_settings()
 
-    def _show_system_notification(self, title: str, body: str, icon_name: str = "") -> None:
+    def _show_system_notification(
+        self, title: str, body: str, icon_name: str = ""
+    ) -> None:
         run_bg(
             [
                 "gdbus",
