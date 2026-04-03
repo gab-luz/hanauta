@@ -17,6 +17,7 @@ INSTALL_QUICKSHELL_ONLY=false
 INSTALL_WIREGUARD_SYSTEMD_ONLY=false
 INSTALL_SDDM_ONLY=false
 INSTALL_I3_VOLUME_ONLY=false
+INSTALL_PRINTER_PLUGIN_ONLY=false
 INSTALL_CUSTOM_THEMES=false
 CUSTOM_THEMES_SELECTION=""
 INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
@@ -28,6 +29,9 @@ GTK_THEME_SELECTION=""
 ADW_GTK_REPO="lassekongo83/adw-gtk3"
 I3_VOLUME_REPO_URL="https://github.com/hastinbe/i3-volume.git"
 I3_VOLUME_REPO_BRANCH="master"
+PRINTER_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-printer"
+PRINTER_PLUGIN_REPO_BRANCH="main"
+PRINTER_PLUGIN_ID="printer_widget"
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -69,6 +73,50 @@ detect_arch() {
 }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+run_privileged_cmd() {
+  local reason="${1:-This action requires elevated privileges.}"
+  shift || true
+  local -a cmd=("$@")
+  local bin=""
+
+  if [ ${#cmd[@]} -eq 0 ]; then
+    error "run_privileged_cmd called without command."
+    return 1
+  fi
+
+  if [[ "${cmd[0]}" == */* ]]; then
+    bin="${cmd[0]}"
+  else
+    bin="$(command -v "${cmd[0]}" 2>/dev/null || true)"
+  fi
+
+  if [ -z "$bin" ]; then
+    error "Command not found: ${cmd[0]}"
+    return 1
+  fi
+  cmd[0]="$bin"
+
+  info "$reason"
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    "${cmd[@]}"
+    return $?
+  fi
+
+  if need_cmd sudo; then
+    sudo "${cmd[@]}"
+    return $?
+  fi
+
+  if need_cmd pkexec; then
+    info "Using Polkit (pkexec) because package installation modifies system directories and needs root access."
+    pkexec "${cmd[@]}"
+    return $?
+  fi
+
+  error "No privilege escalation tool available (sudo/pkexec)."
+  return 1
+}
 
 run_cmd_silencing_inkscape_stderr() {
   "$@" 2> >(
@@ -137,6 +185,7 @@ Options:
   --quickshell                  Install only Quickshell runtime dependencies
   --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
   --i3-volume                   Install only i3-volume + volnoti integration
+  --printer-plugin              Install/update only the Hanauta printer plugin from git
   --sddm                        Install and configure SilentSDDM only
   --custom-themes               Install all vendored custom themes (retrowave + dracula)
   --custom-themes=NAME          Install custom themes by selection: retrowave, dracula, all
@@ -213,6 +262,9 @@ parse_args() {
         ;;
       --i3-volume)
         INSTALL_I3_VOLUME_ONLY=true
+        ;;
+      --printer-plugin)
+        INSTALL_PRINTER_PLUGIN_ONLY=true
         ;;
       --sddm)
         INSTALL_SDDM_ONLY=true
@@ -777,9 +829,64 @@ setup_python_venv() {
   
   info "Installing Python dependencies from pyproject.toml..."
   cd "$SCRIPT_DIR"
-  uv sync
+  uv_sync_with_recovery
   
   success "Python environment ready"
+}
+
+install_pycups_build_dependencies() {
+  if detect_debian_like; then
+    if dpkg -s libcups2-dev >/dev/null 2>&1; then
+      info "libcups2-dev already installed."
+      return 0
+    fi
+    run_privileged_cmd \
+      "Installing libcups2-dev so pycups can compile against CUPS headers (cups/http.h)." \
+      apt-get update -qq
+    run_privileged_cmd \
+      "Installing libcups2-dev so pycups can compile against CUPS headers (cups/http.h)." \
+      apt-get install -y libcups2-dev
+    return $?
+  fi
+
+  if detect_arch; then
+    if pacman -Q cups >/dev/null 2>&1; then
+      info "cups package already installed."
+      return 0
+    fi
+    run_privileged_cmd \
+      "Installing cups so pycups can compile against CUPS headers (cups/http.h)." \
+      pacman -S --needed --noconfirm cups
+    return $?
+  fi
+
+  warn "Unknown distro: cannot auto-install pycups build headers."
+  return 1
+}
+
+uv_sync_with_recovery() {
+  local sync_log=""
+  sync_log="$(mktemp)"
+
+  if uv sync 2> >(tee "$sync_log" >&2); then
+    rm -f "$sync_log"
+    return 0
+  fi
+
+  if rg -q "cups/http.h|Failed to build.*pycups|pycups==|fatal error: .*cups/" "$sync_log" 2>/dev/null; then
+    warn "Detected pycups build failure caused by missing CUPS development headers."
+    if install_pycups_build_dependencies; then
+      info "Retrying uv sync after installing CUPS development packages..."
+      if uv sync; then
+        rm -f "$sync_log"
+        return 0
+      fi
+    fi
+  fi
+
+  rm -f "$sync_log"
+  error "uv sync failed."
+  return 1
 }
 
 apt_has_package() {
@@ -858,6 +965,7 @@ install_packages_debian() {
     python3 python3-pip python3-venv
     python3-pyqt6.qtwebengine
     build-essential pkg-config
+    libcups2-dev
     libglib2.0-dev libgtk-3-dev
     qt6-base-dev
     qt6-declarative-dev
@@ -905,6 +1013,7 @@ install_packages_arch() {
     python python-pip
     python-pyqt6-webengine
     gcc pkgconf glib2
+    cups
     qt6-base
     qt6-declarative
     libxkbcommon-x11
@@ -1329,6 +1438,84 @@ EOF
     fi
     success "Updated i3-volume config to use volnoti"
   fi
+}
+
+install_printer_plugin_packages_debian() {
+  run_privileged_cmd \
+    "Updating apt metadata for printer plugin dependencies." \
+    apt-get update -qq
+  run_privileged_cmd \
+    "Installing printer plugin dependencies (CUPS + pycups runtime/build headers)." \
+    apt-get install -y git cups python3-cups libcups2-dev build-essential pkg-config python3-dev
+}
+
+install_printer_plugin_packages_arch() {
+  run_privileged_cmd \
+    "Installing printer plugin dependencies (CUPS + pycups runtime)." \
+    pacman -S --needed --noconfirm git cups python-pycups base-devel pkgconf python
+}
+
+sync_printer_plugin_repo() {
+  local target_root="$HOME/.config/i3/hanauta/plugins"
+  local target_dir="$target_root/$PRINTER_PLUGIN_ID"
+  local origin_url=""
+
+  mkdir -p "$target_root"
+
+  if [ -d "$target_dir/.git" ]; then
+    origin_url="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
+    if [ "$origin_url" = "$PRINTER_PLUGIN_REPO_URL" ]; then
+      info "Updating printer plugin at $target_dir..."
+      git -C "$target_dir" fetch --depth 1 origin "$PRINTER_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || {
+        warn "Failed to fetch latest printer plugin changes."
+      }
+      git -C "$target_dir" checkout -q "$PRINTER_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" pull --ff-only >/dev/null 2>&1 || {
+        warn "Could not fast-forward printer plugin checkout; keeping existing revision."
+      }
+    else
+      warn "Existing $target_dir is a git repo with a different origin. Replacing it."
+      rm -rf "$target_dir"
+    fi
+  fi
+
+  if [ ! -d "$target_dir/.git" ]; then
+    info "Cloning printer plugin into $target_dir..."
+    rm -rf "$target_dir"
+    if ! git clone --depth 1 --branch "$PRINTER_PLUGIN_REPO_BRANCH" "$PRINTER_PLUGIN_REPO_URL" "$target_dir" >/dev/null 2>&1; then
+      error "Failed to clone printer plugin from $PRINTER_PLUGIN_REPO_URL"
+      return 1
+    fi
+  fi
+
+  if [ -d "$target_dir/bin" ]; then
+    find "$target_dir/bin" -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
+  fi
+
+  success "Printer plugin is installed and updated at $target_dir"
+}
+
+install_printer_plugin_only() {
+  if ! need_cmd git; then
+    error "git is required to install the printer plugin."
+    return 1
+  fi
+
+  if detect_debian_like; then
+    info "Detected Debian-based distribution"
+    install_printer_plugin_packages_debian || return 1
+  elif detect_arch; then
+    info "Detected Arch Linux distribution"
+    install_printer_plugin_packages_arch || return 1
+  else
+    warn "Unknown distro; skipping package auto-install."
+    warn "Install dependencies manually: CUPS + pycups."
+  fi
+
+  sync_printer_plugin_repo || return 1
+
+  info "Printer plugin install/update complete."
+  return 0
 }
 
 offer_mail_desktop_setup() {
@@ -1796,6 +1983,22 @@ post_notes() {
 main() {
   parse_args "$@"
 
+  if [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ] && \
+     { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \
+       [ "$INSTALL_CURSOR_ONLY" = true ] || \
+       [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
+       [ "$INSTALL_VSCODE_ONLY" = true ] || \
+       [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
+       [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
+       [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
+       [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
+       [ "$INSTALL_SDDM_ONLY" = true ]; }; then
+    error "--printer-plugin must be used by itself."
+    return 1
+  fi
+
   if [ "$INSTALL_SDDM_ONLY" = true ] && \
      { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \
        [ "$INSTALL_CURSOR_ONLY" = true ] || \
@@ -1824,6 +2027,13 @@ main() {
        [ "$INSTALL_SDDM_ONLY" = true ]; }; then
     error "--i3-volume must be used by itself."
     return 1
+  fi
+
+  if [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ]; then
+    print_banner
+    install_printer_plugin_only
+    info "Done!"
+    return 0
   fi
 
   if [ "$INSTALL_SDDM_ONLY" = true ]; then

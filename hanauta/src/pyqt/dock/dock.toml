@@ -20,7 +20,7 @@ apps = [
 
 [blacklist]
 wm_class = [
-  "Plank Eww *polybar* *conky* *deadd* *screenkey* *ukui* *xfce4-power-manager* *notification_center* *stalonetray*"
+  "Plank Eww *polybar* *conky* *deadd* *screenkey* *ukui* *xfce4-power-manager* *notification_center* *stalonetray* *hanauta-notifyd*"
 ]
 
 desktop_id = [

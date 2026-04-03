@@ -1024,9 +1024,9 @@ class VolumeButton(QPushButton):
         # Prefer i3-volume so wheel changes also show volnoti notifications.
         if I3_VOLUME_BIN.exists():
             if delta > 0:
-                run_bg([str(I3_VOLUME_BIN), "-n", "up", "5"])
+                run_bg([str(I3_VOLUME_BIN), "-n", "-N", "volnoti", "up", "5"])
             else:
-                run_bg([str(I3_VOLUME_BIN), "-n", "down", "5"])
+                run_bg([str(I3_VOLUME_BIN), "-n", "-N", "volnoti", "down", "5"])
             event.accept()
             return
 
@@ -1673,7 +1673,7 @@ class CyberDock(QWidget):
         self.clock_label.setFont(QFont(self.mono_font, 10))
 
         self.volume_button = VolumeButton(self.material_font, self.theme)
-        self.volume_button.clicked.connect(lambda: run_bg([str(VOLUME_SCRIPT), "toggle-muted"]))
+        self.volume_button.clicked.connect(self._toggle_volume_mute)
 
         self.settings_button = QPushButton(material_icon("settings"))
         self.settings_button.setObjectName("dockUtilityButton")
@@ -1945,6 +1945,12 @@ class CyberDock(QWidget):
             icon = "volume_up"
         self.volume_button.setText(material_icon(icon))
         self.volume_button.setToolTip(f"Volume {vol}%")
+
+    def _toggle_volume_mute(self) -> None:
+        if I3_VOLUME_BIN.exists():
+            run_bg([str(I3_VOLUME_BIN), "-n", "-N", "volnoti", "mute"])
+            return
+        run_bg([str(VOLUME_SCRIPT), "toggle-muted"])
 
     def _open_launcher(self) -> None:
         if LAUNCHER_APP.exists():

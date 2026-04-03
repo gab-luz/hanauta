@@ -38,6 +38,7 @@ Under the hood, Hanauta transforms your X11 desktop into a cohesive, modern expe
 ### Integrations & Widgets
 - **Home Assistant** — Control smart home entities directly from settings
 - **VPN Control** — Manage WireGuard/OpenVPN connections
+- **Printer Widget** — CUPS/IPP status, queue inspection, quick pause/resume/cancel actions, and diagnosis strip
 - **Weather** — Current conditions and forecasts
 - **Calendar** — Events integration
 - **Reminders** — Task reminders
@@ -205,6 +206,34 @@ Because of those results, the repository keeps PyQt6 widgets as the active deskt
 ```
 
 This mode installs and wires `i3-volume` + `volnoti` only, without running the full desktop install.
+
+### Printer Plugin Only (Standalone)
+```bash
+./install.sh --printer-plugin
+```
+
+This mode installs or updates only the Hanauta printer plugin from git into:
+
+```bash
+~/.config/i3/hanauta/plugins/printer_widget
+```
+
+It also installs required printer dependencies:
+- Debian/Ubuntu: `cups`, `python3-cups`, `libcups2-dev`
+- Arch Linux: `cups`, `python-pycups`
+
+If elevated privileges are required for package installation, the installer uses:
+1. `sudo` when available
+2. `pkexec` (Polkit) fallback when `sudo` is not available
+
+The installer explains why Polkit appears: package installation modifies system-owned paths and requires root privileges.
+
+### Python Dependency Recovery (pycups)
+
+The installer now includes automatic recovery for `uv sync` failures related to pycups headers (for example missing `cups/http.h`):
+- Detects the failure
+- Installs the correct CUPS development package for your distro
+- Retries `uv sync` automatically
 
 ### Build & Install `volnoti` from Source (Fallback)
 

@@ -338,6 +338,8 @@ MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT = (
     ROOT / "hanauta" / "scripts" / "install_mail_desktop_system.sh"
 )
 SERVICE_CACHE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+BAR_SERVICE_CACHE_FILE = SERVICE_CACHE_DIR / "plugins" / "bar-services.json"
+SERVICES_SECTION_CACHE_FILE = SERVICE_CACHE_DIR / "plugins" / "services-sections.json"
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
 PICOM_DEFAULT_TEMPLATE = """backend = "glx";
 vsync = true;
@@ -573,7 +575,48 @@ DEFAULT_BAR_SETTINGS = {
     "full_bar_radius": 18,
     "monitor_mode": "primary",
     "monitor_name": "",
+    "service_icon_order": [],
     "polybar_widgets": [],
+}
+
+BAR_SERVICE_ICON_META: dict[str, tuple[str, str]] = {
+    "christian_widget": ("Christian Widget", "church"),
+    "home_assistant": ("Home Assistant", "home"),
+    "reminders_widget": ("Reminders", "notifications"),
+    "pomodoro_widget": ("Pomodoro", "timer"),
+    "rss_widget": ("RSS", "public"),
+    "obs_widget": ("OBS", "videocam"),
+    "crypto_widget": ("Crypto", "show_chart"),
+    "game_mode": ("Game Mode", "sports_esports"),
+    "cap_alerts": ("Weather Alerts", "warning"),
+    "study_tracker_widget": ("Study Tracker", "school"),
+}
+
+BAR_SERVICE_SWITCH_ATTRS: dict[str, str] = {
+    "home_assistant": "ha_bar_switch",
+    "reminders_widget": "reminders_bar_switch",
+    "pomodoro_widget": "pomodoro_bar_switch",
+    "rss_widget": "rss_bar_switch",
+    "obs_widget": "obs_bar_switch",
+    "crypto_widget": "crypto_bar_switch",
+    "game_mode": "game_mode_bar_switch",
+    "cap_alerts": "cap_alerts_bar_switch",
+    "study_tracker_widget": "study_tracker_bar_switch",
+}
+
+SERVICE_DISPLAY_SWITCH_NON_BAR_KEYS = {
+    "home_assistant",
+    "vpn_control",
+    "calendar_widget",
+    "reminders_widget",
+    "pomodoro_widget",
+    "obs_widget",
+    "crypto_widget",
+    "vps_widget",
+    "desktop_clock_widget",
+    "game_mode",
+    "cap_alerts",
+    "study_tracker_widget",
 }
 
 
@@ -1088,9 +1131,15 @@ def run_bg(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
         pass
 
 
-def run_text(cmd: list[str]) -> str:
+def run_text(cmd: list[str], timeout: float = 2.5) -> str:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
         return result.stdout.strip()
     except Exception:
         return ""
@@ -3516,6 +3565,20 @@ class WallpaperSourceSyncWorker(QThread):
         self.finished_sync.emit(self.source_key, ok, message, folder)
 
 
+class MailIntegrationProbeWorker(QThread):
+    finished_probe = pyqtSignal(str, str)
+
+    def run(self) -> None:
+        self.finished_probe.emit(current_favorite_mail_handler(), current_mailto_handler())
+
+
+class GameModeSummaryWorker(QThread):
+    finished_summary = pyqtSignal(object)
+
+    def run(self) -> None:
+        self.finished_summary.emit(gamemode_summary())
+
+
 def sanitize_output_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
 
@@ -4263,6 +4326,8 @@ class SettingsWindow(QWidget):
         self.initial_service_section = initial_service_section
         self._window_animation: QParallelAnimationGroup | None = None
         self._wallpaper_sync_worker: WallpaperSourceSyncWorker | None = None
+        self._mail_integration_probe_worker: MailIntegrationProbeWorker | None = None
+        self._gamemode_summary_worker: GameModeSummaryWorker | None = None
         self._system_theme_install_declined: set[str] = set()
         self._theme_refresh_restart_pending = False
         self._sidebar_collapsed = False
@@ -4514,15 +4579,31 @@ class SettingsWindow(QWidget):
         self.page_stack.addWidget(self._build_networking_page())
         self.page_stack.addWidget(self._build_storage_page())
         self.page_stack.addWidget(self._build_region_page())
-        self.page_stack.addWidget(self._build_bar_page())
+        self.bar_page_index = self.page_stack.count()
+        self._bar_page_ready = False
+        self._bar_page_building = False
+        self.page_stack.addWidget(self._build_bar_placeholder())
         self.services_page_index = self.page_stack.count()
         self._services_page_ready = False
+        self._services_page_building = False
         self.page_stack.addWidget(self._build_services_placeholder())
         self._show_page(self.initial_page)
 
         self._build_search_overlay()
 
         return self.page_stack
+
+    def _build_bar_placeholder(self) -> QWidget:
+        placeholder = QWidget()
+        layout = QVBoxLayout(placeholder)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+        loading = QLabel("Bar page is loaded on demand for faster startup.")
+        loading.setWordWrap(True)
+        loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(loading)
+        layout.addStretch(1)
+        return placeholder
 
     def _build_search_overlay(self) -> None:
         self.search_container = QFrame(self.page_stack)
@@ -4596,11 +4677,50 @@ class SettingsWindow(QWidget):
     def _ensure_services_page_ready(self) -> None:
         if getattr(self, "_services_page_ready", False):
             return
-        services_page = self._build_services_page()
-        index = int(getattr(self, "services_page_index", 14))
-        self.page_stack.removeWidget(self.page_stack.widget(index))
-        self.page_stack.insertWidget(index, services_page)
-        self._services_page_ready = True
+        if bool(getattr(self, "_services_page_building", False)):
+            return
+        self._services_page_building = True
+
+        def _build() -> None:
+            try:
+                services_page = self._build_services_page()
+                index = int(getattr(self, "services_page_index", 14))
+                old_widget = self.page_stack.widget(index)
+                if old_widget is not None:
+                    self.page_stack.removeWidget(old_widget)
+                    old_widget.deleteLater()
+                self.page_stack.insertWidget(index, services_page)
+                self._services_page_ready = True
+                if str(getattr(self, "current_page", "")) == "services":
+                    self.page_stack.setCurrentIndex(index)
+            finally:
+                self._services_page_building = False
+
+        QTimer.singleShot(0, _build)
+
+    def _ensure_bar_page_ready(self) -> None:
+        if getattr(self, "_bar_page_ready", False):
+            return
+        if bool(getattr(self, "_bar_page_building", False)):
+            return
+        self._bar_page_building = True
+
+        def _build() -> None:
+            try:
+                bar_page = self._build_bar_page()
+                index = int(getattr(self, "bar_page_index", 13))
+                old_widget = self.page_stack.widget(index)
+                if old_widget is not None:
+                    self.page_stack.removeWidget(old_widget)
+                    old_widget.deleteLater()
+                self.page_stack.insertWidget(index, bar_page)
+                self._bar_page_ready = True
+                if str(getattr(self, "current_page", "")) == "bar":
+                    self.page_stack.setCurrentIndex(index)
+            finally:
+                self._bar_page_building = False
+
+        QTimer.singleShot(0, _build)
 
     def _toggle_sidebar(self) -> None:
         self._sidebar_collapsed = not self._sidebar_collapsed
@@ -5079,6 +5199,8 @@ class SettingsWindow(QWidget):
             "services": 14,
         }
         resolved = key if key in order else "appearance"
+        if resolved == "bar":
+            self._ensure_bar_page_ready()
         if resolved == "services":
             self._ensure_services_page_ready()
         self.current_page = resolved
@@ -6607,6 +6729,7 @@ class SettingsWindow(QWidget):
                 rice_button,
             )
         )
+        layout.addWidget(self._build_bar_service_icons_section())
 
         polybar_header = QHBoxLayout()
         polybar_icon = IconLabel(
@@ -6652,6 +6775,343 @@ class SettingsWindow(QWidget):
         layout.addLayout(polybar_buttons)
 
         return card
+
+    def _read_bar_service_rows_cache(self) -> list[dict[str, object]]:
+        payload = load_service_cache_json("plugins/bar-services.json")
+        rows = payload.get("rows", []) if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            return []
+        normalized: list[dict[str, object]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key", "")).strip()
+            if not key:
+                continue
+            if not bool(row.get("supports_show_in_bar", False)):
+                continue
+            normalized.append(
+                {
+                    "key": key,
+                    "label": str(row.get("label", key.replace("_", " ").title())).strip()
+                    or key.replace("_", " ").title(),
+                    "icon": str(row.get("icon", "widgets")).strip() or "widgets",
+                    "source": "service",
+                }
+            )
+        deduped: dict[str, dict[str, object]] = {}
+        for row in normalized:
+            key = str(row.get("key", "")).strip()
+            if key and key not in deduped:
+                deduped[key] = row
+        return [deduped[key] for key in sorted(deduped.keys())]
+
+    def _queue_bar_service_cache_refresh(self) -> None:
+        if bool(getattr(self, "_bar_service_cache_refresh_queued", False)):
+            return
+        script = ROOT / "hanauta" / "scripts" / "cache_bar_services.py"
+        if not script.exists():
+            return
+        self._bar_service_cache_refresh_queued = True
+        python_bin = str(shutil.which("python3") or "python3")
+
+        def _run_refresh() -> None:
+            try:
+                run_bg([python_bin, str(script)])
+            finally:
+                self._bar_service_cache_refresh_queued = False
+
+        QTimer.singleShot(0, _run_refresh)
+
+    def _read_services_section_rows_cache(self) -> list[dict[str, object]]:
+        payload = load_service_cache_json("plugins/services-sections.json")
+        rows = payload.get("rows", []) if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            return []
+        normalized: list[dict[str, object]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key", "")).strip()
+            plugin_dir = str(row.get("plugin_dir", "")).strip()
+            if not key or not plugin_dir:
+                continue
+            normalized.append(
+                {
+                    "key": key,
+                    "label": str(row.get("label", "")).strip()
+                    or key.replace("_", " ").title(),
+                    "plugin_dir": plugin_dir,
+                    "plugin_id": str(row.get("plugin_id", "")).strip(),
+                    "plugin_name": str(row.get("plugin_name", "")).strip(),
+                }
+            )
+        return normalized
+
+    def _queue_services_section_cache_refresh(self) -> None:
+        if bool(getattr(self, "_services_section_cache_refresh_queued", False)):
+            return
+        script = ROOT / "hanauta" / "scripts" / "cache_services_sections.py"
+        if not script.exists():
+            return
+        self._services_section_cache_refresh_queued = True
+        python_bin = str(shutil.which("python3") or "python3")
+
+        def _run_refresh() -> None:
+            try:
+                run_bg([python_bin, str(script)])
+            finally:
+                self._services_section_cache_refresh_queued = False
+
+        QTimer.singleShot(0, _run_refresh)
+
+    def _cached_service_plugin_dirs(self) -> list[Path]:
+        dirs: list[Path] = []
+        seen: set[str] = set()
+        for row in self._read_services_section_rows_cache():
+            plugin_dir_raw = str(row.get("plugin_dir", "")).strip()
+            if not plugin_dir_raw:
+                continue
+            plugin_dir = Path(plugin_dir_raw).expanduser()
+            if not plugin_dir.exists():
+                continue
+            resolved = str(plugin_dir.resolve())
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            dirs.append(plugin_dir)
+        return dirs
+
+    def _plugin_bar_service_rows(self) -> list[dict[str, object]]:
+        rows = self._read_bar_service_rows_cache()
+        if rows:
+            return rows
+        self._queue_bar_service_cache_refresh()
+        return []
+
+    def _bar_service_icon_candidates(self) -> list[dict[str, object]]:
+        entries: dict[str, dict[str, object]] = {}
+        services = self.settings_state.setdefault("services", {})
+        if not isinstance(services, dict):
+            services = {}
+            self.settings_state["services"] = services
+
+        for key, (label, icon_name) in BAR_SERVICE_ICON_META.items():
+            entries[key] = {
+                "key": key,
+                "label": label,
+                "icon": icon_name,
+                "source": "service",
+            }
+
+        for row in self._plugin_bar_service_rows():
+            key = str(row.get("key", "")).strip()
+            if not key or key in entries:
+                continue
+            entries[key] = dict(row)
+
+        # Fallback for plugin services that already exist in settings but are not
+        # present in cache yet.
+        for key, service in services.items():
+            if key in entries:
+                continue
+            if not isinstance(service, dict):
+                continue
+            if "show_in_bar" not in service:
+                continue
+            entries[key] = {
+                "key": key,
+                "label": key.replace("_", " ").strip().title(),
+                "icon": "widgets",
+                "source": "service",
+            }
+
+        entries["ntfy"] = {
+            "key": "ntfy",
+            "label": "ntfy",
+            "icon": "notifications",
+            "source": "ntfy",
+        }
+        return list(entries.values())
+
+    def _bar_service_icon_enabled(self, key: str, source: str) -> bool:
+        if source == "ntfy":
+            ntfy = self.settings_state.setdefault("ntfy", {})
+            if not isinstance(ntfy, dict):
+                return False
+            return bool(ntfy.get("enabled", False) and ntfy.get("show_in_bar", False))
+        service = self.settings_state.setdefault("services", {}).get(key, {})
+        if not isinstance(service, dict):
+            return False
+        return bool(service.get("enabled", True) and service.get("show_in_bar", False))
+
+    def _normalized_bar_service_icon_order(
+        self, candidate_keys: list[str]
+    ) -> list[str]:
+        bar = self.settings_state.setdefault("bar", {})
+        if not isinstance(bar, dict):
+            bar = {}
+            self.settings_state["bar"] = bar
+        raw_order = bar.get("service_icon_order", [])
+        normalized: list[str] = []
+        if isinstance(raw_order, list):
+            for item in raw_order:
+                key = str(item).strip()
+                if key and key in candidate_keys and key not in normalized:
+                    normalized.append(key)
+        for key in candidate_keys:
+            if key not in normalized:
+                normalized.append(key)
+        return normalized
+
+    def _save_bar_service_icon_order(self, order: list[str]) -> None:
+        bar = self.settings_state.setdefault("bar", {})
+        if not isinstance(bar, dict):
+            bar = {}
+            self.settings_state["bar"] = bar
+        bar["service_icon_order"] = [str(item).strip() for item in order if str(item).strip()]
+        save_settings_state(self.settings_state)
+
+    def _build_bar_service_icons_section(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("settingsRow")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        title = QLabel("Service icons on bar")
+        title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        title.setStyleSheet("color: #FFFFFF;")
+        subtitle = QLabel(
+            "Manage bar-visible service icons. Move items one-by-one and toggle visibility. This stays synced with each service's Show on bar switch."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        self._bar_service_icon_rows_host = QFrame()
+        self._bar_service_icon_rows_host.setObjectName("settingsRow")
+        host_layout = QVBoxLayout(self._bar_service_icon_rows_host)
+        host_layout.setContentsMargins(8, 8, 8, 8)
+        host_layout.setSpacing(6)
+        self._bar_service_icon_rows_layout = host_layout
+        layout.addWidget(self._bar_service_icon_rows_host)
+
+        self._bar_service_icon_syncing = False
+        self._bar_service_icon_rows: dict[str, dict[str, object]] = {}
+        self._refresh_bar_service_icon_rows()
+        QTimer.singleShot(1200, self._refresh_bar_service_icon_rows)
+        return card
+
+    def _refresh_bar_service_icon_rows(self) -> None:
+        rows_layout = getattr(self, "_bar_service_icon_rows_layout", None)
+        if not isinstance(rows_layout, QVBoxLayout):
+            return
+        while rows_layout.count():
+            item = rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        candidates = self._bar_service_icon_candidates()
+        candidate_map = {
+            str(row.get("key", "")).strip(): row
+            for row in candidates
+            if str(row.get("key", "")).strip()
+        }
+        order = self._normalized_bar_service_icon_order(list(candidate_map.keys()))
+        self._save_bar_service_icon_order(order)
+
+        ordered_rows = [candidate_map[key] for key in order if key in candidate_map]
+        self._bar_service_icon_rows = {}
+
+        for index, row in enumerate(ordered_rows):
+            key = str(row.get("key", "")).strip()
+            label = str(row.get("label", key)).strip() or key
+            icon_name = str(row.get("icon", "widgets")).strip() or "widgets"
+            source = str(row.get("source", "service")).strip() or "service"
+            enabled = self._bar_service_icon_enabled(key, source)
+
+            line = QFrame()
+            line.setObjectName("settingsRow")
+            line_layout = QHBoxLayout(line)
+            line_layout.setContentsMargins(8, 6, 8, 6)
+            line_layout.setSpacing(8)
+
+            icon = IconLabel(material_icon(icon_name), self.icon_font, 14, "#F4EAF7")
+            icon.setFixedSize(20, 20)
+            line_layout.addWidget(icon)
+
+            text = QLabel(label)
+            text.setStyleSheet("color: rgba(246,235,247,0.88);")
+            line_layout.addWidget(text, 1)
+
+            up_btn = QPushButton("Up")
+            up_btn.setObjectName("secondaryButton")
+            up_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            up_btn.setEnabled(index > 0)
+            up_btn.clicked.connect(
+                lambda _checked=False, current=key: self._move_bar_service_icon(
+                    current, -1
+                )
+            )
+            line_layout.addWidget(up_btn)
+
+            down_btn = QPushButton("Down")
+            down_btn.setObjectName("secondaryButton")
+            down_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            down_btn.setEnabled(index < len(ordered_rows) - 1)
+            down_btn.clicked.connect(
+                lambda _checked=False, current=key: self._move_bar_service_icon(
+                    current, 1
+                )
+            )
+            line_layout.addWidget(down_btn)
+
+            toggle = SwitchButton(enabled)
+            toggle.toggledValue.connect(
+                lambda value, current=key: self._set_bar_service_icon_visibility_from_manager(
+                    current, value
+                )
+            )
+            line_layout.addWidget(toggle)
+
+            rows_layout.addWidget(line)
+            self._bar_service_icon_rows[key] = {
+                "switch": toggle,
+                "up": up_btn,
+                "down": down_btn,
+            }
+
+    def _move_bar_service_icon(self, key: str, delta: int) -> None:
+        candidates = self._bar_service_icon_candidates()
+        keys = [str(row.get("key", "")).strip() for row in candidates if str(row.get("key", "")).strip()]
+        order = self._normalized_bar_service_icon_order(keys)
+        if key not in order:
+            return
+        current_index = order.index(key)
+        target_index = max(0, min(len(order) - 1, current_index + int(delta)))
+        if current_index == target_index:
+            return
+        order[current_index], order[target_index] = order[target_index], order[current_index]
+        self._save_bar_service_icon_order(order)
+        self._refresh_bar_service_icon_rows()
+
+    def _set_bar_service_icon_visibility_from_manager(
+        self, key: str, enabled: bool
+    ) -> None:
+        if bool(getattr(self, "_bar_service_icon_syncing", False)):
+            return
+        self._bar_service_icon_syncing = True
+        try:
+            if key == "ntfy":
+                self._set_ntfy_show_in_bar(enabled)
+            else:
+                self._set_service_bar_visibility(key, enabled)
+        finally:
+            self._bar_service_icon_syncing = False
+        self._refresh_bar_service_icon_rows()
 
     def _build_energy_card(self) -> QWidget:
         card = QFrame()
@@ -9921,11 +10381,18 @@ class SettingsWindow(QWidget):
         )
         box.exec()
 
-    def _marketplace_enable_plugin_services(self, plugin_dir: Path) -> list[str]:
+    def _marketplace_collect_plugin_services(
+        self, plugin_dir: Path
+    ) -> list[dict[str, object]]:
         entrypoint = plugin_dir / PLUGIN_ENTRYPOINT
         if not entrypoint.exists():
             return []
+        plugin_path = str(plugin_dir)
+        path_added = False
         try:
+            if plugin_path and plugin_path not in sys.path:
+                sys.path.insert(0, plugin_path)
+                path_added = True
             module_name = f"hanauta_plugin_install_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
             spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
             if spec is None or spec.loader is None:
@@ -9938,31 +10405,93 @@ class SettingsWindow(QWidget):
             payload = register()
         except Exception:
             return []
+        finally:
+            if path_added:
+                try:
+                    sys.path.remove(plugin_path)
+                except ValueError:
+                    pass
         if not isinstance(payload, dict):
             return []
         sections = payload.get("service_sections", [])
         if not isinstance(sections, list):
             return []
-        services_state = self.settings_state.setdefault("services", {})
-        if not isinstance(services_state, dict):
-            services_state = {}
-            self.settings_state["services"] = services_state
-        enabled_keys: list[str] = []
+        service_rows: list[dict[str, object]] = []
         for section in sections:
             if not isinstance(section, dict):
                 continue
             key = str(section.get("key", "")).strip()
             if not key:
                 continue
-            service = services_state.get(key, {})
-            if not isinstance(service, dict):
-                service = {}
-            service["enabled"] = True
-            if "show_in_notification_center" not in service:
-                service["show_in_notification_center"] = False
-            services_state[key] = service
-            enabled_keys.append(key)
-        return sorted(set(enabled_keys))
+            supports_show_in_bar = bool(section.get("supports_show_on_bar", False))
+            service_rows.append(
+                {
+                    "key": key,
+                    "supports_show_in_bar": supports_show_in_bar,
+                }
+            )
+        deduped: dict[str, dict[str, object]] = {}
+        for row in service_rows:
+            key = str(row.get("key", "")).strip()
+            if not key:
+                continue
+            if key not in deduped:
+                deduped[key] = dict(row)
+                continue
+            if bool(row.get("supports_show_in_bar", False)):
+                deduped[key]["supports_show_in_bar"] = True
+        return [deduped[key] for key in sorted(deduped.keys())]
+
+    def _marketplace_prompt_service_choices(
+        self,
+        plugin_label: str,
+        service_rows: list[dict[str, object]],
+    ) -> tuple[list[str], list[str]]:
+        if not service_rows:
+            return [], []
+        keys = [
+            str(row.get("key", "")).strip()
+            for row in service_rows
+            if str(row.get("key", "")).strip()
+        ]
+        if not keys:
+            return [], []
+        services_text = ", ".join(keys)
+        enable_choice = QMessageBox.question(
+            self,
+            "Enable Service",
+            f"{plugin_label} installed successfully.\n\nEnable service(s) now?\n{services_text}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        enable_services = enable_choice == QMessageBox.StandardButton.Yes
+        for key in keys:
+            self._set_service_enabled(key, enable_services)
+
+        bar_supported_keys = [
+            str(row.get("key", "")).strip()
+            for row in service_rows
+            if bool(row.get("supports_show_in_bar", False))
+            and str(row.get("key", "")).strip()
+        ]
+        shown_on_bar: list[str] = []
+        if enable_services and bar_supported_keys:
+            bar_text = ", ".join(sorted(set(bar_supported_keys)))
+            bar_choice = QMessageBox.question(
+                self,
+                "Show on Bar",
+                f"This extension supports bar visibility.\n\nShow on bar now?\n{bar_text}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            show_on_bar = bar_choice == QMessageBox.StandardButton.Yes
+            for key in sorted(set(bar_supported_keys)):
+                self._set_service_bar_visibility(key, show_on_bar)
+            if show_on_bar:
+                shown_on_bar = sorted(set(bar_supported_keys))
+
+        enabled_keys = sorted(set(keys)) if enable_services else []
+        return enabled_keys, shown_on_bar
 
     def _marketplace_install_selected(self) -> None:
         item = self.marketplace_plugin_list.currentItem()
@@ -10110,15 +10639,19 @@ class SettingsWindow(QWidget):
         installed.append(record)
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
-        enabled_keys = self._marketplace_enable_plugin_services(target_dir)
-        for key in enabled_keys:
-            self._set_service_enabled(key, True)
+        service_rows = self._marketplace_collect_plugin_services(target_dir)
+        enabled_keys, bar_keys = self._marketplace_prompt_service_choices(
+            str(plugin.get("name", plugin_id)),
+            service_rows,
+        )
         post_install_ok = self._run_plugin_post_install_steps(plugin, target_dir)
         save_settings_state(self.settings_state)
         if post_install_ok:
             status = f"Installed {plugin_id} into {target_dir}."
             if enabled_keys:
                 status += f" Enabled: {', '.join(enabled_keys)}."
+            if bar_keys:
+                status += f" Showing on bar: {', '.join(bar_keys)}."
             self.marketplace_status.setText(status)
             self._marketplace_show_install_result_dialog(
                 f"{plugin.get('name', plugin_id)} ({plugin_id})",
@@ -10131,6 +10664,8 @@ class SettingsWindow(QWidget):
             )
             if enabled_keys:
                 status += f" Service enablement applied: {', '.join(enabled_keys)}."
+            if bar_keys:
+                status += f" Showing on bar: {', '.join(bar_keys)}."
             self.marketplace_status.setText(status)
             self._marketplace_show_install_result_dialog(
                 f"{plugin.get('name', plugin_id)} ({plugin_id})",
@@ -10241,15 +10776,19 @@ class SettingsWindow(QWidget):
         installed.append(record)
         marketplace["installed_plugins"] = installed
         marketplace["install_dir"] = str(install_root)
-        enabled_keys = self._marketplace_enable_plugin_services(target_dir)
-        for key in enabled_keys:
-            self._set_service_enabled(key, True)
+        service_rows = self._marketplace_collect_plugin_services(target_dir)
+        enabled_keys, bar_keys = self._marketplace_prompt_service_choices(
+            str(plugin_meta.get("name", plugin_id)),
+            service_rows,
+        )
         post_install_ok = self._run_plugin_post_install_steps(plugin_meta, target_dir)
         save_settings_state(self.settings_state)
         if post_install_ok:
             status = f"Installed ZIP plugin {plugin_id} into {target_dir}."
             if enabled_keys:
                 status += f" Enabled: {', '.join(enabled_keys)}."
+            if bar_keys:
+                status += f" Showing on bar: {', '.join(bar_keys)}."
             self.marketplace_status.setText(status)
             self._marketplace_show_install_result_dialog(
                 f"{plugin_id} (ZIP)",
@@ -10262,6 +10801,8 @@ class SettingsWindow(QWidget):
             )
             if enabled_keys:
                 status += f" Service enablement applied: {', '.join(enabled_keys)}."
+            if bar_keys:
+                status += f" Showing on bar: {', '.join(bar_keys)}."
             self.marketplace_status.setText(status)
             self._marketplace_show_install_result_dialog(
                 f"{plugin_id} (ZIP)",
@@ -10345,6 +10886,17 @@ class SettingsWindow(QWidget):
                 seen.add(resolved)
                 dirs.append(preferred)
 
+        cached_dirs = self._cached_service_plugin_dirs()
+        for cached_dir in cached_dirs:
+            resolved = str(cached_dir.resolve())
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            dirs.append(cached_dir)
+        if cached_dirs:
+            self._queue_services_section_cache_refresh()
+            return dirs
+
         for root in self._plugin_search_roots():
             if not root.exists() or not root.is_dir():
                 continue
@@ -10379,6 +10931,7 @@ class SettingsWindow(QWidget):
                     continue
                 seen.add(resolved)
                 dirs.append(child)
+        self._queue_services_section_cache_refresh()
         return dirs
 
     def _plugin_root_icon_path(self, plugin_dir: Path | None) -> str:
@@ -10415,7 +10968,12 @@ class SettingsWindow(QWidget):
         if not entrypoint.exists():
             return builders
         module_name = f"hanauta_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
+        plugin_path = str(plugin_dir)
+        path_added = False
         try:
+            if plugin_path and plugin_path not in sys.path:
+                sys.path.insert(0, plugin_path)
+                path_added = True
             spec = importlib.util.spec_from_file_location(module_name, str(entrypoint))
             if spec is None or spec.loader is None:
                 return builders
@@ -10427,6 +10985,12 @@ class SettingsWindow(QWidget):
             payload = register()
         except Exception:
             return builders
+        finally:
+            if path_added:
+                try:
+                    sys.path.remove(plugin_path)
+                except ValueError:
+                    pass
         if not isinstance(payload, dict):
             return builders
         plugin_id = str(payload.get("id", "")).strip()
@@ -10470,20 +11034,25 @@ class SettingsWindow(QWidget):
             self._plugin_dir_scan_in_progress = False
             self._plugin_builders_loaded = True
             self._queue_plugin_builders()
-            QTimer.singleShot(0, self._build_next_services_section)
+            QTimer.singleShot(18, self._build_next_services_section)
             return
         plugin_dir = self._plugin_dirs_to_scan.pop(0)
         builders = self._collect_plugin_builders_from_dir(plugin_dir)
         if builders:
             self.plugin_service_builders.update(builders)
-        QTimer.singleShot(0, self._process_next_plugin_dir)
+        QTimer.singleShot(16, self._process_next_plugin_dir)
 
     def _start_plugin_dir_scan(self) -> None:
+        if bool(getattr(self, "_plugin_dir_scan_in_progress", False)):
+            return
+        if bool(getattr(self, "_plugin_builders_loaded", False)):
+            return
+        self._plugin_dir_scan_scheduled = False
         self._plugin_dirs_to_scan = self._discover_plugin_dirs()
         self.plugin_service_builders = {}
         self._services_plugin_queue = []
         self._plugin_dir_scan_in_progress = True
-        QTimer.singleShot(0, self._process_next_plugin_dir)
+        QTimer.singleShot(16, self._process_next_plugin_dir)
 
     def _build_services_card(self) -> QWidget:
         card = QFrame()
@@ -10529,11 +11098,16 @@ class SettingsWindow(QWidget):
             ("ntfy", self._build_ntfy_section),
         ]
         self._services_plugin_queue: list[dict[str, object]] = []
+        self._services_cached_plugin_queue = self._read_services_section_rows_cache()
+        self._services_cached_plugins_used = bool(self._services_cached_plugin_queue)
         self._services_loading_label = QLabel("Loading service sections...")
         self._services_loading_label.setWordWrap(True)
         self._services_loading_label.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self._services_loading_label)
-        QTimer.singleShot(0, self._build_next_services_section)
+        self._services_sections_built = 0
+        self._plugin_dir_scan_scheduled = False
+        # Let Qt paint the tab immediately, then progressively add sections.
+        QTimer.singleShot(25, self._build_next_services_section)
         return card
 
     def _add_plugin_service_widget(
@@ -10565,6 +11139,146 @@ class SettingsWindow(QWidget):
             return
         layout.addWidget(widget)
 
+    def _replace_service_section_widget(
+        self, key: str, new_widget: QWidget, expand_after_replace: bool = False
+    ) -> None:
+        layout = getattr(self, "_services_build_layout", None)
+        if not isinstance(layout, QVBoxLayout):
+            return
+        old_widget = self.service_sections.get(key)
+        if old_widget is None:
+            layout.addWidget(new_widget)
+            if isinstance(new_widget, ExpandableServiceSection):
+                self.service_sections[key] = new_widget
+            return
+        insert_index = -1
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item is not None and item.widget() is old_widget:
+                insert_index = i
+                break
+        if insert_index >= 0:
+            layout.removeWidget(old_widget)
+            old_widget.deleteLater()
+            layout.insertWidget(insert_index, new_widget)
+        else:
+            layout.addWidget(new_widget)
+            old_widget.deleteLater()
+        if isinstance(new_widget, ExpandableServiceSection):
+            self.service_sections[key] = new_widget
+            if expand_after_replace:
+                new_widget.set_expanded(True)
+
+    def _build_cached_plugin_service_stub(
+        self, row: dict[str, object]
+    ) -> ExpandableServiceSection:
+        key = str(row.get("key", "")).strip()
+        label = str(row.get("label", key.replace("_", " ").title())).strip() or key
+        icon_name = str(row.get("icon", "widgets")).strip() or "widgets"
+        plugin_dir = str(row.get("plugin_dir", "")).strip()
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        status_label = QLabel(
+            "Loaded from hanauta-service cache. Advanced plugin settings are lazy-loaded on demand."
+        )
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(status_label)
+
+        load_button = QPushButton("Load advanced settings")
+        load_button.setObjectName("secondaryButton")
+        load_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        layout.addWidget(
+            SettingsRow(
+                material_icon("widgets"),
+                "Plugin settings",
+                "Load full plugin-defined settings UI only when needed.",
+                self.icon_font,
+                self.ui_font,
+                load_button,
+            )
+        )
+        load_button.clicked.connect(
+            lambda _checked=False, section_key=key, section_dir=plugin_dir, status=status_label: self._load_cached_plugin_section_on_demand(
+                section_key, section_dir, status
+            )
+        )
+
+        section = ExpandableServiceSection(
+            key,
+            label,
+            "Plugin service section (cache-backed).",
+            material_icon(icon_name),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled(key),
+            lambda enabled, current_key=key: self._set_service_enabled(
+                current_key, enabled
+            ),
+        )
+        self.service_sections[key] = section
+        return section
+
+    def _load_cached_plugin_section_on_demand(
+        self, key: str, plugin_dir_raw: str, status_label: QLabel
+    ) -> None:
+        plugin_dir = Path(plugin_dir_raw).expanduser()
+        if not plugin_dir.exists():
+            status_label.setText("Plugin directory is missing, so advanced settings cannot be loaded.")
+            return
+        status_label.setText("Loading advanced settings...")
+        QApplication.processEvents()
+
+        def _load() -> None:
+            builders = self._collect_plugin_builders_from_dir(plugin_dir)
+            section_meta = builders.get(key, {}) if isinstance(builders, dict) else {}
+            builder = section_meta.get("builder") if isinstance(section_meta, dict) else None
+            plugin_id = str(section_meta.get("plugin_id", "")).strip() if isinstance(section_meta, dict) else ""
+            plugin_name = (
+                str(section_meta.get("plugin_name", plugin_id)).strip() if isinstance(section_meta, dict) else ""
+            ) or plugin_id
+            if not callable(builder):
+                status_label.setText("This plugin does not expose advanced settings for this section.")
+                return
+            try:
+                widget = builder(self, self._plugin_api(plugin_dir))
+            except Exception:
+                status_label.setText("Failed to load advanced plugin settings.")
+                return
+            if not isinstance(widget, QWidget):
+                status_label.setText("Plugin returned invalid settings content.")
+                return
+
+            target_widget = widget
+            if plugin_id and self._installed_plugin_entry_by_id(plugin_id) is not None:
+                wrapper = QWidget()
+                wrapper_layout = QVBoxLayout(wrapper)
+                wrapper_layout.setContentsMargins(0, 0, 0, 0)
+                wrapper_layout.setSpacing(8)
+                wrapper_layout.addWidget(widget)
+                action_row = QHBoxLayout()
+                action_row.addStretch(1)
+                uninstall_button = QPushButton("Uninstall plugin")
+                uninstall_button.setObjectName("secondaryButton")
+                uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                uninstall_button.clicked.connect(
+                    lambda _checked=False, pid=plugin_id, pname=plugin_name: (
+                        self._uninstall_plugin_from_services(pid, pname)
+                    )
+                )
+                action_row.addWidget(uninstall_button)
+                wrapper_layout.addLayout(action_row)
+                self._plugin_service_wrappers[plugin_id] = wrapper
+                target_widget = wrapper
+            self._replace_service_section_widget(key, target_widget, expand_after_replace=True)
+
+        QTimer.singleShot(0, _load)
+
     def _build_next_services_section(self) -> None:
         layout = getattr(self, "_services_build_layout", None)
         if not isinstance(layout, QVBoxLayout):
@@ -10579,6 +11293,9 @@ class SettingsWindow(QWidget):
                 widget = None
             if isinstance(widget, QWidget):
                 layout.addWidget(widget)
+            self._services_sections_built = int(
+                getattr(self, "_services_sections_built", 0)
+            ) + 1
             if str(getattr(self, "initial_service_section", "")).strip() == str(key):
                 QTimer.singleShot(
                     0,
@@ -10586,13 +11303,33 @@ class SettingsWindow(QWidget):
                         current_key
                     ),
                 )
-            QTimer.singleShot(0, self._build_next_services_section)
+            delay_ms = 0 if self._services_sections_built <= 2 else 18
+            QTimer.singleShot(delay_ms, self._build_next_services_section)
+            return
+
+        cached_plugin_queue = getattr(self, "_services_cached_plugin_queue", [])
+        if cached_plugin_queue:
+            row = cached_plugin_queue.pop(0)
+            if isinstance(row, dict):
+                try:
+                    widget = self._build_cached_plugin_service_stub(row)
+                except Exception:
+                    widget = None
+                if isinstance(widget, QWidget):
+                    layout.addWidget(widget)
+            QTimer.singleShot(12, self._build_next_services_section)
             return
 
         if not getattr(self, "_plugin_builders_loaded", False):
-            if not getattr(self, "_plugin_dir_scan_in_progress", False):
-                self._start_plugin_dir_scan()
-            return
+            if bool(getattr(self, "_services_cached_plugins_used", False)):
+                self._plugin_builders_loaded = True
+                self._services_plugin_queue = []
+            else:
+                if not getattr(self, "_plugin_dir_scan_in_progress", False):
+                    if not bool(getattr(self, "_plugin_dir_scan_scheduled", False)):
+                        self._plugin_dir_scan_scheduled = True
+                        QTimer.singleShot(120, self._start_plugin_dir_scan)
+                return
 
         plugin_queue = getattr(self, "_services_plugin_queue", [])
         if plugin_queue:
@@ -10623,7 +11360,7 @@ class SettingsWindow(QWidget):
                                 current_key
                             ),
                         )
-            QTimer.singleShot(0, self._build_next_services_section)
+            QTimer.singleShot(22, self._build_next_services_section)
             return
 
         if not getattr(self, "_services_build_finished", False):
@@ -11009,7 +11746,7 @@ class SettingsWindow(QWidget):
         )
         self.service_sections["mail"] = section
         self._reload_mail_accounts()
-        self._sync_mail_integration_buttons()
+        QTimer.singleShot(0, self._queue_mail_integration_button_sync)
         return section
 
     def _reload_mail_accounts(self, selected_account_id: int = 0) -> None:
@@ -11231,6 +11968,36 @@ class SettingsWindow(QWidget):
         self.mail_mailto_button.setText(
             "mailto Links Enabled" if mailto_enabled else "Handle mailto Links"
         )
+
+    def _queue_mail_integration_button_sync(self) -> None:
+        worker = getattr(self, "_mail_integration_probe_worker", None)
+        if isinstance(worker, MailIntegrationProbeWorker) and worker.isRunning():
+            return
+        self._mail_integration_probe_worker = MailIntegrationProbeWorker()
+        self._mail_integration_probe_worker.finished_probe.connect(
+            self._apply_mail_integration_probe_result
+        )
+        self._mail_integration_probe_worker.finished.connect(
+            self._mail_integration_probe_worker.deleteLater
+        )
+        self._mail_integration_probe_worker.start()
+
+    def _apply_mail_integration_probe_result(
+        self, favorite_handler: str, mailto_handler: str
+    ) -> None:
+        favorite_enabled = str(favorite_handler).strip() == MAIL_DESKTOP_ID
+        mailto_enabled = str(mailto_handler).strip() == MAIL_DESKTOP_ID
+        if hasattr(self, "mail_favorite_button"):
+            self.mail_favorite_button.setText(
+                "Favorite Mail Client Enabled"
+                if favorite_enabled
+                else "Set Favorite Mail Client"
+            )
+        if hasattr(self, "mail_mailto_button"):
+            self.mail_mailto_button.setText(
+                "mailto Links Enabled" if mailto_enabled else "Handle mailto Links"
+            )
+        self._mail_integration_probe_worker = None
 
     def _ensure_hanauta_mail_desktop_entry(self) -> bool:
         if hanauta_mail_desktop_installed():
@@ -13456,17 +14223,12 @@ class SettingsWindow(QWidget):
             )
         )
 
-        current = gamemode_summary()
-        availability = QLabel(
-            "gamemoded detected and ready."
-            if bool(current.get("available", False))
-            else "gamemoded is not installed yet. Install the gamemode package to use this widget."
-        )
-        availability.setWordWrap(True)
-        availability.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(availability)
+        self.game_mode_availability = QLabel("Checking gamemoded availability...")
+        self.game_mode_availability.setWordWrap(True)
+        self.game_mode_availability.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.game_mode_availability)
 
-        self.game_mode_status = QLabel(str(current.get("note", "Game Mode is idle.")))
+        self.game_mode_status = QLabel("Game Mode status is loading...")
         self.game_mode_status.setWordWrap(True)
         self.game_mode_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.game_mode_status)
@@ -13483,7 +14245,36 @@ class SettingsWindow(QWidget):
             lambda enabled: self._set_service_enabled("game_mode", enabled),
         )
         self.service_sections["game_mode"] = section
+        QTimer.singleShot(0, self._queue_game_mode_summary_refresh)
         return section
+
+    def _queue_game_mode_summary_refresh(self) -> None:
+        worker = getattr(self, "_gamemode_summary_worker", None)
+        if isinstance(worker, GameModeSummaryWorker) and worker.isRunning():
+            return
+        self._gamemode_summary_worker = GameModeSummaryWorker()
+        self._gamemode_summary_worker.finished_summary.connect(
+            self._apply_game_mode_summary
+        )
+        self._gamemode_summary_worker.finished.connect(
+            self._gamemode_summary_worker.deleteLater
+        )
+        self._gamemode_summary_worker.start()
+
+    def _apply_game_mode_summary(self, payload: object) -> None:
+        current = payload if isinstance(payload, dict) else {}
+        available = bool(current.get("available", False))
+        availability = (
+            "gamemoded detected and ready."
+            if available
+            else "gamemoded is not installed yet. Install the gamemode package to use this widget."
+        )
+        note = str(current.get("note", "Game Mode is idle."))
+        if hasattr(self, "game_mode_availability"):
+            self.game_mode_availability.setText(availability)
+        if hasattr(self, "game_mode_status"):
+            self.game_mode_status.setText(note)
+        self._gamemode_summary_worker = None
 
     def _build_virtualization_service_section(self) -> QWidget:
         content = QWidget()
@@ -14449,6 +15240,20 @@ class SettingsWindow(QWidget):
             return
         service["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
+        target = bool(enabled)
+        attr_name = BAR_SERVICE_SWITCH_ATTRS.get(key, "")
+        if attr_name:
+            switch = getattr(self, attr_name, None)
+            if isinstance(switch, SwitchButton) and bool(switch.isChecked()) != target:
+                switch.setChecked(target)
+                switch._apply_state()
+        if key not in SERVICE_DISPLAY_SWITCH_NON_BAR_KEYS:
+            switch = getattr(self, "service_display_switches", {}).get(key)
+            if isinstance(switch, SwitchButton) and bool(switch.isChecked()) != target:
+                switch.setChecked(target)
+                switch._apply_state()
+        if hasattr(self, "_refresh_bar_service_icon_rows"):
+            self._refresh_bar_service_icon_rows()
 
     def _set_cap_alerts_test_mode(self, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault("cap_alerts", {})
@@ -15548,6 +16353,8 @@ class SettingsWindow(QWidget):
         if hasattr(self, "ntfy_bar_switch"):
             self.ntfy_bar_switch.setChecked(bool(ntfy.get("show_in_bar", False)))
             self.ntfy_bar_switch._apply_state()
+        if hasattr(self, "_refresh_bar_service_icon_rows"):
+            self._refresh_bar_service_icon_rows()
 
     def _set_ntfy_show_in_bar(self, enabled: bool) -> None:
         ntfy = self.settings_state.setdefault("ntfy", {})
@@ -15555,6 +16362,13 @@ class SettingsWindow(QWidget):
             return
         ntfy["show_in_bar"] = bool(enabled)
         save_settings_state(self.settings_state)
+        if hasattr(self, "ntfy_bar_switch"):
+            target = bool(enabled)
+            if bool(self.ntfy_bar_switch.isChecked()) != target:
+                self.ntfy_bar_switch.setChecked(target)
+                self.ntfy_bar_switch._apply_state()
+        if hasattr(self, "_refresh_bar_service_icon_rows"):
+            self._refresh_bar_service_icon_rows()
 
     def _set_ntfy_hide_notification_content(self, enabled: bool) -> None:
         self.settings_state.setdefault("ntfy", {})["hide_notification_content"] = bool(

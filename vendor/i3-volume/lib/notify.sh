@@ -49,6 +49,15 @@ notify_volume() {
     local icon summary body=""
     local boost_info=""
 
+    # Fast-path for volnoti: skip expensive sink/port metadata probes.
+    # volnoti only needs the volume number and mute state.
+    if [[ "$NOTIFICATION_METHOD" == "volnoti" ]]; then
+        if is_notification_plugin_available "volnoti"; then
+            call_notification_plugin "volnoti" "$vol" "" "" "" || true
+            return
+        fi
+    fi
+
     # Check if boost is active (function defined in commands.sh, called with error suppression)
     if is_boost_active 2>/dev/null; then
         boost_info=" (+${BOOST_AMOUNT}% boost)"
@@ -287,4 +296,3 @@ notify_volume_libnotify() {
     read -ra hints <<< "${hints[@]/#/-h }"
     "$executable" "${hints[@]}" "${args[@]}" "$summary" "$body" &
 }
-
