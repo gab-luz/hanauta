@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4>=4.13.5",
     "cryptography>=46.0.5",
     "dbus-next>=0.2.3",
+    "pycups>=2.0.4",
     "pyqt6>=6.10.2",
     "pyqt6-webengine>=6.10.0",
     "psycopg[binary]>=3.2.9",

@@ -8,6 +8,15 @@ if [ ! -x "$PYTHON_BIN" ]; then
 fi
 CURSOR_THEME_DEFAULT="sweet-cursors"
 CURSOR_SIZE_DEFAULT="24"
+HANAUTA_SCRIPTS_DIR="$HOME/.config/i3/hanauta/scripts"
+
+warm_hanauta_service_caches() {
+  local script_path="$1"
+  local log_path="$2"
+  if [ -f "$script_path" ]; then
+    "$PYTHON_BIN" "$script_path" >"$log_path" 2>&1 &
+  fi
+}
 
 read_gtk_setting() {
   local key="$1"
@@ -179,6 +188,12 @@ PY
   if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-service" ]; then
     "$HOME/.config/i3/hanauta/bin/hanauta-service" >/tmp/hanauta-service.log 2>&1 &
   fi
+  warm_hanauta_service_caches \
+    "$HANAUTA_SCRIPTS_DIR/cache_bar_services.py" \
+    "/tmp/hanauta-cache-bar-services.log"
+  warm_hanauta_service_caches \
+    "$HANAUTA_SCRIPTS_DIR/cache_services_sections.py" \
+    "/tmp/hanauta-cache-services-sections.log"
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-reminders/reminder_daemon.py" >/tmp/hanauta-reminder-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-kdeconnect/kdeconnect_battery_daemon.py" >/tmp/hanauta-kdeconnect-battery-daemon.log 2>&1 &
   "$PYTHON_BIN" "$HOME/.config/i3/hanauta/src/pyqt/widget-game-mode/lutris_gamemode_daemon.py" >/tmp/hanauta-lutris-gamemode-daemon.log 2>&1 &
