@@ -830,6 +830,48 @@ def resolve_rss_widget_script() -> Path | None:
     return RSS_WIDGET
 
 
+def _theme_choice_for_icon_selection(settings: object) -> str:
+    appearance = settings.get("appearance", {}) if isinstance(settings, dict) else {}
+    appearance = appearance if isinstance(appearance, dict) else {}
+    if bool(appearance.get("use_matugen_palette", False)):
+        return "wallpaper_aware"
+    choice = str(appearance.get("theme_choice", "")).strip().lower()
+    if choice == "wallpaper-aware":
+        return "wallpaper_aware"
+    if choice:
+        return choice
+    fallback = str(appearance.get("theme_mode", "dark")).strip().lower()
+    return fallback if fallback else "dark"
+
+
+def resolve_rss_icon_path() -> Path:
+    theme_choice = _theme_choice_for_icon_selection(load_runtime_settings())
+    prefer_mono = theme_choice == "wallpaper_aware"
+    script_path = resolve_rss_widget_script()
+    if script_path is None or not script_path.exists():
+        return RSS_ICON
+    plugin_root = script_path.parent
+    candidates = (
+        [
+            plugin_root / "assets" / "icon.svg",
+            plugin_root / "icon.svg",
+            plugin_root / "assets" / "icon_color.svg",
+            plugin_root / "icon_color.svg",
+        ]
+        if prefer_mono
+        else [
+            plugin_root / "assets" / "icon_color.svg",
+            plugin_root / "icon_color.svg",
+            plugin_root / "assets" / "icon.svg",
+            plugin_root / "icon.svg",
+        ]
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return RSS_ICON
+
+
 def resolve_ntfy_popup_script() -> Path | None:
     return NTFY_POPUP
 
@@ -5289,7 +5331,7 @@ class CyberBar(QWidget):
         self.pomodoro_button.setText(self._icon_text("timer"))
 
     def _set_rss_button_icon(self) -> None:
-        icon = native_svg_icon(RSS_ICON, 16)
+        icon = native_svg_icon(resolve_rss_icon_path(), 16)
         self.rss_button.setProperty("iconKey", "rss_feed")
         self.rss_button.setProperty("nerdIcon", False)
         self.rss_button.setFont(QFont(self.material_font, 16))
