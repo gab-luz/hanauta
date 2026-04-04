@@ -49,6 +49,14 @@
 - The bar should open the PyQt notification center, not an Eww window.
 - Workspace indicators must reflect `focused`, `occupied`, and `urgent` state from `i3-msg -t get_workspaces`.
 - The bar is intended to stay visible across workspaces. Preserve the current dock/sticky behavior in both Qt window flags and i3 config rules when editing it.
+- Bar widget icon mode is now user-configurable from settings:
+  - `bar.use_color_widget_icons = false` (default): prefer `icon.svg` and tint with bar accent color.
+  - `bar.use_color_widget_icons = true`: prefer `icon_color.svg`.
+- Do not hardcode theme-based color icon selection for bar widgets; use `bar.use_color_widget_icons` as the source of truth.
+- If plugin hooks apply icons, host-managed icon refresh can override them later in the same pass. Keep this ordering in mind when debugging icon changes.
+- Debug icon/chip tooltips are opt-in:
+  - `bar.debug_tooltips = false` (default).
+  - Only call `_install_debug_tooltips()` through settings-gated flow (`_apply_debug_tooltips_setting()`), never unconditionally during startup.
 - The center section contains the clock/date and current media.
 - The media visualizer uses `cava` raw output, configured by `hanauta/src/pyqt/bar/cava_bar.conf`.
 - The current stable visualizer path is:
