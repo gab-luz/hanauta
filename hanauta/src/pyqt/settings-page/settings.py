@@ -584,6 +584,8 @@ DEFAULT_BAR_SETTINGS = {
     "bar_height": 45,
     "chip_radius": 0,
     "tray_tint_with_matugen": True,
+    "use_color_widget_icons": False,
+    "debug_tooltips": False,
     "merge_all_chips": False,
     "full_bar_radius": 18,
     "monitor_mode": "primary",
@@ -4177,16 +4179,23 @@ class SettingsRow(QFrame):
         title_label = QLabel(title)
         title_label.setFont(QFont(ui_font, 9))
         title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        title_label.setWordWrap(True)
+        title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        title_label.setMinimumWidth(0)
 
         detail_label = QLabel(detail)
         detail_label.setFont(QFont(ui_font, 8))
         detail_label.setStyleSheet(
             "color: rgba(255,255,255,0.78); background: transparent;"
         )
+        detail_label.setWordWrap(True)
+        detail_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        detail_label.setMinimumWidth(0)
 
         text_wrap.addWidget(title_label)
         text_wrap.addWidget(detail_label)
 
+        trailing.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         layout.addWidget(icon_wrap)
         layout.addLayout(text_wrap, 1)
         layout.addWidget(
@@ -6571,6 +6580,18 @@ class SettingsWindow(QWidget):
         self.bar_tray_tint_switch.toggledValue.connect(
             self._set_bar_tray_tint_with_matugen
         )
+        self.bar_color_widget_icons_switch = SwitchButton(
+            bool(self.settings_state["bar"].get("use_color_widget_icons", False))
+        )
+        self.bar_color_widget_icons_switch.toggledValue.connect(
+            self._set_bar_use_color_widget_icons
+        )
+        self.bar_debug_tooltips_switch = SwitchButton(
+            bool(self.settings_state["bar"].get("debug_tooltips", False))
+        )
+        self.bar_debug_tooltips_switch.toggledValue.connect(
+            self._set_bar_debug_tooltips
+        )
 
         self.bar_monitor_target_combo = QComboBox()
         self.bar_monitor_target_combo.setFixedWidth(220)
@@ -6697,6 +6718,27 @@ class SettingsWindow(QWidget):
         )
         layout.addWidget(
             SettingsRow(
+                material_icon("palette"),
+                "Use color widget icons",
+                "When enabled, bar widgets prefer icon_color.svg.\n"
+                "When disabled, Hanauta prefers icon.svg and tints it like control-center icons.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_color_widget_icons_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("toggle_on"),
+                "Debug icon tooltips",
+                "Show internal debug labels on bar icons and chips to help inspect widget identity and placement.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_debug_tooltips_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
                 material_icon("widgets"),
                 "Visible status icon limit",
                 "How many status/tray widgets stay on the bar before extra icons move into the overflow dropdown.",
@@ -6774,7 +6816,8 @@ class SettingsWindow(QWidget):
             SettingsRow(
                 material_icon("sports_esports"),
                 "Bar icon overrides",
-                f"Rice the bar by editing {BAR_ICON_CONFIG_FILE}. Hanauta reloads the file automatically.",
+                "Rice the bar by editing ~/.config/hanauta/bar-icons.json.\n"
+                "Hanauta reloads the file automatically.",
                 self.icon_font,
                 self.ui_font,
                 rice_button,
@@ -6879,6 +6922,7 @@ class SettingsWindow(QWidget):
         rows = payload.get("rows", []) if isinstance(payload, dict) else []
         if not isinstance(rows, list):
             return []
+        deduped: dict[str, dict[str, object]] = {}
         normalized: list[dict[str, object]] = []
         for row in rows:
             if not isinstance(row, dict):
@@ -6887,16 +6931,16 @@ class SettingsWindow(QWidget):
             plugin_dir = str(row.get("plugin_dir", "")).strip()
             if not key or not plugin_dir:
                 continue
-            normalized.append(
-                {
-                    "key": key,
-                    "label": str(row.get("label", "")).strip()
-                    or key.replace("_", " ").title(),
-                    "plugin_dir": plugin_dir,
-                    "plugin_id": str(row.get("plugin_id", "")).strip(),
-                    "plugin_name": str(row.get("plugin_name", "")).strip(),
-                }
-            )
+            deduped[key] = {
+                "key": key,
+                "label": str(row.get("label", "")).strip()
+                or key.replace("_", " ").title(),
+                "plugin_dir": plugin_dir,
+                "plugin_id": str(row.get("plugin_id", "")).strip(),
+                "plugin_name": str(row.get("plugin_name", "")).strip(),
+            }
+        for key in sorted(deduped.keys()):
+            normalized.append(deduped[key])
         return normalized
 
     def _queue_services_section_cache_refresh(self) -> None:
@@ -9931,6 +9975,377 @@ class SettingsWindow(QWidget):
                 return row
         return None
 
+    def _installed_plugin_rows(self) -> list[dict[str, object]]:
+        installed = self.settings_state.get("marketplace", {}).get(
+            "installed_plugins", []
+        )
+        if not isinstance(installed, list):
+            return []
+        rows: list[dict[str, object]] = []
+        for row in installed:
+            if isinstance(row, dict):
+                rows.append(row)
+        return rows
+
+    def _service_plugin_token(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+    def _resolve_uninstall_target(
+        self,
+        *,
+        plugin_id: str = "",
+        service_key: str = "",
+        plugin_dir: Path | None = None,
+    ) -> tuple[str, str] | None:
+        normalized_id = str(plugin_id).strip()
+        if normalized_id:
+            direct = self._installed_plugin_entry_by_id(normalized_id)
+            if isinstance(direct, dict):
+                resolved_name = (
+                    str(direct.get("name", normalized_id)).strip() or normalized_id
+                )
+                return normalized_id, resolved_name
+
+        normalized_key = str(service_key).strip()
+        if normalized_key:
+            by_key = self._installed_plugin_for_service_key(normalized_key)
+            if by_key is not None:
+                return by_key
+
+        target_dir_resolved = ""
+        if isinstance(plugin_dir, Path):
+            try:
+                target_dir_resolved = str(plugin_dir.expanduser().resolve())
+            except Exception:
+                target_dir_resolved = str(plugin_dir.expanduser())
+
+        target_token = self._service_plugin_token(normalized_id)
+        for row in self._installed_plugin_rows():
+            row_id = str(row.get("id", "")).strip()
+            if not row_id:
+                continue
+            row_name = str(row.get("name", row_id)).strip() or row_id
+            install_path_raw = str(row.get("install_path", "")).strip()
+            install_token = ""
+            install_resolved = ""
+            if install_path_raw:
+                install_path = Path(install_path_raw).expanduser()
+                install_token = self._service_plugin_token(install_path.name)
+                try:
+                    install_resolved = str(install_path.resolve())
+                except Exception:
+                    install_resolved = str(install_path)
+            if target_dir_resolved and install_resolved == target_dir_resolved:
+                return row_id, row_name
+            if target_token:
+                row_token = self._service_plugin_token(row_id)
+                if target_token == row_token or target_token == install_token:
+                    return row_id, row_name
+        return None
+
+    def _installed_plugin_for_service_key(
+        self, service_key: str
+    ) -> tuple[str, str] | None:
+        key = str(service_key).strip()
+        if not key:
+            return None
+        installed_index = getattr(self, "_installed_service_key_index", {})
+        if isinstance(installed_index, dict):
+            indexed = installed_index.get(key)
+            if (
+                isinstance(indexed, tuple)
+                and len(indexed) == 2
+                and str(indexed[0]).strip()
+            ):
+                plugin_id = str(indexed[0]).strip()
+                plugin_name = str(indexed[1]).strip() or plugin_id
+                return plugin_id, plugin_name
+        marketplace = self.settings_state.get("marketplace", {})
+        installed = (
+            marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+        )
+        if not isinstance(installed, list):
+            return None
+
+        # First pass: ask each installed plugin which service keys it exposes.
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if not plugin_id:
+                continue
+            install_path_raw = str(row.get("install_path", "")).strip()
+            plugin_name = (
+                str(row.get("name", plugin_id)).strip() or plugin_id
+            )
+            install_path = Path(install_path_raw).expanduser() if install_path_raw else Path()
+            if install_path_raw and install_path.exists() and install_path.is_dir():
+                try:
+                    services = self._marketplace_collect_plugin_services(install_path)
+                except Exception:
+                    services = []
+                for service_row in services:
+                    if not isinstance(service_row, dict):
+                        continue
+                    if str(service_row.get("key", "")).strip() == key:
+                        return plugin_id, plugin_name
+
+        # Fallback: heuristic match against plugin id or install directory name.
+        key_token = self._service_plugin_token(key)
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if not plugin_id:
+                continue
+            plugin_name = (
+                str(row.get("name", plugin_id)).strip() or plugin_id
+            )
+            install_path_raw = str(row.get("install_path", "")).strip()
+            install_name = ""
+            if install_path_raw:
+                try:
+                    install_name = Path(install_path_raw).expanduser().name
+                except Exception:
+                    install_name = ""
+            candidates = {
+                self._service_plugin_token(plugin_id),
+                self._service_plugin_token(install_name),
+            }
+            candidates = {item for item in candidates if item}
+            if key_token in candidates:
+                return plugin_id, plugin_name
+        return None
+
+    def _refresh_installed_service_key_index(self) -> None:
+        index: dict[str, tuple[str, str]] = {}
+        marketplace = self.settings_state.get("marketplace", {})
+        installed = (
+            marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+        )
+        if not isinstance(installed, list):
+            installed = []
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if not plugin_id:
+                continue
+            plugin_name = str(row.get("name", plugin_id)).strip() or plugin_id
+            install_path_raw = str(row.get("install_path", "")).strip()
+            if not install_path_raw:
+                continue
+            install_path = Path(install_path_raw).expanduser()
+            if not install_path.exists() or not install_path.is_dir():
+                continue
+            try:
+                service_rows = self._marketplace_collect_plugin_services(install_path)
+            except Exception:
+                service_rows = []
+            for service_row in service_rows:
+                if not isinstance(service_row, dict):
+                    continue
+                key = str(service_row.get("key", "")).strip()
+                if not key or key in index:
+                    continue
+                index[key] = (plugin_id, plugin_name)
+        for row in self._read_services_section_rows_cache():
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key", "")).strip()
+            plugin_id = str(row.get("plugin_id", "")).strip()
+            if not key or not plugin_id or key in index:
+                continue
+            plugin_name = str(row.get("plugin_name", plugin_id)).strip() or plugin_id
+            index[key] = (plugin_id, plugin_name)
+        self._installed_service_key_index = index
+
+    def _service_enabled_for_sort(self, key: str) -> bool:
+        service_key = str(key).strip()
+        if service_key == "weather":
+            weather = self.settings_state.get("weather", {})
+            return bool(weather.get("enabled", False)) if isinstance(weather, dict) else False
+        if service_key == "ntfy":
+            ntfy = self.settings_state.get("ntfy", {})
+            return bool(ntfy.get("enabled", False)) if isinstance(ntfy, dict) else False
+        return self._service_enabled(service_key)
+
+    def _service_group_for_sort(self, key: str, is_installed: bool) -> int:
+        enabled = self._service_enabled_for_sort(key)
+        if not is_installed and enabled:
+            return 0
+        if is_installed and enabled:
+            return 1
+        if not is_installed and not enabled:
+            return 2
+        return 3
+
+    def _service_label_for_widget(self, widget: QWidget, key: str) -> str:
+        if isinstance(widget, ExpandableServiceSection):
+            try:
+                return str(widget.title_label.text()).strip() or key.replace("_", " ").title()
+            except Exception:
+                return key.replace("_", " ").title()
+        section_child = widget.findChild(ExpandableServiceSection)
+        if isinstance(section_child, ExpandableServiceSection):
+            try:
+                return str(section_child.title_label.text()).strip() or key.replace("_", " ").title()
+            except Exception:
+                return key.replace("_", " ").title()
+        return key.replace("_", " ").title()
+
+    def _toggle_services_sort_order(self) -> None:
+        self._services_sort_desc = not bool(getattr(self, "_services_sort_desc", False))
+        if hasattr(self, "services_sort_button"):
+            self.services_sort_button.setText("Z→A" if self._services_sort_desc else "A→Z")
+        self._refresh_service_widget_order()
+
+    def _cycle_services_visibility_mode(self) -> None:
+        current = str(getattr(self, "_services_visibility_mode", "all"))
+        mode_order = ["all", "hide_disabled", "hide_enabled"]
+        try:
+            idx = mode_order.index(current)
+        except ValueError:
+            idx = 0
+        next_mode = mode_order[(idx + 1) % len(mode_order)]
+        self._services_visibility_mode = next_mode
+        if hasattr(self, "services_visibility_button"):
+            label = {
+                "all": "All",
+                "hide_disabled": "Hide Disabled",
+                "hide_enabled": "Hide Enabled",
+            }.get(next_mode, "All")
+            self.services_visibility_button.setText(label)
+        self._refresh_service_widget_order()
+
+    def _services_filter_changed(self, value: str) -> None:
+        self._services_filter_query = str(value or "").strip().lower()
+        self._refresh_service_widget_order()
+
+    def _refresh_service_widget_order(self) -> None:
+        layout = getattr(self, "_services_build_layout", None)
+        if not isinstance(layout, QVBoxLayout):
+            return
+        widgets = list(getattr(self, "_services_section_widgets", []))
+        if not widgets:
+            return
+        for widget in widgets:
+            layout.removeWidget(widget)
+        widgets.sort(
+            key=lambda widget: (
+                self._service_label_for_widget(
+                    widget, str(widget.property("service_key") or "")
+                ).lower(),
+                int(widget.property("service_insert_order") or 0),
+            ),
+            reverse=bool(getattr(self, "_services_sort_desc", False)),
+        )
+        widgets.sort(
+            key=lambda widget: self._service_group_for_sort(
+                str(widget.property("service_key") or ""),
+                bool(widget.property("service_is_installed")),
+            )
+        )
+        loading_label = getattr(self, "_services_loading_label", None)
+        base_index = 1
+        if isinstance(loading_label, QLabel):
+            try:
+                loading_index = layout.indexOf(loading_label)
+            except RuntimeError:
+                loading_index = -1
+                self._services_loading_label = None
+            if loading_index >= 0:
+                base_index = loading_index + 1
+        visibility_mode = str(getattr(self, "_services_visibility_mode", "all"))
+        query = str(getattr(self, "_services_filter_query", "")).strip().lower()
+        visible_widgets: list[QWidget] = []
+        for widget in widgets:
+            key = str(widget.property("service_key") or "").strip()
+            label = self._service_label_for_widget(widget, key)
+            enabled = self._service_enabled_for_sort(key)
+            if visibility_mode == "hide_disabled" and not enabled:
+                widget.setVisible(False)
+                continue
+            if visibility_mode == "hide_enabled" and enabled:
+                widget.setVisible(False)
+                continue
+            haystack = f"{key} {label}".lower()
+            if query and query not in haystack:
+                widget.setVisible(False)
+                continue
+            widget.setVisible(True)
+            visible_widgets.append(widget)
+        for index, widget in enumerate(visible_widgets):
+            layout.insertWidget(base_index + index, widget)
+        self._services_section_widgets = widgets
+
+    def _insert_service_section_widget(
+        self, key: str, widget: QWidget, *, is_installed: bool
+    ) -> None:
+        if not isinstance(widget, QWidget):
+            return
+        widgets = getattr(self, "_services_section_widgets", [])
+        for existing in list(widgets):
+            if existing is widget:
+                continue
+            if str(existing.property("service_key") or "").strip() != str(key).strip():
+                continue
+            widgets.remove(existing)
+            layout = getattr(self, "_services_build_layout", None)
+            if isinstance(layout, QVBoxLayout):
+                layout.removeWidget(existing)
+            existing.deleteLater()
+        if widget not in widgets:
+            insert_order = int(getattr(self, "_services_widget_insert_counter", 0))
+            self._services_widget_insert_counter = insert_order + 1
+            widget.setProperty("service_insert_order", insert_order)
+            widgets.append(widget)
+            self._services_section_widgets = widgets
+        widget.setProperty("service_key", str(key).strip())
+        widget.setProperty("service_is_installed", bool(is_installed))
+        widget.setProperty(
+            "service_label", self._service_label_for_widget(widget, str(key).strip())
+        )
+        self._refresh_service_widget_order()
+
+    def _wrap_service_widget_with_uninstall_action(
+        self,
+        widget: QWidget,
+        plugin_id: str,
+        plugin_name: str,
+        *,
+        service_key: str = "",
+        plugin_dir: Path | None = None,
+    ) -> QWidget:
+        resolved = self._resolve_uninstall_target(
+            plugin_id=plugin_id,
+            service_key=service_key,
+            plugin_dir=plugin_dir,
+        )
+        if resolved is None:
+            return widget
+        plugin_id, resolved_name = resolved
+        plugin_name = str(resolved_name).strip() or plugin_id
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(8)
+        wrapper_layout.addWidget(widget)
+        action_row = QHBoxLayout()
+        action_row.addStretch(1)
+        uninstall_button = QPushButton("Uninstall plugin")
+        uninstall_button.setObjectName("secondaryButton")
+        uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        uninstall_button.clicked.connect(
+            lambda _checked=False, pid=plugin_id, pname=plugin_name: (
+                self._uninstall_plugin_from_services(pid, pname)
+            )
+        )
+        action_row.addWidget(uninstall_button)
+        wrapper_layout.addLayout(action_row)
+        self._plugin_service_wrappers[plugin_id] = wrapper
+        return wrapper
+
     def _uninstall_plugin_from_services(self, plugin_id: str, plugin_name: str) -> None:
         row = self._installed_plugin_entry_by_id(plugin_id)
         if row is None:
@@ -10024,6 +10439,7 @@ class SettingsWindow(QWidget):
         ]
         marketplace["installed_plugins"] = installed
         save_settings_state(self.settings_state)
+        self._refresh_installed_service_key_index()
         self._clear_plugin_install_receipt(plugin_id)
         wrapper = getattr(self, "_plugin_service_wrappers", {}).get(plugin_id)
         if isinstance(wrapper, QWidget):
@@ -10135,6 +10551,47 @@ class SettingsWindow(QWidget):
                 return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{manifest_path}"
         return repo_url.rstrip("/") + "/" + manifest_path
 
+    def _marketplace_fetch_manifest_payload(
+        self, repo_url: str, branch: str, manifest_path: str
+    ) -> object:
+        parsed = parse.urlparse(repo_url)
+        if parsed.netloc.lower() == "github.com":
+            parts = [part for part in parsed.path.split("/") if part]
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo = parts[1].removesuffix(".git")
+                api_url = (
+                    f"https://api.github.com/repos/{owner}/{repo}/contents/{manifest_path}"
+                    f"?ref={branch}"
+                )
+                try:
+                    req = request.Request(
+                        api_url,
+                        headers={
+                            "User-Agent": "HanautaSettings/Marketplace",
+                            "Accept": "application/vnd.github+json",
+                        },
+                    )
+                    with request.urlopen(req, timeout=10) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                    if isinstance(payload, dict):
+                        content = str(payload.get("content", "")).strip()
+                        if content:
+                            content = content.replace("\n", "")
+                            decoded = base64.b64decode(content).decode("utf-8")
+                            return json.loads(decoded)
+                except Exception:
+                    pass
+
+        manifest_url = self._marketplace_manifest_url_for_source(
+            repo_url, branch, manifest_path
+        )
+        req = request.Request(
+            manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"}
+        )
+        with request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+
     def _marketplace_normalize_catalog(
         self, payload: object
     ) -> list[dict[str, object]]:
@@ -10226,15 +10683,10 @@ class SettingsWindow(QWidget):
             )
             if not repo_url:
                 continue
-            manifest_url = self._marketplace_manifest_url_for_source(
-                repo_url, branch, manifest_path
-            )
             try:
-                req = request.Request(
-                    manifest_url, headers={"User-Agent": "HanautaSettings/Marketplace"}
+                payload = self._marketplace_fetch_manifest_payload(
+                    repo_url, branch, manifest_path
                 )
-                with request.urlopen(req, timeout=10) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
             except Exception as exc:
                 source_errors.append(f"{repo_url} ({branch}/{manifest_path}): {exc}")
                 continue
@@ -11205,33 +11657,43 @@ class SettingsWindow(QWidget):
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
         header.addWidget(icon)
         header.addWidget(title)
+        self._services_filter_query = ""
+        self._services_sort_desc = False
+        self._services_visibility_mode = "all"
+        self.services_search_input = QLineEdit()
+        self.services_search_input.setPlaceholderText("Search services/plugins")
+        self.services_search_input.setObjectName("settingsInput")
+        self.services_search_input.setMinimumWidth(220)
+        self.services_search_input.textChanged.connect(self._services_filter_changed)
+        self.services_sort_button = QPushButton("A→Z")
+        self.services_sort_button.setObjectName("secondaryButton")
+        self.services_sort_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.services_sort_button.clicked.connect(self._toggle_services_sort_order)
+        self.services_visibility_button = QPushButton("All")
+        self.services_visibility_button.setObjectName("secondaryButton")
+        self.services_visibility_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.services_visibility_button.clicked.connect(
+            self._cycle_services_visibility_mode
+        )
+        header.addWidget(self.services_search_input)
+        header.addWidget(self.services_sort_button)
+        header.addWidget(self.services_visibility_button)
         header.addStretch(1)
         layout.addLayout(header)
 
         self.service_sections: dict[str, ExpandableServiceSection] = {}
         self.service_display_switches: dict[str, SwitchButton] = {}
         self._plugin_service_wrappers: dict[str, QWidget] = {}
+        self._services_section_widgets: list[QWidget] = []
+        self._services_widget_insert_counter = 0
+        self._refresh_installed_service_key_index()
         self._services_build_layout = layout
         self._services_build_finished = False
         self._services_core_queue = [
             ("mail", self._build_mail_service_section),
             ("kdeconnect", self._build_kdeconnect_service_section),
-            ("home_assistant", self._build_home_assistant_section),
-            ("vpn_control", self._build_vpn_service_section),
-            ("christian_widget", self._build_christian_service_section),
-            ("health_widget", self._build_health_service_section),
-            ("calendar_widget", self._build_calendar_service_section),
-            ("reminders_widget", self._build_reminders_service_section),
-            ("pomodoro_widget", self._build_pomodoro_service_section),
-            ("cap_alerts", self._build_cap_alerts_service_section),
-            ("obs_widget", self._build_obs_service_section),
-            ("crypto_widget", self._build_crypto_service_section),
-            ("vps_widget", self._build_vps_service_section),
-            ("desktop_clock_widget", self._build_desktop_clock_service_section),
-            ("game_mode", self._build_game_mode_service_section),
-            ("virtualization", self._build_virtualization_service_section),
-            ("weather", self._build_weather_section),
-            ("ntfy", self._build_ntfy_section),
         ]
         self._services_plugin_queue: list[dict[str, object]] = []
         self._services_cached_plugin_queue = self._read_services_section_rows_cache()
@@ -11247,33 +11709,24 @@ class SettingsWindow(QWidget):
         return card
 
     def _add_plugin_service_widget(
-        self, widget: QWidget, plugin_id: str, plugin_name: str
+        self,
+        key: str,
+        widget: QWidget,
+        plugin_id: str,
+        plugin_name: str,
+        plugin_dir: Path | None = None,
     ) -> None:
-        layout = getattr(self, "_services_build_layout", None)
-        if not isinstance(layout, QVBoxLayout):
-            return
-        if plugin_id and self._installed_plugin_entry_by_id(plugin_id) is not None:
-            wrapper = QWidget()
-            wrapper_layout = QVBoxLayout(wrapper)
-            wrapper_layout.setContentsMargins(0, 0, 0, 0)
-            wrapper_layout.setSpacing(8)
-            wrapper_layout.addWidget(widget)
-            action_row = QHBoxLayout()
-            action_row.addStretch(1)
-            uninstall_button = QPushButton("Uninstall plugin")
-            uninstall_button.setObjectName("secondaryButton")
-            uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            uninstall_button.clicked.connect(
-                lambda _checked=False, pid=plugin_id, pname=plugin_name: (
-                    self._uninstall_plugin_from_services(pid, pname)
-                )
-            )
-            action_row.addWidget(uninstall_button)
-            wrapper_layout.addLayout(action_row)
-            self._plugin_service_wrappers[plugin_id] = wrapper
-            layout.addWidget(wrapper)
-            return
-        layout.addWidget(widget)
+        self._insert_service_section_widget(
+            key,
+            self._wrap_service_widget_with_uninstall_action(
+                widget,
+                plugin_id,
+                plugin_name,
+                service_key=key,
+                plugin_dir=plugin_dir,
+            ),
+            is_installed=True,
+        )
 
     def _replace_service_section_widget(
         self, key: str, new_widget: QWidget, expand_after_replace: bool = False
@@ -11282,36 +11735,37 @@ class SettingsWindow(QWidget):
         if not isinstance(layout, QVBoxLayout):
             return
         old_widget = self.service_sections.get(key)
-        if old_widget is None:
-            layout.addWidget(new_widget)
-            if isinstance(new_widget, ExpandableServiceSection):
-                self.service_sections[key] = new_widget
-            return
-        insert_index = -1
-        for i in range(layout.count()):
-            item = layout.itemAt(i)
-            if item is not None and item.widget() is old_widget:
-                insert_index = i
-                break
-        if insert_index >= 0:
-            layout.removeWidget(old_widget)
-            old_widget.deleteLater()
-            layout.insertWidget(insert_index, new_widget)
-        else:
-            layout.addWidget(new_widget)
-            old_widget.deleteLater()
+        widgets = getattr(self, "_services_section_widgets", [])
+        removable = old_widget if old_widget in widgets else None
+        if removable is None:
+            for candidate in widgets:
+                if str(candidate.property("service_key") or "").strip() == str(key).strip():
+                    removable = candidate
+                    break
+        if removable is not None and removable in widgets:
+            widgets.remove(removable)
+            self._services_section_widgets = widgets
+            layout.removeWidget(removable)
+            removable.deleteLater()
         if isinstance(new_widget, ExpandableServiceSection):
             self.service_sections[key] = new_widget
             if expand_after_replace:
                 new_widget.set_expanded(True)
+        self._insert_service_section_widget(
+            key,
+            new_widget,
+            is_installed=bool(new_widget.property("service_is_installed")),
+        )
 
-    def _build_cached_plugin_service_stub(
-        self, row: dict[str, object]
-    ) -> ExpandableServiceSection:
+    def _build_cached_plugin_service_stub(self, row: dict[str, object]) -> QWidget:
         key = str(row.get("key", "")).strip()
         label = str(row.get("label", key.replace("_", " ").title())).strip() or key
         icon_name = str(row.get("icon", "widgets")).strip() or "widgets"
         plugin_dir = str(row.get("plugin_dir", "")).strip()
+        plugin_id = str(row.get("plugin_id", "")).strip()
+        plugin_name = (
+            str(row.get("plugin_name", plugin_id)).strip() or plugin_id
+        )
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -11358,7 +11812,17 @@ class SettingsWindow(QWidget):
             ),
         )
         self.service_sections[key] = section
-        return section
+        if not plugin_id:
+            plugin_meta = self._installed_plugin_for_service_key(key)
+            if plugin_meta is not None:
+                plugin_id, plugin_name = plugin_meta
+        return self._wrap_service_widget_with_uninstall_action(
+            section,
+            plugin_id,
+            plugin_name,
+            service_key=key,
+            plugin_dir=Path(plugin_dir).expanduser() if plugin_dir else None,
+        )
 
     def _load_cached_plugin_section_on_demand(
         self, key: str, plugin_dir_raw: str, status_label: QLabel
@@ -11390,27 +11854,19 @@ class SettingsWindow(QWidget):
                 status_label.setText("Plugin returned invalid settings content.")
                 return
 
+            if not plugin_id:
+                plugin_meta = self._installed_plugin_for_service_key(key)
+                if plugin_meta is not None:
+                    plugin_id, plugin_name = plugin_meta
             target_widget = widget
-            if plugin_id and self._installed_plugin_entry_by_id(plugin_id) is not None:
-                wrapper = QWidget()
-                wrapper_layout = QVBoxLayout(wrapper)
-                wrapper_layout.setContentsMargins(0, 0, 0, 0)
-                wrapper_layout.setSpacing(8)
-                wrapper_layout.addWidget(widget)
-                action_row = QHBoxLayout()
-                action_row.addStretch(1)
-                uninstall_button = QPushButton("Uninstall plugin")
-                uninstall_button.setObjectName("secondaryButton")
-                uninstall_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-                uninstall_button.clicked.connect(
-                    lambda _checked=False, pid=plugin_id, pname=plugin_name: (
-                        self._uninstall_plugin_from_services(pid, pname)
-                    )
-                )
-                action_row.addWidget(uninstall_button)
-                wrapper_layout.addLayout(action_row)
-                self._plugin_service_wrappers[plugin_id] = wrapper
-                target_widget = wrapper
+            target_widget = self._wrap_service_widget_with_uninstall_action(
+                target_widget,
+                plugin_id,
+                plugin_name,
+                service_key=key,
+                plugin_dir=plugin_dir,
+            )
+            target_widget.setProperty("service_is_installed", True)
             self._replace_service_section_widget(key, target_widget, expand_after_replace=True)
 
         QTimer.singleShot(0, _load)
@@ -11423,12 +11879,15 @@ class SettingsWindow(QWidget):
         core_queue = getattr(self, "_services_core_queue", [])
         if core_queue:
             key, builder = core_queue.pop(0)
+            if self._installed_plugin_for_service_key(key) is not None:
+                QTimer.singleShot(0, self._build_next_services_section)
+                return
             try:
                 widget = builder()
             except Exception:
                 widget = None
             if isinstance(widget, QWidget):
-                layout.addWidget(widget)
+                self._insert_service_section_widget(key, widget, is_installed=False)
             self._services_sections_built = int(
                 getattr(self, "_services_sections_built", 0)
             ) + 1
@@ -11452,20 +11911,20 @@ class SettingsWindow(QWidget):
                 except Exception:
                     widget = None
                 if isinstance(widget, QWidget):
-                    layout.addWidget(widget)
+                    self._insert_service_section_widget(
+                        str(row.get("key", "")).strip(),
+                        widget,
+                        is_installed=True,
+                    )
             QTimer.singleShot(12, self._build_next_services_section)
             return
 
         if not getattr(self, "_plugin_builders_loaded", False):
-            if bool(getattr(self, "_services_cached_plugins_used", False)):
-                self._plugin_builders_loaded = True
-                self._services_plugin_queue = []
-            else:
-                if not getattr(self, "_plugin_dir_scan_in_progress", False):
-                    if not bool(getattr(self, "_plugin_dir_scan_scheduled", False)):
-                        self._plugin_dir_scan_scheduled = True
-                        QTimer.singleShot(120, self._start_plugin_dir_scan)
-                return
+            if not getattr(self, "_plugin_dir_scan_in_progress", False):
+                if not bool(getattr(self, "_plugin_dir_scan_scheduled", False)):
+                    self._plugin_dir_scan_scheduled = True
+                    QTimer.singleShot(120, self._start_plugin_dir_scan)
+            return
 
         plugin_queue = getattr(self, "_services_plugin_queue", [])
         if plugin_queue:
@@ -11488,7 +11947,26 @@ class SettingsWindow(QWidget):
                 except Exception:
                     widget = None
                 if isinstance(widget, QWidget):
-                    self._add_plugin_service_widget(widget, plugin_id, plugin_name)
+                    if key in getattr(self, "service_sections", {}):
+                        replacement = self._wrap_service_widget_with_uninstall_action(
+                            widget,
+                            plugin_id,
+                            plugin_name,
+                            service_key=key,
+                            plugin_dir=plugin_dir if isinstance(plugin_dir, Path) else None,
+                        )
+                        replacement.setProperty("service_is_installed", True)
+                        self._replace_service_section_widget(
+                            key, replacement, expand_after_replace=False
+                        )
+                    else:
+                        self._add_plugin_service_widget(
+                            key,
+                            widget,
+                            plugin_id,
+                            plugin_name,
+                            plugin_dir if isinstance(plugin_dir, Path) else None,
+                        )
                     if str(getattr(self, "initial_service_section", "")).strip() == key:
                         QTimer.singleShot(
                             0,
@@ -11502,8 +11980,10 @@ class SettingsWindow(QWidget):
         if not getattr(self, "_services_build_finished", False):
             self._services_build_finished = True
             if isinstance(getattr(self, "_services_loading_label", None), QLabel):
-                self._services_loading_label.setText("Services ready.")
-                QTimer.singleShot(700, self._services_loading_label.deleteLater)
+                loading_label = self._services_loading_label
+                loading_label.setText("Services ready.")
+                QTimer.singleShot(700, loading_label.deleteLater)
+                self._services_loading_label = None
             layout.addStretch(1)
             if str(getattr(self, "initial_service_section", "")).strip():
                 QTimer.singleShot(
@@ -15363,6 +15843,8 @@ class SettingsWindow(QWidget):
                 self._start_virtualization_daemon()
             else:
                 self._stop_virtualization_daemon()
+        if hasattr(self, "_refresh_service_widget_order"):
+            self._refresh_service_widget_order()
 
     def _set_service_notification_visibility(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
@@ -16520,6 +17002,8 @@ class SettingsWindow(QWidget):
             self.ntfy_bar_switch._apply_state()
         if hasattr(self, "_refresh_bar_service_icon_rows"):
             self._refresh_bar_service_icon_rows()
+        if hasattr(self, "_refresh_service_widget_order"):
+            self._refresh_service_widget_order()
 
     def _set_ntfy_show_in_bar(self, enabled: bool) -> None:
         ntfy = self.settings_state.setdefault("ntfy", {})
@@ -16557,6 +17041,8 @@ class SettingsWindow(QWidget):
                 if enabled
                 else "Weather icon disabled."
             )
+        if hasattr(self, "_refresh_service_widget_order"):
+            self._refresh_service_widget_order()
 
     def _toggle_energy_battery_section(self) -> None:
         if not getattr(self, "_battery_present", False):
@@ -16894,6 +17380,16 @@ class SettingsWindow(QWidget):
         self.settings_state.setdefault("bar", {})["tray_tint_with_matugen"] = bool(
             enabled
         )
+        self._save_bar_settings()
+
+    def _set_bar_use_color_widget_icons(self, enabled: bool) -> None:
+        self.settings_state.setdefault("bar", {})["use_color_widget_icons"] = bool(
+            enabled
+        )
+        self._save_bar_settings()
+
+    def _set_bar_debug_tooltips(self, enabled: bool) -> None:
+        self.settings_state.setdefault("bar", {})["debug_tooltips"] = bool(enabled)
         self._save_bar_settings()
 
     def _set_bar_monitor_target(self, index: int) -> None:

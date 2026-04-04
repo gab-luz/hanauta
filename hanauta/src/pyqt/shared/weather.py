@@ -350,14 +350,14 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
 
 
 def animated_icon_path(name: str) -> Path:
-    preferred = WEATHER_ICON_DIR / "fill" / "svg" / f"{name}.svg"
-    if preferred.exists():
-        return preferred
     fallback_name = ANIMATED_ICON_FALLBACKS.get(name, "")
     if fallback_name:
         fallback = WEATHER_ICON_DIR / "fill" / "svg" / f"{fallback_name}.svg"
         if fallback.exists():
             return fallback
+    preferred = WEATHER_ICON_DIR / "fill" / "svg" / f"{name}.svg"
+    if preferred.exists():
+        return preferred
     return WEATHER_ICON_DIR / "fill" / "svg" / "not-available.svg"
 
 

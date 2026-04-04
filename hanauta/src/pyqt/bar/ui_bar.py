@@ -181,7 +181,9 @@ DESKTOP_CLOCK_WIDGET: Path | None = resolve_plugin_script(
 )
 DESKTOP_CLOCK_BINARY = HANAUTA_ROOT / "bin" / "hanauta-clock"
 NTFY_POPUP: Path | None = resolve_plugin_script("ntfy_popup.py", ["ntfy"])
-WEATHER_POPUP: Path | None = resolve_plugin_script("weather_popup.py", ["weather"])
+WEATHER_POPUP: Path | None = resolve_plugin_script(
+    "weather_popup.py", ["weather"], required=False
+)
 CAP_ALERTS_POPUP: Path | None = resolve_plugin_script(
     "cap_alerts_popup.py", ["cap-alerts", "alerts"]
 )
@@ -3420,6 +3422,7 @@ class CyberBar(QWidget):
             "python_bin": self._python_bin,
             "register_hook": self._register_bar_plugin_hook,
             "add_status_button": self._add_status_plugin_button,
+            "set_status_tooltip": self._set_status_widget_tooltip,
             "polkit_available": polkit_available,
             "build_polkit_command": build_polkit_command,
             "run_with_polkit": run_with_polkit,
@@ -3700,11 +3703,44 @@ class CyberBar(QWidget):
         self.tray_host.setToolTip("")
         self.btn_power.setToolTip("")
 
+    def _set_status_widget_tooltip(self, key: str, tooltip: str) -> None:
+        status_key = str(key).strip()
+        if not status_key:
+            return
+        text = str(tooltip).strip()
+        for widget in self._status_managed_widgets:
+            current = str(widget.property("statusKey") or "").strip()
+            if not current:
+                continue
+            service_key = current.split(":", 1)[-1]
+            if current == status_key or service_key == status_key:
+                widget.setToolTip(text)
+
+    def _apply_installed_widget_tooltips(self) -> None:
+        marketplace = self.runtime_settings.get("marketplace", {})
+        installed = (
+            marketplace.get("installed_plugins", [])
+            if isinstance(marketplace, dict)
+            else []
+        )
+        if not isinstance(installed, list):
+            return
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            plugin_name = str(row.get("name", "")).strip()
+            if not plugin_id or not plugin_name:
+                continue
+            # In normal mode, widget tooltips should only show the widget/plugin name.
+            self._set_status_widget_tooltip(plugin_id, plugin_name)
+
     def _apply_debug_tooltips_setting(self) -> None:
         if bool(self.bar_settings.get("debug_tooltips", False)):
             self._install_debug_tooltips()
         else:
             self._clear_debug_tooltips()
+            self._apply_installed_widget_tooltips()
 
     def _enforce_plugin_icon_mode(self) -> None:
         if bool(self.bar_settings.get("use_color_widget_icons", False)):
@@ -6034,29 +6070,35 @@ class CyberBar(QWidget):
         return env
 
     def _singleton_active(
-        self, process: Optional[subprocess.Popen], script_path: Path
+        self, process: Optional[subprocess.Popen], script_path: Path | None
     ) -> bool:
         if process is not None and process.poll() is None:
             return True
         return False
 
-    def _terminate_singleton_process(self, attr_name: str, script_path: Path) -> None:
+    def _terminate_singleton_process(
+        self, attr_name: str, script_path: Path | None
+    ) -> None:
         process = getattr(self, attr_name, None)
         if process is not None and process.poll() is None:
             process.terminate()
-        for pattern in entry_patterns(script_path):
-            terminate_background_matches(pattern)
+        if script_path is not None:
+            for pattern in entry_patterns(script_path):
+                terminate_background_matches(pattern)
         setattr(self, attr_name, None)
 
     def _launch_singleton_process(
         self,
         attr_name: str,
-        script_path: Path,
+        script_path: Path | None,
         *,
         python_bin: Optional[str] = None,
         extra_env: Optional[dict[str, str]] = None,
         cleanup_patterns: bool = True,
     ) -> bool:
+        if script_path is None:
+            setattr(self, attr_name, None)
+            return False
         if (
             not script_path.exists()
             and entry_target(script_path) == script_path.resolve()
@@ -6102,7 +6144,7 @@ class CyberBar(QWidget):
     def _toggle_singleton_process(
         self,
         attr_name: str,
-        script_path: Path,
+        script_path: Path | None,
         *,
         python_bin: Optional[str] = None,
         extra_env: Optional[dict[str, str]] = None,
@@ -6333,7 +6375,7 @@ class CyberBar(QWidget):
         self,
         button: QPushButton,
         process_attr: str,
-        script_path: Path,
+        script_path: Path | None,
         *,
         tooltip: str | None = None,
     ) -> bool:
