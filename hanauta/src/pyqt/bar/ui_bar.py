@@ -5412,16 +5412,27 @@ class CyberBar(QWidget):
             16,
         )
         vpn_payload = {}
+        parsed_status = False
         raw = run_script("vpn.sh", "--status")
         if raw:
             try:
                 vpn_payload = json.loads(raw)
+                parsed_status = True
             except Exception:
                 vpn_payload = {}
-        wg_active = vpn_payload.get("wireguard") == "on"
+        wireguard_state = str(vpn_payload.get("wireguard", "")).strip().lower()
+        wg_active = wireguard_state == "on"
+        wg_inactive = wireguard_state == "off"
         selected_iface = str(vpn_payload.get("wg_selected", "")).strip()
-        self._set_vpn_button_icon(wg_active)
+        wg_alert = (
+            (not raw.strip())
+            or (raw.strip() and not parsed_status)
+            or (parsed_status and not (wg_active or wg_inactive))
+            or (parsed_status and not selected_iface)
+        )
+        self._set_vpn_button_icon(wg_active, alert=wg_alert)
         self.vpn_icon.setProperty("active", wg_active)
+        self.vpn_icon.setProperty("alert", wg_alert)
         self.vpn_icon.setToolTip(f"WireGuard: {selected_iface or 'No config selected'}")
         self.style().unpolish(self.vpn_icon)
         self.style().polish(self.vpn_icon)
@@ -5448,9 +5459,15 @@ class CyberBar(QWidget):
             return icon
         return QIcon(str(path))
 
-    def _set_vpn_button_icon(self, active: bool) -> None:
+    def _set_vpn_button_icon(self, active: bool, alert: bool | None = None) -> None:
         prefer_color = bool(self.bar_settings.get("use_color_widget_icons", False))
-        override_prop = "pluginIconPathActive" if active else "pluginIconPathInactive"
+        if alert is None:
+            alert = self.vpn_icon.property("alert") == True
+        override_prop = (
+            "pluginIconPathAlert"
+            if alert
+            else ("pluginIconPathActive" if active else "pluginIconPathInactive")
+        )
         override_value = str(self.vpn_icon.property(override_prop) or "").strip()
         override_path = Path(override_value).expanduser() if override_value else None
         icon = QIcon()
@@ -5460,7 +5477,11 @@ class CyberBar(QWidget):
             icon_path = VPN_ICON_ON if active else VPN_ICON_OFF
             icon = self._widget_icon(icon_path, 16, prefer_color=prefer_color)
         # Keep iconKey valid for generic refreshers that may rebuild icon text.
-        self.vpn_icon.setProperty("iconKey", "vpn_key" if active else "shield")
+        if alert:
+            icon_key = "warning"
+        else:
+            icon_key = "vpn_key" if active else "shield"
+        self.vpn_icon.setProperty("iconKey", icon_key)
         self.vpn_icon.setProperty("nerdIcon", False)
         self.vpn_icon.setFont(QFont(self.material_font, 16))
         if not icon.isNull():
@@ -5469,7 +5490,7 @@ class CyberBar(QWidget):
             self.vpn_icon.setText("")
             return
         self.vpn_icon.setIcon(QIcon())
-        self.vpn_icon.setText(self._icon_text("vpn_key" if active else "shield"))
+        self.vpn_icon.setText(self._icon_text(icon_key))
 
     def _set_christian_button_icon(self) -> None:
         icon = self._widget_icon(
