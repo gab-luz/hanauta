@@ -979,10 +979,9 @@ def resolve_game_mode_icon_path(prefer_color: bool | None = None) -> Path:
         ]
         if prefer_color
         else [
+            # In mono/tint mode, always start from the mono asset.
             plugin_root / "assets" / "icon.svg",
             plugin_root / "icon.svg",
-            plugin_root / "assets" / "icon_color.svg",
-            plugin_root / "icon_color.svg",
         ]
     )
     for path in candidates:
