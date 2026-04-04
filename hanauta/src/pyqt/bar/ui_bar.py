@@ -59,6 +59,7 @@ from PyQt6.QtGui import (
     QFont,
     QFontDatabase,
     QFontMetrics,
+    QGuiApplication,
     QIcon,
     QImage,
     QPainter,
@@ -169,9 +170,6 @@ REMINDERS_WIDGET: Path | None = resolve_plugin_script(
 )
 POMODORO_WIDGET: Path | None = resolve_plugin_script("pomodoro_widget.py", ["pomodoro"])
 RSS_WIDGET: Path | None = resolve_plugin_script("rss_widget.py", ["rss"])
-HOME_ASSISTANT_WIDGET: Path | None = resolve_plugin_script(
-    "home_assistant_widget.py", ["home-assistant", "homeassistant"]
-)
 POWERMENU_WIDGET = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 OBS_WIDGET: Path | None = resolve_plugin_script("obs_widget.py", ["obs"])
 OBS_STATUS: Path | None = resolve_plugin_script("obs_status.py", ["obs"])
@@ -210,7 +208,6 @@ ASSETS_DIR = source_root() / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
 VPN_ICON_OFF = ASSETS_DIR / "vpn_key_off.svg"
 CHRISTIAN_ICON = ASSETS_DIR / "cath.svg"
-HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 OBS_ICON = ASSETS_DIR / "OBS Studio.svg"
 OBS_STREAMING_ACTIVE_ICON = ASSETS_DIR / "obs-streaming-active.svg"
 OBS_STREAMING_INACTIVE_ICON = ASSETS_DIR / "obs-streaming-inactive.svg"
@@ -318,6 +315,8 @@ DEFAULT_BAR_SETTINGS = {
     "bar_height": 45,
     "chip_radius": 0,
     "tray_tint_with_matugen": True,
+    "use_color_widget_icons": False,
+    "debug_tooltips": False,
     "merge_all_chips": False,
     "full_bar_radius": 18,
     "monitor_mode": MONITOR_MODE_PRIMARY,
@@ -669,60 +668,110 @@ def load_app_fonts() -> dict[str, str]:
     return loaded
 
 
-def tinted_svg_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
-    if not path.exists():
-        return QIcon()
-    renderer = QSvgRenderer()
-    try:
-        raw_svg = path.read_text(encoding="utf-8")
-    except OSError:
-        raw_svg = ""
-    if raw_svg:
-        normalized = (
-            raw_svg.replace("param(fill)", "#FFFFFF")
-            .replace("param(outline)", "#FFFFFF")
-            .replace("param(fill-opacity)", "1")
-            .replace("param(outline-opacity)", "1")
-            .replace("param(outline-width)", "1.5")
-        )
-        renderer.load(QByteArray(normalized.encode("utf-8")))
-    else:
-        renderer.load(str(path))
-    if not renderer.isValid():
-        return QIcon()
+def _tint_pixmap_from_alpha(source: QPixmap, color: QColor) -> QPixmap:
+    if source.isNull():
+        return QPixmap()
+
+    src = source.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+
+    out = QImage(src.size(), QImage.Format.Format_ARGB32)
+    out.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+    # First paint the desired tint color everywhere...
+    painter.fillRect(out.rect(), color)
+
+    # ...then keep only the original alpha mask.
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    painter.drawImage(0, 0, src)
+    painter.end()
+
+    return _drop_low_alpha_noise(QPixmap.fromImage(out))
+
+
+def _render_svg_renderer(renderer: QSvgRenderer, size: int) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
+
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-    renderer.render(painter)
-    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), color)
+    renderer.render(painter, QRectF(0, 0, size, size))
     painter.end()
-    return QIcon(pixmap)
+
+    return pixmap
+
+
+def _resolve_param_svg_colors(raw_svg: str, color: QColor) -> str:
+    color_hex = color.name(QColor.NameFormat.HexRgb)
+    alpha_text = f"{color.alphaF():.3f}".rstrip("0").rstrip(".")
+    if not alpha_text:
+        alpha_text = "1"
+
+    return (
+        raw_svg.replace("param(fill)", color_hex)
+        .replace("param(outline)", color_hex)
+        .replace("param(fill-opacity)", alpha_text)
+        .replace("param(outline-opacity)", alpha_text)
+        .replace("param(outline-width)", "1.5")
+    )
+
+
+def tinted_svg_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
+    if not path.exists():
+        return QIcon()
+
+    try:
+        raw_svg = path.read_text(encoding="utf-8")
+    except OSError:
+        raw_svg = ""
+
+    renderer = QSvgRenderer()
+
+    if raw_svg:
+        # If the SVG uses param(fill)/param(outline), color it at SVG level.
+        svg_text = (
+            _resolve_param_svg_colors(raw_svg, color)
+            if "param(" in raw_svg
+            else raw_svg
+        )
+        renderer.load(QByteArray(svg_text.encode("utf-8")))
+    else:
+        renderer.load(str(path))
+
+    if not renderer.isValid():
+        return QIcon()
+
+    pixmap = _render_svg_renderer(renderer, size)
+
+    # For param-based symbolic SVGs, the SVG itself is already colored correctly.
+    if raw_svg and "param(" in raw_svg:
+        return QIcon(_drop_low_alpha_noise(pixmap))
+
+    # For generic SVGs, tint using alpha only.
+    return QIcon(_tint_pixmap_from_alpha(pixmap, color))
 
 
 def tinted_raster_icon(path: Path, color: QColor, size: int = 16) -> QIcon:
     if not path.exists():
         return QIcon()
+
     pixmap = QPixmap(str(path))
     if pixmap.isNull():
         return QIcon()
-    tinted = pixmap.scaled(
+
+    source = pixmap.scaled(
         size,
         size,
         Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
-    painter = QPainter(tinted)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-    painter.fillRect(tinted.rect(), color)
-    painter.end()
-    return QIcon(tinted)
+    return QIcon(_tint_pixmap_from_alpha(source, color))
 
 
 def native_svg_icon(path: Path, size: int = 16) -> QIcon:
@@ -735,6 +784,36 @@ def native_svg_icon(path: Path, size: int = 16) -> QIcon:
     if pixmap.isNull():
         return QIcon()
     return QIcon(pixmap)
+
+
+def _drop_low_alpha_noise(pixmap: QPixmap, threshold: int = 24) -> QPixmap:
+    if pixmap.isNull():
+        return pixmap
+    image = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    width = image.width()
+    height = image.height()
+    for y in range(height):
+        for x in range(width):
+            pixel = image.pixelColor(x, y)
+            if pixel.alpha() < threshold:
+                image.setPixelColor(x, y, QColor(0, 0, 0, 0))
+            else:
+                # Keep original anti-aliased alpha so tinted icons stay soft.
+                image.setPixelColor(
+                    x, y, QColor(pixel.red(), pixel.green(), pixel.blue(), pixel.alpha())
+                )
+    return QPixmap.fromImage(image)
+
+
+def tinted_qicon(icon: QIcon, color: QColor, size: int = 16) -> QIcon:
+    if icon.isNull():
+        return QIcon()
+
+    source = icon.pixmap(size, size)
+    if source.isNull():
+        return QIcon()
+
+    return QIcon(_tint_pixmap_from_alpha(source, color))
 
 
 def load_service_settings() -> dict[str, dict[str, object]]:
@@ -844,26 +923,33 @@ def _theme_choice_for_icon_selection(settings: object) -> str:
     return fallback if fallback else "dark"
 
 
-def resolve_rss_icon_path() -> Path:
-    theme_choice = _theme_choice_for_icon_selection(load_runtime_settings())
-    prefer_mono = theme_choice == "wallpaper_aware"
+def _prefer_color_widget_icons(settings: object) -> bool:
+    bar = settings.get("bar", {}) if isinstance(settings, dict) else {}
+    bar = bar if isinstance(bar, dict) else {}
+    return bool(bar.get("use_color_widget_icons", False))
+
+
+def resolve_rss_icon_path(prefer_color: bool | None = None) -> Path:
+    settings = load_runtime_settings()
+    if prefer_color is None:
+        prefer_color = _prefer_color_widget_icons(settings)
     script_path = resolve_rss_widget_script()
     if script_path is None or not script_path.exists():
         return RSS_ICON
     plugin_root = script_path.parent
     candidates = (
         [
-            plugin_root / "assets" / "icon.svg",
-            plugin_root / "icon.svg",
             plugin_root / "assets" / "icon_color.svg",
             plugin_root / "icon_color.svg",
+            plugin_root / "assets" / "icon.svg",
+            plugin_root / "icon.svg",
         ]
-        if prefer_mono
+        if prefer_color
         else [
-            plugin_root / "assets" / "icon_color.svg",
-            plugin_root / "icon_color.svg",
             plugin_root / "assets" / "icon.svg",
             plugin_root / "icon.svg",
+            plugin_root / "assets" / "icon_color.svg",
+            plugin_root / "icon_color.svg",
         ]
     )
     for path in candidates:
@@ -876,8 +962,39 @@ def resolve_ntfy_popup_script() -> Path | None:
     return NTFY_POPUP
 
 
-def resolve_ntfy_icon_path() -> Path:
+def resolve_game_mode_icon_path(prefer_color: bool | None = None) -> Path:
     settings = load_runtime_settings()
+    if prefer_color is None:
+        prefer_color = _prefer_color_widget_icons(settings)
+    script_path = GAME_MODE_POPUP
+    if script_path is None or not script_path.exists():
+        return GAME_MODE_ICON
+    plugin_root = script_path.parent
+    candidates = (
+        [
+            plugin_root / "assets" / "icon_color.svg",
+            plugin_root / "icon_color.svg",
+            plugin_root / "assets" / "icon.svg",
+            plugin_root / "icon.svg",
+        ]
+        if prefer_color
+        else [
+            plugin_root / "assets" / "icon.svg",
+            plugin_root / "icon.svg",
+            plugin_root / "assets" / "icon_color.svg",
+            plugin_root / "icon_color.svg",
+        ]
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return GAME_MODE_ICON
+
+
+def resolve_ntfy_icon_path(prefer_color: bool | None = None) -> Path:
+    settings = load_runtime_settings()
+    if prefer_color is None:
+        prefer_color = _prefer_color_widget_icons(settings)
     marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
     install_dir = str(marketplace.get("install_dir", "")).strip()
     roots: list[Path] = []
@@ -905,17 +1022,17 @@ def resolve_ntfy_icon_path() -> Path:
                 if "ntfy" not in child.name.lower():
                     continue
                 color_icon = child / "assets" / "icon_color.svg"
-                if color_icon.exists():
-                    return color_icon
                 mono_icon = child / "assets" / "icon.svg"
-                if mono_icon.exists():
-                    return mono_icon
                 root_color = child / "icon_color.svg"
-                if root_color.exists():
-                    return root_color
                 root_mono = child / "icon.svg"
-                if root_mono.exists():
-                    return root_mono
+                candidates = (
+                    [color_icon, root_color, mono_icon, root_mono]
+                    if prefer_color
+                    else [mono_icon, root_mono, color_icon, root_color]
+                )
+                for candidate in candidates:
+                    if candidate.exists():
+                        return candidate
     return NTFY_ICON
 
 
@@ -1461,18 +1578,16 @@ class StatusNotifierItemButton(QPushButton):
     def _tint_icon(self, icon: QIcon) -> QIcon:
         if icon.isNull() or self._icon_tint_getter is None:
             return icon
+
         color = self._icon_tint_getter()
         if color is None:
             return icon
+
         pixmap = icon.pixmap(self.iconSize())
         if pixmap.isNull():
             return icon
-        tinted = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
-        painter = QPainter(tinted)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-        painter.fillRect(tinted.rect(), color)
-        painter.end()
-        return QIcon(QPixmap.fromImage(tinted))
+
+        return QIcon(_tint_pixmap_from_alpha(pixmap, color))
 
     def _event_position(self, event) -> tuple[int, int]:
         point = event.globalPosition().toPoint()
@@ -2919,11 +3034,6 @@ class CyberBar(QWidget):
         self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.christian_button.clicked.connect(self._open_christian_widget)
         self.christian_button.setIconSize(QSize(16, 16))
-        self.home_assistant_button = QPushButton("")
-        self.home_assistant_button.setObjectName("statusIconButton")
-        self.home_assistant_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.home_assistant_button.clicked.connect(self._open_home_assistant_widget)
-        self.home_assistant_button.setIconSize(QSize(18, 18))
         self.reminders_button = QPushButton(REMINDERS_BAR_GLYPH)
         self.reminders_button.setObjectName("statusIconButton")
         self.reminders_button.setProperty("nerdIcon", True)
@@ -2974,7 +3084,6 @@ class CyberBar(QWidget):
         for label in (
             self.net_icon,
             self.vpn_icon,
-            self.home_assistant_button,
             self.pomodoro_button,
             self.rss_button,
             self.obs_button,
@@ -2992,7 +3101,6 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.net_icon)
         self.status_layout.addWidget(self.vpn_icon)
         self.status_layout.addWidget(self.christian_button)
-        self.status_layout.addWidget(self.home_assistant_button)
         self.status_layout.addWidget(self.reminders_button)
         self.status_layout.addWidget(self.caps_lock_button)
         self.status_layout.addWidget(self.num_lock_button)
@@ -3017,22 +3125,9 @@ class CyberBar(QWidget):
         self.tray_host.setProperty("embedded", True)
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.tray_wrap = self._wrap_movable(self.tray_host)
-        self._create_status_overflow()
-        self.status_overflow_button = self._icon_button("expand_less")
-        self.status_overflow_button.setObjectName("statusIconButton")
-        self.status_overflow_button.setCheckable(True)
-        self.status_overflow_button.setVisible(False)
-        self.status_overflow_button.clicked.connect(self._toggle_status_overflow)
-        self.status_overflow_button.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu
-        )
-        self.status_overflow_button.customContextMenuRequested.connect(
-            self._show_overflow_button_menu
-        )
-        self._status_overflow_button = self.status_overflow_button
+        self._status_overflow_button = None
         self.status_layout.addWidget(self.btn_clip)
         self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.status_layout.addWidget(self.status_overflow_button)
         self.status_layout.addWidget(self.btn_power)
         self.status_wrap = self._wrap_movable(self.status_chip)
         self.right_layout.addWidget(self.cap_alert_chip)
@@ -3045,10 +3140,8 @@ class CyberBar(QWidget):
         self.battery_value.setVisible(has_battery)
         self._set_vpn_button_icon(False)
         self._set_christian_button_icon()
-        self._set_home_assistant_button_icon()
         self._sync_health_pill_visibility()
         self._sync_christian_button_visibility()
-        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -3060,7 +3153,6 @@ class CyberBar(QWidget):
         self._register_status_widget(self.net_icon, "net_icon")
         self._register_status_widget(self.vpn_icon, "vpn_icon")
         self._register_status_widget(self.christian_button, "christian_widget")
-        self._register_status_widget(self.home_assistant_button, "home_assistant")
         self._register_status_widget(self.reminders_button, "reminders_widget")
         self._register_status_widget(self.caps_lock_button, "caps_lock")
         self._register_status_widget(self.num_lock_button, "num_lock")
@@ -3079,13 +3171,12 @@ class CyberBar(QWidget):
         self._sync_status_overflow()
         self._sync_cap_alert_chip()
         self._apply_bar_settings()
-        self._install_debug_tooltips()
+        self._apply_debug_tooltips_setting()
 
     def _icon_button(self, icon_name: str) -> QPushButton:
         button = QPushButton(self._icon_text(icon_name))
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setFont(QFont(self.material_font, 18))
-        button.setToolTip(f"IconButton {icon_name}")
         button.setProperty("iconKey", icon_name)
         return button
 
@@ -3562,7 +3653,6 @@ class CyberBar(QWidget):
         self.net_icon.setToolTip("Wi-Fi button")
         self.vpn_icon.setToolTip("VPN button")
         self.christian_button.setToolTip("Christian widget button")
-        self.home_assistant_button.setToolTip("Home Assistant widget button")
         self.reminders_button.setToolTip("Reminders widget button")
         self.mail_wrap.setToolTip("Mail")
         self.mail_button.setToolTip("Mail")
@@ -3574,6 +3664,67 @@ class CyberBar(QWidget):
         self.btn_clip.setToolTip("Clipboard button")
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.btn_power.setToolTip("Power button")
+
+    def _clear_debug_tooltips(self) -> None:
+        self.setToolTip("")
+        self.ai_button.setToolTip("")
+        self.launcher_trigger.setToolTip("")
+        self.workspace_chip.setToolTip("")
+        self.workspace_label.setToolTip("")
+        self.datetime_chip.setToolTip("")
+        self.weather_icon.setToolTip("")
+        self.time_label.setToolTip("")
+        self.date_label.setToolTip("")
+        self.health_pill.setToolTip("")
+        self.updates_pill.setToolTip("")
+        self.btn_control_center.setToolTip("")
+        self.media_chip.setToolTip("")
+        self.media_icon.setToolTip("")
+        self.media_equalizer.setToolTip("")
+        self.media_text.setToolTip("")
+        self.media_prev.setToolTip("")
+        self.media_play.setToolTip("")
+        self.media_next.setToolTip("")
+        self.status_chip.setToolTip("")
+        self.net_icon.setToolTip("")
+        self.vpn_icon.setToolTip("")
+        self.christian_button.setToolTip("")
+        self.reminders_button.setToolTip("")
+        self.mail_wrap.setToolTip("")
+        self.mail_button.setToolTip("")
+        self.mail_count.setToolTip("")
+        self.ntfy_button.setToolTip("")
+        self.caffeine_icon.setToolTip("")
+        self.battery_icon.setToolTip("")
+        self.battery_value.setToolTip("")
+        self.btn_clip.setToolTip("")
+        self.tray_host.setToolTip("")
+        self.btn_power.setToolTip("")
+
+    def _apply_debug_tooltips_setting(self) -> None:
+        if bool(self.bar_settings.get("debug_tooltips", False)):
+            self._install_debug_tooltips()
+        else:
+            self._clear_debug_tooltips()
+
+    def _enforce_plugin_icon_mode(self) -> None:
+        if bool(self.bar_settings.get("use_color_widget_icons", False)):
+            return
+        tint = self._widget_icon_tint_color()
+        for button in self.findChildren(QPushButton):
+            if button.objectName() != "statusIconButton":
+                continue
+            if not isinstance(button, QPushButton):
+                continue
+            icon = button.icon()
+            if icon.isNull():
+                continue
+            size = button.iconSize()
+            target = max(12, int(size.width() if size.width() > 0 else 16))
+            tinted = tinted_qicon(icon, tint, target)
+            if tinted.isNull():
+                continue
+            button.setIcon(tinted)
 
     def _apply_bar_settings(self) -> None:
         self.bar_settings = load_bar_settings()
@@ -3670,9 +3821,13 @@ class CyberBar(QWidget):
         status_icon_color = theme.primary
         status_hover_color = theme.text
         status_active_color = theme.primary
-        tint_tray_icons = bool(
-            self.bar_settings.get("tray_tint_with_matugen", True)
-        ) and bool(theme.use_matugen)
+        use_color_widget_icons = bool(
+            self.bar_settings.get("use_color_widget_icons", False)
+        )
+        tint_tray_icons = (not use_color_widget_icons) or (
+            bool(self.bar_settings.get("tray_tint_with_matugen", True))
+            and bool(theme.use_matugen)
+        )
         self.tray_host.set_icon_tint(QColor(theme.primary) if tint_tray_icons else None)
         chip_bg = (
             "transparent"
@@ -4029,7 +4184,6 @@ class CyberBar(QWidget):
         self._set_vpn_button_icon(bool(self.vpn_icon.property("active")))
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
-        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -4158,8 +4312,8 @@ class CyberBar(QWidget):
         self._apply_bar_icon_overrides()
         self._apply_styles()
         self._run_bar_plugin_hooks("settings_reloaded")
+        self._enforce_plugin_icon_mode()
         self._sync_christian_button_visibility()
-        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -4170,6 +4324,7 @@ class CyberBar(QWidget):
         self._sync_game_mode_button_visibility()
         self._sync_status_overflow()
         self._sync_cap_alert_chip()
+        self._apply_debug_tooltips_setting()
         self._poll_cap_alerts()
         self._sync_desktop_clock_process()
         self._update_locale_button()
@@ -4181,7 +4336,6 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(
             self.media_icon, "music_note", material_icon("music_note"), 16
         )
-        self._set_home_assistant_button_icon()
         self._set_pomodoro_button_icon()
         self._set_reminders_button_icon()
         self._set_rss_button_icon()
@@ -4191,6 +4345,13 @@ class CyberBar(QWidget):
         self._set_ntfy_button_icon()
         self._set_game_mode_button_icon()
         self._run_bar_plugin_hooks("icons")
+        self._enforce_plugin_icon_mode()
+        # Keep host-managed widget icons aligned with the current icon mode,
+        # even if plugin hooks set their own icon assets.
+        self._set_pomodoro_button_icon()
+        self._set_reminders_button_icon()
+        self._set_rss_button_icon()
+        self._set_ntfy_button_icon()
         self._apply_icon_to_widget(
             self.caffeine_icon, "coffee", material_icon("coffee"), 16
         )
@@ -4204,6 +4365,7 @@ class CyberBar(QWidget):
         self._apply_icon_to_widget(self.launcher_note, "launcher_note", "♪", 14)
         self._set_vpn_button_icon(self.vpn_icon.property("active") == True)
         self._set_christian_button_icon()
+        self._enforce_plugin_icon_mode()
         apply_antialias_font(self)
 
     def _update_window_mask(self) -> None:
@@ -4275,9 +4437,7 @@ class CyberBar(QWidget):
         self.game_mode_popup_timer.start(2000)
 
         self.plugin_poll_timer = QTimer(self)
-        self.plugin_poll_timer.timeout.connect(
-            lambda: self._run_bar_plugin_hooks("poll")
-        )
+        self.plugin_poll_timer.timeout.connect(self._run_plugin_poll_hooks)
         self.plugin_poll_timer.start(2000)
 
         self.weather_popup_timer = QTimer(self)
@@ -4343,8 +4503,12 @@ class CyberBar(QWidget):
         self._poll_mail_state()
         self._poll_obs_state()
         self._sync_game_mode_button()
-        self._run_bar_plugin_hooks("poll")
+        self._run_plugin_poll_hooks()
         self._sync_status_overflow()
+
+    def _run_plugin_poll_hooks(self) -> None:
+        self._run_bar_plugin_hooks("poll")
+        self._enforce_plugin_icon_mode()
 
     def _tree_has_window(self, titles: tuple[str, ...]) -> bool:
         raw = run_cmd(["i3-msg", "-t", "get_tree"])
@@ -4552,7 +4716,6 @@ class CyberBar(QWidget):
         self._system_state_worker.start()
         poll_health_reminders()
         self._sync_christian_button_visibility()
-        self._sync_home_assistant_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
         self._sync_rss_button_visibility()
@@ -4562,6 +4725,7 @@ class CyberBar(QWidget):
         self._sync_ntfy_button_visibility()
         self._sync_game_mode_button_visibility()
         self._run_bar_plugin_hooks("settings_reloaded")
+        self._enforce_plugin_icon_mode()
         self._sync_health_pill_visibility()
         self._sync_weather_visibility()
         self._sync_cap_alert_chip()
@@ -5263,10 +5427,41 @@ class CyberBar(QWidget):
         self.style().unpolish(self.vpn_icon)
         self.style().polish(self.vpn_icon)
 
+    def _widget_icon_tint_color(self) -> QColor:
+        return QColor(self.theme.primary)
+
+    def _widget_icon(self, path: Path, size: int, *, prefer_color: bool) -> QIcon:
+        if not path.exists():
+            return QIcon()
+        if prefer_color:
+            icon = native_svg_icon(path, size)
+            if icon.isNull():
+                return QIcon(str(path))
+            return icon
+        suffix = path.suffix.lower()
+        if suffix == ".svg":
+            icon = tinted_svg_icon(path, self._widget_icon_tint_color(), size)
+            if not icon.isNull():
+                return icon
+            return native_svg_icon(path, size)
+        icon = tinted_raster_icon(path, self._widget_icon_tint_color(), size)
+        if not icon.isNull():
+            return icon
+        return QIcon(str(path))
+
     def _set_vpn_button_icon(self, active: bool) -> None:
-        icon_path = VPN_ICON_ON if active else VPN_ICON_OFF
-        icon = native_svg_icon(icon_path, 16)
-        self.vpn_icon.setProperty("iconKey", "vpn_key" if active else "vpn_key_off")
+        prefer_color = bool(self.bar_settings.get("use_color_widget_icons", False))
+        override_prop = "pluginIconPathActive" if active else "pluginIconPathInactive"
+        override_value = str(self.vpn_icon.property(override_prop) or "").strip()
+        override_path = Path(override_value).expanduser() if override_value else None
+        icon = QIcon()
+        if override_path is not None and override_path.exists():
+            icon = self._widget_icon(override_path, 16, prefer_color=prefer_color)
+        if icon.isNull():
+            icon_path = VPN_ICON_ON if active else VPN_ICON_OFF
+            icon = self._widget_icon(icon_path, 16, prefer_color=prefer_color)
+        # Keep iconKey valid for generic refreshers that may rebuild icon text.
+        self.vpn_icon.setProperty("iconKey", "vpn_key" if active else "shield")
         self.vpn_icon.setProperty("nerdIcon", False)
         self.vpn_icon.setFont(QFont(self.material_font, 16))
         if not icon.isNull():
@@ -5278,9 +5473,14 @@ class CyberBar(QWidget):
         self.vpn_icon.setText(self._icon_text("vpn_key" if active else "shield"))
 
     def _set_christian_button_icon(self) -> None:
-        icon = native_svg_icon(CHRISTIAN_ICON, 16)
+        icon = self._widget_icon(
+            CHRISTIAN_ICON,
+            16,
+            prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+        )
         if not icon.isNull():
             self.christian_button.setIcon(icon)
+            self.christian_button.setIconSize(QSize(16, 16))
             self.christian_button.setText("")
             return
         self.christian_button.setIcon(QIcon())
@@ -5291,21 +5491,12 @@ class CyberBar(QWidget):
         )
         self.christian_button.setFont(QFont(self.material_font, 16))
 
-    def _set_home_assistant_button_icon(self) -> None:
-        icon = native_svg_icon(HOME_ASSISTANT_ICON, 18)
-        self.home_assistant_button.setProperty("iconKey", "home")
-        self.home_assistant_button.setProperty("nerdIcon", False)
-        self.home_assistant_button.setFont(QFont(self.material_font, 16))
-        if not icon.isNull():
-            self.home_assistant_button.setIcon(icon)
-            self.home_assistant_button.setIconSize(QSize(18, 18))
-            self.home_assistant_button.setText("")
-            return
-        self.home_assistant_button.setIcon(QIcon())
-        self.home_assistant_button.setText(material_icon("home"))
-
     def _set_reminders_button_icon(self) -> None:
-        icon = native_svg_icon(REMINDER_ICON, 20)
+        icon = self._widget_icon(
+            REMINDER_ICON,
+            20,
+            prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+        )
         self.reminders_button.setProperty("iconKey", "reminder_widget")
         self.reminders_button.setProperty("nerdIcon", False)
         self.reminders_button.setFont(QFont(self.material_font, 16))
@@ -5318,7 +5509,11 @@ class CyberBar(QWidget):
         self.reminders_button.setText(REMINDERS_BAR_GLYPH)
 
     def _set_pomodoro_button_icon(self) -> None:
-        icon = native_svg_icon(POMODORO_ICON, 20)
+        icon = self._widget_icon(
+            POMODORO_ICON,
+            20,
+            prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+        )
         self.pomodoro_button.setProperty("iconKey", "pomodoro_widget")
         self.pomodoro_button.setProperty("nerdIcon", False)
         self.pomodoro_button.setFont(QFont(self.material_font, 16))
@@ -5331,7 +5526,12 @@ class CyberBar(QWidget):
         self.pomodoro_button.setText(self._icon_text("timer"))
 
     def _set_rss_button_icon(self) -> None:
-        icon = native_svg_icon(resolve_rss_icon_path(), 16)
+        prefer_color = bool(self.bar_settings.get("use_color_widget_icons", False))
+        icon = self._widget_icon(
+            resolve_rss_icon_path(prefer_color=prefer_color),
+            16,
+            prefer_color=prefer_color,
+        )
         self.rss_button.setProperty("iconKey", "rss_feed")
         self.rss_button.setProperty("nerdIcon", False)
         self.rss_button.setFont(QFont(self.material_font, 16))
@@ -5346,7 +5546,12 @@ class CyberBar(QWidget):
         )
 
     def _set_ntfy_button_icon(self) -> None:
-        icon = native_svg_icon(resolve_ntfy_icon_path(), 16)
+        prefer_color = bool(self.bar_settings.get("use_color_widget_icons", False))
+        icon = self._widget_icon(
+            resolve_ntfy_icon_path(prefer_color=prefer_color),
+            16,
+            prefer_color=prefer_color,
+        )
         self.ntfy_button.setProperty("iconKey", "notifications")
         self.ntfy_button.setProperty("nerdIcon", False)
         self.ntfy_button.setFont(QFont(self.material_font, 16))
@@ -5363,7 +5568,11 @@ class CyberBar(QWidget):
         )
 
     def _set_crypto_button_icon(self) -> None:
-        icon = native_svg_icon(CRYPTO_ICON, 20)
+        icon = self._widget_icon(
+            CRYPTO_ICON,
+            20,
+            prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+        )
         self.crypto_button.setProperty("iconKey", "show_chart")
         self.crypto_button.setProperty("nerdIcon", False)
         self.crypto_button.setFont(QFont(self.material_font, 16))
@@ -5378,7 +5587,12 @@ class CyberBar(QWidget):
         )
 
     def _set_game_mode_button_icon(self) -> None:
-        icon = native_svg_icon(GAME_MODE_ICON, 20)
+        prefer_color = bool(self.bar_settings.get("use_color_widget_icons", False))
+        icon = self._widget_icon(
+            resolve_game_mode_icon_path(prefer_color=prefer_color),
+            20,
+            prefer_color=prefer_color,
+        )
         self.game_mode_button.setProperty("iconKey", "sports_esports")
         self.game_mode_button.setProperty("nerdIcon", False)
         self.game_mode_button.setFont(QFont(self.material_font, 16))
@@ -5395,7 +5609,11 @@ class CyberBar(QWidget):
         )
 
     def _set_clipboard_button_icon(self) -> None:
-        icon = native_svg_icon(CLIPBOARD_ICON, 16)
+        icon = self._widget_icon(
+            CLIPBOARD_ICON,
+            16,
+            prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+        )
         self.btn_clip.setProperty("iconKey", "content_paste")
         self.btn_clip.setProperty("nerdIcon", False)
         self.btn_clip.setFont(QFont(self.material_font, 16))
@@ -5418,15 +5636,23 @@ class CyberBar(QWidget):
                 if self._obs_flash_visible
                 else OBS_RECORDING_INACTIVE_ICON
             )
-            icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
+            icon = self._widget_icon(
+                icon_path,
+                16,
+                prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+            )
         elif self._obs_streaming:
-            icon = (
-                QIcon(str(OBS_STREAMING_ACTIVE_ICON))
-                if OBS_STREAMING_ACTIVE_ICON.exists()
-                else QIcon()
+            icon = self._widget_icon(
+                OBS_STREAMING_ACTIVE_ICON,
+                16,
+                prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
             )
         else:
-            icon = native_svg_icon(OBS_ICON, 16)
+            icon = self._widget_icon(
+                OBS_ICON,
+                16,
+                prefer_color=bool(self.bar_settings.get("use_color_widget_icons", False)),
+            )
         self.obs_button.setProperty("iconKey", "videocam")
         self.obs_button.setProperty("nerdIcon", False)
         self.obs_button.setFont(QFont(self.material_font, 16))
@@ -5481,15 +5707,6 @@ class CyberBar(QWidget):
             )
         )
         self.christian_button.setVisible(enabled and show_in_bar)
-
-    def _sync_home_assistant_button_visibility(self) -> None:
-        services = load_service_settings()
-        service = services.get("home_assistant", {})
-        if not isinstance(service, dict):
-            service = {}
-        enabled = bool(service.get("enabled", True))
-        show_in_bar = bool(service.get("show_in_bar", False))
-        self.home_assistant_button.setVisible(enabled and show_in_bar)
 
     def _sync_reminders_button_visibility(self) -> None:
         services = load_service_settings()
@@ -5972,15 +6189,6 @@ class CyberBar(QWidget):
             HEALTH_WIDGET,
             python_bin=self._python_bin(),
             extra_env=extra_env,
-        )
-
-    def _open_home_assistant_widget(self) -> None:
-        if HOME_ASSISTANT_WIDGET is None or not HOME_ASSISTANT_WIDGET.exists():
-            return
-        self._toggle_singleton_process(
-            "_home_assistant_widget_process",
-            HOME_ASSISTANT_WIDGET,
-            python_bin=self._python_bin(),
         )
 
     def _open_reminders_widget(self) -> None:
