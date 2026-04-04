@@ -4263,6 +4263,12 @@ class CyberBar(QWidget):
         self.style().unpolish(button)
         self.style().polish(button)
 
+    def _lock_keys_plugin_owns_bar(self) -> bool:
+        service = self.service_settings.get("lock_keys_osd", {})
+        if not isinstance(service, dict):
+            return False
+        return bool(service.get("enabled", False))
+
     def _send_lock_notification(
         self, title: str, enabled: bool, replace_id: int
     ) -> None:
@@ -4791,12 +4797,16 @@ class CyberBar(QWidget):
 
         caps_on = bool(payload.get("caps_on", False))
         num_on = bool(payload.get("num_on", False))
-        self._set_lock_button_state(self.caps_lock_button, caps_on, "Caps Lock")
-        self._set_lock_button_state(self.num_lock_button, num_on, "Num Lock")
-        if self._caps_lock_on is not None and caps_on != self._caps_lock_on:
-            self._send_lock_notification("Caps Lock", caps_on, 12345)
-        if self._num_lock_on is not None and num_on != self._num_lock_on:
-            self._send_lock_notification("Num Lock", num_on, 12346)
+        if self._lock_keys_plugin_owns_bar():
+            self.caps_lock_button.hide()
+            self.num_lock_button.hide()
+        else:
+            self._set_lock_button_state(self.caps_lock_button, caps_on, "Caps Lock")
+            self._set_lock_button_state(self.num_lock_button, num_on, "Num Lock")
+            if self._caps_lock_on is not None and caps_on != self._caps_lock_on:
+                self._send_lock_notification("Caps Lock", caps_on, 12345)
+            if self._num_lock_on is not None and num_on != self._num_lock_on:
+                self._send_lock_notification("Num Lock", num_on, 12346)
         self._caps_lock_on = caps_on
         self._num_lock_on = num_on
 
@@ -5872,6 +5882,10 @@ class CyberBar(QWidget):
             self._desktop_clock_process = None
 
     def _poll_lock_states(self) -> None:
+        if self._lock_keys_plugin_owns_bar():
+            self.caps_lock_button.hide()
+            self.num_lock_button.hide()
+            return
         caps_on = run_script("lockstatus.sh", "--caps-status") == "on"
         num_on = run_script("lockstatus.sh", "--num-status") == "on"
         self._set_lock_button_state(self.caps_lock_button, caps_on, "Caps Lock")
