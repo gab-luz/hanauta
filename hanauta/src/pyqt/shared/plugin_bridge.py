@@ -6,13 +6,14 @@ import subprocess
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from pyqt.shared.runtime import entry_command
+from pyqt.shared.runtime import entry_command, source_root
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 
 
-REMINDER_ALERT_SCRIPT = (
-    resolve_plugin_script("reminder_alert.py", ["reminders"]) or Path()
-)
+CORE_FULLSCREEN_ALERT_SCRIPT = source_root() / "pyqt" / "shared" / "fullscreen_alert.py"
+REMINDER_ALERT_SCRIPT = CORE_FULLSCREEN_ALERT_SCRIPT
+if not REMINDER_ALERT_SCRIPT.exists():
+    REMINDER_ALERT_SCRIPT = resolve_plugin_script("reminder_alert.py", ["reminders"]) or Path()
 
 
 def _normalize_command(command: Sequence[str]) -> list[str]:
