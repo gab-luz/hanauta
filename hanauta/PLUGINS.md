@@ -130,6 +130,9 @@ Notes:
     - `polkit`
     - `fullscreen_alert`
   - `requirements`: list of runtime requirements (examples: `pkexec`, `wireguard-tools`)
+  - `shortcuts`: list of keyboard shortcut requests, each row:
+    - `{keys, command, description}`
+    - example: `{ "keys": "SUPER W", "command": "exec --no-startup-id \"$HOME/.config/i3/hanauta/scripts/open_wallpaper_manager.sh\"", "description": "Open wallpaper manager" }`
 
 ### Installer Permission Dialog Standard
 
@@ -142,6 +145,8 @@ All plugin installs should pass through a Hanauta-styled permission confirmation
 - Privileged installs must be two-step:
   - permission dialog confirm
   - Polkit prompt (`pkexec`) for privileged command
+- If plugin metadata declares `shortcuts`, installer must show a shortcut confirmation dialog before writing i3 binds.
+- If any declared shortcut is already bound, installer must show a conflict dialog and ask whether to replace conflicting binds.
 
 Recommended plugin-local install manifest:
 
@@ -186,6 +191,7 @@ Optional per plugin object:
 - `api_min_version: int`
 - `api_target_version: int`
 - `permissions: dict[str, object]`
+- `shortcuts: list[{keys: str, command: str, description?: str}]`
 - `compatibility: dict[str, object]`
 - `x-<vendor-field>: any` (custom plugin-side metadata)
 

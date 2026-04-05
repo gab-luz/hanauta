@@ -16,6 +16,7 @@ import os
 import platform
 import random
 import re
+import shlex
 import shutil
 import signal
 import sqlite3
@@ -59,7 +60,10 @@ from PyQt6.QtGui import (
     QPen,
     QPixmap,
 )
-from PyQt6.QtQuickWidgets import QQuickWidget
+try:
+    from PyQt6.QtQuickWidgets import QQuickWidget
+except Exception:  # pragma: no cover
+    QQuickWidget = None
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -92,7 +96,7 @@ APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
-from pyqt.shared.runtime import entry_command, entry_patterns
+from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.button_helpers import create_close_button
 from pyqt.shared.plugin_bridge import (
@@ -102,7 +106,17 @@ from pyqt.shared.plugin_bridge import (
     trigger_fullscreen_alert,
 )
 from pyqt.shared.plugin_runtime import resolve_plugin_script
-from pyqt.shared.weather import WeatherCity, configured_city, search_cities
+try:
+    from pyqt.shared.weather import WeatherCity, configured_city, search_cities
+except Exception:  # pragma: no cover
+    class WeatherCity:  # type: ignore[no-redef]
+        pass
+
+    def configured_city(_settings: object = None):  # type: ignore[no-redef]
+        return None
+
+    def search_cities(_query: str):  # type: ignore[no-redef]
+        return []
 from pyqt.shared.gamemode import summary as gamemode_summary
 from pyqt.shared.home_assistant import (
     entity_friendly_name,
@@ -133,6 +147,7 @@ COMMUNITY_WALLPAPER_DIR = ROOT / "hanauta" / "walls" / "community"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
+I3_CONFIG_FILE = ROOT / "config"
 NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
 HOST_PLUGIN_API_VERSION = 1
 
@@ -6907,7 +6922,7 @@ class SettingsWindow(QWidget):
         if not script.exists():
             return
         self._bar_service_cache_refresh_queued = True
-        python_bin = str(shutil.which("python3") or "python3")
+        python_bin = python_executable()
 
         def _run_refresh() -> None:
             try:
@@ -6950,7 +6965,7 @@ class SettingsWindow(QWidget):
         if not script.exists():
             return
         self._services_section_cache_refresh_queued = True
-        python_bin = str(shutil.which("python3") or "python3")
+        python_bin = python_executable()
 
         def _run_refresh() -> None:
             try:
@@ -9717,7 +9732,7 @@ class SettingsWindow(QWidget):
         elif isinstance(raw_exec, str):
             exec_value = raw_exec.replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
         if not exec_value:
-            exec_value = f"python3 {plugin_dir / 'hanauta_plugin.py'}"
+            exec_value = f"{python_executable()} {plugin_dir / 'hanauta_plugin.py'}"
         icon = (
             str(entry.get("icon", "")).replace("${PLUGIN_DIR}", str(plugin_dir)).strip()
         )
@@ -9867,6 +9882,7 @@ class SettingsWindow(QWidget):
             desktop_actions = self._apply_plugin_desktop_entries(
                 plugin_id, target_dir, manifest
             )
+        shortcut_actions = self._marketplace_apply_plugin_shortcuts(plugin, plugin_id)
 
         requires_privileged = bool(manifest.get("requires_privileged_install", False))
         has_systemd_unit = bool(list((target_dir / "systemd").glob("*.service")))
@@ -9877,6 +9893,7 @@ class SettingsWindow(QWidget):
                     "plugin_id": plugin_id,
                     "plugin_dir": str(target_dir),
                     "desktop_entries": desktop_actions,
+                    "shortcuts": shortcut_actions,
                     "manifest": manifest if isinstance(manifest, dict) else {},
                     "installed_at_epoch": int(time.time()),
                 },
@@ -9894,6 +9911,7 @@ class SettingsWindow(QWidget):
                     "plugin_id": plugin_id,
                     "plugin_dir": str(target_dir),
                     "desktop_entries": desktop_actions,
+                    "shortcuts": shortcut_actions,
                     "manifest": manifest if isinstance(manifest, dict) else {},
                     "installed_at_epoch": int(time.time()),
                     "privileged_install_skipped": True,
@@ -9910,6 +9928,7 @@ class SettingsWindow(QWidget):
                     "plugin_id": plugin_id,
                     "plugin_dir": str(target_dir),
                     "desktop_entries": desktop_actions,
+                    "shortcuts": shortcut_actions,
                     "manifest": manifest if isinstance(manifest, dict) else {},
                     "installed_at_epoch": int(time.time()),
                     "privileged_install_skipped": True,
@@ -9946,6 +9965,7 @@ class SettingsWindow(QWidget):
                 "plugin_id": plugin_id,
                 "plugin_dir": str(target_dir),
                 "desktop_entries": desktop_actions,
+                "shortcuts": shortcut_actions,
                 "manifest": manifest if isinstance(manifest, dict) else {},
                 "installed_at_epoch": int(time.time()),
                 "privileged_install_attempted": True,
@@ -10416,6 +10436,7 @@ class SettingsWindow(QWidget):
                 return
 
         self._revert_plugin_desktop_entries(plugin_id, receipt)
+        self._remove_plugin_shortcuts_from_i3_config(plugin_id)
 
         if install_path.exists() and install_path.is_dir():
             try:
@@ -10659,6 +10680,9 @@ class SettingsWindow(QWidget):
                     "permissions": item.get("permissions", {})
                     if isinstance(item.get("permissions", {}), dict)
                     else {},
+                    "shortcuts": self._marketplace_normalize_shortcuts_field(
+                        item.get("shortcuts", [])
+                    ),
                 }
             )
         return rows
@@ -10821,6 +10845,18 @@ class SettingsWindow(QWidget):
                     )
                 )
             )
+        shortcuts = self._marketplace_normalize_shortcuts_field(
+            plugin.get("shortcuts", [])
+        )
+        if shortcuts:
+            details.append(
+                "Shortcuts: "
+                + ", ".join(
+                    f"{str(row.get('combo', '')).strip()}"
+                    for row in shortcuts
+                    if str(row.get("combo", "")).strip()
+                )
+            )
         self.marketplace_detail_label.setText("\n".join(details))
 
     def _marketplace_sanitize_plugin_id(self, value: str) -> str:
@@ -10968,6 +11004,473 @@ class SettingsWindow(QWidget):
             """
         )
         box.exec()
+
+    def _marketplace_normalize_shortcuts_field(
+        self, raw_shortcuts: object
+    ) -> list[dict[str, str]]:
+        if not isinstance(raw_shortcuts, list):
+            return []
+        rows: list[dict[str, str]] = []
+        for row in raw_shortcuts:
+            if not isinstance(row, dict):
+                continue
+            combo_raw = str(
+                row.get("keys", row.get("shortcut", row.get("combo", "")))
+            ).strip()
+            command = str(row.get("command", row.get("i3_command", ""))).strip()
+            description = str(
+                row.get("description", row.get("label", row.get("action", "")))
+            ).strip()
+            combo = self._shortcut_combo_to_i3(combo_raw)
+            if not combo or not command:
+                continue
+            rows.append(
+                {
+                    "keys": combo_raw or combo,
+                    "combo": combo,
+                    "command": command,
+                    "description": description
+                    or f"Trigger {str(row.get('name', 'plugin action')).strip() or 'plugin action'}",
+                }
+            )
+        deduped: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for row in rows:
+            signature = (
+                f"{row.get('combo', '').strip().lower()}|"
+                f"{row.get('command', '').strip().lower()}"
+            )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append(row)
+        return deduped
+
+    def _shortcut_combo_to_i3(self, combo: str) -> str:
+        raw = str(combo).strip()
+        if not raw:
+            return ""
+        parts = [token.strip() for token in re.split(r"[+\s]+", raw) if token.strip()]
+        if not parts:
+            return ""
+        modifier_map = {
+            "super": "Mod4",
+            "win": "Mod4",
+            "windows": "Mod4",
+            "mod4": "Mod4",
+            "$mod": "Mod4",
+            "meta": "Mod4",
+            "alt": "Mod1",
+            "mod1": "Mod1",
+            "control": "Ctrl",
+            "ctrl": "Ctrl",
+            "shift": "Shift",
+        }
+        ordered_modifiers = ["Mod4", "Mod1", "Ctrl", "Shift"]
+        modifiers: list[str] = []
+        key_token = ""
+        for token in parts:
+            normalized = modifier_map.get(token.lower())
+            if normalized is not None:
+                if normalized not in modifiers:
+                    modifiers.append(normalized)
+                continue
+            key_token = token
+        if not key_token and parts:
+            key_token = parts[-1]
+        if not key_token:
+            return ""
+        if key_token.startswith("$"):
+            normalized_key = key_token
+        elif len(key_token) == 1:
+            normalized_key = key_token.lower()
+        elif key_token.lower().startswith("xf86"):
+            normalized_key = key_token
+        else:
+            normalized_key = key_token
+        sorted_modifiers = [name for name in ordered_modifiers if name in modifiers]
+        if sorted_modifiers:
+            return "+".join(sorted_modifiers + [normalized_key])
+        return normalized_key
+
+    def _canonical_shortcut_combo(
+        self, combo: str, variables: dict[str, str] | None = None
+    ) -> str:
+        raw = str(combo).strip()
+        if not raw:
+            return ""
+        variables = variables or {}
+        parts = [token.strip() for token in re.split(r"[+\s]+", raw) if token.strip()]
+        if not parts:
+            return ""
+        expanded_parts: list[str] = []
+        for token in parts:
+            lowered = token.lower()
+            if lowered.startswith("$"):
+                resolved = str(variables.get(lowered, "")).strip()
+                if resolved:
+                    expanded_parts.extend(
+                        [
+                            part.strip()
+                            for part in re.split(r"[+\s]+", resolved)
+                            if part.strip()
+                        ]
+                    )
+                    continue
+            expanded_parts.append(token)
+        modifier_map = {
+            "super": "mod4",
+            "win": "mod4",
+            "windows": "mod4",
+            "mod4": "mod4",
+            "$mod": "mod4",
+            "meta": "mod4",
+            "alt": "mod1",
+            "mod1": "mod1",
+            "control": "ctrl",
+            "ctrl": "ctrl",
+            "shift": "shift",
+        }
+        ordered_modifiers = ["mod4", "mod1", "ctrl", "shift"]
+        modifiers: set[str] = set()
+        keys: list[str] = []
+        for token in expanded_parts:
+            lowered = token.lower()
+            normalized = modifier_map.get(lowered)
+            if normalized is not None:
+                modifiers.add(normalized)
+            else:
+                keys.append(lowered)
+        if not keys:
+            return ""
+        prefix = [name for name in ordered_modifiers if name in modifiers]
+        return "+".join(prefix + [keys[-1]])
+
+    def _parse_i3_set_variables(self, lines: list[str]) -> dict[str, str]:
+        variables: dict[str, str] = {}
+        for raw_line in lines:
+            line = str(raw_line).strip()
+            if not line or line.startswith("#"):
+                continue
+            active = line.split("#", 1)[0].strip()
+            if not active:
+                continue
+            try:
+                tokens = shlex.split(active, posix=True)
+            except Exception:
+                tokens = active.split()
+            if len(tokens) < 3 or tokens[0] != "set":
+                continue
+            key = str(tokens[1]).strip().lower()
+            if not key.startswith("$"):
+                continue
+            variables[key] = str(tokens[2]).strip()
+        return variables
+
+    def _parse_i3_bindsym_line(self, line: str) -> tuple[str, str] | None:
+        raw = str(line).strip()
+        if not raw or raw.startswith("#"):
+            return None
+        active = raw.split("#", 1)[0].strip()
+        if not active:
+            return None
+        try:
+            tokens = shlex.split(active, posix=True)
+        except Exception:
+            tokens = active.split()
+        if not tokens or tokens[0] != "bindsym":
+            return None
+        index = 1
+        while index < len(tokens) and tokens[index].startswith("--"):
+            index += 1
+        if index >= len(tokens):
+            return None
+        combo = str(tokens[index]).strip()
+        command = " ".join(tokens[index + 1 :]).strip()
+        return combo, command
+
+    def _marketplace_read_i3_config_lines(self) -> list[str]:
+        try:
+            return I3_CONFIG_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
+        except Exception:
+            return []
+
+    def _marketplace_write_i3_config_lines(self, lines: list[str]) -> bool:
+        try:
+            content = "".join(lines)
+            I3_CONFIG_FILE.write_text(content, encoding="utf-8")
+            return True
+        except Exception:
+            return False
+
+    def _remove_plugin_shortcut_lines_from_config(
+        self, lines: list[str], plugin_id: str
+    ) -> list[str]:
+        marker_prefix = f"# hanauta-plugin-shortcut:{plugin_id}:"
+        section_header = f"# Hanauta marketplace shortcuts for {plugin_id}"
+        cleaned: list[str] = []
+        skip_next_bindsym = False
+        for line in lines:
+            stripped = str(line).strip()
+            if skip_next_bindsym:
+                if stripped.startswith("bindsym "):
+                    skip_next_bindsym = False
+                    continue
+                skip_next_bindsym = False
+            if stripped.startswith(marker_prefix):
+                skip_next_bindsym = True
+                continue
+            if stripped == section_header:
+                continue
+            cleaned.append(line)
+        return cleaned
+
+    def _marketplace_show_shortcut_dialog(
+        self,
+        *,
+        title_text: str,
+        intro_text: str,
+        entries: list[str],
+        confirm_label: str,
+    ) -> bool:
+        dialog = QDialog(self)
+        dialog.setObjectName("pluginShortcutDialog")
+        dialog.setWindowTitle("Plugin Shortcuts")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(580)
+        dialog.setStyleSheet(
+            """
+            QDialog#pluginShortcutDialog {
+                background-color: rgba(14, 18, 26, 0.98);
+                border: 1px solid rgba(145, 160, 185, 0.34);
+                border-radius: 14px;
+            }
+            QDialog#pluginShortcutDialog QLabel {
+                color: rgba(246, 235, 247, 0.90);
+            }
+            QDialog#pluginShortcutDialog QFrame#shortcutListCard {
+                background-color: rgba(26, 32, 43, 0.94);
+                border: 1px solid rgba(145, 160, 185, 0.30);
+                border-radius: 12px;
+            }
+            QDialog#pluginShortcutDialog QPushButton#shortcutCancelButton {
+                background-color: rgba(96, 112, 136, 0.42);
+                color: rgba(246, 235, 247, 0.98);
+                border: 1px solid rgba(196, 208, 228, 0.62);
+                border-radius: 10px;
+                padding: 8px 14px;
+                min-width: 90px;
+            }
+            QDialog#pluginShortcutDialog QPushButton#shortcutCancelButton:hover {
+                background-color: rgba(110, 126, 150, 0.56);
+            }
+            """
+        )
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel(title_text)
+        title.setFont(QFont(self.display_font, 12, QFont.Weight.DemiBold))
+        layout.addWidget(title)
+
+        body = QLabel(intro_text.strip())
+        body.setWordWrap(True)
+        body.setStyleSheet("color: rgba(246,235,247,0.74);")
+        layout.addWidget(body)
+
+        card = QFrame()
+        card.setObjectName("shortcutListCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(6)
+        if entries:
+            for entry in entries:
+                row = QLabel(f"• {entry}")
+                row.setWordWrap(True)
+                row.setStyleSheet("color: rgba(246,235,247,0.84);")
+                card_layout.addWidget(row)
+        else:
+            empty = QLabel("No shortcut details were provided.")
+            empty.setStyleSheet("color: rgba(246,235,247,0.70);")
+            card_layout.addWidget(empty)
+        layout.addWidget(card)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("shortcutCancelButton")
+        confirm_btn = QPushButton(confirm_label)
+        confirm_btn.setObjectName("primaryButton")
+        cancel_btn.clicked.connect(dialog.reject)
+        confirm_btn.clicked.connect(dialog.accept)
+        actions.addWidget(cancel_btn)
+        actions.addWidget(confirm_btn)
+        layout.addLayout(actions)
+        return dialog.exec() == int(QDialog.DialogCode.Accepted)
+
+    def _reload_i3_keybindings(self) -> None:
+        try:
+            subprocess.run(
+                ["i3-msg", "reload"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def _marketplace_apply_plugin_shortcuts(
+        self, plugin: dict[str, object], plugin_id: str
+    ) -> list[str]:
+        shortcut_rows = self._marketplace_normalize_shortcuts_field(
+            plugin.get("shortcuts", [])
+        )
+        if not shortcut_rows:
+            return []
+        plugin_label = str(plugin.get("name", plugin_id)).strip() or plugin_id
+        entry_labels = [
+            (
+                f"{row.get('combo', '')} -> "
+                f"{row.get('description', '').strip() or row.get('command', '').strip()}"
+            )
+            for row in shortcut_rows
+        ]
+        accepted = self._marketplace_show_shortcut_dialog(
+            title_text=f"Apply shortcuts for {plugin_label}?",
+            intro_text=(
+                "This plugin proposes keyboard shortcuts. "
+                "Apply them to your i3 config now?"
+            ),
+            entries=entry_labels,
+            confirm_label="Apply Shortcuts",
+        )
+        if not accepted:
+            return []
+        if not I3_CONFIG_FILE.exists():
+            QMessageBox.warning(
+                self,
+                "Shortcut Setup Skipped",
+                f"Could not find i3 config file:\n{I3_CONFIG_FILE}",
+            )
+            return []
+
+        lines = self._marketplace_read_i3_config_lines()
+        if not lines:
+            QMessageBox.warning(
+                self,
+                "Shortcut Setup Skipped",
+                f"Could not read i3 config file:\n{I3_CONFIG_FILE}",
+            )
+            return []
+        lines = self._remove_plugin_shortcut_lines_from_config(lines, plugin_id)
+        variables = self._parse_i3_set_variables(lines)
+        binding_index: dict[str, list[tuple[int, str, str]]] = {}
+        for idx, line in enumerate(lines):
+            parsed = self._parse_i3_bindsym_line(line)
+            if parsed is None:
+                continue
+            combo, command = parsed
+            canonical = self._canonical_shortcut_combo(combo, variables)
+            if not canonical:
+                continue
+            bucket = binding_index.setdefault(canonical, [])
+            bucket.append((idx, combo, command))
+
+        conflicting: list[dict[str, object]] = []
+        for row in shortcut_rows:
+            canonical = self._canonical_shortcut_combo(str(row.get("combo", "")), {})
+            if not canonical:
+                continue
+            existing = binding_index.get(canonical, [])
+            if existing:
+                conflicting.append({"shortcut": row, "existing": existing})
+
+        replace_conflicts = False
+        if conflicting:
+            conflict_rows: list[str] = []
+            for row in conflicting:
+                shortcut = row.get("shortcut", {})
+                existing = row.get("existing", [])
+                if not isinstance(shortcut, dict) or not isinstance(existing, list):
+                    continue
+                target_combo = str(shortcut.get("combo", "")).strip()
+                for _idx, combo, command in existing:
+                    conflict_rows.append(
+                        f"{target_combo} is already bound to: {combo} {command}"
+                    )
+            replace_conflicts = self._marketplace_show_shortcut_dialog(
+                title_text="Shortcut conflicts detected",
+                intro_text=(
+                    "Some requested shortcuts are already in use. "
+                    "Replace conflicting bindings with the plugin actions?"
+                ),
+                entries=conflict_rows,
+                confirm_label="Replace Conflicts",
+            )
+
+        lines_to_remove: set[int] = set()
+        skipped_conflicts: set[str] = set()
+        if conflicting:
+            for row in conflicting:
+                shortcut = row.get("shortcut", {})
+                existing = row.get("existing", [])
+                if not isinstance(shortcut, dict) or not isinstance(existing, list):
+                    continue
+                combo_label = str(shortcut.get("combo", "")).strip()
+                if replace_conflicts:
+                    for idx, _combo, _command in existing:
+                        lines_to_remove.add(int(idx))
+                else:
+                    skipped_conflicts.add(combo_label)
+
+        if lines_to_remove:
+            lines = [line for idx, line in enumerate(lines) if idx not in lines_to_remove]
+
+        managed_rows: list[str] = []
+        applied_entries: list[str] = []
+        for row in shortcut_rows:
+            combo = str(row.get("combo", "")).strip()
+            command = str(row.get("command", "")).strip()
+            description = str(row.get("description", "")).strip()
+            if not combo or not command:
+                continue
+            if combo in skipped_conflicts:
+                continue
+            managed_rows.append(f"# hanauta-plugin-shortcut:{plugin_id}:{combo}\n")
+            managed_rows.append(f"bindsym {combo} {command}\n")
+            applied_entries.append(
+                f"{combo} -> {description or command}"
+            )
+        if not managed_rows:
+            return []
+        if lines and not str(lines[-1]).endswith("\n"):
+            lines[-1] = f"{lines[-1]}\n"
+        if lines:
+            lines.append("\n")
+        lines.append(f"# Hanauta marketplace shortcuts for {plugin_id}\n")
+        lines.extend(managed_rows)
+        if not self._marketplace_write_i3_config_lines(lines):
+            QMessageBox.warning(
+                self,
+                "Shortcut Setup Failed",
+                f"Failed to write i3 config file:\n{I3_CONFIG_FILE}",
+            )
+            return []
+        self._reload_i3_keybindings()
+        return applied_entries
+
+    def _remove_plugin_shortcuts_from_i3_config(self, plugin_id: str) -> None:
+        if not I3_CONFIG_FILE.exists():
+            return
+        lines = self._marketplace_read_i3_config_lines()
+        if not lines:
+            return
+        cleaned = self._remove_plugin_shortcut_lines_from_config(lines, plugin_id)
+        if cleaned == lines:
+            return
+        if self._marketplace_write_i3_config_lines(cleaned):
+            self._reload_i3_keybindings()
 
     def _marketplace_collect_plugin_services(
         self, plugin_dir: Path
@@ -11216,6 +11719,9 @@ class SettingsWindow(QWidget):
             "permissions": plugin.get("permissions", {})
             if isinstance(plugin.get("permissions", {}), dict)
             else {},
+            "shortcuts": self._marketplace_normalize_shortcuts_field(
+                plugin.get("shortcuts", [])
+            ),
             "catalog_source": str(plugin.get("catalog_source", "")).strip(),
             "installed_at_epoch": int(time.time()),
         }
@@ -11354,6 +11860,7 @@ class SettingsWindow(QWidget):
             "api_min_version": 1,
             "api_target_version": HOST_PLUGIN_API_VERSION,
             "permissions": {},
+            "shortcuts": [],
             "installed_at_epoch": int(time.time()),
         }
         installed = [
@@ -17860,7 +18367,7 @@ class SettingsWindow(QWidget):
         self._theme_refresh_restart_pending = True
         page = getattr(self, "current_page", self.initial_page or "appearance")
         command = [
-            sys.executable,
+            python_executable(),
             str(Path(__file__).resolve()),
             "--page",
             str(page or "appearance"),
@@ -19065,6 +19572,43 @@ def _marketplace_fetch_manifest_payload_api(
         return json.loads(response.read().decode("utf-8"))
 
 
+def _marketplace_normalize_shortcuts_field_api(
+    raw_shortcuts: object,
+) -> list[dict[str, str]]:
+    if not isinstance(raw_shortcuts, list):
+        return []
+    rows: list[dict[str, str]] = []
+    for row in raw_shortcuts:
+        if not isinstance(row, dict):
+            continue
+        combo = str(row.get("keys", row.get("shortcut", row.get("combo", "")))).strip()
+        command = str(row.get("command", row.get("i3_command", ""))).strip()
+        description = str(
+            row.get("description", row.get("label", row.get("action", "")))
+        ).strip()
+        if not combo or not command:
+            continue
+        rows.append(
+            {
+                "keys": combo,
+                "command": command,
+                "description": description,
+            }
+        )
+    deduped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        signature = (
+            f"{row.get('keys', '').strip().lower()}|"
+            f"{row.get('command', '').strip().lower()}"
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        deduped.append(row)
+    return deduped
+
+
 def _marketplace_normalize_catalog_api(payload: object) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     plugins: object = payload
@@ -19117,6 +19661,9 @@ def _marketplace_normalize_catalog_api(payload: object) -> list[dict[str, object
                 "permissions": item.get("permissions", {})
                 if isinstance(item.get("permissions", {}), dict)
                 else {},
+                "shortcuts": _marketplace_normalize_shortcuts_field_api(
+                    item.get("shortcuts", [])
+                ),
             }
         )
     return rows
