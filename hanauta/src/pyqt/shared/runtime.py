@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -89,6 +91,21 @@ def python_executable() -> str:
     venv_python = project_root() / ".venv" / "bin" / "python"
     if venv_python.exists():
         return str(venv_python)
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        try:
+            result = subprocess.run(
+                [uv_bin, "python", "find"],
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+                check=False,
+            )
+            candidate = (result.stdout or "").strip()
+            if result.returncode == 0 and candidate and Path(candidate).exists():
+                return candidate
+        except Exception:
+            pass
     return sys.executable
 
 
