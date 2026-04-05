@@ -1571,6 +1571,29 @@ def load_settings_state() -> dict:
             "latitude": 0.0,
             "longitude": 0.0,
             "timezone": "auto",
+            "notify_climate_changes": True,
+            "notify_rain_soon": True,
+            "notify_sunset_soon": True,
+            "notify_temperature_drop_soon": True,
+            "notify_temperature_rise_soon": True,
+            "notify_freezing_risk_tonight": True,
+            "notify_high_uv_window": True,
+            "notify_strong_wind_incoming": True,
+            "notify_thunderstorm_likelihood": True,
+            "notify_snow_ice_start": True,
+            "notify_fog_low_visibility": True,
+            "notify_air_quality_worsening": True,
+            "notify_pollen_high": True,
+            "notify_morning_commute_rain": True,
+            "notify_evening_commute_risk": True,
+            "notify_feels_like_extreme": True,
+            "notify_sunrise_soon": True,
+            "notify_dry_window_ending": True,
+            "notify_lead_minutes": 30,
+            "commute_morning_start": "07:00",
+            "commute_morning_end": "09:00",
+            "commute_evening_start": "17:00",
+            "commute_evening_end": "19:00",
         },
         "calendar": {
             "show_week_numbers": False,
@@ -1921,6 +1944,42 @@ def load_settings_state() -> dict:
     weather.setdefault("latitude", 0.0)
     weather.setdefault("longitude", 0.0)
     weather.setdefault("timezone", "auto")
+    weather.setdefault("notify_climate_changes", True)
+    weather.setdefault("notify_rain_soon", True)
+    weather.setdefault("notify_sunset_soon", True)
+    weather.setdefault("notify_temperature_drop_soon", True)
+    weather.setdefault("notify_temperature_rise_soon", True)
+    weather.setdefault("notify_freezing_risk_tonight", True)
+    weather.setdefault("notify_high_uv_window", True)
+    weather.setdefault("notify_strong_wind_incoming", True)
+    weather.setdefault("notify_thunderstorm_likelihood", True)
+    weather.setdefault("notify_snow_ice_start", True)
+    weather.setdefault("notify_fog_low_visibility", True)
+    weather.setdefault("notify_air_quality_worsening", True)
+    weather.setdefault("notify_pollen_high", True)
+    weather.setdefault("notify_morning_commute_rain", True)
+    weather.setdefault("notify_evening_commute_risk", True)
+    weather.setdefault("notify_feels_like_extreme", True)
+    weather.setdefault("notify_sunrise_soon", True)
+    weather.setdefault("notify_dry_window_ending", True)
+    try:
+        weather["notify_lead_minutes"] = max(
+            5, min(180, int(weather.get("notify_lead_minutes", 30) or 30))
+        )
+    except Exception:
+        weather["notify_lead_minutes"] = 30
+    weather["commute_morning_start"] = (
+        str(weather.get("commute_morning_start", "07:00")).strip() or "07:00"
+    )
+    weather["commute_morning_end"] = (
+        str(weather.get("commute_morning_end", "09:00")).strip() or "09:00"
+    )
+    weather["commute_evening_start"] = (
+        str(weather.get("commute_evening_start", "17:00")).strip() or "17:00"
+    )
+    weather["commute_evening_end"] = (
+        str(weather.get("commute_evening_end", "19:00")).strip() or "19:00"
+    )
     calendar = dict(payload.get("calendar", {}))
     calendar.setdefault("show_week_numbers", False)
     calendar.setdefault("show_other_month_days", True)
@@ -12223,6 +12282,7 @@ class SettingsWindow(QWidget):
         self._services_core_queue = [
             ("mail", self._build_mail_service_section),
             ("kdeconnect", self._build_kdeconnect_service_section),
+            ("weather", self._build_weather_section),
         ]
         self._services_plugin_queue: list[dict[str, object]] = []
         self._services_cached_plugin_queue = self._read_services_section_rows_cache()
@@ -14020,6 +14080,178 @@ class SettingsWindow(QWidget):
                 self.weather_city_input,
             )
         )
+
+        weather_settings = self.settings_state.setdefault("weather", {})
+        if not isinstance(weather_settings, dict):
+            weather_settings = {}
+            self.settings_state["weather"] = weather_settings
+
+        notifications_title = QLabel("Notifications")
+        notifications_title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        notifications_title.setStyleSheet("color: rgba(246,235,247,0.86);")
+        layout.addWidget(notifications_title)
+
+        self.weather_notify_changes_switch = SwitchButton(
+            bool(weather_settings.get("notify_climate_changes", True))
+        )
+        self.weather_notify_changes_switch.toggledValue.connect(
+            self._set_weather_notify_climate_changes
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("notifications_active"),
+                "Climate change alerts",
+                "Enable proactive weather alerts like rain soon and sunset reminders.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_notify_changes_switch,
+            )
+        )
+
+        self.weather_notify_rain_switch = SwitchButton(
+            bool(weather_settings.get("notify_rain_soon", True))
+        )
+        self.weather_notify_rain_switch.toggledValue.connect(
+            self._set_weather_notify_rain_soon
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("rainy"),
+                "Rain soon",
+                "Notify when rain is forecast within the next configured lead time.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_notify_rain_switch,
+            )
+        )
+
+        self.weather_notify_sunset_switch = SwitchButton(
+            bool(weather_settings.get("notify_sunset_soon", True))
+        )
+        self.weather_notify_sunset_switch.toggledValue.connect(
+            self._set_weather_notify_sunset_soon
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("wb_twilight"),
+                "Sunset soon",
+                "Notify before sunset for your selected weather location.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_notify_sunset_switch,
+            )
+        )
+        weather_notification_rows = [
+            (
+                "thermometer",
+                "Temperature drop soon",
+                "Alert when temperature is forecast to drop quickly in the next hours.",
+                "notify_temperature_drop_soon",
+            ),
+            (
+                "wb_sunny",
+                "Rapid heat rise",
+                "Alert when temperature rises quickly in the next hours.",
+                "notify_temperature_rise_soon",
+            ),
+            (
+                "ac_unit",
+                "Freezing risk tonight",
+                "Alert when temperatures are forecast near or below freezing overnight.",
+                "notify_freezing_risk_tonight",
+            ),
+            (
+                "sunny",
+                "High UV window",
+                "Alert when UV index enters a high-risk period.",
+                "notify_high_uv_window",
+            ),
+            (
+                "air",
+                "Strong wind incoming",
+                "Alert when strong gusts are expected soon.",
+                "notify_strong_wind_incoming",
+            ),
+            (
+                "thunderstorm",
+                "Thunderstorm likelihood",
+                "Alert when storm conditions are likely soon.",
+                "notify_thunderstorm_likelihood",
+            ),
+            (
+                "weather_snowy",
+                "Snow or ice start soon",
+                "Alert before snow, sleet, or freezing rain begins.",
+                "notify_snow_ice_start",
+            ),
+            (
+                "foggy",
+                "Fog / low visibility",
+                "Alert when visibility is forecast to drop significantly.",
+                "notify_fog_low_visibility",
+            ),
+            (
+                "airwave",
+                "Air quality worsening",
+                "Alert when AQI shifts into a worse category.",
+                "notify_air_quality_worsening",
+            ),
+            (
+                "grass",
+                "Pollen high alert",
+                "Alert when pollen levels are high for your area.",
+                "notify_pollen_high",
+            ),
+            (
+                "commute",
+                "Morning commute rain",
+                "Alert for rain risk during your configured morning commute window.",
+                "notify_morning_commute_rain",
+            ),
+            (
+                "commute",
+                "Evening commute weather risk",
+                "Alert for rain, snow, or strong wind during evening commute.",
+                "notify_evening_commute_risk",
+            ),
+            (
+                "emergency_heat",
+                "Feels-like extreme",
+                "Alert when apparent temperature reaches dangerous levels.",
+                "notify_feels_like_extreme",
+            ),
+            (
+                "wb_twilight",
+                "Sunrise soon",
+                "Alert shortly before sunrise.",
+                "notify_sunrise_soon",
+            ),
+            (
+                "water_drop",
+                "Dry window ending",
+                "Alert when a dry stretch is about to end with precipitation.",
+                "notify_dry_window_ending",
+            ),
+        ]
+        self.weather_notification_switches = {}
+        for icon_name, label, description, key_name in weather_notification_rows:
+            toggle = SwitchButton(bool(weather_settings.get(key_name, True)))
+            toggle.toggledValue.connect(
+                lambda enabled, key=key_name, title=label: self._set_weather_notification_flag(
+                    key, enabled, title
+                )
+            )
+            self.weather_notification_switches[key_name] = toggle
+            layout.addWidget(
+                SettingsRow(
+                    material_icon(icon_name),
+                    label,
+                    description,
+                    self.icon_font,
+                    self.ui_font,
+                    toggle,
+                )
+            )
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
@@ -17572,6 +17804,30 @@ class SettingsWindow(QWidget):
             )
         if hasattr(self, "_refresh_service_widget_order"):
             self._refresh_service_widget_order()
+
+    def _set_weather_notify_climate_changes(self, enabled: bool) -> None:
+        self._set_weather_notification_flag(
+            "notify_climate_changes", enabled, "Climate change alerts"
+        )
+
+    def _set_weather_notify_rain_soon(self, enabled: bool) -> None:
+        self._set_weather_notification_flag("notify_rain_soon", enabled, "Rain soon")
+
+    def _set_weather_notify_sunset_soon(self, enabled: bool) -> None:
+        self._set_weather_notification_flag(
+            "notify_sunset_soon", enabled, "Sunset soon"
+        )
+
+    def _set_weather_notification_flag(
+        self, key: str, enabled: bool, label: str = "Weather notifications"
+    ) -> None:
+        weather = self.settings_state.setdefault("weather", {})
+        weather[str(key).strip()] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "weather_status"):
+            self.weather_status.setText(
+                f"{label} enabled." if enabled else f"{label} disabled."
+            )
 
     def _toggle_energy_battery_section(self) -> None:
         if not getattr(self, "_battery_present", False):
