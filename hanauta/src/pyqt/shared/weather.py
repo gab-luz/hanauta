@@ -26,6 +26,7 @@ ANIMATED_ICON_FALLBACKS = {
 
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
+AIR_QUALITY_API = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class WeatherCity:
 
 @dataclass(frozen=True)
 class WeatherCurrent:
+    observed_time_iso: str
     temperature: float
     apparent_temperature: float
     humidity: int
@@ -59,6 +61,8 @@ class WeatherCurrent:
     is_day: bool
     condition: str
     icon_name: str
+    sunrise_iso: str
+    sunset_iso: str
     sunrise: str
     sunset: str
 
@@ -75,10 +79,31 @@ class WeatherDaily:
 
 
 @dataclass(frozen=True)
+class WeatherHourly:
+    time_iso: str
+    weather_code: int
+    icon_name: str
+    temperature: float
+    apparent_temperature: float
+    wind_speed: float
+    wind_gusts: float
+    visibility: float
+    uv_index: float
+    rain: float
+    snowfall: float
+    precipitation_probability: int
+    precipitation: float
+    us_aqi: int | None
+    pollen_index: float | None
+    minutes_from_current: int
+
+
+@dataclass(frozen=True)
 class WeatherForecast:
     city: WeatherCity
     current: WeatherCurrent
     daily: list[WeatherDaily]
+    hourly: list[WeatherHourly]
 
 
 def load_runtime_settings() -> dict[str, object]:
@@ -284,6 +309,21 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
                     "sunset",
                 ]
             ),
+            "hourly": ",".join(
+                [
+                    "temperature_2m",
+                    "apparent_temperature",
+                    "wind_speed_10m",
+                    "wind_gusts_10m",
+                    "visibility",
+                    "uv_index",
+                    "weather_code",
+                    "precipitation_probability",
+                    "precipitation",
+                    "rain",
+                    "snowfall",
+                ]
+            ),
         }
     )
     payload = _load_service_weather_cache(city)
@@ -292,6 +332,31 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
             payload = _get_json(f"{WEATHER_API}?{params}", timeout=5.0)
         except Exception:
             return None
+    air_payload: dict[str, Any] | None = None
+    aqi_params = parse.urlencode(
+        {
+            "latitude": f"{city.latitude:.5f}",
+            "longitude": f"{city.longitude:.5f}",
+            "timezone": city.timezone or "auto",
+            "hourly": ",".join(
+                [
+                    "us_aqi",
+                    "alder_pollen",
+                    "birch_pollen",
+                    "grass_pollen",
+                    "mugwort_pollen",
+                    "olive_pollen",
+                    "ragweed_pollen",
+                ]
+            ),
+        }
+    )
+    try:
+        candidate = _get_json(f"{AIR_QUALITY_API}?{aqi_params}", timeout=5.0)
+        if isinstance(candidate, dict):
+            air_payload = candidate
+    except Exception:
+        air_payload = None
 
     current_payload = payload.get("current", {})
     daily_payload = payload.get("daily", {})
@@ -302,8 +367,19 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
     is_day = bool(int(current_payload.get("is_day", 1)))
     sunrise_list = daily_payload.get("sunrise", [])
     sunset_list = daily_payload.get("sunset", [])
+    sunrise_iso = (
+        str(sunrise_list[0])
+        if isinstance(sunrise_list, list) and sunrise_list and str(sunrise_list[0]).strip()
+        else ""
+    )
+    sunset_iso = (
+        str(sunset_list[0])
+        if isinstance(sunset_list, list) and sunset_list and str(sunset_list[0]).strip()
+        else ""
+    )
 
     current = WeatherCurrent(
+        observed_time_iso=str(current_payload.get("time", "")).strip(),
         temperature=float(current_payload.get("temperature_2m", 0.0)),
         apparent_temperature=float(current_payload.get("apparent_temperature", 0.0)),
         humidity=int(current_payload.get("relative_humidity_2m", 0)),
@@ -314,8 +390,10 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
         is_day=is_day,
         condition=weather_condition_label(weather_code),
         icon_name=_current_icon_name(weather_code, is_day),
-        sunrise=_fmt_time(str(sunrise_list[0])) if isinstance(sunrise_list, list) and sunrise_list else "--:--",
-        sunset=_fmt_time(str(sunset_list[0])) if isinstance(sunset_list, list) and sunset_list else "--:--",
+        sunrise_iso=sunrise_iso,
+        sunset_iso=sunset_iso,
+        sunrise=_fmt_time(sunrise_iso) if sunrise_iso else "--:--",
+        sunset=_fmt_time(sunset_iso) if sunset_iso else "--:--",
     )
 
     daily: list[WeatherDaily] = []
@@ -346,7 +424,150 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
                 )
             )
 
-    return WeatherForecast(city=city, current=current, daily=daily)
+    hourly_payload = payload.get("hourly", {})
+    hourly: list[WeatherHourly] = []
+    reference_time = None
+    try:
+        reference_time = datetime.fromisoformat(current.observed_time_iso)
+    except Exception:
+        reference_time = None
+    if isinstance(hourly_payload, dict):
+        hourly_times = hourly_payload.get("time", [])
+        hourly_temp = hourly_payload.get("temperature_2m", [])
+        hourly_apparent = hourly_payload.get("apparent_temperature", [])
+        hourly_wind = hourly_payload.get("wind_speed_10m", [])
+        hourly_gusts = hourly_payload.get("wind_gusts_10m", [])
+        hourly_visibility = hourly_payload.get("visibility", [])
+        hourly_uv = hourly_payload.get("uv_index", [])
+        hourly_codes = hourly_payload.get("weather_code", [])
+        hourly_probability = hourly_payload.get("precipitation_probability", [])
+        hourly_precip = hourly_payload.get("precipitation", [])
+        hourly_rain = hourly_payload.get("rain", [])
+        hourly_snowfall = hourly_payload.get("snowfall", [])
+        aqi_by_time: dict[str, int | None] = {}
+        pollen_by_time: dict[str, float | None] = {}
+        if isinstance(air_payload, dict):
+            aqi_hourly = air_payload.get("hourly", {})
+            if isinstance(aqi_hourly, dict):
+                aqi_times = aqi_hourly.get("time", [])
+                aqi_values = aqi_hourly.get("us_aqi", [])
+                alder = aqi_hourly.get("alder_pollen", [])
+                birch = aqi_hourly.get("birch_pollen", [])
+                grass = aqi_hourly.get("grass_pollen", [])
+                mugwort = aqi_hourly.get("mugwort_pollen", [])
+                olive = aqi_hourly.get("olive_pollen", [])
+                ragweed = aqi_hourly.get("ragweed_pollen", [])
+                if isinstance(aqi_times, list):
+                    aqi_size = min(
+                        len(aqi_times),
+                        len(aqi_values) if isinstance(aqi_values, list) else 0,
+                    )
+                    for index in range(aqi_size):
+                        time_key = str(aqi_times[index]).strip()
+                        if not time_key:
+                            continue
+                        try:
+                            aqi_value = int(float(aqi_values[index]))
+                        except Exception:
+                            aqi_value = None
+                        aqi_by_time[time_key] = aqi_value
+                    pollen_lists: list[list[object]] = []
+                    for values in (alder, birch, grass, mugwort, olive, ragweed):
+                        if isinstance(values, list):
+                            pollen_lists.append(values)
+                    for index, time_value in enumerate(aqi_times):
+                        time_key = str(time_value).strip()
+                        if not time_key:
+                            continue
+                        pollen_samples: list[float] = []
+                        for samples in pollen_lists:
+                            if index >= len(samples):
+                                continue
+                            try:
+                                pollen_samples.append(float(samples[index]))
+                            except Exception:
+                                continue
+                        pollen_by_time[time_key] = (
+                            max(pollen_samples) if pollen_samples else None
+                        )
+        if all(
+            isinstance(item, list)
+            for item in (
+                hourly_times,
+                hourly_temp,
+                hourly_apparent,
+                hourly_wind,
+                hourly_gusts,
+                hourly_visibility,
+                hourly_uv,
+                hourly_codes,
+                hourly_probability,
+                hourly_precip,
+                hourly_rain,
+                hourly_snowfall,
+            )
+        ):
+            size = min(
+                len(hourly_times),
+                len(hourly_temp),
+                len(hourly_apparent),
+                len(hourly_wind),
+                len(hourly_gusts),
+                len(hourly_visibility),
+                len(hourly_uv),
+                len(hourly_codes),
+                len(hourly_probability),
+                len(hourly_precip),
+                len(hourly_rain),
+                len(hourly_snowfall),
+                48,
+            )
+            for index in range(size):
+                try:
+                    time_iso = str(hourly_times[index]).strip()
+                    if not time_iso:
+                        continue
+                    timestamp = datetime.fromisoformat(time_iso)
+                    temperature_value = float(hourly_temp[index])
+                    apparent_value = float(hourly_apparent[index])
+                    wind_value = float(hourly_wind[index])
+                    gust_value = float(hourly_gusts[index])
+                    visibility_value = float(hourly_visibility[index])
+                    uv_value = float(hourly_uv[index])
+                    code_value = int(hourly_codes[index])
+                    probability_value = int(float(hourly_probability[index]))
+                    precip_value = float(hourly_precip[index])
+                    rain_value = float(hourly_rain[index])
+                    snowfall_value = float(hourly_snowfall[index])
+                    minutes_from_current = 0
+                    if reference_time is not None:
+                        minutes_from_current = int(
+                            (timestamp - reference_time).total_seconds() // 60
+                        )
+                except Exception:
+                    continue
+                hourly.append(
+                    WeatherHourly(
+                        time_iso=time_iso,
+                        weather_code=code_value,
+                        icon_name=_current_icon_name(code_value, True),
+                        temperature=temperature_value,
+                        apparent_temperature=apparent_value,
+                        wind_speed=wind_value,
+                        wind_gusts=gust_value,
+                        visibility=visibility_value,
+                        uv_index=uv_value,
+                        rain=rain_value,
+                        snowfall=snowfall_value,
+                        precipitation_probability=probability_value,
+                        precipitation=precip_value,
+                        us_aqi=aqi_by_time.get(time_iso),
+                        pollen_index=pollen_by_time.get(time_iso),
+                        minutes_from_current=minutes_from_current,
+                    )
+                )
+
+    return WeatherForecast(city=city, current=current, daily=daily, hourly=hourly)
 
 
 def animated_icon_path(name: str) -> Path:
