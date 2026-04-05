@@ -11309,16 +11309,33 @@ class SettingsWindow(QWidget):
         layout.addLayout(actions)
         return dialog.exec() == int(QDialog.DialogCode.Accepted)
 
-    def _reload_i3_keybindings(self) -> None:
+    def _reload_i3_keybindings(self) -> bool:
+        commands: list[list[str]] = [["i3-msg", "reload"]]
         try:
-            subprocess.run(
-                ["i3-msg", "reload"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            sock = subprocess.run(
+                ["i3", "--get-socketpath"],
+                capture_output=True,
+                text=True,
                 check=False,
             )
+            socket_path = (sock.stdout or "").strip()
+            if socket_path:
+                commands.append(["i3-msg", "-s", socket_path, "reload"])
         except Exception:
             pass
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except Exception:
+                continue
+            if result.returncode == 0:
+                return True
+        return False
 
     def _marketplace_apply_plugin_shortcuts(
         self, plugin: dict[str, object], plugin_id: str
@@ -11457,7 +11474,12 @@ class SettingsWindow(QWidget):
                 f"Failed to write i3 config file:\n{I3_CONFIG_FILE}",
             )
             return []
-        self._reload_i3_keybindings()
+        if not self._reload_i3_keybindings():
+            QMessageBox.warning(
+                self,
+                "i3 Reload Needed",
+                "Shortcuts were saved, but i3 did not reload automatically. Please run i3-msg reload once.",
+            )
         return applied_entries
 
     def _remove_plugin_shortcuts_from_i3_config(self, plugin_id: str) -> None:
