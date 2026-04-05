@@ -3435,7 +3435,12 @@ class CyberBar(QWidget):
             if path_key in self._loaded_bar_plugin_paths:
                 continue
             module_name = f"hanauta_bar_plugin_{hash(str(entrypoint)) & 0xFFFFFFFF:x}"
+            plugin_path = str(entrypoint.parent)
+            path_added = False
             try:
+                if plugin_path and plugin_path not in sys.path:
+                    sys.path.insert(0, plugin_path)
+                    path_added = True
                 spec = importlib.util.spec_from_file_location(
                     module_name, str(entrypoint)
                 )
@@ -3455,6 +3460,12 @@ class CyberBar(QWidget):
                     self._loaded_bar_plugin_ids.add(plugin_key)
             except Exception:
                 continue
+            finally:
+                if path_added:
+                    try:
+                        sys.path.remove(plugin_path)
+                    except ValueError:
+                        pass
 
     def _font_supports_text(self, font: QFont, text: str) -> bool:
         if not text:
@@ -4320,7 +4331,7 @@ class CyberBar(QWidget):
             return
         self._theme_refresh_restart_pending = True
         subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve())],
+            [python_executable(), str(Path(__file__).resolve())],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
