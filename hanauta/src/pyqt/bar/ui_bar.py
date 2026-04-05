@@ -120,6 +120,7 @@ from pyqt.shared.weather import (
     animated_icon_path,
     configured_city,
     fetch_forecast,
+    weather_condition_label,
 )
 from pyqt.shared.updates import collect_update_payload
 from pyqt.shared.health import (
@@ -2670,6 +2671,7 @@ class CyberBar(QWidget):
         self._media_worker: Optional[MediaStateWorker] = None
         self._system_state_worker: Optional[SystemStateWorker] = None
         self._weather_forecast: Optional[WeatherForecast] = None
+        self._weather_alert_seen_keys: set[str] = set()
         self._cap_alerts: list[CapAlert] = []
         self._pending_updates_total = 0
         self._health_snapshot: dict[str, object] = {}
@@ -4927,12 +4929,468 @@ class CyberBar(QWidget):
             return
         if configured_city() is None:
             self._weather_forecast = None
+            self._weather_alert_seen_keys.clear()
             self._sync_weather_visibility()
             return
         self._weather_worker = WeatherWorker()
         self._weather_worker.loaded.connect(self._apply_weather_forecast)
         self._weather_worker.finished.connect(self._finish_weather_worker)
         self._weather_worker.start()
+
+    def _parse_hhmm_minutes(self, value: object, fallback: str) -> int:
+        text = str(value or fallback).strip() or fallback
+        match = re.match(r"^(\d{1,2}):(\d{2})$", text)
+        if not match:
+            text = fallback
+            match = re.match(r"^(\d{1,2}):(\d{2})$", text)
+        if match is None:
+            return 0
+        try:
+            hours = max(0, min(23, int(match.group(1))))
+            minutes = max(0, min(59, int(match.group(2))))
+        except Exception:
+            return 0
+        return (hours * 60) + minutes
+
+    def _minute_in_window(self, minute_of_day: int, start: int, end: int) -> bool:
+        if start == end:
+            return True
+        if start < end:
+            return start <= minute_of_day < end
+        return minute_of_day >= start or minute_of_day < end
+
+    def _aqi_category(self, aqi: int) -> int:
+        if aqi <= 50:
+            return 0
+        if aqi <= 100:
+            return 1
+        if aqi <= 150:
+            return 2
+        if aqi <= 200:
+            return 3
+        if aqi <= 300:
+            return 4
+        return 5
+
+    def _weather_notification_settings(self) -> dict[str, object]:
+        weather = self.runtime_settings.get("weather", {})
+        weather = weather if isinstance(weather, dict) else {}
+        try:
+            lead_minutes = max(
+                5, min(180, int(weather.get("notify_lead_minutes", 30) or 30))
+            )
+        except Exception:
+            lead_minutes = 30
+        morning_start = self._parse_hhmm_minutes(
+            weather.get("commute_morning_start", "07:00"), "07:00"
+        )
+        morning_end = self._parse_hhmm_minutes(
+            weather.get("commute_morning_end", "09:00"), "09:00"
+        )
+        evening_start = self._parse_hhmm_minutes(
+            weather.get("commute_evening_start", "17:00"), "17:00"
+        )
+        evening_end = self._parse_hhmm_minutes(
+            weather.get("commute_evening_end", "19:00"), "19:00"
+        )
+        return {
+            "enabled": bool(weather.get("notify_climate_changes", True)),
+            "rain": bool(weather.get("notify_rain_soon", True)),
+            "sunset": bool(weather.get("notify_sunset_soon", True)),
+            "temperature_drop": bool(weather.get("notify_temperature_drop_soon", True)),
+            "temperature_rise": bool(weather.get("notify_temperature_rise_soon", True)),
+            "freezing_tonight": bool(weather.get("notify_freezing_risk_tonight", True)),
+            "high_uv": bool(weather.get("notify_high_uv_window", True)),
+            "strong_wind": bool(weather.get("notify_strong_wind_incoming", True)),
+            "thunderstorm": bool(weather.get("notify_thunderstorm_likelihood", True)),
+            "snow_ice": bool(weather.get("notify_snow_ice_start", True)),
+            "fog_visibility": bool(weather.get("notify_fog_low_visibility", True)),
+            "air_quality": bool(weather.get("notify_air_quality_worsening", True)),
+            "pollen_high": bool(weather.get("notify_pollen_high", True)),
+            "commute_morning_rain": bool(weather.get("notify_morning_commute_rain", True)),
+            "commute_evening_risk": bool(weather.get("notify_evening_commute_risk", True)),
+            "feels_extreme": bool(weather.get("notify_feels_like_extreme", True)),
+            "sunrise": bool(weather.get("notify_sunrise_soon", True)),
+            "dry_window_ending": bool(weather.get("notify_dry_window_ending", True)),
+            "lead_minutes": lead_minutes,
+            "morning_start": morning_start,
+            "morning_end": morning_end,
+            "evening_start": evening_start,
+            "evening_end": evening_end,
+        }
+
+    def _send_weather_alert_notification(
+        self,
+        summary: str,
+        body: str,
+        *,
+        icon_name: str = "not-available",
+        replace_id: int = 18700,
+    ) -> None:
+        icon_path = animated_icon_path(icon_name)
+        command = [
+            "notify-send",
+            "-a",
+            "Hanauta Weather",
+            "-r",
+            str(replace_id),
+            "-i",
+            str(icon_path),
+            summary,
+            body,
+        ]
+        try:
+            subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
+
+    def _maybe_notify_weather_changes(self, forecast: WeatherForecast) -> None:
+        if len(self._weather_alert_seen_keys) > 256:
+            self._weather_alert_seen_keys.clear()
+        cfg = self._weather_notification_settings()
+        if not bool(cfg.get("enabled", True)):
+            return
+        lead_minutes = int(cfg.get("lead_minutes", 30) or 30)
+        city_label = forecast.city.label
+        observed = None
+        try:
+            observed = datetime.fromisoformat(forecast.current.observed_time_iso)
+        except Exception:
+            observed = None
+        if observed is None:
+            observed = datetime.now()
+
+        future_hours = [
+            hour
+            for hour in forecast.hourly
+            if int(hour.minutes_from_current) >= 0 and int(hour.minutes_from_current) <= 24 * 60
+        ]
+
+        def _rain_like(hour: object) -> bool:
+            try:
+                return bool(hour.precipitation >= 0.1) or bool(hour.precipitation_probability >= 55)
+            except Exception:
+                return False
+
+        def _notify_once(
+            event_key: str,
+            summary: str,
+            body: str,
+            *,
+            icon_name: str,
+            replace_id: int,
+        ) -> None:
+            if event_key in self._weather_alert_seen_keys:
+                return
+            self._send_weather_alert_notification(
+                summary,
+                body,
+                icon_name=icon_name,
+                replace_id=replace_id,
+            )
+            self._weather_alert_seen_keys.add(event_key)
+
+        def _first_hour(predicate, max_minutes: int) -> object | None:
+            for hour in future_hours:
+                minutes = int(hour.minutes_from_current)
+                if minutes > max_minutes:
+                    continue
+                if predicate(hour):
+                    return hour
+            return None
+
+        if bool(cfg.get("rain", True)):
+            hour = _first_hour(_rain_like, lead_minutes)
+            if hour is not None:
+                event_key = f"rain:{city_label}:{hour.time_iso}"
+                minutes = int(hour.minutes_from_current)
+                eta = "soon" if minutes <= 1 else f"in about {minutes} minutes"
+                summary = f"Rain expected {eta}"
+                body = (
+                    f"{city_label}\n"
+                    f"Chance: {hour.precipitation_probability}% • "
+                    f"Forecast: {weather_condition_label(hour.weather_code)}"
+                )
+                _notify_once(
+                    event_key,
+                    summary,
+                    body,
+                    icon_name=hour.icon_name or "overcast-rain",
+                    replace_id=18701,
+                )
+
+        if bool(cfg.get("sunset", True)):
+            sunset_iso = str(forecast.current.sunset_iso).strip()
+            if sunset_iso:
+                try:
+                    sunset = datetime.fromisoformat(sunset_iso)
+                except Exception:
+                    sunset = None
+                if sunset is not None:
+                    now_like = observed
+                    minutes_left = int((sunset - now_like).total_seconds() // 60)
+                    if 0 <= minutes_left <= lead_minutes:
+                        sunset_key = f"sunset:{city_label}:{sunset.date().isoformat()}"
+                        eta = (
+                            "now"
+                            if minutes_left <= 1
+                            else f"in about {minutes_left} minutes"
+                        )
+                        _notify_once(
+                            sunset_key,
+                            f"Sunset {eta}",
+                            f"{city_label}\nSunset at {forecast.current.sunset}",
+                            icon_name="sunset",
+                            replace_id=18702,
+                        )
+
+        if bool(cfg.get("temperature_drop", True)):
+            hour = _first_hour(
+                lambda item: item.temperature <= (forecast.current.temperature - 5.0),
+                120,
+            )
+            if hour is not None:
+                _notify_once(
+                    f"temp-drop:{city_label}:{hour.time_iso}",
+                    "Temperature drop soon",
+                    f"{city_label}\nExpected {hour.temperature:.0f}° in about {int(hour.minutes_from_current)} minutes.",
+                    icon_name=hour.icon_name or "overcast",
+                    replace_id=18703,
+                )
+
+        if bool(cfg.get("temperature_rise", True)):
+            hour = _first_hour(
+                lambda item: item.temperature >= (forecast.current.temperature + 5.0),
+                120,
+            )
+            if hour is not None:
+                _notify_once(
+                    f"temp-rise:{city_label}:{hour.time_iso}",
+                    "Rapid heat rise",
+                    f"{city_label}\nExpected {hour.temperature:.0f}° in about {int(hour.minutes_from_current)} minutes.",
+                    icon_name=hour.icon_name or "clear-day",
+                    replace_id=18704,
+                )
+
+        if bool(cfg.get("freezing_tonight", True)):
+            hour = _first_hour(lambda item: item.temperature <= 0.0, 12 * 60)
+            if hour is not None:
+                _notify_once(
+                    f"freeze:{city_label}:{observed.date().isoformat()}",
+                    "Freezing risk tonight",
+                    f"{city_label}\nForecast low around {hour.temperature:.0f}°.",
+                    icon_name="overcast-snow",
+                    replace_id=18705,
+                )
+
+        if bool(cfg.get("high_uv", True)):
+            hour = _first_hour(lambda item: item.uv_index >= 6.0, 6 * 60)
+            if hour is not None:
+                _notify_once(
+                    f"uv:{city_label}:{hour.time_iso}",
+                    "High UV window",
+                    f"{city_label}\nUV index may reach {hour.uv_index:.1f} soon.",
+                    icon_name="clear-day",
+                    replace_id=18706,
+                )
+
+        if bool(cfg.get("strong_wind", True)):
+            hour = _first_hour(lambda item: item.wind_gusts >= 45.0, 6 * 60)
+            if hour is not None:
+                _notify_once(
+                    f"wind:{city_label}:{hour.time_iso}",
+                    "Strong wind incoming",
+                    f"{city_label}\nGusts may reach {hour.wind_gusts:.0f} km/h.",
+                    icon_name="overcast",
+                    replace_id=18707,
+                )
+
+        if bool(cfg.get("thunderstorm", True)):
+            hour = _first_hour(lambda item: int(item.weather_code) in {95, 96, 99}, 6 * 60)
+            if hour is not None:
+                _notify_once(
+                    f"thunder:{city_label}:{hour.time_iso}",
+                    "Thunderstorm likelihood",
+                    f"{city_label}\nStorm conditions possible in about {int(hour.minutes_from_current)} minutes.",
+                    icon_name="thunderstorms",
+                    replace_id=18708,
+                )
+
+        if bool(cfg.get("snow_ice", True)):
+            snow_codes = {56, 57, 66, 67, 71, 73, 75, 77, 85, 86}
+            hour = _first_hour(
+                lambda item: int(item.weather_code) in snow_codes
+                or item.snowfall >= 0.1
+                or (item.rain >= 0.2 and item.temperature <= 1.0),
+                lead_minutes,
+            )
+            if hour is not None:
+                _notify_once(
+                    f"snow-ice:{city_label}:{hour.time_iso}",
+                    "Snow or ice start soon",
+                    f"{city_label}\n{weather_condition_label(hour.weather_code)} expected soon.",
+                    icon_name="overcast-snow",
+                    replace_id=18709,
+                )
+
+        if bool(cfg.get("fog_visibility", True)):
+            hour = _first_hour(
+                lambda item: int(item.weather_code) in {45, 48}
+                or (item.visibility > 0 and item.visibility <= 1000.0),
+                6 * 60,
+            )
+            if hour is not None:
+                _notify_once(
+                    f"fog:{city_label}:{hour.time_iso}",
+                    "Fog / low visibility risk",
+                    f"{city_label}\nVisibility may drop significantly soon.",
+                    icon_name="fog",
+                    replace_id=18710,
+                )
+
+        if bool(cfg.get("air_quality", True)):
+            current_aqi = None
+            if future_hours:
+                current_aqi = future_hours[0].us_aqi
+            worse_hour = None
+            if current_aqi is not None:
+                current_cat = self._aqi_category(int(current_aqi))
+                for hour in future_hours:
+                    if int(hour.minutes_from_current) > 6 * 60:
+                        continue
+                    if hour.us_aqi is None:
+                        continue
+                    if self._aqi_category(int(hour.us_aqi)) > current_cat:
+                        worse_hour = hour
+                        break
+            if worse_hour is not None:
+                _notify_once(
+                    f"aqi:{city_label}:{worse_hour.time_iso}",
+                    "Air quality worsening",
+                    f"{city_label}\nAQI may rise to {int(worse_hour.us_aqi or 0)}.",
+                    icon_name="overcast",
+                    replace_id=18711,
+                )
+
+        if bool(cfg.get("pollen_high", True)):
+            hour = _first_hour(
+                lambda item: (item.pollen_index is not None and float(item.pollen_index) >= 80.0),
+                12 * 60,
+            )
+            if hour is not None:
+                _notify_once(
+                    f"pollen:{city_label}:{hour.time_iso}",
+                    "Pollen high alert",
+                    f"{city_label}\nPollen levels may be high soon.",
+                    icon_name="partly-cloudy-day",
+                    replace_id=18712,
+                )
+
+        morning_start = int(cfg.get("morning_start", 7 * 60) or 7 * 60)
+        morning_end = int(cfg.get("morning_end", 9 * 60) or 9 * 60)
+        if bool(cfg.get("commute_morning_rain", True)):
+            morning_hour = None
+            for hour in future_hours:
+                if int(hour.minutes_from_current) > 24 * 60:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(hour.time_iso)
+                except Exception:
+                    continue
+                minute_of_day = (ts.hour * 60) + ts.minute
+                if not self._minute_in_window(minute_of_day, morning_start, morning_end):
+                    continue
+                if _rain_like(hour):
+                    morning_hour = hour
+                    break
+            if morning_hour is not None:
+                _notify_once(
+                    f"commute-am:{city_label}:{datetime.fromisoformat(morning_hour.time_iso).date().isoformat()}",
+                    "Morning commute rain",
+                    f"{city_label}\nRain risk during your morning commute window.",
+                    icon_name=morning_hour.icon_name or "overcast-rain",
+                    replace_id=18713,
+                )
+
+        evening_start = int(cfg.get("evening_start", 17 * 60) or 17 * 60)
+        evening_end = int(cfg.get("evening_end", 19 * 60) or 19 * 60)
+        if bool(cfg.get("commute_evening_risk", True)):
+            evening_hour = None
+            for hour in future_hours:
+                if int(hour.minutes_from_current) > 24 * 60:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(hour.time_iso)
+                except Exception:
+                    continue
+                minute_of_day = (ts.hour * 60) + ts.minute
+                if not self._minute_in_window(minute_of_day, evening_start, evening_end):
+                    continue
+                if _rain_like(hour) or hour.snowfall >= 0.1 or hour.wind_gusts >= 40.0:
+                    evening_hour = hour
+                    break
+            if evening_hour is not None:
+                _notify_once(
+                    f"commute-pm:{city_label}:{datetime.fromisoformat(evening_hour.time_iso).date().isoformat()}",
+                    "Evening commute weather risk",
+                    f"{city_label}\nRain, snow, or strong wind risk in evening commute.",
+                    icon_name=evening_hour.icon_name or "overcast",
+                    replace_id=18714,
+                )
+
+        if bool(cfg.get("feels_extreme", True)):
+            hour = _first_hour(
+                lambda item: item.apparent_temperature <= -5.0
+                or item.apparent_temperature >= 35.0,
+                6 * 60,
+            )
+            if hour is not None:
+                _notify_once(
+                    f"feels:{city_label}:{hour.time_iso}",
+                    "Feels-like extreme",
+                    f"{city_label}\nFeels like {hour.apparent_temperature:.0f}° soon.",
+                    icon_name=hour.icon_name or "not-available",
+                    replace_id=18715,
+                )
+
+        if bool(cfg.get("sunrise", True)):
+            sunrise_iso = str(forecast.current.sunrise_iso).strip()
+            if sunrise_iso:
+                try:
+                    sunrise = datetime.fromisoformat(sunrise_iso)
+                except Exception:
+                    sunrise = None
+                if sunrise is not None:
+                    minutes_left = int((sunrise - observed).total_seconds() // 60)
+                    if 0 <= minutes_left <= lead_minutes:
+                        _notify_once(
+                            f"sunrise:{city_label}:{sunrise.date().isoformat()}",
+                            "Sunrise soon",
+                            f"{city_label}\nSunrise at {forecast.current.sunrise}.",
+                            icon_name="sunrise",
+                            replace_id=18716,
+                        )
+
+        if bool(cfg.get("dry_window_ending", True)):
+            current_dry = (
+                forecast.current.precipitation < 0.05
+                and forecast.current.weather_code not in {61, 63, 65, 80, 81, 82}
+            )
+            if current_dry:
+                hour = _first_hour(_rain_like, lead_minutes)
+                if hour is not None and int(hour.minutes_from_current) >= 15:
+                    _notify_once(
+                        f"dry-ending:{city_label}:{hour.time_iso}",
+                        "Dry window ending",
+                        f"{city_label}\nPrecipitation may begin in about {int(hour.minutes_from_current)} minutes.",
+                        icon_name=hour.icon_name or "overcast-rain",
+                        replace_id=18717,
+                    )
 
     def _apply_weather_forecast(self, forecast: object) -> None:
         self._weather_forecast = (
@@ -4944,6 +5402,7 @@ class CyberBar(QWidget):
             self.weather_icon.setToolTip(
                 f"{self._weather_forecast.city.label} • {round(current.temperature):.0f}° • {current.condition}"
             )
+            self._maybe_notify_weather_changes(self._weather_forecast)
         self._sync_weather_visibility()
 
     def _finish_weather_worker(self) -> None:
