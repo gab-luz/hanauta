@@ -86,6 +86,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSlider,
+    QSpinBox,
     QCheckBox,
     QStackedWidget,
     QVBoxLayout,
@@ -150,6 +151,7 @@ PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
 I3_CONFIG_FILE = ROOT / "config"
 NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
 HOST_PLUGIN_API_VERSION = 1
+BUILTIN_SERVICE_KEYS = {"mail", "kdeconnect", "weather", "desktop_clock_widget"}
 
 
 def resolve_qcal_wrapper() -> Path | None:
@@ -157,7 +159,17 @@ def resolve_qcal_wrapper() -> Path | None:
 
 
 def resolve_desktop_clock_widget() -> Path | None:
-    return resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
+    resolved = resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
+    if resolved is not None and resolved.exists():
+        return resolved
+    fallback_candidates = (
+        ROOT / "hanauta" / "src" / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py",
+        Path.home() / "dev" / "hanauta-plugin-desktop-clock" / "desktop_clock_widget.py",
+    )
+    for candidate in fallback_candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def resolve_study_tracker_app() -> Path | None:
@@ -603,6 +615,7 @@ DEFAULT_BAR_SETTINGS = {
     "debug_tooltips": False,
     "merge_all_chips": False,
     "full_bar_radius": 18,
+    "orientation_mode": "horizontal_top",
     "monitor_mode": "primary",
     "monitor_name": "",
     "service_icon_order": [],
@@ -706,6 +719,12 @@ def merged_bar_settings(payload: object) -> dict[str, object]:
         monitor_mode
         if monitor_mode in {"primary", "follow_mouse", "named"}
         else "primary"
+    )
+    orientation_mode = str(merged.get("orientation_mode", "horizontal_top")).strip().lower()
+    merged["orientation_mode"] = (
+        orientation_mode
+        if orientation_mode in {"horizontal_top", "vertical_left", "vertical_right"}
+        else "horizontal_top"
     )
     merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
     if "polybar_widgets" in current and isinstance(current["polybar_widgets"], list):
@@ -1667,6 +1686,7 @@ def load_settings_state() -> dict:
         "clock": {
             "size": 320,
             "show_seconds": True,
+            "digital_line_spacing": 14,
             "position_x": -1,
             "position_y": -1,
         },
@@ -2188,6 +2208,12 @@ def load_settings_state() -> dict:
     except Exception:
         clock["size"] = 320
     clock["show_seconds"] = bool(clock.get("show_seconds", True))
+    try:
+        clock["digital_line_spacing"] = max(
+            8, min(64, int(clock.get("digital_line_spacing", 14)))
+        )
+    except Exception:
+        clock["digital_line_spacing"] = 14
     try:
         clock["position_x"] = int(clock.get("position_x", -1))
     except Exception:
@@ -6679,6 +6705,28 @@ class SettingsWindow(QWidget):
         self.bar_monitor_target_combo.currentIndexChanged.connect(
             self._set_bar_monitor_target
         )
+        self.bar_orientation_combo = QComboBox()
+        self.bar_orientation_combo.setFixedWidth(220)
+        self.bar_orientation_combo.setObjectName("settingsCombo")
+        orientation_items = [
+            ("Horizontal (Top)", "horizontal_top"),
+            ("Vertical (Left)", "vertical_left"),
+            ("Vertical (Right)", "vertical_right"),
+        ]
+        for label, value in orientation_items:
+            self.bar_orientation_combo.addItem(label, value)
+        current_orientation = str(
+            self.settings_state["bar"].get("orientation_mode", "horizontal_top")
+        ).strip().lower()
+        selected_index = 0
+        for idx, (_label, value) in enumerate(orientation_items):
+            if value == current_orientation:
+                selected_index = idx
+                break
+        self.bar_orientation_combo.setCurrentIndex(selected_index)
+        self.bar_orientation_combo.currentIndexChanged.connect(
+            self._set_bar_orientation_mode
+        )
 
         self.dock_monitor_target_combo = QComboBox()
         self.dock_monitor_target_combo.setFixedWidth(220)
@@ -6849,6 +6897,16 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.bar_full_merge_switch,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Bar orientation",
+                "Choose top horizontal bar or vertical sidebar docked on the left/right. Vertical mode starts with the AI launcher section at the top.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_orientation_combo,
             )
         )
         layout.addWidget(
@@ -10128,6 +10186,8 @@ class SettingsWindow(QWidget):
         key = str(service_key).strip()
         if not key:
             return None
+        if key in BUILTIN_SERVICE_KEYS:
+            return None
         installed_index = getattr(self, "_installed_service_key_index", {})
         if isinstance(installed_index, dict):
             indexed = installed_index.get(key)
@@ -10225,7 +10285,7 @@ class SettingsWindow(QWidget):
                 if not isinstance(service_row, dict):
                     continue
                 key = str(service_row.get("key", "")).strip()
-                if not key or key in index:
+                if not key or key in index or key in BUILTIN_SERVICE_KEYS:
                     continue
                 index[key] = (plugin_id, plugin_name)
         for row in self._read_services_section_rows_cache():
@@ -10233,7 +10293,7 @@ class SettingsWindow(QWidget):
                 continue
             key = str(row.get("key", "")).strip()
             plugin_id = str(row.get("plugin_id", "")).strip()
-            if not key or not plugin_id or key in index:
+            if not key or not plugin_id or key in index or key in BUILTIN_SERVICE_KEYS:
                 continue
             plugin_name = str(row.get("plugin_name", plugin_id)).strip() or plugin_id
             index[key] = (plugin_id, plugin_name)
@@ -12197,6 +12257,8 @@ class SettingsWindow(QWidget):
     def _queue_plugin_builders(self) -> None:
         plugin_queue: list[dict[str, object]] = []
         for key in sorted(self.plugin_service_builders.keys()):
+            if key in BUILTIN_SERVICE_KEYS:
+                continue
             section_meta = self.plugin_service_builders.get(key, {})
             if not isinstance(section_meta, dict):
                 continue
@@ -12283,6 +12345,7 @@ class SettingsWindow(QWidget):
             ("mail", self._build_mail_service_section),
             ("kdeconnect", self._build_kdeconnect_service_section),
             ("weather", self._build_weather_section),
+            ("desktop_clock_widget", self._build_desktop_clock_service_section),
         ]
         self._services_plugin_queue: list[dict[str, object]] = []
         self._services_cached_plugin_queue = self._read_services_section_rows_cache()
@@ -12495,13 +12558,17 @@ class SettingsWindow(QWidget):
         if cached_plugin_queue:
             row = cached_plugin_queue.pop(0)
             if isinstance(row, dict):
+                row_key = str(row.get("key", "")).strip()
+                if row_key in BUILTIN_SERVICE_KEYS:
+                    QTimer.singleShot(0, self._build_next_services_section)
+                    return
                 try:
                     widget = self._build_cached_plugin_service_stub(row)
                 except Exception:
                     widget = None
                 if isinstance(widget, QWidget):
                     self._insert_service_section_widget(
-                        str(row.get("key", "")).strip(),
+                        row_key,
                         widget,
                         is_installed=True,
                     )
@@ -15513,10 +15580,65 @@ class SettingsWindow(QWidget):
             )
         )
 
+        self.clock_digital_spacing_slider = QSlider(Qt.Orientation.Horizontal)
+        self.clock_digital_spacing_slider.setRange(8, 64)
+        self.clock_digital_spacing_slider.setValue(
+            int(self.settings_state["clock"].get("digital_line_spacing", 14))
+        )
+        self.clock_digital_spacing_slider.valueChanged.connect(
+            self._set_clock_digital_line_spacing
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("swap_vert"),
+                "Digital line spacing",
+                "Adjust spacing between the stacked digital hour and minute text.",
+                self.icon_font,
+                self.ui_font,
+                self.clock_digital_spacing_slider,
+            )
+        )
+
+        self.clock_position_x_spin = QSpinBox()
+        self.clock_position_x_spin.setRange(-1, 10000)
+        self.clock_position_x_spin.setSpecialValueText("Auto")
+        self.clock_position_x_spin.setValue(
+            int(self.settings_state["clock"].get("position_x", -1))
+        )
+        self.clock_position_x_spin.valueChanged.connect(self._set_clock_position_x)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Clock X position",
+                "Set a fixed horizontal position in pixels. Use Auto to keep centered.",
+                self.icon_font,
+                self.ui_font,
+                self.clock_position_x_spin,
+            )
+        )
+
+        self.clock_position_y_spin = QSpinBox()
+        self.clock_position_y_spin.setRange(-1, 10000)
+        self.clock_position_y_spin.setSpecialValueText("Auto")
+        self.clock_position_y_spin.setValue(
+            int(self.settings_state["clock"].get("position_y", -1))
+        )
+        self.clock_position_y_spin.valueChanged.connect(self._set_clock_position_y)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "Clock Y position",
+                "Set a fixed vertical position in pixels. Use Auto to follow bar-aware placement.",
+                self.icon_font,
+                self.ui_font,
+                self.clock_position_y_spin,
+            )
+        )
+
         if native_clock:
-            clock_status_text = "Desktop clock is ready. Settings will launch the native Qt clock binary."
+            clock_status_text = "Desktop clock service is built in and ready."
         else:
-            clock_status_text = "Desktop clock is ready. Settings will fall back to the PyQt clock until the native binary is built."
+            clock_status_text = "Desktop clock service is enabled, but `hanauta/bin/hanauta-clock` is missing."
         self.clock_status = QLabel(clock_status_text)
         self.clock_status.setWordWrap(True)
         self.clock_status.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -17689,11 +17811,50 @@ class SettingsWindow(QWidget):
                 "Seconds hand enabled." if enabled else "Seconds hand hidden."
             )
 
+    def _set_clock_digital_line_spacing(self, value: int) -> None:
+        clock = self.settings_state.setdefault("clock", {})
+        clock["digital_line_spacing"] = max(8, min(64, int(value)))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "clock_status"):
+            self.clock_status.setText(
+                f"Digital line spacing set to {int(clock['digital_line_spacing'])}."
+            )
+
+    def _set_clock_position_x(self, value: int) -> None:
+        clock = self.settings_state.setdefault("clock", {})
+        clock["position_x"] = int(value)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "clock_status"):
+            self.clock_status.setText(
+                "Clock X position set to auto."
+                if int(value) < 0
+                else f"Clock X position set to {int(value)}px."
+            )
+
+    def _set_clock_position_y(self, value: int) -> None:
+        clock = self.settings_state.setdefault("clock", {})
+        clock["position_y"] = int(value)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "clock_status"):
+            self.clock_status.setText(
+                "Clock Y position set to auto."
+                if int(value) < 0
+                else f"Clock Y position set to {int(value)}px."
+            )
+
     def _reset_clock_position(self) -> None:
         clock = self.settings_state.setdefault("clock", {})
         clock["position_x"] = -1
         clock["position_y"] = -1
         save_settings_state(self.settings_state)
+        if hasattr(self, "clock_position_x_spin"):
+            self.clock_position_x_spin.blockSignals(True)
+            self.clock_position_x_spin.setValue(-1)
+            self.clock_position_x_spin.blockSignals(False)
+        if hasattr(self, "clock_position_y_spin"):
+            self.clock_position_y_spin.blockSignals(True)
+            self.clock_position_y_spin.setValue(-1)
+            self.clock_position_y_spin.blockSignals(False)
         if hasattr(self, "clock_status"):
             self.clock_status.setText("Desktop clock position reset.")
 
@@ -18175,6 +18336,15 @@ class SettingsWindow(QWidget):
 
     def _set_bar_debug_tooltips(self, enabled: bool) -> None:
         self.settings_state.setdefault("bar", {})["debug_tooltips"] = bool(enabled)
+        self._save_bar_settings()
+
+    def _set_bar_orientation_mode(self, index: int) -> None:
+        if not hasattr(self, "bar_orientation_combo"):
+            return
+        value = str(self.bar_orientation_combo.itemData(index) or "").strip().lower()
+        if value not in {"horizontal_top", "vertical_left", "vertical_right"}:
+            value = "horizontal_top"
+        self.settings_state.setdefault("bar", {})["orientation_mode"] = value
         self._save_bar_settings()
 
     def _set_bar_monitor_target(self, index: int) -> None:

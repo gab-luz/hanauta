@@ -124,9 +124,23 @@ CRYPTO_WIDGET_SCRIPT: Path | None = resolve_plugin_script(
     "crypto_widget.py", ["crypto"]
 )
 VPS_WIDGET_SCRIPT: Path | None = resolve_plugin_script("vps_widget.py", ["vps"])
-DESKTOP_CLOCK_WIDGET_SCRIPT: Path | None = resolve_plugin_script(
-    "desktop_clock_widget.py", ["desktop-clock", "clock"]
-)
+
+
+def _resolve_desktop_clock_widget_script() -> Path | None:
+    resolved = resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
+    if resolved is not None and resolved.exists():
+        return resolved
+    fallback_candidates = (
+        ROOT / "hanauta" / "src" / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py",
+        Path.home() / "dev" / "hanauta-plugin-desktop-clock" / "desktop_clock_widget.py",
+    )
+    for candidate in fallback_candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+DESKTOP_CLOCK_WIDGET_SCRIPT: Path | None = _resolve_desktop_clock_widget_script()
 DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 GAME_MODE_POPUP_SCRIPT: Path | None = resolve_plugin_script(
     "game_mode_popup.py", ["game-mode", "gamemode"]
