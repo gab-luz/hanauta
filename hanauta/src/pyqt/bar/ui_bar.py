@@ -70,6 +70,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QFrame,
     QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
@@ -177,9 +178,23 @@ OBS_STATUS: Path | None = resolve_plugin_script("obs_status.py", ["obs"])
 UPDATES_WIDGET: Path | None = resolve_plugin_script("updates_widget.py", ["updates"])
 CRYPTO_WIDGET: Path | None = resolve_plugin_script("crypto_widget.py", ["crypto"])
 VPS_WIDGET: Path | None = resolve_plugin_script("vps_widget.py", ["vps"])
-DESKTOP_CLOCK_WIDGET: Path | None = resolve_plugin_script(
-    "desktop_clock_widget.py", ["desktop-clock", "clock"]
-)
+
+
+def _resolve_desktop_clock_widget() -> Path | None:
+    resolved = resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
+    if resolved is not None and resolved.exists():
+        return resolved
+    fallback_candidates = (
+        HANAUTA_ROOT / "src" / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py",
+        Path.home() / "dev" / "hanauta-plugin-desktop-clock" / "desktop_clock_widget.py",
+    )
+    for candidate in fallback_candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+DESKTOP_CLOCK_WIDGET: Path | None = _resolve_desktop_clock_widget()
 DESKTOP_CLOCK_BINARY = HANAUTA_ROOT / "bin" / "hanauta-clock"
 NTFY_POPUP: Path | None = resolve_plugin_script("ntfy_popup.py", ["ntfy"])
 WEATHER_POPUP: Path | None = resolve_plugin_script(
@@ -322,6 +337,7 @@ DEFAULT_BAR_SETTINGS = {
     "debug_tooltips": False,
     "merge_all_chips": False,
     "full_bar_radius": 18,
+    "orientation_mode": "horizontal_top",
     "monitor_mode": MONITOR_MODE_PRIMARY,
     "monitor_name": "",
     "service_icon_order": [],
@@ -1113,6 +1129,12 @@ def load_bar_settings_from_payload(settings: object) -> dict[str, object]:
         if monitor_mode
         in {MONITOR_MODE_PRIMARY, MONITOR_MODE_FOLLOW_MOUSE, MONITOR_MODE_NAMED}
         else MONITOR_MODE_PRIMARY
+    )
+    orientation_mode = str(merged.get("orientation_mode", "horizontal_top")).strip().lower()
+    merged["orientation_mode"] = (
+        orientation_mode
+        if orientation_mode in {"horizontal_top", "vertical_left", "vertical_right"}
+        else "horizontal_top"
     )
     merged["monitor_name"] = str(merged.get("monitor_name", "")).strip()
     return merged
@@ -2587,6 +2609,7 @@ class CyberBar(QWidget):
         self.ui_path = ui_path
         self.loaded_fonts = load_app_fonts()
         self.theme = load_theme_palette()
+        self._theme_use_matugen = bool(self.theme.use_matugen)
         self._theme_mtime = palette_mtime()
         self._settings_mtime = (
             SETTINGS_FILE.stat().st_mtime if SETTINGS_FILE.exists() else 0.0
@@ -2745,14 +2768,30 @@ class CyberBar(QWidget):
         monitor_name = str(self.bar_settings.get("monitor_name", "")).strip()
         return preferred_bar_screen(monitor_mode, monitor_name)
 
+    def _bar_orientation_mode(self) -> str:
+        value = str(self.bar_settings.get("orientation_mode", "horizontal_top")).strip().lower()
+        if value in {"vertical_left", "vertical_right"}:
+            return value
+        return "horizontal_top"
+
     def _position_on_target_screen(self, bar_height: int | None = None) -> None:
         screen = self._target_screen()
         if screen is None:
             return
         geo = screen.availableGeometry()
         target_height = bar_height if bar_height is not None else self.height()
-        self.setFixedSize(geo.width(), max(1, int(target_height)))
-        self.move(geo.x(), geo.y())
+        orientation = self._bar_orientation_mode()
+        if orientation == "horizontal_top":
+            self.setFixedSize(geo.width(), max(1, int(target_height)))
+            self.move(geo.x(), geo.y())
+            return
+        sidebar_width = max(220, min(460, int(target_height) * 8))
+        self.setFixedSize(sidebar_width, max(1, geo.height()))
+        if orientation == "vertical_right":
+            x = geo.x() + geo.width() - sidebar_width
+        else:
+            x = geo.x()
+        self.move(x, geo.y())
 
     def _build_ui(self) -> None:
         self.outer_layout = QVBoxLayout(self)
@@ -2768,6 +2807,7 @@ class CyberBar(QWidget):
         self.root_layout.setSpacing(14)
 
         left_wrap = QWidget()
+        self.left_wrap_widget = left_wrap
         self.left_layout = QHBoxLayout(left_wrap)
         self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(10)
@@ -2844,6 +2884,7 @@ class CyberBar(QWidget):
         self.root_layout.addWidget(left_wrap, 0, Qt.AlignmentFlag.AlignLeft)
 
         center_wrap = QWidget()
+        self.center_wrap_widget = center_wrap
         self.center_layout = QHBoxLayout(center_wrap)
         self.center_layout.setContentsMargins(0, 0, 0, 0)
         self.center_layout.setSpacing(10)
@@ -2978,6 +3019,7 @@ class CyberBar(QWidget):
         self.root_layout.addWidget(center_wrap, 1, Qt.AlignmentFlag.AlignCenter)
 
         right_wrap = QWidget()
+        self.right_wrap_widget = right_wrap
         self.right_layout = QHBoxLayout(right_wrap)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.right_layout.setSpacing(8)
@@ -3128,10 +3170,23 @@ class CyberBar(QWidget):
         self.tray_host.setProperty("embedded", True)
         self.tray_host.setToolTip("Qt StatusNotifier tray")
         self.tray_wrap = self._wrap_movable(self.tray_host)
-        self._status_overflow_button = None
+        self._status_overflow_button = QPushButton("↑↓")
+        self._status_overflow_button.setObjectName("statusIconButton")
+        self._status_overflow_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._status_overflow_button.setCheckable(True)
+        self._status_overflow_button.setProperty("iconKey", "overflow_vertical")
+        self._status_overflow_button.clicked.connect(self._toggle_status_overflow)
+        self._status_overflow_button.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self._status_overflow_button.customContextMenuRequested.connect(
+            self._show_overflow_button_menu
+        )
         self.status_layout.addWidget(self.btn_clip)
         self.status_layout.addWidget(self.tray_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.status_layout.addWidget(self._status_overflow_button)
         self.status_layout.addWidget(self.btn_power)
+        self._create_status_overflow()
         self.status_wrap = self._wrap_movable(self.status_chip)
         self.right_layout.addWidget(self.cap_alert_chip)
         self.right_layout.addWidget(self.status_wrap)
@@ -3168,6 +3223,7 @@ class CyberBar(QWidget):
         self._register_status_widget(self.caffeine_icon, "caffeine")
         self._register_status_widget(self.battery_icon, "battery_icon")
         self._register_status_widget(self.battery_value, "battery_value")
+        self._register_status_widget(self.btn_clip, "clipboard")
         self._register_status_widget(self.tray_wrap, "tray_wrap")
         self._status_manual_overflow.add("tray_wrap")
         self._run_bar_plugin_hooks("settings_reloaded")
@@ -3330,23 +3386,38 @@ class CyberBar(QWidget):
             self._status_overflow_open = False
         else:
             self._sync_status_overflow()
-            anchor = self._status_overflow_button.mapToGlobal(
-                self._status_overflow_button.rect().bottomLeft()
-            )
-            width = max(140, self._status_overflow_popup.sizeHint().width())
-            x = anchor.x()
-            y = anchor.y() + 8
             self._status_overflow_popup.adjustSize()
+            orientation = self._bar_orientation_mode()
+            button_rect = self._status_overflow_button.rect()
+            popup_size = self._status_overflow_popup.sizeHint()
+            if orientation == "vertical_left":
+                anchor = self._status_overflow_button.mapToGlobal(button_rect.topRight())
+                x = anchor.x() + 8
+                y = anchor.y()
+            elif orientation == "vertical_right":
+                anchor = self._status_overflow_button.mapToGlobal(button_rect.topLeft())
+                x = anchor.x() - popup_size.width() - 8
+                y = anchor.y()
+            else:
+                anchor = self._status_overflow_button.mapToGlobal(
+                    self._status_overflow_button.rect().bottomLeft()
+                )
+                x = anchor.x()
+                y = anchor.y() + 8
             self._status_overflow_popup.move(x, y)
             self._status_overflow_popup.show()
             self._status_overflow_open = True
         self._status_overflow_button.setChecked(self._status_overflow_open)
-        icon_name = "expand_more" if self._status_overflow_open else "expand_less"
-        self._status_overflow_button.setText(self._icon_text(icon_name))
+        if self._bar_orientation_mode() in {"vertical_left", "vertical_right"}:
+            self._status_overflow_button.setText("↑↓")
+        else:
+            icon_name = "expand_more" if self._status_overflow_open else "expand_less"
+            self._status_overflow_button.setText(self._icon_text(icon_name))
 
     def _sync_status_overflow(self) -> None:
         if self._status_overflow_layout is None or self._status_overflow_button is None:
             return
+        vertical_mode = self._bar_orientation_mode() in {"vertical_left", "vertical_right"}
         limit = int(self.bar_settings.get("status_icon_limit", 14) or 14)
         limit = max(4, min(48, limit))
         overflow_manual: list[QWidget] = []
@@ -3362,39 +3433,55 @@ class CyberBar(QWidget):
             else:
                 visible_candidates.append(widget)
 
-        service_order_raw = self.bar_settings.get("service_icon_order", [])
-        service_order = (
-            [str(item).strip() for item in service_order_raw if str(item).strip()]
-            if isinstance(service_order_raw, list)
-            else []
-        )
-        if service_order:
-            rank = {key: index for index, key in enumerate(service_order)}
-            slots: list[int] = []
-            sortable: list[tuple[QWidget, int, int]] = []
-            for index, widget in enumerate(visible_candidates):
-                status_key = str(widget.property("statusKey") or "").strip()
-                service_key = status_key.split(":", 1)[-1] if status_key else ""
-                if service_key in rank:
-                    slots.append(index)
-                    sortable.append((widget, rank[service_key], len(sortable)))
-            if slots and sortable:
-                sortable.sort(key=lambda item: (item[1], item[2]))
-                for index, slot in enumerate(slots):
-                    visible_candidates[slot] = sortable[index][0]
+        if vertical_mode:
+            net_widgets: list[QWidget] = []
+            other_widgets: list[QWidget] = []
+            for widget in visible_candidates:
+                if str(widget.property("statusKey") or "").strip() == "net_icon":
+                    net_widgets.append(widget)
+                else:
+                    other_widgets.append(widget)
+            main_widgets = net_widgets[:1]
+            overflow_widgets = overflow_manual + other_widgets + net_widgets[1:]
+        else:
+            service_order_raw = self.bar_settings.get("service_icon_order", [])
+            service_order = (
+                [str(item).strip() for item in service_order_raw if str(item).strip()]
+                if isinstance(service_order_raw, list)
+                else []
+            )
+            if service_order:
+                rank = {key: index for index, key in enumerate(service_order)}
+                slots: list[int] = []
+                sortable: list[tuple[QWidget, int, int]] = []
+                for index, widget in enumerate(visible_candidates):
+                    status_key = str(widget.property("statusKey") or "").strip()
+                    service_key = status_key.split(":", 1)[-1] if status_key else ""
+                    if service_key in rank:
+                        slots.append(index)
+                        sortable.append((widget, rank[service_key], len(sortable)))
+                if slots and sortable:
+                    sortable.sort(key=lambda item: (item[1], item[2]))
+                    for index, slot in enumerate(slots):
+                        visible_candidates[slot] = sortable[index][0]
 
-        main_widgets = visible_candidates[:limit]
-        overflow_widgets = overflow_manual + visible_candidates[limit:]
+            main_widgets = visible_candidates[:limit]
+            overflow_widgets = overflow_manual + visible_candidates[limit:]
 
         insert_anchor = (
             self.btn_clip if hasattr(self, "btn_clip") else self._status_overflow_button
         )
         for widget in main_widgets:
-            anchor_index = self.status_layout.indexOf(insert_anchor)
-            if anchor_index < 0:
-                anchor_index = max(
-                    0, self.status_layout.indexOf(self._status_overflow_button)
-                )
+            if vertical_mode:
+                anchor_index = self.status_layout.indexOf(self._status_overflow_button)
+                if anchor_index < 0:
+                    anchor_index = 0
+            else:
+                anchor_index = self.status_layout.indexOf(insert_anchor)
+                if anchor_index < 0:
+                    anchor_index = max(
+                        0, self.status_layout.indexOf(self._status_overflow_button)
+                    )
             self.status_layout.insertWidget(
                 max(0, anchor_index),
                 widget,
@@ -3410,8 +3497,11 @@ class CyberBar(QWidget):
             self._status_overflow_popup.hide()
             self._status_overflow_open = False
         self._status_overflow_button.setEnabled(has_overflow)
-        icon_name = "expand_more" if self._status_overflow_open else "expand_less"
-        self._status_overflow_button.setText(self._icon_text(icon_name))
+        if vertical_mode:
+            self._status_overflow_button.setText("↑↓")
+        else:
+            icon_name = "expand_more" if self._status_overflow_open else "expand_less"
+            self._status_overflow_button.setText(self._icon_text(icon_name))
 
     def _bar_plugin_api(self, plugin_dir: Path) -> dict[str, object]:
         return {
@@ -3780,6 +3870,8 @@ class CyberBar(QWidget):
         self.workspace_label.setVisible(
             bool(self.bar_settings.get("show_workspace_label", False))
         )
+        orientation = self._bar_orientation_mode()
+        vertical_mode = orientation in {"vertical_left", "vertical_right"}
         merge_all_chips = bool(self.bar_settings.get("merge_all_chips", False))
         bar_height = int(self.bar_settings.get("bar_height", 40))
         outer_vertical_margin = 4
@@ -3787,15 +3879,27 @@ class CyberBar(QWidget):
         chip_height = max(22, surface_height - 2)
         chip_vertical_padding = max(4, min(14, (surface_height - 22) // 2))
         self._position_on_target_screen(bar_height)
-        self.outer_layout.setContentsMargins(
-            12, outer_vertical_margin, 12, outer_vertical_margin
-        )
-        self.bar_surface.setFixedHeight(surface_height)
-        self.root_layout.setSpacing(0 if merge_all_chips else 14)
+        if vertical_mode:
+            self.outer_layout.setContentsMargins(4, 12, 4, 12)
+            self.bar_surface.setMinimumHeight(0)
+            self.bar_surface.setMaximumHeight(16777215)
+            self.bar_surface.setFixedWidth(max(24, self.width() - 8))
+            self.root_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            self.root_layout.setSpacing(0 if merge_all_chips else 8)
+            self.root_layout.setContentsMargins(1, 8, 1, 8)
+        else:
+            self.outer_layout.setContentsMargins(
+                12, outer_vertical_margin, 12, outer_vertical_margin
+            )
+            self.bar_surface.setMinimumWidth(0)
+            self.bar_surface.setMaximumWidth(16777215)
+            self.bar_surface.setFixedHeight(surface_height)
+            self.root_layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            self.root_layout.setSpacing(0 if merge_all_chips else 14)
+            self.root_layout.setContentsMargins(8, 1, 8, 1)
         self.left_layout.setSpacing(0 if merge_all_chips else 10)
         self.center_layout.setSpacing(0 if merge_all_chips else 10)
         self.right_layout.setSpacing(0 if merge_all_chips else 8)
-        self.root_layout.setContentsMargins(8, 1, 8, 1)
         for chip in (
             self.launcher_chip,
             self.workspace_chip,
@@ -3842,6 +3946,32 @@ class CyberBar(QWidget):
         self._apply_vertical_offset(
             self.tray_wrap, self.bar_settings.get("tray_offset", 0)
         )
+        if vertical_mode:
+            self.root_layout.setAlignment(
+                self.left_wrap_widget,
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            )
+            self.root_layout.setAlignment(
+                self.center_wrap_widget,
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            )
+            self.root_layout.setAlignment(
+                self.right_wrap_widget,
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            )
+        else:
+            self.root_layout.setAlignment(
+                self.left_wrap_widget,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            )
+            self.root_layout.setAlignment(
+                self.center_wrap_widget,
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+            )
+            self.root_layout.setAlignment(
+                self.right_wrap_widget,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            )
         self._sync_status_overflow()
 
     def _rebuild_workspace_buttons(self) -> None:
@@ -4314,8 +4444,10 @@ class CyberBar(QWidget):
         if current_mtime == self._theme_mtime:
             self._reload_settings_if_needed()
             return
+        previous_use_matugen = bool(getattr(self, "_theme_use_matugen", False))
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
+        self._theme_use_matugen = bool(self.theme.use_matugen)
         new_signature = (
             theme_font_family("ui"),
             theme_font_family("display"),
@@ -4327,6 +4459,8 @@ class CyberBar(QWidget):
             return
         self._apply_styles()
         self._reload_settings_if_needed(force=True)
+        if previous_use_matugen != self._theme_use_matugen:
+            self._restart_desktop_clock_for_theme_change()
 
     def _restart_for_theme_refresh(self) -> None:
         if getattr(self, "_theme_refresh_restart_pending", False):
@@ -6350,6 +6484,15 @@ class CyberBar(QWidget):
             )
         except Exception:
             self._desktop_clock_process = None
+
+    def _restart_desktop_clock_for_theme_change(self) -> None:
+        if (
+            self._desktop_clock_process is not None
+            and self._desktop_clock_process.poll() is None
+        ):
+            self._desktop_clock_process.terminate()
+            self._desktop_clock_process = None
+        self._sync_desktop_clock_process()
 
     def _poll_lock_states(self) -> None:
         if self._lock_keys_plugin_owns_bar():
