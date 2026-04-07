@@ -41,6 +41,7 @@ typedef struct {
 
 typedef struct {
     gchar *plugin_id;
+    gchar *plugin_dir;
     gchar *task_id;
     gint interval_seconds;
     gint timeout_seconds;
@@ -377,6 +378,7 @@ static void plugin_task_spec_free(gpointer data) {
         return;
     }
     g_free(task->plugin_id);
+    g_free(task->plugin_dir);
     g_free(task->task_id);
     g_free(task->working_dir);
     if (task->command != NULL) {
@@ -1734,6 +1736,7 @@ static GPtrArray *parse_plugin_tasks_manifest(const gchar *manifest_path, const 
         task_json = g_strndup(cursor, (gsize)(end - cursor + 1));
         task = g_new0(PluginTaskSpec, 1);
         task->plugin_id = g_strdup(plugin_id);
+        task->plugin_dir = g_strdup(plugin_dir);
         task->task_id = object_string(task_json, "id", "");
         task->interval_seconds = (gint)object_number(task_json, "interval_seconds", 300.0);
         task->timeout_seconds = (gint)object_number(task_json, "timeout_seconds", 25.0);
@@ -1791,6 +1794,15 @@ static gboolean run_plugin_task(PluginTaskSpec *task) {
     argv[task->command->len] = NULL;
 
     launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SETTINGS_PATH", g_service.settings_path, TRUE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_STATE_DIR", g_service.state_dir, TRUE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SERVICE_STATE_DIR", g_service.state_dir, TRUE);
+    if (task->plugin_id != NULL && *task->plugin_id != '\0') {
+        g_subprocess_launcher_setenv(launcher, "HANAUTA_PLUGIN_ID", task->plugin_id, TRUE);
+    }
+    if (task->plugin_dir != NULL && *task->plugin_dir != '\0') {
+        g_subprocess_launcher_setenv(launcher, "HANAUTA_PLUGIN_DIR", task->plugin_dir, TRUE);
+    }
     if (task->working_dir != NULL && *task->working_dir != '\0' && g_file_test(task->working_dir, G_FILE_TEST_IS_DIR)) {
         g_subprocess_launcher_set_cwd(launcher, task->working_dir);
     }

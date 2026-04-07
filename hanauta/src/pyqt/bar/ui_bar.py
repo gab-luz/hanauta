@@ -108,6 +108,7 @@ from pyqt.shared.rss import load_cache as load_rss_cache
 from pyqt.shared.rss import save_cache as save_rss_cache
 from pyqt.shared.cap_alerts import (
     CapAlert,
+    alert_accent_color,
     configured_alert_location,
     fallback_tip,
     fetch_active_alerts,
@@ -2696,6 +2697,7 @@ class CyberBar(QWidget):
         self._weather_forecast: Optional[WeatherForecast] = None
         self._weather_alert_seen_keys: set[str] = set()
         self._cap_alerts: list[CapAlert] = []
+        self._cap_alert_accent = "#FBC02D"
         self._pending_updates_total = 0
         self._health_snapshot: dict[str, object] = {}
         self._focused_workspace_has_real_windows = False
@@ -3034,6 +3036,9 @@ class CyberBar(QWidget):
         self.cap_alert_warning = QLabel(material_icon("warning"))
         self.cap_alert_warning.setObjectName("capAlertWarning")
         self.cap_alert_warning.setFont(QFont(self.material_font, 16))
+        self.cap_alert_warning_opacity = QGraphicsOpacityEffect(self.cap_alert_warning)
+        self.cap_alert_warning_opacity.setOpacity(1.0)
+        self.cap_alert_warning.setGraphicsEffect(self.cap_alert_warning_opacity)
         self.cap_alert_icon = AnimatedWeatherIcon(32)
         self.cap_alert_text = QLabel("Local weather alerts")
         self.cap_alert_text.setObjectName("capAlertText")
@@ -5594,10 +5599,13 @@ class CyberBar(QWidget):
         visible = self._cap_alerts_service_visible()
         alert = top_alert(self._cap_alerts) if visible else None
         if alert is None:
+            self._cap_alert_accent = "#FBC02D"
             self.cap_alert_chip.hide()
             self.cap_alert_glow_frame.hide()
             self.cap_alert_chip.setToolTip("")
             return
+        self._cap_alert_accent = alert_accent_color(alert)
+        self._apply_cap_alert_chip_style(self._cap_alert_accent)
         summary = f"{alert.event} • {relative_expiry(alert)}".strip(" •")
         if len(self._cap_alerts) > 1:
             summary = f"{len(self._cap_alerts)} alerts • {alert.event}"
@@ -5625,16 +5633,43 @@ class CyberBar(QWidget):
         self.cap_alert_glow_frame.show()
         self.cap_alert_chip.show()
 
+    def _apply_cap_alert_chip_style(self, accent: str) -> None:
+        text_color = "#101114" if QColor(accent).lightnessF() > 0.62 else "#FFF9E8"
+        warning_color = accent if QColor(accent).lightnessF() <= 0.82 else "#C99200"
+        self.cap_alert_chip.setStyleSheet(
+            f"""
+            QFrame#capAlertChip {{
+                background: {rgba(accent, 0.30)};
+                border: 1px solid {rgba(accent, 0.58)};
+            }}
+            QFrame#capAlertChip:hover {{
+                background: {rgba(accent, 0.38)};
+                border: 1px solid {rgba(accent, 0.76)};
+            }}
+            """
+        )
+        self.cap_alert_warning.setStyleSheet(
+            f'color: {warning_color}; font-family: "{self.material_font}"; font-size: 17px;'
+        )
+        self.cap_alert_text.setStyleSheet(
+            f"color: {text_color}; font-size: 11px; font-weight: 700;"
+        )
+
     def _tick_cap_alert_pulse(self) -> None:
         if not self.cap_alert_chip.isVisible():
             self.cap_alert_glow_frame.hide()
+            self.cap_alert_warning_opacity.setOpacity(1.0)
             return
         self._cap_alert_pulse_tick = (self._cap_alert_pulse_tick + 1) % 360
         phase = self._cap_alert_pulse_tick / 18.0
         alpha = 0.20 + (0.30 * ((math.sin(phase) + 1.0) / 2.0))
         width = 2 if math.sin(phase * 1.2) < 0.35 else 3
+        # Fast fade in/out using only opacity (no size/layout changes).
+        icon_phase = self._cap_alert_pulse_tick / 6.0
+        icon_alpha = 0.20 + (0.80 * ((math.sin(icon_phase) + 1.0) / 2.0))
+        self.cap_alert_warning_opacity.setOpacity(icon_alpha)
         self.cap_alert_glow_frame.setStyleSheet(
-            f"background: transparent; border: {width}px solid rgba(255, 224, 120, {alpha:.3f}); border-radius: 14px;"
+            f"background: transparent; border: {width}px solid {rgba(self._cap_alert_accent, alpha)}; border-radius: 14px;"
         )
         self.cap_alert_glow_frame.setGeometry(self.cap_alert_chip.rect())
         self.cap_alert_glow_frame.show()
@@ -5675,6 +5710,10 @@ class CyberBar(QWidget):
             alert.web or "",
             "--icon",
             alert.icon_name,
+            "--severity",
+            alert.severity,
+            "--alert-color",
+            alert.color,
         )
         if not command:
             return
@@ -5936,7 +5975,7 @@ class CyberBar(QWidget):
         self.mail_count.setToolTip(tooltip)
 
     def _open_mail_client(self) -> None:
-        if not EMAIL_CLIENT.exists():
+        if EMAIL_CLIENT is None or not EMAIL_CLIENT.exists():
             return
         command = entry_command(EMAIL_CLIENT)
         if not command:
@@ -6799,7 +6838,7 @@ class CyberBar(QWidget):
         )
 
     def _toggle_wifi_popup(self) -> None:
-        if not WIFI_CONTROL.exists():
+        if WIFI_CONTROL is None or not WIFI_CONTROL.exists():
             self.net_icon.setChecked(False)
             return
         self._toggle_singleton_process(
@@ -6808,7 +6847,7 @@ class CyberBar(QWidget):
         QTimer.singleShot(150, self._sync_wifi_button)
 
     def _toggle_vpn_popup(self) -> None:
-        if not VPN_CONTROL.exists():
+        if VPN_CONTROL is None or not VPN_CONTROL.exists():
             self.vpn_icon.setChecked(False)
             return
         self._toggle_singleton_process(

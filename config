@@ -60,6 +60,7 @@ client.background       #101417
 
 # Startup (from bspwmrc)
 exec_always --no-startup-id xsetroot -cursor_name left_ptr
+exec_always --no-startup-id sh -c '"$HOME/.config/i3/scripts/reset_pointer_map.sh" >/tmp/i3-pointer-map.log 2>&1'
 
 # Notifications are handled by Hanauta's native PyQt notification daemon from startup.sh
 
