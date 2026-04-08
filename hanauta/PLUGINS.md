@@ -147,6 +147,8 @@ All plugin installs should pass through a Hanauta-styled permission confirmation
   - Polkit prompt (`pkexec`) for privileged command
 - If plugin metadata declares `shortcuts`, installer must show a shortcut confirmation dialog before writing i3 binds.
 - If any declared shortcut is already bound, installer must show a conflict dialog and ask whether to replace conflicting binds.
+- Shortcut confirmation is required behavior (not optional): installers must never write shortcut binds silently.
+- Shortcut confirmation dialog must show each requested `keys`, `command`, and optional `description`, and allow cancel/skip.
 
 Recommended plugin-local install manifest:
 
