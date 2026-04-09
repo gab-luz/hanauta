@@ -3,6 +3,9 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -1903,10 +1906,145 @@ static void settings_changed(
     }
 }
 
-int main(void) {
+static guint16 read_le16(const guint8 *ptr) {
+    return (guint16)((guint16)ptr[0] | ((guint16)ptr[1] << 8));
+}
+
+static guint32 read_le32(const guint8 *ptr) {
+    return (guint32)((guint32)ptr[0] | ((guint32)ptr[1] << 8) | ((guint32)ptr[2] << 16) | ((guint32)ptr[3] << 24));
+}
+
+static gboolean write_waveform_json_for_wav(const gchar *wav_path, gint bars_count, GError **error) {
+    guint8 *blob = NULL;
+    gsize blob_len = 0;
+    const guint8 *fmt_chunk = NULL;
+    gsize fmt_size = 0;
+    const guint8 *data_chunk = NULL;
+    gsize data_size = 0;
+    guint16 audio_format = 0;
+    guint16 channels = 0;
+    guint16 bits_per_sample = 0;
+    guint16 block_align = 0;
+    guint32 frame_count = 0;
+    guint32 bar = 0;
+
+    if (bars_count < 4) {
+        bars_count = 4;
+    }
+    if (bars_count > 256) {
+        bars_count = 256;
+    }
+
+    if (!g_file_get_contents(wav_path, (gchar **)&blob, &blob_len, error)) {
+        return FALSE;
+    }
+    if (blob_len < 44 || memcmp(blob, "RIFF", 4) != 0 || memcmp(blob + 8, "WAVE", 4) != 0) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Invalid WAV file: %s", wav_path);
+        g_free(blob);
+        return FALSE;
+    }
+
+    gsize offset = 12;
+    while (offset + 8 <= blob_len) {
+        const guint8 *chunk = blob + offset;
+        guint32 chunk_size = read_le32(chunk + 4);
+        gsize payload_offset = offset + 8;
+        gsize next = payload_offset + (gsize)chunk_size + ((chunk_size & 1U) ? 1U : 0U);
+        if (payload_offset > blob_len || next > blob_len) {
+            break;
+        }
+        if (memcmp(chunk, "fmt ", 4) == 0) {
+            fmt_chunk = blob + payload_offset;
+            fmt_size = (gsize)chunk_size;
+        } else if (memcmp(chunk, "data", 4) == 0) {
+            data_chunk = blob + payload_offset;
+            data_size = (gsize)chunk_size;
+        }
+        offset = next;
+    }
+
+    if (fmt_chunk == NULL || data_chunk == NULL || fmt_size < 16) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "WAV missing fmt/data chunks: %s", wav_path);
+        g_free(blob);
+        return FALSE;
+    }
+
+    audio_format = read_le16(fmt_chunk + 0);
+    channels = read_le16(fmt_chunk + 2);
+    block_align = read_le16(fmt_chunk + 12);
+    bits_per_sample = read_le16(fmt_chunk + 14);
+    if (audio_format != 1 || channels < 1 || bits_per_sample != 16 || block_align < (guint16)(channels * 2)) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "Unsupported WAV format in %s (need PCM16)", wav_path);
+        g_free(blob);
+        return FALSE;
+    }
+    frame_count = (guint32)(data_size / block_align);
+    if (frame_count == 0) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "No audio samples found in %s", wav_path);
+        g_free(blob);
+        return FALSE;
+    }
+
+    GString *json = g_string_new("{\"bars\":[");
+    for (bar = 0; bar < (guint32)bars_count; ++bar) {
+        guint32 start = (guint32)((((guint64)bar) * frame_count) / (guint32)bars_count);
+        guint32 end = (guint32)((((guint64)(bar + 1)) * frame_count) / (guint32)bars_count);
+        guint32 frame = 0;
+        guint32 peak = 0;
+        if (end <= start) {
+            end = start + 1;
+        }
+        if (end > frame_count) {
+            end = frame_count;
+        }
+        for (frame = start; frame < end; ++frame) {
+            guint16 ch = 0;
+            gsize frame_offset = (gsize)frame * block_align;
+            for (ch = 0; ch < channels; ++ch) {
+                gsize sample_offset = frame_offset + ((gsize)ch * 2U);
+                gint16 sample = (gint16)read_le16(data_chunk + sample_offset);
+                guint32 abs_sample = (sample == G_MININT16) ? 32768U : (guint32)(sample < 0 ? -sample : sample);
+                if (abs_sample > peak) {
+                    peak = abs_sample;
+                }
+            }
+        }
+        guint32 amplitude = (guint32)((peak * 100U) / 32768U);
+        if (bar > 0) {
+            g_string_append_c(json, ',');
+        }
+        g_string_append_printf(json, "%u", amplitude);
+    }
+    g_string_append(json, "]}");
+    fputs(json->str, stdout);
+    fputc('\n', stdout);
+    fflush(stdout);
+    g_string_free(json, TRUE);
+    g_free(blob);
+    return TRUE;
+}
+
+int main(int argc, char **argv) {
     GMainLoop *loop = NULL;
     GFile *settings_file = NULL;
     GError *error = NULL;
+
+    if (argc >= 3 && g_strcmp0(argv[1], "--waveform") == 0) {
+        gint bars_count = 32;
+        if (argc >= 4) {
+            bars_count = (gint)g_ascii_strtoll(argv[3], NULL, 10);
+        }
+        if (!write_waveform_json_for_wav(argv[2], bars_count, &error)) {
+            if (error != NULL) {
+                g_printerr("waveform error: %s\n", error->message);
+                g_clear_error(&error);
+            } else {
+                g_printerr("waveform error: unknown error\n");
+            }
+            return 2;
+        }
+        return 0;
+    }
 
     g_service.settings_path = g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-center", "settings.json", NULL);
     g_service.state_dir = g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "service", NULL);
