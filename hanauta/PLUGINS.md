@@ -11,11 +11,11 @@ This document defines how Hanauta plugins integrate with the shell while keeping
 ## Folder Layout
 
 - Core plugin install root (default):
-  - `/home/<user>/.config/i3/hanauta/plugins`
+  - `$HOME/.config/i3/hanauta/plugins`
 - Plugin catalog repo:
   - `https://github.com/gab-luz/hanauta-plugins`
 - Local plugin dev repo example:
-  - `/home/<user>/dev/hanauta-plugin-study-tracker`
+  - `$HOME/dev/hanauta-plugin-study-tracker`
 
 A plugin directory should contain at least:
 
@@ -55,13 +55,13 @@ Recommended behavior for plugin builders:
 Settings searches plugin folders from:
 
 1. marketplace `install_dir` in settings
-2. fallback `/home/<user>/.config/i3/hanauta/plugins`
+2. fallback `$HOME/.config/i3/hanauta/plugins`
 
 A directory is treated as a plugin when `hanauta_plugin.py` exists.
 
 For installed plugins listed in marketplace metadata, Hanauta can prefer a dev override at:
 
-- `/home/<user>/dev/<plugin-folder-name>/hanauta_plugin.py`
+- `$HOME/dev/<plugin-folder-name>/hanauta_plugin.py`
 
 This keeps the plugin "installed" requirement while still letting you iterate in a dev clone.
 
@@ -333,8 +333,8 @@ Bridge behavior:
 
 Study Tracker is now plugin-powered for Services tab integration.
 
-- Plugin repo: `/home/<user>/dev/hanauta-plugin-study-tracker`
-- Installed copy: `/home/<user>/.config/i3/hanauta/plugins/hanauta-plugin-study-tracker`
+- Plugin repo: `$HOME/dev/hanauta-plugin-study-tracker`
+- Installed copy: `$HOME/.config/i3/hanauta/plugins/hanauta-plugin-study-tracker`
 - Entrypoint file:
   - `hanauta_plugin.py`
 
@@ -344,7 +344,7 @@ The Services tab section is created via plugin builder, not hardcoded core secti
 
 RSS widget shell files were decoupled from core and moved to a plugin repository.
 
-- Plugin repo: `/home/<user>/dev/hanauta-plugin-rss`
+- Plugin repo: `$HOME/dev/hanauta-plugin-rss`
 - Catalog id: `rss_widget`
 - Runtime files now live in plugin root:
   - `rss_widget.py`
