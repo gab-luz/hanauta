@@ -107,8 +107,40 @@ from pyqt.shared.plugin_bridge import (
     trigger_fullscreen_alert,
 )
 from pyqt.shared.plugin_runtime import resolve_plugin_script
+
+
+def _load_plugin_backend(module_name: str, candidates: list[Path]):
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ImportError(f"Unable to load plugin backend {module_name}: {candidates}")
+
+
+_GAMEMODE_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_gamemode_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-game-mode" / "gamemode_backend.py",
+    ],
+)
+gamemode_summary = _GAMEMODE_BACKEND.summary
+
 try:
-    from pyqt.shared.weather import WeatherCity, configured_city, search_cities
+    _WEATHER_BACKEND = _load_plugin_backend(
+        "hanauta_plugin_weather_backend",
+        [
+            Path.home() / "dev" / "hanauta-plugin-weather" / "weather_backend.py",
+        ],
+    )
+    WeatherCity = _WEATHER_BACKEND.WeatherCity
+    configured_city = _WEATHER_BACKEND.configured_city
+    search_cities = _WEATHER_BACKEND.search_cities
 except Exception:  # pragma: no cover
     class WeatherCity:  # type: ignore[no-redef]
         pass
@@ -118,13 +150,18 @@ except Exception:  # pragma: no cover
 
     def search_cities(_query: str):  # type: ignore[no-redef]
         return []
-from pyqt.shared.gamemode import summary as gamemode_summary
-from pyqt.shared.home_assistant import (
-    entity_friendly_name,
-    entity_icon_name,
-    entity_secondary_text,
-    prefetch_entity_icons,
+
+
+_HOME_ASSISTANT_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_home_assistant_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-home-assistant" / "home_assistant_backend.py",
+    ],
 )
+entity_friendly_name = _HOME_ASSISTANT_BACKEND.entity_friendly_name
+entity_icon_name = _HOME_ASSISTANT_BACKEND.entity_icon_name
+entity_secondary_text = _HOME_ASSISTANT_BACKEND.entity_secondary_text
+prefetch_entity_icons = _HOME_ASSISTANT_BACKEND.prefetch_entity_icons
 
 ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
@@ -225,9 +262,7 @@ def load_mail_storage_config() -> dict[str, str]:
 
 def save_mail_storage_config(config: dict[str, str]) -> None:
     MAIL_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    (MAIL_STATE_DIR / "storage.json").write_text(
-        json.dumps(config, indent=2), encoding="utf-8"
-    )
+    _atomic_write_json_file(MAIL_STATE_DIR / "storage.json", config)
 
 
 class MailAccountStore:
@@ -536,6 +571,7 @@ MATERIAL_ICONS = {
     "web_asset": "\ue069",
     "public": "\ue80b",
     "language": "\ue894",
+    "keyboard": "\ue312",
     "widgets": "\ue1bd",
     "bolt": "\uea0b",
     "desktop_windows": "\ue30c",
@@ -1327,6 +1363,22 @@ def directory_size_bytes(path: Path) -> int:
     return total
 
 
+def filesystem_usage_bytes(path: Path) -> tuple[int, int, int]:
+    target = path.expanduser().resolve()
+    while not target.exists() and target != target.parent:
+        target = target.parent
+    try:
+        stats = os.statvfs(str(target))
+        block_size = int(stats.f_frsize or stats.f_bsize or 4096)
+        total = int(stats.f_blocks) * block_size
+        free = int(stats.f_bavail) * block_size
+        used = max(0, total - free)
+        return total, used, free
+    except Exception:
+        usage = shutil.disk_usage(str(target))
+        return int(usage.total), int(usage.used), int(usage.free)
+
+
 def format_bytes(value: int) -> str:
     size = float(max(0, int(value)))
     units = ["B", "KB", "MB", "GB", "TB"]
@@ -1803,11 +1855,16 @@ def load_settings_state() -> dict:
         },
         "region": {
             "locale_code": "",
+            "keyboard_layout": "us",
             "use_24_hour": False,
             "date_style": "us",
             "temperature_unit": "c",
         },
         "bar": dict(DEFAULT_BAR_SETTINGS),
+        "ai_popup": {
+            "window_width": 452,
+            "window_height": 930,
+        },
         "services": merged_service_settings({}),
     }
     try:
@@ -2455,14 +2512,31 @@ def load_settings_state() -> dict:
     display["outputs"] = [item for item in outputs if isinstance(item, dict)]
     region = dict(payload.get("region", {}))
     region["locale_code"] = str(region.get("locale_code", "")).strip()
+    region["keyboard_layout"] = (
+        str(region.get("keyboard_layout", input_settings.get("keyboard_layout", "us"))).strip()
+        or "us"
+    )
     region["use_24_hour"] = bool(region.get("use_24_hour", False))
     date_style = str(region.get("date_style", "us")).strip().lower()
     region["date_style"] = date_style if date_style in {"us", "iso", "eu"} else "us"
     temp_unit = str(region.get("temperature_unit", "c")).strip().lower()
     region["temperature_unit"] = temp_unit if temp_unit in {"c", "f"} else "c"
     bar = merged_bar_settings(payload.get("bar", {}))
+    ai_popup = dict(payload.get("ai_popup", {}))
+    try:
+        ai_popup["window_width"] = max(
+            360, min(1600, int(ai_popup.get("window_width", 452)))
+        )
+    except Exception:
+        ai_popup["window_width"] = 452
+    try:
+        ai_popup["window_height"] = max(
+            520, min(1800, int(ai_popup.get("window_height", 930)))
+        )
+    except Exception:
+        ai_popup["window_height"] = 930
     services = merged_service_settings(payload.get("services", {}))
-    return {
+    result = {
         "appearance": appearance,
         "home_assistant": home_assistant,
         "ntfy": ntfy,
@@ -2490,8 +2564,14 @@ def load_settings_state() -> dict:
         "marketplace": marketplace,
         "region": region,
         "bar": bar,
+        "ai_popup": ai_popup,
         "services": services,
     }
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key not in result:
+                result[key] = value
+    return result
 
 
 def load_notification_rules_state() -> dict:
@@ -2628,8 +2708,38 @@ def save_notification_rules_state(state: dict) -> None:
 
 
 def save_settings_state(settings: dict) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    _atomic_write_json_file(SETTINGS_FILE, settings)
+
+
+def _atomic_write_json_file(path: Path, payload_obj: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(payload_obj, indent=2)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(path.parent),
+            prefix=f"{path.stem}-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(str(temp_path), str(path))
+    except OSError as exc:
+        total, used, free = filesystem_usage_bytes(path.parent)
+        detail = (
+            f"failed to write {path.name} ({exc}). "
+            f"filesystem totals: total={format_bytes(total)}, "
+            f"used={format_bytes(used)}, free={format_bytes(free)}"
+        )
+        raise OSError(detail) from exc
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def ensure_settings_state() -> None:
@@ -3200,7 +3310,7 @@ def write_pyqt_palette(
     payload.update(palette)
     if fonts:
         payload.update(fonts)
-    PYQT_THEME_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _atomic_write_json_file(PYQT_THEME_FILE, payload)
 
 
 def selected_theme_key(settings_state: dict) -> str:
@@ -4254,6 +4364,7 @@ class SettingsRow(QFrame):
         icon_font: str,
         ui_font: str,
         trailing: QWidget,
+        icon_svg_path: str = "",
     ) -> None:
         super().__init__()
         self.setObjectName("settingsRow")
@@ -4271,6 +4382,20 @@ class SettingsRow(QFrame):
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon.setFont(QFont(icon_font, 14))
         icon.setProperty("iconRole", True)
+        if icon_svg_path:
+            svg_path = Path(icon_svg_path).expanduser()
+            if svg_path.exists():
+                pix = QPixmap(str(svg_path))
+                if not pix.isNull():
+                    icon.setText("")
+                    icon.setPixmap(
+                        pix.scaled(
+                            16,
+                            16,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
         icon_layout.addWidget(icon)
 
         text_wrap = QVBoxLayout()
@@ -8261,6 +8386,36 @@ class SettingsWindow(QWidget):
             return self._normalize_keyboard_layout_value(data)
         return "us"
 
+    def _resolve_region_keyboard_layout_value(self) -> str:
+        combo = getattr(self, "region_keyboard_layout_combo", None)
+        if not isinstance(combo, QComboBox):
+            return self._normalize_keyboard_layout_value(
+                str(self.settings_state.get("region", {}).get("keyboard_layout", "us"))
+            )
+        text = combo.currentText().strip()
+        if hasattr(self, "_region_keyboard_layout_label_to_value"):
+            label_map = getattr(self, "_region_keyboard_layout_label_to_value", {})
+            if isinstance(label_map, dict):
+                mapped = label_map.get(text)
+                if isinstance(mapped, str) and mapped.strip():
+                    return self._normalize_keyboard_layout_value(mapped)
+        if text:
+            lowered = text.casefold()
+            for _label, layout_value in KEYBOARD_LAYOUT_PRESETS:
+                if lowered == layout_value.casefold():
+                    return self._normalize_keyboard_layout_value(layout_value)
+            if " - " in text:
+                suffix = text.rsplit(" - ", 1)[-1].strip()
+                if suffix:
+                    return self._normalize_keyboard_layout_value(suffix)
+            return self._normalize_keyboard_layout_value(text)
+        data = combo.currentData()
+        if isinstance(data, str) and data.strip():
+            return self._normalize_keyboard_layout_value(data)
+        return self._normalize_keyboard_layout_value(
+            str(self.settings_state.get("region", {}).get("keyboard_layout", "us"))
+        )
+
     def _apply_keyboard_layout(self, value: str) -> None:
         if shutil.which("setxkbmap") is None:
             return
@@ -8993,6 +9148,8 @@ class SettingsWindow(QWidget):
                 "Rendered Wallpapers",
                 "Mail Attachments",
                 "State Root",
+                "Filesystem Total",
+                "Filesystem Free",
             )
         ):
             label = QLabel("...")
@@ -9090,6 +9247,46 @@ class SettingsWindow(QWidget):
             )
         )
 
+        self.region_keyboard_layout_combo = QComboBox()
+        self.region_keyboard_layout_combo.setObjectName("settingsCombo")
+        self.region_keyboard_layout_combo.setEditable(True)
+        self.region_keyboard_layout_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._region_keyboard_layout_label_to_value: dict[str, str] = {}
+        region_labels: list[str] = []
+        for label, layout_value in KEYBOARD_LAYOUT_PRESETS:
+            self.region_keyboard_layout_combo.addItem(label, layout_value)
+            self._region_keyboard_layout_label_to_value[label] = layout_value
+            region_labels.append(label)
+        region_model = QStringListModel(region_labels, self)
+        self.region_keyboard_layout_completer = QCompleter(region_model, self)
+        self.region_keyboard_layout_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.region_keyboard_layout_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.region_keyboard_layout_combo.setCompleter(self.region_keyboard_layout_completer)
+        current_region_layout = self._normalize_keyboard_layout_value(
+            str(
+                self.settings_state["region"].get(
+                    "keyboard_layout",
+                    self.settings_state.get("input", {}).get("keyboard_layout", "us"),
+                )
+            )
+        )
+        current_region_layout_index = self.region_keyboard_layout_combo.findData(current_region_layout)
+        if current_region_layout_index >= 0:
+            self.region_keyboard_layout_combo.setCurrentIndex(current_region_layout_index)
+        else:
+            self.region_keyboard_layout_combo.setCurrentText(current_region_layout)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("keyboard"),
+                "Keyboard language",
+                "Autocomplete keyboard layout used by the current session (setxkbmap). Example: us, br, br abnt2.",
+                self.icon_font,
+                self.ui_font,
+                self.region_keyboard_layout_combo,
+                str(ASSETS_DIR / "keyboard.svg"),
+            )
+        )
+
         self.region_24h_switch = SwitchButton(
             bool(self.settings_state["region"].get("use_24_hour", False))
         )
@@ -9147,6 +9344,7 @@ class SettingsWindow(QWidget):
                 self.icon_font,
                 self.ui_font,
                 self.region_temperature_combo,
+                str(ASSETS_DIR / "thermostat.svg"),
             )
         )
 
@@ -9803,7 +10001,7 @@ class SettingsWindow(QWidget):
     ) -> None:
         receipt_path = self._plugin_install_receipt_file(plugin_id)
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
-        receipt_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _atomic_write_json_file(receipt_path, payload)
 
     def _clear_plugin_install_receipt(self, plugin_id: str) -> None:
         receipt_path = self._plugin_install_receipt_file(plugin_id)
@@ -17053,6 +17251,10 @@ class SettingsWindow(QWidget):
     def _save_input_settings(self) -> None:
         input_settings = self.settings_state.setdefault("input", {})
         input_settings["keyboard_layout"] = self._resolve_keyboard_layout_value()
+        region_settings = self.settings_state.setdefault("region", {})
+        region_settings["keyboard_layout"] = str(
+            input_settings.get("keyboard_layout", "us")
+        ).strip() or "us"
         try:
             input_settings["repeat_delay_ms"] = max(
                 150,
@@ -17220,6 +17422,7 @@ class SettingsWindow(QWidget):
             self.networking_status.setText("Networking settings saved.")
 
     def _refresh_storage_metrics(self) -> None:
+        fs_total, _fs_used, fs_free = filesystem_usage_bytes(STATE_DIR)
         metrics = {
             "Wallpaper Source Cache": format_bytes(
                 directory_size_bytes(WALLPAPER_SOURCE_CACHE_DIR)
@@ -17231,6 +17434,8 @@ class SettingsWindow(QWidget):
                 directory_size_bytes(MAIL_STATE_DIR / "cache")
             ),
             "State Root": format_bytes(directory_size_bytes(STATE_DIR.parent)),
+            "Filesystem Total": format_bytes(fs_total),
+            "Filesystem Free": format_bytes(fs_free),
         }
         for key, label in getattr(self, "storage_metrics", {}).items():
             label.setText(metrics.get(key, "0 B"))
@@ -18206,15 +18411,24 @@ class SettingsWindow(QWidget):
     def _save_region_settings(self) -> None:
         region = self.settings_state.setdefault("region", {})
         region["locale_code"] = self.region_locale_input.text().strip()
+        region["keyboard_layout"] = self._resolve_region_keyboard_layout_value()
+        input_settings = self.settings_state.setdefault("input", {})
+        input_settings["keyboard_layout"] = str(
+            region.get("keyboard_layout", "us")
+        ).strip() or "us"
         region["use_24_hour"] = bool(self.region_24h_switch.isChecked())
         region["date_style"] = str(self.region_date_style_combo.currentData() or "us")
         region["temperature_unit"] = str(
             self.region_temperature_combo.currentData() or "c"
         )
         save_settings_state(self.settings_state)
+        self._apply_keyboard_layout(str(region.get("keyboard_layout", "us")))
         if hasattr(self, "region_status"):
             locale_label = region["locale_code"] or "system default"
-            self.region_status.setText(f"Region settings saved for {locale_label}.")
+            keyboard_label = str(region.get("keyboard_layout", "us")).strip() or "us"
+            self.region_status.setText(
+                f"Region settings saved for {locale_label} • keyboard {keyboard_label}."
+            )
 
     def _save_bar_settings(self) -> None:
         bar = merged_bar_settings(self.settings_state.get("bar", {}))

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import logging
 import html
 import imaplib
@@ -102,48 +103,103 @@ from pyqt.shared.plugin_bridge import (
 )
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
-from pyqt.shared.rss import collect_entries as collect_rss_entries
-from pyqt.shared.rss import entry_fingerprint as rss_entry_fingerprint
-from pyqt.shared.rss import load_cache as load_rss_cache
-from pyqt.shared.rss import save_cache as save_rss_cache
-from pyqt.shared.cap_alerts import (
-    CapAlert,
-    alert_accent_color,
-    configured_alert_location,
-    fallback_tip,
-    fetch_active_alerts,
-    relative_expiry,
-    test_mode_enabled,
-    top_alert,
+
+def _load_plugin_backend(module_name: str, candidates: list[Path]) -> Any:
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ImportError(f"Unable to load plugin backend {module_name}: {candidates}")
+
+
+_RSS_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_rss_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-rss" / "rss_backend.py",
+    ],
 )
-from pyqt.shared.weather import (
-    AnimatedWeatherIcon,
-    WeatherForecast,
-    animated_icon_path,
-    configured_city,
-    fetch_forecast,
-    weather_condition_label,
+collect_rss_entries = _RSS_BACKEND.collect_entries
+rss_entry_fingerprint = _RSS_BACKEND.entry_fingerprint
+load_rss_cache = _RSS_BACKEND.load_cache
+save_rss_cache = _RSS_BACKEND.save_cache
+
+_CAP_ALERTS_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_cap_alerts_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-cap-alerts" / "cap_alerts_shared.py",
+    ],
 )
-from pyqt.shared.updates import collect_update_payload
-from pyqt.shared.health import (
-    format_steps_short,
-    health_tooltip,
-    load_current_snapshot,
-    load_health_service_settings,
-    poll_health_reminders,
+CapAlert = _CAP_ALERTS_BACKEND.CapAlert
+alert_accent_color = _CAP_ALERTS_BACKEND.alert_accent_color
+configured_alert_location = _CAP_ALERTS_BACKEND.configured_alert_location
+fallback_tip = _CAP_ALERTS_BACKEND.fallback_tip
+fetch_active_alerts = _CAP_ALERTS_BACKEND.fetch_active_alerts
+relative_expiry = _CAP_ALERTS_BACKEND.relative_expiry
+test_mode_enabled = _CAP_ALERTS_BACKEND.test_mode_enabled
+top_alert = _CAP_ALERTS_BACKEND.top_alert
+
+_WEATHER_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_weather_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-weather" / "weather_backend.py",
+    ],
 )
-from pyqt.shared.crypto import (
-    build_price_alerts as build_crypto_price_alerts,
-    fetch_prices as fetch_crypto_prices,
-    load_settings_state as load_crypto_settings_state,
-    load_tracker_state as load_crypto_tracker_state,
-    movement_summary as crypto_movement_summary,
-    save_tracker_state as save_crypto_tracker_state,
-    should_check as crypto_should_check,
-    slug_to_name as crypto_slug_to_name,
+AnimatedWeatherIcon = _WEATHER_BACKEND.AnimatedWeatherIcon
+WeatherForecast = _WEATHER_BACKEND.WeatherForecast
+animated_icon_path = _WEATHER_BACKEND.animated_icon_path
+configured_city = _WEATHER_BACKEND.configured_city
+fetch_forecast = _WEATHER_BACKEND.fetch_forecast
+weather_condition_label = _WEATHER_BACKEND.weather_condition_label
+
+_UPDATES_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_updates_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-updates" / "updates_backend.py",
+    ],
 )
-from pyqt.shared.gamemode import service_enabled as game_mode_service_enabled
-from pyqt.shared.gamemode import summary as game_mode_summary
+collect_update_payload = _UPDATES_BACKEND.collect_update_payload
+
+_HEALTH_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_health_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-health" / "health_backend.py",
+    ],
+)
+format_steps_short = _HEALTH_BACKEND.format_steps_short
+health_tooltip = _HEALTH_BACKEND.health_tooltip
+load_current_snapshot = _HEALTH_BACKEND.load_current_snapshot
+load_health_service_settings = _HEALTH_BACKEND.load_health_service_settings
+poll_health_reminders = _HEALTH_BACKEND.poll_health_reminders
+
+_CRYPTO_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_crypto_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-crypto" / "crypto_backend.py",
+    ],
+)
+build_crypto_price_alerts = _CRYPTO_BACKEND.build_price_alerts
+fetch_crypto_prices = _CRYPTO_BACKEND.fetch_prices
+load_crypto_settings_state = _CRYPTO_BACKEND.load_settings_state
+load_crypto_tracker_state = _CRYPTO_BACKEND.load_tracker_state
+crypto_movement_summary = _CRYPTO_BACKEND.movement_summary
+save_crypto_tracker_state = _CRYPTO_BACKEND.save_tracker_state
+crypto_should_check = _CRYPTO_BACKEND.should_check
+crypto_slug_to_name = _CRYPTO_BACKEND.slug_to_name
+
+_GAMEMODE_BACKEND = _load_plugin_backend(
+    "hanauta_plugin_gamemode_backend",
+    [
+        Path.home() / "dev" / "hanauta-plugin-game-mode" / "gamemode_backend.py",
+    ],
+)
+game_mode_service_enabled = _GAMEMODE_BACKEND.service_enabled
+game_mode_summary = _GAMEMODE_BACKEND.summary
 
 APP_DIR = source_root()
 ROOT = project_root()

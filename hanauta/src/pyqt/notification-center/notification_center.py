@@ -12,6 +12,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 from dataclasses import replace
 from datetime import datetime
@@ -559,8 +560,29 @@ def load_notification_settings() -> dict:
 
 
 def save_notification_settings(settings: dict) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    _atomic_write_json(SETTINGS_FILE, settings)
+
+
+def _atomic_write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(path.parent),
+            prefix=f"{path.stem}-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(json.dumps(payload, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(str(temp_path), str(path))
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def tinted_svg_pixmap(path: Path, color: QColor, size: int = 18) -> QPixmap:
@@ -3241,11 +3263,7 @@ class NotificationCenter(QWidget):
         )
 
     def _write_notification_history(self, history: list[dict]) -> None:
-        NOTIFICATION_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        NOTIFICATION_HISTORY_FILE.write_text(
-            json.dumps(history, indent=2),
-            encoding="utf-8",
-        )
+        _atomic_write_json(NOTIFICATION_HISTORY_FILE, history)
 
     def _dismiss_notification(self, target: dict) -> None:
         updated: list[dict] = []

@@ -7,6 +7,7 @@ Native PyQt6 dock for i3.
 from __future__ import annotations
 
 import argparse
+import errno
 import fnmatch
 import json
 import os
@@ -98,6 +99,7 @@ MATERIAL_ICONS = {
 MONITOR_MODE_PRIMARY = "primary"
 MONITOR_MODE_FOLLOW_MOUSE = "follow_mouse"
 MONITOR_MODE_NAMED = "named"
+MIN_FREE_BYTES_FOR_STATE_WRITES = 64 * 1024 * 1024
 
 
 def run_cmd(cmd: list[str], timeout: float = 3.0) -> str:
@@ -191,9 +193,72 @@ def load_json(path: Path, default):
         return default
 
 
+def _free_bytes(path: Path) -> int:
+    target = path
+    if target.exists() and target.is_file():
+        target = target.parent
+    try:
+        usage = shutil.disk_usage(str(target))
+        return int(usage.free)
+    except Exception:
+        return -1
+
+
+def _has_free_space_for_state(path: Path, minimum_bytes: int = MIN_FREE_BYTES_FOR_STATE_WRITES) -> bool:
+    free = _free_bytes(path)
+    if free < 0:
+        # If we cannot determine free space, keep behavior permissive.
+        return True
+    return free >= max(0, int(minimum_bytes))
+
+
 def save_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not _has_free_space_for_state(path):
+        # Keep dock startup alive when storage is genuinely low.
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as exc:
+        if exc.errno in {errno.ENOSPC, errno.EDQUOT}:
+            return
+        return
+    except Exception:
+        return
+
+
+def _read_lock_pid(lock_path: Path) -> int | None:
+    try:
+        for line in lock_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            pid = int(line)
+            if pid > 0:
+                return pid
+    except Exception:
+        return None
+    return None
+
+
+def _pid_looks_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+    return True
+
+
+def _clear_orphan_lock_file(lock_path: Path) -> None:
+    if not lock_path.exists():
+        return
+    pid = _read_lock_pid(lock_path)
+    if pid is None or not _pid_looks_alive(pid):
+        lock_path.unlink(missing_ok=True)
 
 
 def acquire_runtime_lock() -> QLockFile | None:
@@ -204,6 +269,12 @@ def acquire_runtime_lock() -> QLockFile | None:
         return lock
     try:
         lock.removeStaleLockFile()
+    except Exception:
+        pass
+    if lock.tryLock(1000):
+        return lock
+    try:
+        _clear_orphan_lock_file(LOCK_PATH)
     except Exception:
         pass
     if lock.tryLock(1000):
@@ -2579,7 +2650,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     runtime_lock = acquire_runtime_lock()
     if runtime_lock is None:
-        return 0
+        print(f"hanauta-dock: failed to acquire runtime lock at {LOCK_PATH}", file=sys.stderr)
+        return 1
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
     app.setPalette(palette)

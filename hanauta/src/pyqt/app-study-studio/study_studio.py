@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import signal
 import subprocess
 import sys
+import tempfile
 import textwrap
 import uuid
 import xml.etree.ElementTree as ET
@@ -498,7 +500,24 @@ def save_state(state: OrganizerState) -> None:
         "resources": [asdict(item) for item in state.resources],
         "settings": asdict(state.settings),
     }
-    STATE_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(STATE_DIR),
+            prefix="state-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(json.dumps(payload, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(str(temp_path), str(STATE_FILE))
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def load_global_calendar_settings() -> dict:

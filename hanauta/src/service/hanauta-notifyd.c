@@ -648,14 +648,14 @@ static void apply_text_with_emoji_markup(GtkWidget *widget, const gchar *text) {
 static gchar *load_toast_css(const ThemePalette *theme) {
     static const gchar *fallback_template =
         "#hanauta-toast-window { background: transparent; }\n"
-        "#card { background: {{CARD_BG}}; border: 1px solid {{CARD_BORDER}}; border-radius: 24px; box-shadow: 0 0 24px {{CARD_SHADOW}}; }\n"
-        "#content { padding: 14px; }\n"
+        "#card { background: {{CARD_BG}}; border: 1px solid {{CARD_BORDER}}; border-radius: 18px; box-shadow: 0 0 16px {{CARD_SHADOW}}; }\n"
+        "#content { padding: 10px; }\n"
         "#toastIcon { padding: 0; }\n"
         "#appLabel { color: {{APP_LABEL}}; font-weight: 800; letter-spacing: 0.4px; }\n"
-        "#summaryLabel { color: {{SUMMARY_COLOR}}; font-weight: 800; font-size: 15px; }\n"
-        "#bodyLabel { color: {{BODY_COLOR}}; }\n"
-        "#closeButton { background: {{CLOSE_BG}}; color: {{CLOSE_FG}}; border-radius: 12px; padding: 2px 8px; border: none; }\n"
-        "#actionButton { background: {{ACTION_BG}}; color: {{ACTION_FG}}; border-radius: 16px; padding: 7px 13px; border: none; font-weight: 800; }\n"
+        "#summaryLabel { color: {{SUMMARY_COLOR}}; font-weight: 800; font-size: 13px; }\n"
+        "#bodyLabel { color: {{BODY_COLOR}}; font-size: 12px; }\n"
+        "#closeButton { background: {{CLOSE_BG}}; color: {{CLOSE_FG}}; border-radius: 10px; padding: 1px 6px; border: none; }\n"
+        "#actionButton { background: {{ACTION_BG}}; color: {{ACTION_FG}}; border-radius: 12px; padding: 5px 10px; border: none; font-weight: 800; }\n"
         "#actionButton:hover { background: {{ACTION_HOVER}}; color: {{ACTION_HOVER_FG}}; }\n";
     gchar *override_path = toast_override_file_path();
     gchar *default_path = toast_default_file_path();
@@ -1300,12 +1300,12 @@ static void reposition_toasts(void) {
     ordered = g_list_sort(ordered, compare_toast_windows);
     for (GList *node = ordered; node != NULL; node = node->next) {
         ToastWindow *toast = node->data;
-        gint toast_width = 356;
+        gint toast_width = 320;
         gint toast_height = 120;
         gtk_widget_show_all(toast->window);
         gtk_window_get_size(GTK_WINDOW(toast->window), &toast_width, &toast_height);
         gtk_window_move(GTK_WINDOW(toast->window), geometry.x + geometry.width - toast_width - 24, geometry.y + y);
-        y += toast_height + 10;
+        y += toast_height + 8;
     }
     g_list_free(ordered);
 }
@@ -1372,6 +1372,136 @@ static GtkWidget *make_label(const gchar *name, const gchar *text, gdouble xalig
     return label;
 }
 
+static gboolean notification_is_weather(const NotificationPayload *payload) {
+    if (payload == NULL) {
+        return FALSE;
+    }
+    if (str_contains_casefold(payload->app_name, "weather")) {
+        return TRUE;
+    }
+    if (str_contains_casefold(payload->summary, "weather")) {
+        return TRUE;
+    }
+    if (str_contains_casefold(payload->summary, "sunrise") || str_contains_casefold(payload->summary, "sunset")) {
+        return TRUE;
+    }
+    if (str_contains_casefold(payload->body, "sunrise") || str_contains_casefold(payload->body, "sunset")) {
+        return TRUE;
+    }
+    if (str_contains_casefold(payload->app_icon, "weather")
+        || str_contains_casefold(payload->app_icon, "sunrise")
+        || str_contains_casefold(payload->app_icon, "sunset")
+        || str_contains_casefold(payload->app_icon, "clear-day")
+        || str_contains_casefold(payload->app_icon, "clear-night")
+        || str_contains_casefold(payload->app_icon, "overcast")
+        || str_contains_casefold(payload->app_icon, "thunderstorms")
+        || str_contains_casefold(payload->app_icon, "fog")) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static gchar *resolve_weather_icon_alias_name(const gchar *icon_name) {
+    gchar *base = NULL;
+    if (icon_name == NULL || *icon_name == '\0') {
+        return NULL;
+    }
+    base = g_ascii_strdown(icon_name, -1);
+    if (g_str_has_suffix(base, "-symbolic")) {
+        base[strlen(base) - strlen("-symbolic")] = '\0';
+    }
+    if (g_strcmp0(base, "weather-clear") == 0) {
+        g_free(base);
+        return g_strdup("clear-day");
+    }
+    if (g_strcmp0(base, "weather-clear-night") == 0) {
+        g_free(base);
+        return g_strdup("clear-night");
+    }
+    if (g_strcmp0(base, "weather-few-clouds") == 0 || g_strcmp0(base, "weather-partly-cloudy") == 0) {
+        g_free(base);
+        return g_strdup("partly-cloudy-day");
+    }
+    if (g_strcmp0(base, "weather-overcast") == 0) {
+        g_free(base);
+        return g_strdup("overcast");
+    }
+    if (g_strcmp0(base, "weather-showers") == 0 || g_strcmp0(base, "weather-showers-scattered") == 0) {
+        g_free(base);
+        return g_strdup("overcast-rain");
+    }
+    if (g_strcmp0(base, "weather-storm") == 0 || g_strcmp0(base, "weather-severe-alert") == 0) {
+        g_free(base);
+        return g_strdup("thunderstorms");
+    }
+    if (g_strcmp0(base, "weather-snow") == 0) {
+        g_free(base);
+        return g_strdup("overcast-snow");
+    }
+    if (g_strcmp0(base, "weather-fog") == 0 || g_strcmp0(base, "weather-mist") == 0) {
+        g_free(base);
+        return g_strdup("fog");
+    }
+    if (g_strcmp0(base, "daytime-sunrise") == 0) {
+        g_free(base);
+        return g_strdup("sunrise");
+    }
+    if (g_strcmp0(base, "daytime-sunset") == 0) {
+        g_free(base);
+        return g_strdup("sunset");
+    }
+    return base;
+}
+
+static gchar *resolve_bundled_weather_icon_path(const gchar *icon_name) {
+    gchar *base_name = resolve_weather_icon_alias_name(icon_name);
+    gchar *path = NULL;
+    if (base_name == NULL || *base_name == '\0') {
+        g_free(base_name);
+        return NULL;
+    }
+    path = g_build_filename(
+        g_get_home_dir(),
+        ".config",
+        "i3",
+        "hanauta",
+        "src",
+        "assets",
+        "weather-icons",
+        "monochrome",
+        "svg-static",
+        NULL
+    );
+    gchar *candidate = g_strdup_printf("%s/%s.svg", path, base_name);
+    if (g_file_test(candidate, G_FILE_TEST_EXISTS)) {
+        g_free(path);
+        g_free(base_name);
+        return candidate;
+    }
+    g_free(candidate);
+    candidate = g_build_filename(
+        g_get_home_dir(),
+        ".config",
+        "i3",
+        "hanauta",
+        "src",
+        "assets",
+        "weather-icons",
+        "fill",
+        "svg",
+        NULL
+    );
+    path = g_strdup_printf("%s/%s.svg", candidate, base_name);
+    g_free(candidate);
+    if (g_file_test(path, G_FILE_TEST_EXISTS)) {
+        g_free(base_name);
+        return path;
+    }
+    g_free(path);
+    g_free(base_name);
+    return NULL;
+}
+
 static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *image_pixbuf, gint target_size) {
     if (image_pixbuf != NULL) {
         gint width = gdk_pixbuf_get_width(image_pixbuf);
@@ -1412,7 +1542,14 @@ static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *imag
     if (g_str_has_prefix(icon_name, "file://")) {
         resolved_path = g_filename_from_uri(icon_name, NULL, NULL);
     }
+    gchar *bundled_weather_icon = NULL;
     const gchar *effective_icon = (resolved_path != NULL && *resolved_path != '\0') ? resolved_path : icon_name;
+    if (!g_file_test(effective_icon, G_FILE_TEST_EXISTS)) {
+        bundled_weather_icon = resolve_bundled_weather_icon_path(effective_icon);
+        if (bundled_weather_icon != NULL && *bundled_weather_icon != '\0') {
+            effective_icon = bundled_weather_icon;
+        }
+    }
     if (g_file_test(effective_icon, G_FILE_TEST_EXISTS)) {
         GError *error = NULL;
         GdkPixbufAnimation *animation = gdk_pixbuf_animation_new_from_file(effective_icon, &error);
@@ -1425,7 +1562,9 @@ static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *imag
         }
     } else {
         image = gtk_image_new_from_icon_name(effective_icon, GTK_ICON_SIZE_DIALOG);
+        gtk_image_set_pixel_size(GTK_IMAGE(image), MAX(16, target_size));
     }
+    g_free(bundled_weather_icon);
     g_free(resolved_path);
     if (image == NULL) {
         return NULL;
@@ -1447,6 +1586,13 @@ static gboolean clear_transparent_window(GtkWidget *widget, cairo_t *cr, gpointe
 
 static void show_toast(const NotificationPayload *payload) {
     ThemePalette theme;
+    gboolean compact_weather = notification_is_weather(payload);
+    gint toast_width = compact_weather ? 264 : 320;
+    guint outer_padding = compact_weather ? 6 : 10;
+    guint content_padding = compact_weather ? 4 : 6;
+    gint content_spacing = compact_weather ? 6 : 8;
+    gint header_icon_size = compact_weather ? 18 : 22;
+    gint art_icon_size = compact_weather ? 42 : 58;
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     GdkScreen *screen = gtk_widget_get_screen(window);
     GdkVisual *visual = screen != NULL ? gdk_screen_get_rgba_visual(screen) : NULL;
@@ -1465,32 +1611,36 @@ static void show_toast(const NotificationPayload *payload) {
     gtk_window_stick(GTK_WINDOW(window));
     gtk_window_set_accept_focus(GTK_WINDOW(window), FALSE);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
-    gtk_window_set_default_size(GTK_WINDOW(window), 356, -1);
+    gtk_window_set_default_size(GTK_WINDOW(window), toast_width, -1);
+    gtk_widget_set_size_request(window, toast_width, -1);
     gtk_window_set_title(GTK_WINDOW(window), title);
     gtk_widget_set_name(window, "hanauta-toast-window");
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_container_set_border_width(GTK_CONTAINER(outer), 18);
+    gtk_container_set_border_width(GTK_CONTAINER(outer), outer_padding);
     gtk_container_add(GTK_CONTAINER(window), outer);
 
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_name(card, "card");
     gtk_box_pack_start(GTK_BOX(outer), card, TRUE, TRUE, 0);
 
-    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, content_spacing);
     gtk_widget_set_name(content, "content");
-    gtk_container_set_border_width(GTK_CONTAINER(content), 14);
+    gtk_container_set_border_width(GTK_CONTAINER(content), content_padding);
     gtk_box_pack_start(GTK_BOX(card), content, TRUE, TRUE, 0);
 
     GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_pack_start(GTK_BOX(content), top, FALSE, FALSE, 0);
 
-    GtkWidget *icon = make_notification_icon(payload->app_icon, NULL, 28);
+    GtkWidget *icon = make_notification_icon(payload->app_icon, NULL, header_icon_size);
     if (icon != NULL) {
         gtk_box_pack_start(GTK_BOX(top), icon, FALSE, FALSE, 0);
     }
 
     GtkWidget *app_name = make_label("appLabel", payload->app_name[0] != '\0' ? payload->app_name : "Notification", 0.0);
+    gtk_label_set_lines(GTK_LABEL(app_name), 1);
+    gtk_label_set_ellipsize(GTK_LABEL(app_name), PANGO_ELLIPSIZE_END);
+    gtk_label_set_max_width_chars(GTK_LABEL(app_name), compact_weather ? 18 : 26);
     gtk_box_pack_start(GTK_BOX(top), app_name, TRUE, TRUE, 0);
 
     GtkWidget *close_button = gtk_button_new_with_label("×");
@@ -1500,11 +1650,20 @@ static void show_toast(const NotificationPayload *payload) {
     gtk_box_pack_end(GTK_BOX(top), close_button, FALSE, FALSE, 0);
 
     GtkWidget *summary = make_label("summaryLabel", payload->summary, 0.0);
+    if (compact_weather) {
+        gtk_label_set_max_width_chars(GTK_LABEL(summary), 28);
+        gtk_label_set_lines(GTK_LABEL(summary), 2);
+        gtk_label_set_ellipsize(GTK_LABEL(summary), PANGO_ELLIPSIZE_END);
+    } else {
+        gtk_label_set_max_width_chars(GTK_LABEL(summary), 44);
+        gtk_label_set_lines(GTK_LABEL(summary), 3);
+        gtk_label_set_ellipsize(GTK_LABEL(summary), PANGO_ELLIPSIZE_END);
+    }
     gtk_box_pack_start(GTK_BOX(content), summary, FALSE, FALSE, 0);
 
     if ((payload->image_pixbuf != NULL) || (payload->image_path != NULL && payload->image_path[0] != '\0')) {
         GtkWidget *art_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        GtkWidget *art = make_notification_icon(payload->image_path, payload->image_pixbuf, 84);
+        GtkWidget *art = make_notification_icon(payload->image_path, payload->image_pixbuf, art_icon_size);
         if (art != NULL) {
             gtk_box_pack_start(GTK_BOX(art_row), art, FALSE, FALSE, 0);
             gtk_box_pack_start(GTK_BOX(content), art_row, FALSE, FALSE, 0);
@@ -1515,6 +1674,15 @@ static void show_toast(const NotificationPayload *payload) {
 
     if (payload->body != NULL && payload->body[0] != '\0') {
         GtkWidget *body = make_label("bodyLabel", payload->body, 0.0);
+        if (compact_weather) {
+            gtk_label_set_max_width_chars(GTK_LABEL(body), 30);
+            gtk_label_set_lines(GTK_LABEL(body), 2);
+            gtk_label_set_ellipsize(GTK_LABEL(body), PANGO_ELLIPSIZE_END);
+        } else {
+            gtk_label_set_max_width_chars(GTK_LABEL(body), 46);
+            gtk_label_set_lines(GTK_LABEL(body), 4);
+            gtk_label_set_ellipsize(GTK_LABEL(body), PANGO_ELLIPSIZE_END);
+        }
         gtk_box_pack_start(GTK_BOX(content), body, FALSE, FALSE, 0);
     }
 

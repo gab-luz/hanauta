@@ -177,7 +177,7 @@ EOF
   dbus-update-activation-environment --systemd GTK_THEME= 2>/dev/null || true
   pkill -x picom 2>/dev/null || true
   picom --config "$HOME/.config/i3/picom.conf" --daemon >/tmp/picom.log 2>&1 || true
-  if command -v setxkbmap >/dev/null 2>&1; then
+if command -v setxkbmap >/dev/null 2>&1; then
     keyboard_layout="$("$PYTHON_BIN" - <<'PY'
 import json
 from pathlib import Path
@@ -189,8 +189,17 @@ try:
 except Exception:
     payload = {}
 if isinstance(payload, dict):
+    region_settings = payload.get("region", {})
+    if isinstance(region_settings, dict):
+        candidate = str(region_settings.get("keyboard_layout", "")).strip()
+        if candidate:
+            value = " ".join(part for part in candidate.split() if part)
+        else:
+            locale_code = str(region_settings.get("locale_code", "")).strip().lower()
+            if locale_code.startswith("pt_br") or locale_code.startswith("pt-br"):
+                value = "br abnt2"
     input_settings = payload.get("input", {})
-    if isinstance(input_settings, dict):
+    if isinstance(input_settings, dict) and value == "us":
         candidate = str(input_settings.get("keyboard_layout", "")).strip()
         if candidate:
             value = " ".join(part for part in candidate.split() if part)

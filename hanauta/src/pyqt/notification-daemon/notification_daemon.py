@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -102,7 +104,24 @@ def load_json(path: Path, default):
 
 def save_json(path: Path, payload) -> None:
     ensure_state_dir()
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(path.parent),
+            prefix=f"{path.stem}-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(json.dumps(payload, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(str(temp_path), str(path))
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def is_paused() -> bool:

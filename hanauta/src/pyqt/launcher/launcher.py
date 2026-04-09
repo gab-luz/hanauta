@@ -11,6 +11,8 @@ import shlex
 import subprocess
 import sys
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -402,7 +404,26 @@ def save_cached_desktop_apps(apps: list[DesktopApp]) -> None:
         payload = {
             "apps": [app.to_cache_dict() for app in apps],
         }
-        CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=True, separators=(",", ":")), encoding="utf-8")
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(STATE_DIR),
+                prefix="apps_cache-",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                handle.write(
+                    json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+                temp_path = Path(handle.name)
+            os.replace(str(temp_path), str(CACHE_FILE))
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
     except Exception:
         pass
 
