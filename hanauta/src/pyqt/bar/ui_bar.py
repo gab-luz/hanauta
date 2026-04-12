@@ -5297,7 +5297,7 @@ class CyberBar(QWidget):
         icon_name: str = "not-available",
         replace_id: int = 18700,
     ) -> None:
-        icon_path = animated_icon_path(icon_name)
+        icon_arg = str(icon_name or "not-available").strip() or "not-available"
         command = [
             "notify-send",
             "-a",
@@ -5305,7 +5305,7 @@ class CyberBar(QWidget):
             "-r",
             str(replace_id),
             "-i",
-            str(icon_path),
+            icon_arg,
             summary,
             body,
         ]

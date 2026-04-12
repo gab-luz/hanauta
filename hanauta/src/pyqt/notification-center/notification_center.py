@@ -92,6 +92,14 @@ AIRPLANE_NOTIFICATION_ICON = _preferred_icon_path(
     "airplane-mode-on.svg",
     "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg",
 )
+CAFFEINE_NOTIFICATION_ICON = _preferred_icon_path("caffeine.svg", "coffee")
+NIGHT_LIGHT_NOTIFICATION_ICON = _preferred_icon_path("night-light.svg", "nightlight")
+CALENDAR_NOTIFICATION_ICON = _preferred_icon_path(
+    "calendar_today.svg", "x-office-calendar"
+)
+WEATHER_HISTORY_ICON = (
+    ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
+)
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 NOTIFICATION_HISTORY_FILE = (
@@ -155,6 +163,7 @@ MATERIAL_ICONS = {
     "bluetooth": "\ue1a7",
     "brightness_medium": "\ue1ae",
     "camera_alt": "\ue3b0",
+    "calendar_today": "\ue935",
     "check_circle": "\ue86c",
     "chevron_left": "\ue5cb",
     "chevron_right": "\ue5cc",
@@ -3324,9 +3333,67 @@ class NotificationCenter(QWidget):
         return card
 
     def _notification_icon_pixmap(
-        self, app_name: str, desktop_entry: str = "", icon_name: str = ""
+        self,
+        app_name: str,
+        desktop_entry: str = "",
+        icon_name: str = "",
+        summary: str = "",
+        body: str = "",
     ) -> QPixmap:
         normalized = app_name.strip().lower()
+        summary_normalized = summary.strip().lower()
+        body_normalized = body.strip().lower()
+        if icon_name:
+            direct_icon_path = Path(icon_name.replace("file://", "")).expanduser()
+            if direct_icon_path.exists():
+                direct = render_svg_pixmap(direct_icon_path, 18)
+                if not direct.isNull():
+                    return direct
+        is_caffeine = (
+            "caffeine" in normalized
+            or "caffeine" in summary_normalized
+            or "caffeine" in body_normalized
+        )
+        if is_caffeine:
+            caffeine_path = Path(CAFFEINE_NOTIFICATION_ICON).expanduser()
+            if caffeine_path.exists():
+                return tinted_svg_pixmap(
+                    caffeine_path, QColor(self.theme_palette.primary), 18
+                )
+            fallback = render_theme_icon_pixmap(["coffee"], 18)
+            if not fallback.isNull():
+                return fallback
+        is_night_light = (
+            "night light" in normalized
+            or "nightlight" in normalized
+            or "night light" in summary_normalized
+            or "nightlight" in summary_normalized
+            or "night light" in body_normalized
+            or "nightlight" in body_normalized
+            or icon_name.strip().lower() in {"nightlight", "weather-clear-night"}
+        )
+        if is_night_light:
+            night_path = Path(NIGHT_LIGHT_NOTIFICATION_ICON).expanduser()
+            if night_path.exists():
+                return tinted_svg_pixmap(
+                    night_path, QColor(self.theme_palette.primary), 18
+                )
+            fallback = render_theme_icon_pixmap(["nightlight", "weather-clear-night"], 18)
+            if not fallback.isNull():
+                return fallback
+        is_weather = (
+            "weather" in normalized
+            or "weather" in summary_normalized
+            or "weather" in body_normalized
+            or "sunrise" in summary_normalized
+            or "sunset" in summary_normalized
+            or "sunrise" in body_normalized
+            or "sunset" in body_normalized
+        )
+        if is_weather and WEATHER_HISTORY_ICON.exists():
+            return tinted_svg_pixmap(
+                WEATHER_HISTORY_ICON, QColor(self.theme_palette.primary), 18
+            )
         known_assets = {
             "kde connect": KDECONNECT_ICON,
             "kdeconnect": KDECONNECT_ICON,
@@ -3400,6 +3467,12 @@ class NotificationCenter(QWidget):
     def _poll_calendar_events(self) -> None:
         self._calendar_events = load_calendar_events(2)
         self._clear_layout_widgets(self.events_layout)
+        calendar_icon_pixmap = QPixmap()
+        calendar_icon_path = Path(CALENDAR_NOTIFICATION_ICON).expanduser()
+        if calendar_icon_path.exists():
+            calendar_icon_pixmap = tinted_svg_pixmap(
+                calendar_icon_path, QColor(self.theme_palette.primary), 18
+            )
         if not self._calendar_events:
             self.events_layout.addWidget(
                 self._list_item_card(
@@ -3407,6 +3480,7 @@ class NotificationCenter(QWidget):
                     "Connect a CalDAV calendar to populate this area.",
                     "Nothing scheduled in the next 14 days",
                     "calendar_today",
+                    calendar_icon_pixmap,
                 )
             )
             self.events_layout.addStretch(1)
@@ -3422,7 +3496,13 @@ class NotificationCenter(QWidget):
             location = str(event.get("location", "")).strip()
             subtitle = location or "Calendar event"
             self.events_layout.addWidget(
-                self._list_item_card(title, subtitle, meta, "calendar_today")
+                self._list_item_card(
+                    title,
+                    subtitle,
+                    meta,
+                    "calendar_today",
+                    calendar_icon_pixmap,
+                )
             )
         self.events_layout.addStretch(1)
 
@@ -3467,7 +3547,13 @@ class NotificationCenter(QWidget):
                     body,
                     app_name,
                     "notifications",
-                    self._notification_icon_pixmap(app_name, desktop_entry, icon_name),
+                    self._notification_icon_pixmap(
+                        app_name,
+                        desktop_entry,
+                        icon_name,
+                        title,
+                        body,
+                    ),
                     dismiss_btn,
                 )
             )
@@ -4194,7 +4280,9 @@ class NotificationCenter(QWidget):
                 "Night Light",
                 "Night light enabled",
                 "Night light disabled",
-                "weather-clear-night",
+                NIGHT_LIGHT_NOTIFICATION_ICON
+                if Path(NIGHT_LIGHT_NOTIFICATION_ICON).exists()
+                else "nightlight",
             ),
         )
 
@@ -4209,7 +4297,9 @@ class NotificationCenter(QWidget):
                 "Caffeine",
                 "Caffeine enabled",
                 "Caffeine disabled",
-                "coffee",
+                CAFFEINE_NOTIFICATION_ICON
+                if Path(CAFFEINE_NOTIFICATION_ICON).exists()
+                else "coffee",
             ),
         )
 
