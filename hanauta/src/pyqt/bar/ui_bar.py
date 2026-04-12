@@ -4190,10 +4190,6 @@ class CyberBar(QWidget):
                 letter-spacing: 0.7px;
                 padding-bottom: 0px;
             }}
-            #launcherChip:hover {{
-                background: {rgba(theme.surface_container_high, 0.92)};
-                border: 1px solid {rgba(theme.primary, 0.20)};
-            }}
             #workspaceLabel {{
                 color: {theme.text_muted};
                 font-weight: 500;
@@ -4323,7 +4319,7 @@ class CyberBar(QWidget):
                 max-width: 22px;
                 padding: 0;
             }}
-            #mediaControl:hover, #utilityButton:hover, #aiToggleButton:hover {{
+            #mediaControl:hover, #utilityButton:hover {{
                 color: {theme.text};
                 background: {theme.hover_bg};
                 border-radius: 11px;
@@ -4347,16 +4343,27 @@ class CyberBar(QWidget):
                 max-width: 28px;
                 min-height: 24px;
                 max-height: 24px;
-                padding: 0;
+                padding: 1px 0 0 0;
+                outline: none;
             }}
-            #launcherChip QPushButton#aiToggleButton:hover,
+            #launcherChip QPushButton#aiToggleButton:hover {{
+                background: transparent;
+                border: none;
+                color: {theme.primary};
+                outline: none;
+            }}
+            #launcherChip QPushButton#aiToggleButton:focus {{
+                background: transparent;
+                border: none;
+                outline: none;
+            }}
             #launcherChip QFrame#launcherTrigger:hover {{
-                background: {theme.hover_bg};
+                background: transparent;
                 border-radius: {max(0, chip_radius - 5)}px;
             }}
             #launcherChip QFrame#launcherTrigger:hover QLabel#launcherNote,
             #launcherChip QFrame#launcherTrigger:hover QLabel#launcherText {{
-                color: {theme.text};
+                color: {theme.text_muted};
             }}
             #aiToggleButton:checked {{
                 color: {theme.primary};
@@ -4438,8 +4445,9 @@ class CyberBar(QWidget):
         self._update_window_mask()
 
     def _update_launcher_wordmark_colors(self, hovered: bool = False) -> None:
-        note_color = self.theme.text if hovered else self.theme.primary
-        text_color = self.theme.text if hovered else self.theme.text_muted
+        del hovered
+        note_color = self.theme.primary
+        text_color = self.theme.text_muted
         self.launcher_note.setStyleSheet(f"color: {note_color};")
         self.launcher_text.setStyleSheet(f"color: {text_color};")
 
