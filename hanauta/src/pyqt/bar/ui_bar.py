@@ -2881,8 +2881,10 @@ class CyberBar(QWidget):
         self.ai_button = self._icon_button("auto_awesome")
         self.ai_button.setObjectName("aiToggleButton")
         self.ai_button.setCheckable(True)
+        self.ai_button.setFont(QFont(self.material_font, 16))
         self.ai_button.setFixedSize(28, 24)
         self.ai_button.pressed.connect(self._toggle_ai_popup)
+        self._refresh_ai_button_icon()
         self.launcher_trigger = ClickableFrame()
         self.launcher_trigger.setObjectName("launcherTrigger")
         self.launcher_trigger.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -3300,6 +3302,66 @@ class CyberBar(QWidget):
         button.setFont(QFont(self.material_font, 18))
         button.setProperty("iconKey", icon_name)
         return button
+
+    def _render_glyph_icon(
+        self, glyph: str, color: QColor, font: QFont, *, icon_size: int = 18
+    ) -> QIcon:
+        pixmap = QPixmap(icon_size, icon_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        painter.setPen(color)
+        painter.setFont(font)
+        target_rect = pixmap.rect().translated(0, -int(round(icon_size * 0.40)))
+        painter.drawText(target_rect, Qt.AlignmentFlag.AlignCenter, glyph)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _offset_icon_vertical(
+        self, icon: QIcon, *, icon_size: int = 18, y_ratio: float = -0.25
+    ) -> QIcon:
+        source = icon.pixmap(icon_size, icon_size)
+        if source.isNull():
+            return icon
+        shifted = QPixmap(icon_size, icon_size)
+        shifted.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(shifted)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        y_offset = int(round(icon_size * y_ratio))
+        painter.drawPixmap(0, y_offset, source)
+        painter.end()
+        return QIcon(shifted)
+
+    def _refresh_ai_button_icon(self) -> None:
+        ai_svg_path = ROOT / "hanauta" / "src" / "assets" / "ai.svg"
+        ai_svg_icon = tinted_svg_icon(ai_svg_path, QColor(self.theme.primary), 18)
+        if not ai_svg_icon.isNull():
+            self.ai_button.setIcon(
+                self._offset_icon_vertical(ai_svg_icon, icon_size=18, y_ratio=-0.25)
+            )
+            self.ai_button.setIconSize(QSize(18, 18))
+            self.ai_button.setText("")
+            return
+
+        text = self._icon_text("auto_awesome")
+        fallback_text = material_icon("auto_awesome")
+        font, _, resolved_text = self._icon_font_for_text(
+            "auto_awesome", text, fallback_text, 18
+        )
+        if not resolved_text:
+            return
+        icon = self._render_glyph_icon(
+            resolved_text,
+            QColor(self.theme.primary),
+            font,
+            icon_size=18,
+        )
+        self.ai_button.setIcon(
+            self._offset_icon_vertical(icon, icon_size=18, y_ratio=-0.25)
+        )
+        self.ai_button.setIconSize(QSize(18, 18))
+        self.ai_button.setText("")
 
     def _icon_text(self, icon_name: str) -> str:
         return self._bar_icon_overrides.get(icon_name, material_icon(icon_name))
@@ -4343,7 +4405,7 @@ class CyberBar(QWidget):
                 max-width: 28px;
                 min-height: 24px;
                 max-height: 24px;
-                padding: 1px 0 0 0;
+                padding: 0;
                 outline: none;
             }}
             #launcherChip QPushButton#aiToggleButton:hover {{
@@ -4442,6 +4504,7 @@ class CyberBar(QWidget):
         self._sync_ntfy_button_visibility()
         self._sync_desktop_clock_process()
         self._update_locale_button()
+        self._refresh_ai_button_icon()
         self._update_window_mask()
 
     def _update_launcher_wordmark_colors(self, hovered: bool = False) -> None:
@@ -4590,6 +4653,7 @@ class CyberBar(QWidget):
         self._update_locale_button()
 
     def _apply_bar_icon_overrides(self) -> None:
+        self._refresh_ai_button_icon()
         self._apply_icon_to_widget(
             self.locale_button, "public", material_icon("public"), 16
         )
