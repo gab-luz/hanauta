@@ -2881,7 +2881,8 @@ class CyberBar(QWidget):
         self.ai_button = self._icon_button("auto_awesome")
         self.ai_button.setObjectName("aiToggleButton")
         self.ai_button.setCheckable(True)
-        self.ai_button.clicked.connect(self._toggle_ai_popup)
+        self.ai_button.setFixedSize(28, 24)
+        self.ai_button.pressed.connect(self._toggle_ai_popup)
         self.launcher_trigger = ClickableFrame()
         self.launcher_trigger.setObjectName("launcherTrigger")
         self.launcher_trigger.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -3022,7 +3023,7 @@ class CyberBar(QWidget):
         self.btn_control_center = self._icon_button("dashboard")
         self.btn_control_center.setObjectName("utilityButton")
         self.btn_control_center.setCheckable(True)
-        self.btn_control_center.clicked.connect(self._toggle_notifications)
+        self.btn_control_center.pressed.connect(self._toggle_notifications)
         self.datetime_layout.addWidget(self.btn_control_center)
         self.datetime_wrap = self._wrap_movable(self.datetime_chip)
         self.center_layout.addWidget(self.datetime_wrap)
@@ -4342,8 +4343,10 @@ class CyberBar(QWidget):
                 border: none;
                 color: {theme.primary};
                 font-family: "{self.material_font}";
-                min-width: 22px;
-                max-width: 22px;
+                min-width: 28px;
+                max-width: 28px;
+                min-height: 24px;
+                max-height: 24px;
                 padding: 0;
             }}
             #launcherChip QPushButton#aiToggleButton:hover,
