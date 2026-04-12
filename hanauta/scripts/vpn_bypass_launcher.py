@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -56,10 +57,56 @@ def load_vpn_status() -> dict[str, str]:
     }
 
 
+def _desktop_exec_from_file(source_path: str) -> list[str] | None:
+    path = Path(source_path).expanduser()
+    if not path.exists():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+
+    in_entry = False
+    exec_line = ""
+    app_name = ""
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            in_entry = line == "[Desktop Entry]"
+            continue
+        if not in_entry or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key == "Exec" and not exec_line:
+            exec_line = value
+        elif key == "Name" and not app_name:
+            app_name = value
+        if exec_line and app_name:
+            break
+
+    if not exec_line:
+        return None
+    sanitized = re.sub(r"%[fFuUdDnNickvm]", "", exec_line).strip()
+    if "%c" in sanitized:
+        sanitized = sanitized.replace("%c", app_name or path.stem)
+    if "%k" in sanitized:
+        sanitized = sanitized.replace("%k", str(path))
+    command = [part for part in shlex.split(sanitized) if part]
+    return command or None
+
+
 def direct_launch(args: argparse.Namespace) -> int:
     try:
         if args.mode == "desktop":
             if args.source_path:
+                direct = _desktop_exec_from_file(args.source_path)
+                if direct:
+                    subprocess.Popen(direct, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return 0
                 result = subprocess.run(
                     ["gio", "launch", args.source_path],
                     stdout=subprocess.DEVNULL,
@@ -165,6 +212,8 @@ def bypass_launch(args: argparse.Namespace, interface: str) -> int:
         os.environ.get("XDG_CURRENT_DESKTOP", ""),
         "--desktop-session",
         os.environ.get("DESKTOP_SESSION", ""),
+        "--path",
+        os.environ.get("PATH", ""),
     ]
     if args.source_path:
         command.extend(["--source-path", args.source_path])

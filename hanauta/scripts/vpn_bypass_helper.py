@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import grp
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -158,10 +159,57 @@ def ensure_cgroup_mark_rules(cgroup_path: str, fwmark: str) -> None:
     ensure_cgroup_mark_rule(command_path(IP6TABLES_CANDIDATES, "ip6tables"), cgroup_path, fwmark)
 
 
+def _desktop_exec_from_file(source_path: str) -> list[str] | None:
+    path = Path(source_path).expanduser()
+    if not path.exists():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+
+    in_entry = False
+    exec_line = ""
+    app_name = ""
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            in_entry = line == "[Desktop Entry]"
+            continue
+        if not in_entry or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key == "Exec" and not exec_line:
+            exec_line = value
+        elif key == "Name" and not app_name:
+            app_name = value
+        if exec_line and app_name:
+            break
+
+    if not exec_line:
+        return None
+    # Remove desktop entry placeholders so we can execute directly.
+    sanitized = re.sub(r"%[fFuUdDnNickvm]", "", exec_line).strip()
+    if "%c" in sanitized:
+        sanitized = sanitized.replace("%c", app_name or path.stem)
+    if "%k" in sanitized:
+        sanitized = sanitized.replace("%k", str(path))
+    command = [part for part in shlex.split(sanitized) if part]
+    return command or None
+
+
 def build_command(mode: str, target: str, source_path: str = "") -> list[str]:
     if mode == "desktop":
-        if source_path.strip():
-            return ["gio", "launch", source_path.strip()]
+        source = source_path.strip()
+        if source:
+            direct = _desktop_exec_from_file(source)
+            if direct:
+                return direct
+            return ["gio", "launch", source]
         desktop_id = target.strip()
         desktop_base = desktop_id[:-8] if desktop_id.endswith(".desktop") else target.strip()
         return ["bash", "-lc", f"gtk-launch {shlex.quote(desktop_id)} || gtk-launch {shlex.quote(desktop_base)}"]
@@ -192,7 +240,7 @@ def launch_target(args: argparse.Namespace) -> None:
         "HOME": args.home,
         "USER": args.user,
         "LOGNAME": args.user,
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "PATH": args.path or os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
         "XDG_RUNTIME_DIR": args.runtime_dir or f"/run/user/{args.uid}",
     }
     optional_env = {
@@ -258,6 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--wayland-display", default=os.environ.get("WAYLAND_DISPLAY", ""))
     parser.add_argument("--current-desktop", default=os.environ.get("XDG_CURRENT_DESKTOP", ""))
     parser.add_argument("--desktop-session", default=os.environ.get("DESKTOP_SESSION", ""))
+    parser.add_argument("--path", default=os.environ.get("PATH", ""))
     return parser
 
 
