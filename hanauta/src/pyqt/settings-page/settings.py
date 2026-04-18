@@ -188,11 +188,27 @@ PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
 I3_CONFIG_FILE = ROOT / "config"
 NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
 HOST_PLUGIN_API_VERSION = 1
-BUILTIN_SERVICE_KEYS = {"mail", "kdeconnect", "weather", "desktop_clock_widget"}
+BUILTIN_SERVICE_KEYS = {
+    "mail",
+    "kdeconnect",
+    "weather",
+    "desktop_clock_widget",
+    "calendar_widget",
+}
 
 
 def resolve_qcal_wrapper() -> Path | None:
-    return resolve_plugin_script("qcal-wrapper.py", ["calendar"])
+    resolved = resolve_plugin_script("qcal-wrapper.py", ["calendar"])
+    if resolved is not None and resolved.exists():
+        return resolved
+    fallback_candidates = (
+        ROOT / "hanauta" / "src" / "pyqt" / "widget-calendar" / "qcal-wrapper.py",
+        Path.home() / "dev" / "hanauta-plugin-calendar" / "qcal-wrapper.py",
+    )
+    for candidate in fallback_candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def resolve_desktop_clock_widget() -> Path | None:
@@ -1670,6 +1686,11 @@ def load_settings_state() -> dict:
             "show_week_numbers": False,
             "show_other_month_days": True,
             "first_day_of_week": "monday",
+            "selected_calendar_id": "",
+            "calendars": [],
+            "selected_remote_calendar_url": "",
+            "selected_contact_id": "",
+            "contacts": [],
             "caldav_url": "",
             "caldav_username": "",
             "caldav_password": "",
@@ -2069,6 +2090,106 @@ def load_settings_state() -> dict:
     calendar.setdefault("caldav_password", "")
     calendar.setdefault("last_sync_status", "")
     calendar.setdefault("connected", False)
+    calendar.setdefault("selected_calendar_id", "")
+    calendar.setdefault("selected_contact_id", "")
+    calendar.setdefault("selected_remote_calendar_url", "")
+
+    calendars = calendar.get("calendars", [])
+    if not isinstance(calendars, list):
+        calendars = []
+    sanitized_calendars: list[dict[str, object]] = []
+    for item in calendars:
+        if not isinstance(item, dict):
+            continue
+        account_id = str(item.get("id", "")).strip()
+        if not account_id:
+            continue
+        remote_calendars = item.get("remote_calendars", [])
+        if not isinstance(remote_calendars, list):
+            remote_calendars = []
+        sanitized_remote: list[dict[str, str]] = []
+        for remote in remote_calendars:
+            if not isinstance(remote, dict):
+                continue
+            remote_url = str(remote.get("url", "")).strip()
+            if not remote_url:
+                continue
+            sanitized_remote.append(
+                {
+                    "name": str(remote.get("name", "")).strip() or "Calendar",
+                    "url": remote_url,
+                }
+            )
+        sanitized_calendars.append(
+            {
+                "id": account_id,
+                "label": str(item.get("label", "")).strip() or "Calendar",
+                "enabled": bool(item.get("enabled", True)),
+                "caldav_url": str(item.get("caldav_url", "")).strip(),
+                "caldav_username": str(item.get("caldav_username", "")).strip(),
+                "caldav_password": str(item.get("caldav_password", "")),
+                "connected": bool(item.get("connected", False)),
+                "last_sync_status": str(item.get("last_sync_status", "")).strip(),
+                "remote_calendars": sanitized_remote,
+            }
+        )
+    if not sanitized_calendars and (
+        str(calendar.get("caldav_url", "")).strip()
+        or str(calendar.get("caldav_username", "")).strip()
+        or str(calendar.get("caldav_password", "")).strip()
+    ):
+        legacy_id = "primary"
+        sanitized_calendars = [
+            {
+                "id": legacy_id,
+                "label": "Primary",
+                "enabled": True,
+                "caldav_url": str(calendar.get("caldav_url", "")).strip(),
+                "caldav_username": str(calendar.get("caldav_username", "")).strip(),
+                "caldav_password": str(calendar.get("caldav_password", "")),
+                "connected": bool(calendar.get("connected", False)),
+                "last_sync_status": str(calendar.get("last_sync_status", "")).strip(),
+                "remote_calendars": [],
+            }
+        ]
+        calendar["selected_calendar_id"] = legacy_id
+    calendar["calendars"] = sanitized_calendars
+    selected_calendar_id = str(calendar.get("selected_calendar_id", "")).strip()
+    if sanitized_calendars and (
+        not selected_calendar_id
+        or not any(row.get("id") == selected_calendar_id for row in sanitized_calendars)
+    ):
+        calendar["selected_calendar_id"] = str(sanitized_calendars[0].get("id", ""))
+
+    contacts = calendar.get("contacts", [])
+    if not isinstance(contacts, list):
+        contacts = []
+    sanitized_contacts: list[dict[str, object]] = []
+    for item in contacts:
+        if not isinstance(item, dict):
+            continue
+        account_id = str(item.get("id", "")).strip()
+        if not account_id:
+            continue
+        sanitized_contacts.append(
+            {
+                "id": account_id,
+                "label": str(item.get("label", "")).strip() or "Contacts",
+                "enabled": bool(item.get("enabled", True)),
+                "carddav_url": str(item.get("carddav_url", "")).strip(),
+                "carddav_username": str(item.get("carddav_username", "")).strip(),
+                "carddav_password": str(item.get("carddav_password", "")),
+                "connected": bool(item.get("connected", False)),
+                "last_sync_status": str(item.get("last_sync_status", "")).strip(),
+            }
+        )
+    calendar["contacts"] = sanitized_contacts
+    selected_contact_id = str(calendar.get("selected_contact_id", "")).strip()
+    if sanitized_contacts and (
+        not selected_contact_id
+        or not any(row.get("id") == selected_contact_id for row in sanitized_contacts)
+    ):
+        calendar["selected_contact_id"] = str(sanitized_contacts[0].get("id", ""))
     reminders = dict(payload.get("reminders", {}))
     try:
         reminders["default_lead_minutes"] = max(
@@ -12543,6 +12664,7 @@ class SettingsWindow(QWidget):
             ("mail", self._build_mail_service_section),
             ("kdeconnect", self._build_kdeconnect_service_section),
             ("weather", self._build_weather_section),
+            ("calendar_widget", self._build_calendar_service_section),
             ("desktop_clock_widget", self._build_desktop_clock_service_section),
         ]
         self._services_plugin_queue: list[dict[str, object]] = []
@@ -14615,6 +14737,16 @@ class SettingsWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        calendar_state = self.settings_state.setdefault("calendar", {})
+        calendars = calendar_state.get("calendars", [])
+        if not isinstance(calendars, list):
+            calendars = []
+            calendar_state["calendars"] = calendars
+        contacts = calendar_state.get("contacts", [])
+        if not isinstance(contacts, list):
+            contacts = []
+            calendar_state["contacts"] = contacts
+
         self.calendar_display_switch = SwitchButton(
             bool(
                 self.settings_state["services"]["calendar_widget"].get(
@@ -14697,16 +14829,93 @@ class SettingsWindow(QWidget):
             )
         )
 
+        calendars_heading = QLabel("Calendars")
+        calendars_heading.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        calendars_heading.setStyleSheet("color: rgba(246,235,247,0.86);")
+        layout.addWidget(calendars_heading)
+
+        self.calendar_account_combo = QComboBox()
+        self.calendar_account_combo.setObjectName("settingsCombo")
+        self.calendar_account_combo.currentIndexChanged.connect(
+            self._load_selected_calendar_account
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("calendar_month"),
+                "Saved calendar",
+                "Pick a CalDAV calendar connection or create a new one.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_account_combo,
+            )
+        )
+
+        calendar_actions = QWidget()
+        calendar_actions_layout = QHBoxLayout(calendar_actions)
+        calendar_actions_layout.setContentsMargins(0, 0, 0, 0)
+        calendar_actions_layout.setSpacing(8)
+        self.calendar_add_account_button = QPushButton("Add calendar")
+        self.calendar_add_account_button.setObjectName("secondaryButton")
+        self.calendar_add_account_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.calendar_add_account_button.clicked.connect(self._add_calendar_account)
+        self.calendar_remove_account_button = QPushButton("Remove")
+        self.calendar_remove_account_button.setObjectName("dangerButton")
+        self.calendar_remove_account_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.calendar_remove_account_button.clicked.connect(
+            self._remove_selected_calendar_account
+        )
+        calendar_actions_layout.addWidget(self.calendar_add_account_button)
+        calendar_actions_layout.addWidget(self.calendar_remove_account_button)
+        calendar_actions_layout.addStretch(1)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("apps"),
+                "Manage calendars",
+                "Add multiple CalDAV providers (work, personal, shared).",
+                self.icon_font,
+                self.ui_font,
+                calendar_actions,
+            )
+        )
+
+        selected_calendar = self._selected_calendar_account()
+        self.calendar_account_enabled_switch = SwitchButton(
+            bool(selected_calendar.get("enabled", True)) if selected_calendar else True
+        )
+        self.calendar_account_enabled_switch.toggledValue.connect(
+            self._set_selected_calendar_account_enabled
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("toggle_on"),
+                "Enable this calendar",
+                "Disabled calendars stay saved but are ignored during sync.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_account_enabled_switch,
+            )
+        )
+
         self.calendar_url_input = QLineEdit(
-            self.settings_state["calendar"].get("caldav_url", "")
+            str(selected_calendar.get("caldav_url", "")).strip()
+            if selected_calendar
+            else self.settings_state["calendar"].get("caldav_url", "")
         )
         self.calendar_url_input.setPlaceholderText("https://dav.example.com/caldav/")
         self.calendar_user_input = QLineEdit(
-            self.settings_state["calendar"].get("caldav_username", "")
+            str(selected_calendar.get("caldav_username", "")).strip()
+            if selected_calendar
+            else self.settings_state["calendar"].get("caldav_username", "")
         )
         self.calendar_user_input.setPlaceholderText("username")
         self.calendar_password_input = QLineEdit(
-            self.settings_state["calendar"].get("caldav_password", "")
+            str(selected_calendar.get("caldav_password", ""))
+            if selected_calendar
+            else self.settings_state["calendar"].get("caldav_password", "")
         )
         self.calendar_password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.calendar_password_input.setPlaceholderText("Password or app password")
@@ -14743,7 +14952,7 @@ class SettingsWindow(QWidget):
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
-        self.calendar_save_button = QPushButton("Save")
+        self.calendar_save_button = QPushButton("Save credentials")
         self.calendar_save_button.setObjectName("secondaryButton")
         self.calendar_discover_button = QPushButton("Discover calendars")
         self.calendar_discover_button.setObjectName("primaryButton")
@@ -14759,12 +14968,151 @@ class SettingsWindow(QWidget):
         layout.addLayout(buttons)
 
         self.calendar_status = QLabel(
-            str(self.settings_state["calendar"].get("last_sync_status", "")).strip()
+            str(
+                (selected_calendar or {}).get("last_sync_status", "")
+                or self.settings_state["calendar"].get("last_sync_status", "")
+            ).strip()
             or "Calendar integration is idle."
         )
         self.calendar_status.setWordWrap(True)
         self.calendar_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.calendar_status)
+
+        contacts_heading = QLabel("Contacts")
+        contacts_heading.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        contacts_heading.setStyleSheet("color: rgba(246,235,247,0.86);")
+        layout.addWidget(contacts_heading)
+
+        self.contacts_account_combo = QComboBox()
+        self.contacts_account_combo.setObjectName("settingsCombo")
+        self.contacts_account_combo.currentIndexChanged.connect(
+            self._load_selected_contact_account
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "Saved contacts",
+                "Add CardDAV accounts so Hanauta can reuse contacts later (callers, mail, quick share).",
+                self.icon_font,
+                self.ui_font,
+                self.contacts_account_combo,
+            )
+        )
+
+        contacts_actions = QWidget()
+        contacts_actions_layout = QHBoxLayout(contacts_actions)
+        contacts_actions_layout.setContentsMargins(0, 0, 0, 0)
+        contacts_actions_layout.setSpacing(8)
+        self.contacts_add_account_button = QPushButton("Add CardDAV")
+        self.contacts_add_account_button.setObjectName("secondaryButton")
+        self.contacts_add_account_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.contacts_add_account_button.clicked.connect(self._add_contact_account)
+        self.contacts_remove_account_button = QPushButton("Remove")
+        self.contacts_remove_account_button.setObjectName("dangerButton")
+        self.contacts_remove_account_button.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.contacts_remove_account_button.clicked.connect(
+            self._remove_selected_contact_account
+        )
+        contacts_actions_layout.addWidget(self.contacts_add_account_button)
+        contacts_actions_layout.addWidget(self.contacts_remove_account_button)
+        contacts_actions_layout.addStretch(1)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("apps"),
+                "Manage contacts",
+                "CardDAV support is stored here so other widgets can consume it.",
+                self.icon_font,
+                self.ui_font,
+                contacts_actions,
+            )
+        )
+
+        selected_contact = self._selected_contact_account()
+        self.contacts_account_enabled_switch = SwitchButton(
+            bool(selected_contact.get("enabled", True)) if selected_contact else True
+        )
+        self.contacts_account_enabled_switch.toggledValue.connect(
+            self._set_selected_contact_account_enabled
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("toggle_on"),
+                "Enable this contact source",
+                "Disabled CardDAV accounts stay saved but are ignored.",
+                self.icon_font,
+                self.ui_font,
+                self.contacts_account_enabled_switch,
+            )
+        )
+
+        self.contacts_url_input = QLineEdit(
+            str(selected_contact.get("carddav_url", "")).strip()
+            if selected_contact
+            else ""
+        )
+        self.contacts_url_input.setPlaceholderText("https://dav.example.com/carddav/")
+        self.contacts_user_input = QLineEdit(
+            str(selected_contact.get("carddav_username", "")).strip()
+            if selected_contact
+            else ""
+        )
+        self.contacts_user_input.setPlaceholderText("username")
+        self.contacts_password_input = QLineEdit(
+            str(selected_contact.get("carddav_password", "")) if selected_contact else ""
+        )
+        self.contacts_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.contacts_password_input.setPlaceholderText("Password or app password")
+        layout.addWidget(
+            SettingsRow(
+                material_icon("web_asset"),
+                "CardDAV URL",
+                "Credentials are saved so future Hanauta widgets can reuse contacts.",
+                self.icon_font,
+                self.ui_font,
+                self.contacts_url_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "CardDAV username",
+                "Account used for CardDAV discovery.",
+                self.icon_font,
+                self.ui_font,
+                self.contacts_user_input,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("lock"),
+                "CardDAV password",
+                "Stored locally so contact sync can be enabled later.",
+                self.icon_font,
+                self.ui_font,
+                self.contacts_password_input,
+            )
+        )
+
+        self.contacts_save_button = QPushButton("Save contacts credentials")
+        self.contacts_save_button.setObjectName("primaryButton")
+        self.contacts_save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.contacts_save_button.clicked.connect(self._save_contact_settings)
+        layout.addWidget(self.contacts_save_button, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.contacts_status = QLabel(
+            str((selected_contact or {}).get("last_sync_status", "")).strip()
+            or "CardDAV credentials are stored. Contact syncing will be enabled by future widgets."
+        )
+        self.contacts_status.setWordWrap(True)
+        self.contacts_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.contacts_status)
+
+        self._refresh_calendar_account_picker()
+        self._refresh_contact_account_picker()
 
         section = ExpandableServiceSection(
             "calendar_widget",
@@ -17681,21 +18029,423 @@ class SettingsWindow(QWidget):
         if hasattr(self, "calendar_status"):
             self.calendar_status.setText("Calendar first day updated.")
 
-    def _save_calendar_settings(self) -> None:
+    def _calendar_accounts(self) -> list[dict[str, object]]:
         calendar = self.settings_state.setdefault("calendar", {})
-        calendar["caldav_url"] = self.calendar_url_input.text().strip()
-        calendar["caldav_username"] = self.calendar_user_input.text().strip()
-        calendar["caldav_password"] = self.calendar_password_input.text()
+        accounts = calendar.get("calendars", [])
+        if not isinstance(accounts, list):
+            accounts = []
+            calendar["calendars"] = accounts
+        return [row for row in accounts if isinstance(row, dict)]
+
+    def _contact_accounts(self) -> list[dict[str, object]]:
+        calendar = self.settings_state.setdefault("calendar", {})
+        accounts = calendar.get("contacts", [])
+        if not isinstance(accounts, list):
+            accounts = []
+            calendar["contacts"] = accounts
+        return [row for row in accounts if isinstance(row, dict)]
+
+    def _selected_calendar_account(self) -> dict[str, object] | None:
+        calendar = self.settings_state.setdefault("calendar", {})
+        selected_id = str(calendar.get("selected_calendar_id", "")).strip()
+        accounts = self._calendar_accounts()
+        if selected_id:
+            for row in accounts:
+                if str(row.get("id", "")).strip() == selected_id:
+                    return row
+        return accounts[0] if accounts else None
+
+    def _selected_contact_account(self) -> dict[str, object] | None:
+        calendar = self.settings_state.setdefault("calendar", {})
+        selected_id = str(calendar.get("selected_contact_id", "")).strip()
+        accounts = self._contact_accounts()
+        if selected_id:
+            for row in accounts:
+                if str(row.get("id", "")).strip() == selected_id:
+                    return row
+        return accounts[0] if accounts else None
+
+    def _new_account_id(self, prefix: str) -> str:
+        suffix = int(time.time() * 1000) ^ random.randint(1000, 9999)
+        return f"{prefix}-{suffix:x}"
+
+    def _refresh_calendar_account_picker(self) -> None:
+        if not hasattr(self, "calendar_account_combo"):
+            return
+        combo: QComboBox = self.calendar_account_combo
+        combo.blockSignals(True)
+        combo.clear()
+        accounts = self._calendar_accounts()
+        for row in accounts:
+            account_id = str(row.get("id", "")).strip()
+            if not account_id:
+                continue
+            label = str(row.get("label", "")).strip() or "Calendar"
+            combo.addItem(label, account_id)
+        combo.addItem("New calendar…", "__new__")
+        calendar = self.settings_state.setdefault("calendar", {})
+        selected_id = str(calendar.get("selected_calendar_id", "")).strip()
+        if selected_id:
+            idx = combo.findData(selected_id)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+        else:
+            combo.setCurrentIndex(0 if combo.count() else -1)
+        combo.blockSignals(False)
+
+    def _refresh_contact_account_picker(self) -> None:
+        if not hasattr(self, "contacts_account_combo"):
+            return
+        combo: QComboBox = self.contacts_account_combo
+        combo.blockSignals(True)
+        combo.clear()
+        accounts = self._contact_accounts()
+        for row in accounts:
+            account_id = str(row.get("id", "")).strip()
+            if not account_id:
+                continue
+            label = str(row.get("label", "")).strip() or "Contacts"
+            combo.addItem(label, account_id)
+        combo.addItem("New CardDAV…", "__new__")
+        calendar = self.settings_state.setdefault("calendar", {})
+        selected_id = str(calendar.get("selected_contact_id", "")).strip()
+        if selected_id:
+            idx = combo.findData(selected_id)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+        else:
+            combo.setCurrentIndex(0 if combo.count() else -1)
+        combo.blockSignals(False)
+
+    def _load_selected_calendar_account(self, index: int) -> None:
+        if not hasattr(self, "calendar_account_combo"):
+            return
+        account_id = str(self.calendar_account_combo.itemData(index) or "").strip()
+        if account_id == "__new__":
+            self._add_calendar_account()
+            return
+        calendar = self.settings_state.setdefault("calendar", {})
+        calendar["selected_calendar_id"] = account_id
+        save_settings_state(self.settings_state)
+        row = self._selected_calendar_account()
+        if row is None:
+            return
+        if hasattr(self, "calendar_account_enabled_switch"):
+            self.calendar_account_enabled_switch.setChecked(bool(row.get("enabled", True)))
+        if hasattr(self, "calendar_url_input"):
+            self.calendar_url_input.setText(str(row.get("caldav_url", "")).strip())
+        if hasattr(self, "calendar_user_input"):
+            self.calendar_user_input.setText(str(row.get("caldav_username", "")).strip())
+        if hasattr(self, "calendar_password_input"):
+            self.calendar_password_input.setText(str(row.get("caldav_password", "")))
+        if hasattr(self, "calendar_status"):
+            status = str(row.get("last_sync_status", "")).strip()
+            self.calendar_status.setText(status or "Calendar integration is idle.")
+
+    def _load_selected_contact_account(self, index: int) -> None:
+        if not hasattr(self, "contacts_account_combo"):
+            return
+        account_id = str(self.contacts_account_combo.itemData(index) or "").strip()
+        if account_id == "__new__":
+            self._add_contact_account()
+            return
+        calendar = self.settings_state.setdefault("calendar", {})
+        calendar["selected_contact_id"] = account_id
+        save_settings_state(self.settings_state)
+        row = self._selected_contact_account()
+        if row is None:
+            return
+        if hasattr(self, "contacts_account_enabled_switch"):
+            self.contacts_account_enabled_switch.setChecked(bool(row.get("enabled", True)))
+        if hasattr(self, "contacts_url_input"):
+            self.contacts_url_input.setText(str(row.get("carddav_url", "")).strip())
+        if hasattr(self, "contacts_user_input"):
+            self.contacts_user_input.setText(str(row.get("carddav_username", "")).strip())
+        if hasattr(self, "contacts_password_input"):
+            self.contacts_password_input.setText(str(row.get("carddav_password", "")))
+        if hasattr(self, "contacts_status"):
+            status = str(row.get("last_sync_status", "")).strip()
+            self.contacts_status.setText(
+                status
+                or "CardDAV credentials are stored. Contact syncing will be enabled by future widgets."
+            )
+
+    def _set_selected_calendar_account_enabled(self, enabled: bool) -> None:
+        row = self._selected_calendar_account()
+        if row is None:
+            return
+        row["enabled"] = bool(enabled)
         save_settings_state(self.settings_state)
         if hasattr(self, "calendar_status"):
-            self.calendar_status.setText("Calendar settings saved.")
+            self.calendar_status.setText(
+                "Calendar enabled." if enabled else "Calendar disabled."
+            )
+
+    def _set_selected_contact_account_enabled(self, enabled: bool) -> None:
+        row = self._selected_contact_account()
+        if row is None:
+            return
+        row["enabled"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if hasattr(self, "contacts_status"):
+            self.contacts_status.setText(
+                "Contacts enabled." if enabled else "Contacts disabled."
+            )
+
+    def _add_calendar_account(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Calendar (CalDAV)")
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+
+        label_input = QLineEdit()
+        label_input.setPlaceholderText("Work, Personal, Family…")
+        url_input = QLineEdit()
+        url_input.setPlaceholderText("https://dav.example.com/caldav/")
+        user_input = QLineEdit()
+        user_input.setPlaceholderText("username")
+        pass_input = QLineEdit()
+        pass_input.setPlaceholderText("Password or app password")
+        pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        layout.addWidget(QLabel("Label"))
+        layout.addWidget(label_input)
+        layout.addWidget(QLabel("CalDAV URL"))
+        layout.addWidget(url_input)
+        layout.addWidget(QLabel("Username"))
+        layout.addWidget(user_input)
+        layout.addWidget(QLabel("Password"))
+        layout.addWidget(pass_input)
+
+        buttons = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("secondaryButton")
+        cancel_btn.clicked.connect(dialog.reject)
+        add_btn = QPushButton("Add")
+        add_btn.setObjectName("primaryButton")
+        add_btn.clicked.connect(dialog.accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(add_btn)
+        layout.addLayout(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._refresh_calendar_account_picker()
+            return
+        account_id = self._new_account_id("caldav")
+        label = label_input.text().strip() or "Calendar"
+        account = {
+            "id": account_id,
+            "label": label,
+            "enabled": True,
+            "caldav_url": url_input.text().strip(),
+            "caldav_username": user_input.text().strip(),
+            "caldav_password": pass_input.text(),
+            "connected": False,
+            "last_sync_status": "",
+        }
+        calendar = self.settings_state.setdefault("calendar", {})
+        calendar.setdefault("calendars", [])
+        if isinstance(calendar["calendars"], list):
+            calendar["calendars"].append(account)
+        calendar["selected_calendar_id"] = account_id
+        save_settings_state(self.settings_state)
+        self._refresh_calendar_account_picker()
+        self._load_selected_calendar_account(self.calendar_account_combo.currentIndex())
+
+    def _remove_selected_calendar_account(self) -> None:
+        row = self._selected_calendar_account()
+        if row is None:
+            return
+        label = str(row.get("label", "Calendar")).strip() or "Calendar"
+        reply = QMessageBox.question(
+            self,
+            "Remove calendar",
+            f"Remove '{label}'? Credentials will be deleted from settings.",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        calendar = self.settings_state.setdefault("calendar", {})
+        accounts = calendar.get("calendars", [])
+        if isinstance(accounts, list):
+            accounts[:] = [
+                item
+                for item in accounts
+                if not (
+                    isinstance(item, dict)
+                    and str(item.get("id", "")).strip() == str(row.get("id", "")).strip()
+                )
+            ]
+        calendar["selected_calendar_id"] = ""
+        save_settings_state(self.settings_state)
+        self._refresh_calendar_account_picker()
+        self._load_selected_calendar_account(self.calendar_account_combo.currentIndex())
+
+    def _add_contact_account(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Contacts (CardDAV)")
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+
+        label_input = QLineEdit()
+        label_input.setPlaceholderText("Work, Personal…")
+        url_input = QLineEdit()
+        url_input.setPlaceholderText("https://dav.example.com/carddav/")
+        user_input = QLineEdit()
+        user_input.setPlaceholderText("username")
+        pass_input = QLineEdit()
+        pass_input.setPlaceholderText("Password or app password")
+        pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        layout.addWidget(QLabel("Label"))
+        layout.addWidget(label_input)
+        layout.addWidget(QLabel("CardDAV URL"))
+        layout.addWidget(url_input)
+        layout.addWidget(QLabel("Username"))
+        layout.addWidget(user_input)
+        layout.addWidget(QLabel("Password"))
+        layout.addWidget(pass_input)
+
+        buttons = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("secondaryButton")
+        cancel_btn.clicked.connect(dialog.reject)
+        add_btn = QPushButton("Add")
+        add_btn.setObjectName("primaryButton")
+        add_btn.clicked.connect(dialog.accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(add_btn)
+        layout.addLayout(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._refresh_contact_account_picker()
+            return
+        account_id = self._new_account_id("carddav")
+        label = label_input.text().strip() or "Contacts"
+        account = {
+            "id": account_id,
+            "label": label,
+            "enabled": True,
+            "carddav_url": url_input.text().strip(),
+            "carddav_username": user_input.text().strip(),
+            "carddav_password": pass_input.text(),
+            "connected": False,
+            "last_sync_status": "",
+        }
+        calendar = self.settings_state.setdefault("calendar", {})
+        calendar.setdefault("contacts", [])
+        if isinstance(calendar["contacts"], list):
+            calendar["contacts"].append(account)
+        calendar["selected_contact_id"] = account_id
+        save_settings_state(self.settings_state)
+        self._refresh_contact_account_picker()
+        self._load_selected_contact_account(self.contacts_account_combo.currentIndex())
+
+    def _remove_selected_contact_account(self) -> None:
+        row = self._selected_contact_account()
+        if row is None:
+            return
+        label = str(row.get("label", "Contacts")).strip() or "Contacts"
+        reply = QMessageBox.question(
+            self,
+            "Remove contacts",
+            f"Remove '{label}'? Credentials will be deleted from settings.",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        calendar = self.settings_state.setdefault("calendar", {})
+        accounts = calendar.get("contacts", [])
+        if isinstance(accounts, list):
+            accounts[:] = [
+                item
+                for item in accounts
+                if not (
+                    isinstance(item, dict)
+                    and str(item.get("id", "")).strip() == str(row.get("id", "")).strip()
+                )
+            ]
+        calendar["selected_contact_id"] = ""
+        save_settings_state(self.settings_state)
+        self._refresh_contact_account_picker()
+        self._load_selected_contact_account(self.contacts_account_combo.currentIndex())
+
+    def _save_calendar_settings(self) -> None:
+        calendar = self.settings_state.setdefault("calendar", {})
+        row = self._selected_calendar_account()
+        if row is None:
+            account_id = "primary"
+            row = {
+                "id": account_id,
+                "label": "Primary",
+                "enabled": True,
+                "caldav_url": "",
+                "caldav_username": "",
+                "caldav_password": "",
+                "connected": False,
+                "last_sync_status": "",
+            }
+            calendar.setdefault("calendars", [])
+            if isinstance(calendar["calendars"], list):
+                calendar["calendars"].append(row)
+            calendar["selected_calendar_id"] = account_id
+            self._refresh_calendar_account_picker()
+        caldav_url = self.calendar_url_input.text().strip()
+        if caldav_url and not caldav_url.endswith("/"):
+            caldav_url += "/"
+        row["caldav_url"] = caldav_url
+        row["caldav_username"] = self.calendar_user_input.text().strip()
+        row["caldav_password"] = self.calendar_password_input.text()
+        calendar["caldav_url"] = str(row.get("caldav_url", "")).strip()
+        calendar["caldav_username"] = str(row.get("caldav_username", "")).strip()
+        calendar["caldav_password"] = str(row.get("caldav_password", ""))
+        save_settings_state(self.settings_state)
+        if hasattr(self, "calendar_status"):
+            label = str(row.get("label", "Calendar")).strip() or "Calendar"
+            self.calendar_status.setText(f"Calendar credentials saved for {label}.")
+
+    def _save_contact_settings(self) -> None:
+        calendar = self.settings_state.setdefault("calendar", {})
+        row = self._selected_contact_account()
+        if row is None:
+            account_id = "primary"
+            row = {
+                "id": account_id,
+                "label": "Primary",
+                "enabled": True,
+                "carddav_url": "",
+                "carddav_username": "",
+                "carddav_password": "",
+                "connected": False,
+                "last_sync_status": "",
+            }
+            calendar.setdefault("contacts", [])
+            if isinstance(calendar["contacts"], list):
+                calendar["contacts"].append(row)
+            calendar["selected_contact_id"] = account_id
+            self._refresh_contact_account_picker()
+        carddav_url = self.contacts_url_input.text().strip()
+        if carddav_url and not carddav_url.endswith("/"):
+            carddav_url += "/"
+        row["carddav_url"] = carddav_url
+        row["carddav_username"] = self.contacts_user_input.text().strip()
+        row["carddav_password"] = self.contacts_password_input.text()
+        save_settings_state(self.settings_state)
+        if hasattr(self, "contacts_status"):
+            label = str(row.get("label", "Contacts")).strip() or "Contacts"
+            self.contacts_status.setText(f"CardDAV credentials saved for {label}.")
 
     def _discover_calendar_calendars(self) -> None:
         self._save_calendar_settings()
         calendar = self.settings_state.setdefault("calendar", {})
-        url = str(calendar.get("caldav_url", "")).strip()
-        username = str(calendar.get("caldav_username", "")).strip()
-        password = str(calendar.get("caldav_password", ""))
+        row = self._selected_calendar_account() or {}
+        url = str(row.get("caldav_url", "")).strip() or str(
+            calendar.get("caldav_url", "")
+        ).strip()
+        username = str(row.get("caldav_username", "")).strip() or str(
+            calendar.get("caldav_username", "")
+        ).strip()
+        password = str(row.get("caldav_password", "")) or str(
+            calendar.get("caldav_password", "")
+        )
         if not url or not username or not password:
             self.calendar_status.setText(
                 "CalDAV URL, username, and password are required."
@@ -17705,10 +18455,7 @@ class SettingsWindow(QWidget):
         if qcal_wrapper is None:
             self.calendar_status.setText("qcal wrapper is missing.")
             return
-        command = entry_command(qcal_wrapper, "discover", url, username, password)
-        if not command:
-            self.calendar_status.setText("qcal wrapper is missing.")
-            return
+        command = [python_executable(), str(qcal_wrapper), "discover", url, username, password]
         result = subprocess.run(
             command,
             capture_output=True,
@@ -17723,18 +18470,41 @@ class SettingsWindow(QWidget):
                 "error": (result.stderr or "CalDAV discovery failed.").strip(),
             }
         success = bool(payload.get("success", False))
+        if isinstance(row, dict):
+            row["connected"] = success
         calendar["connected"] = success
-        names = payload.get("calendars", [])
+        discovered_raw = payload.get("calendars", [])
+        discovered_urls: list[dict[str, str]] = []
+        names: list[str] = []
+        if isinstance(discovered_raw, list):
+            for item in discovered_raw:
+                if isinstance(item, dict):
+                    name = str(item.get("name", "")).strip() or "Calendar"
+                    url = str(item.get("url", "")).strip()
+                    if not url:
+                        continue
+                    discovered_urls.append({"name": name, "url": url})
+                    names.append(name)
+                elif isinstance(item, str) and item.strip():
+                    names.append(item.strip())
         if success:
-            discovered = ", ".join(str(name) for name in names[:3])
+            discovered_summary = ", ".join(str(name) for name in names[:3])
             suffix = "" if len(names) <= 3 else "..."
-            calendar["last_sync_status"] = (
-                f"Connected to {len(names)} calendar(s): {discovered}{suffix}"
+            status_text = (
+                f"Connected to {len(names)} calendar(s): {discovered_summary}{suffix}"
             )
         else:
-            calendar["last_sync_status"] = str(
+            status_text = str(
                 payload.get("error", "Unable to discover calendars.")
             ).strip()
+        if isinstance(row, dict):
+            row["last_sync_status"] = status_text
+            if discovered_urls:
+                row["remote_calendars"] = discovered_urls
+                calendar["selected_remote_calendar_url"] = str(
+                    discovered_urls[0].get("url", "")
+                )
+        calendar["last_sync_status"] = status_text
         save_settings_state(self.settings_state)
         self.calendar_status.setText(
             calendar["last_sync_status"] or "Calendar integration updated."

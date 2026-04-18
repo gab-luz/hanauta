@@ -1552,10 +1552,17 @@ static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *imag
     }
     if (g_file_test(effective_icon, G_FILE_TEST_EXISTS)) {
         GError *error = NULL;
-        GdkPixbufAnimation *animation = gdk_pixbuf_animation_new_from_file(effective_icon, &error);
-        if (animation != NULL) {
-            image = gtk_image_new_from_animation(animation);
-            g_object_unref(animation);
+        gint target = MAX(16, target_size);
+        GdkPixbuf *scaled = gdk_pixbuf_new_from_file_at_scale(
+            effective_icon,
+            target,
+            target,
+            TRUE,
+            &error
+        );
+        if (scaled != NULL) {
+            image = gtk_image_new_from_pixbuf(scaled);
+            g_object_unref(scaled);
         } else {
             g_clear_error(&error);
             image = gtk_image_new_from_file(effective_icon);

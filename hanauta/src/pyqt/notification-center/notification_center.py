@@ -20,7 +20,7 @@ from pathlib import Path
 from time import monotonic
 from urllib import error, parse, request
 
-from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QCursor,
@@ -110,7 +110,21 @@ NOTIFICATION_HISTORY_FILE = (
     / "notification-daemon"
     / "history.json"
 )
-QCAL_WRAPPER = resolve_plugin_script("qcal-wrapper.py", ["calendar"]) or Path()
+def _resolve_qcal_wrapper_script() -> Path | None:
+    resolved = resolve_plugin_script("qcal-wrapper.py", ["calendar"])
+    if resolved is not None and resolved.exists():
+        return resolved
+    fallback_candidates = (
+        ROOT / "hanauta" / "src" / "pyqt" / "widget-calendar" / "qcal-wrapper.py",
+        Path.home() / "dev" / "hanauta-plugin-calendar" / "qcal-wrapper.py",
+    )
+    for candidate in fallback_candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+QCAL_WRAPPER = _resolve_qcal_wrapper_script() or Path()
 LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
 LUTRIS_COVERART_DIR = Path.home() / ".local" / "share" / "lutris" / "coverart"
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
@@ -817,15 +831,44 @@ def load_calendar_events(limit: int = 2) -> list[dict]:
         return []
     try:
         result = subprocess.run(
-            [sys.executable, str(QCAL_WRAPPER), "list", "--days", "14"],
+            [
+                python_executable(),
+                str(QCAL_WRAPPER),
+                "list",
+                "--days",
+                "14",
+                "--limit",
+                str(max(1, int(limit))),
+            ],
             capture_output=True,
             text=True,
-            timeout=3.5,
+            timeout=20.0,
             check=False,
         )
         payload = json.loads(result.stdout or "{}")
-    except Exception:
-        return []
+    except Exception as exc:
+        return [
+            {
+                "title": "Calendar sync error",
+                "location": "Open Settings → Services → Calendar",
+                "start": str(exc).strip() or "Unable to fetch events.",
+                "source": "calendar",
+            }
+        ][:limit]
+    if isinstance(payload, dict):
+        events = payload.get("events", [])
+        if isinstance(events, list) and events:
+            return [item for item in events if isinstance(item, dict)][:limit]
+        err = str(payload.get("error", "")).strip()
+        if err:
+            return [
+                {
+                    "title": "Calendar sync error",
+                    "location": "Open Settings → Services → Calendar",
+                    "start": err,
+                    "source": "calendar",
+                }
+            ][:limit]
     events = payload.get("events", []) if isinstance(payload, dict) else []
     if not isinstance(events, list):
         return []
@@ -1467,6 +1510,8 @@ class GameCarouselCard(QFrame):
 
 
 class NotificationCenter(QWidget):
+    calendarEventsReady = pyqtSignal(list)
+
     def __init__(self) -> None:
         super().__init__()
         self.loaded_fonts = load_app_fonts()
@@ -1509,6 +1554,10 @@ class NotificationCenter(QWidget):
         self._media_duration_cache: dict[str, int] = {}
         self._media_duration_pending: set[str] = set()
         self._calendar_events: list[dict] = []
+        self._calendar_last_error = ""
+        self._calendar_fetch_in_progress = False
+        self._calendar_last_fetch = 0.0
+        self._calendar_render_signature = ""
         self._notification_history: list[dict] = []
         self.settings_state = load_notification_settings()
         self.theme_palette = load_theme_palette()
@@ -1547,6 +1596,7 @@ class NotificationCenter(QWidget):
 
         self._build_window()
         self._build_ui()
+        self.calendarEventsReady.connect(self._apply_calendar_events)
         apply_antialias_font(self)
         self._apply_styles()
         self._apply_media_palette()
@@ -3149,6 +3199,11 @@ class NotificationCenter(QWidget):
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
 
+        self.calendar_timer = QTimer(self)
+        self.calendar_timer.timeout.connect(self._request_calendar_refresh)
+        self.calendar_timer.start(30000)
+        QTimer.singleShot(150, self._request_calendar_refresh)
+
         QTimer.singleShot(80, self._animate_in)
 
     def _reload_theme_if_needed(self) -> None:
@@ -3182,10 +3237,19 @@ class NotificationCenter(QWidget):
         self._poll_media_metadata()
         self._poll_media_progress()
         self._poll_phone()
-        self._poll_calendar_events()
+        self._render_calendar_events()
         self._poll_notification_history()
         self._refresh_system_overview()
         self._render_home_assistant_tiles()
+
+    def _apply_calendar_events(self, events: list) -> None:
+        self._calendar_fetch_in_progress = False
+        self._calendar_events = (
+            [item for item in events if isinstance(item, dict)]
+            if isinstance(events, list)
+            else []
+        )
+        self._render_calendar_events(force=True)
 
     def _poll_header(self) -> None:
         self.user_label.setText(os.environ.get("USER", "User"))
@@ -3464,8 +3528,47 @@ class NotificationCenter(QWidget):
         today_fmt.setBackground(QColor(self._hex_to_rgba(theme.primary, 0.16)))
         self.calendar_widget.setDateTextFormat(QDate.currentDate(), today_fmt)
 
-    def _poll_calendar_events(self) -> None:
-        self._calendar_events = load_calendar_events(2)
+    def _request_calendar_refresh(self) -> None:
+        if self._calendar_fetch_in_progress:
+            return
+        self._calendar_fetch_in_progress = True
+        self._calendar_last_fetch = monotonic()
+
+        def worker() -> None:
+            events = load_calendar_events(2)
+            try:
+                self.calendarEventsReady.emit(events)
+            except Exception:
+                pass
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+    def _render_calendar_events(self, *, force: bool = False) -> None:
+        try:
+            signature = json.dumps(self._calendar_events, sort_keys=True)
+        except Exception:
+            signature = str(self._calendar_events)
+        if not force and signature == self._calendar_render_signature:
+            return
+        self._calendar_render_signature = signature
+
+        if self._calendar_events:
+            title = str(self._calendar_events[0].get("title", "")).strip()
+            if title == "Calendar sync error":
+                err = str(self._calendar_events[0].get("start", "")).strip()
+                if err and err != self._calendar_last_error:
+                    self._calendar_last_error = err
+                    try:
+                        print(f"[hanauta] calendar error: {err}", file=sys.stderr)
+                    except Exception:
+                        pass
+            elif self._calendar_last_error:
+                self._calendar_last_error = ""
+                try:
+                    print("[hanauta] calendar recovered", file=sys.stderr)
+                except Exception:
+                    pass
         self._clear_layout_widgets(self.events_layout)
         calendar_icon_pixmap = QPixmap()
         calendar_icon_path = Path(CALENDAR_NOTIFICATION_ICON).expanduser()
