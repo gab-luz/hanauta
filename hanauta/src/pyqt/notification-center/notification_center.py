@@ -102,6 +102,8 @@ WEATHER_HISTORY_ICON = (
 )
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+CALENDAR_EVENTS_CACHE = SERVICE_STATE_DIR / "calendar_events.json"
 NOTIFICATION_HISTORY_FILE = (
     Path.home()
     / ".local"
@@ -827,6 +829,25 @@ def resolve_rss_widget_script(settings_state: dict | None = None) -> Path:
 
 
 def load_calendar_events(limit: int = 2) -> list[dict]:
+    try:
+        if CALENDAR_EVENTS_CACHE.exists():
+            payload = json.loads(CALENDAR_EVENTS_CACHE.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                events = payload.get("events", [])
+                if isinstance(events, list) and events:
+                    return [item for item in events if isinstance(item, dict)][:limit]
+                err = str(payload.get("error", "")).strip()
+                if err:
+                    return [
+                        {
+                            "title": "Calendar sync error",
+                            "location": "Open Settings → Services → Calendar",
+                            "start": err,
+                            "source": "calendar",
+                        }
+                    ][:limit]
+    except Exception:
+        pass
     if not QCAL_WRAPPER.exists():
         return []
     try:
@@ -1479,6 +1500,31 @@ class GameCarouselCard(QFrame):
         self.dots_wrap.addWidget(dot)
         self._refresh_state()
 
+    def clear_slides(self) -> None:
+        # Removes all slide widgets and dots so we can repopulate asynchronously.
+        for widget in list(getattr(self, "_slides", [])):
+            try:
+                self.stack.removeWidget(widget)
+            except Exception:
+                pass
+            try:
+                widget.deleteLater()
+            except Exception:
+                pass
+        self._slides = []
+        for dot in list(getattr(self, "_dots", [])):
+            try:
+                dot.deleteLater()
+            except Exception:
+                pass
+        self._dots = []
+        try:
+            self.caption.setText("0/0")
+        except Exception:
+            pass
+        self.prev_button.setEnabled(False)
+        self.next_button.setEnabled(False)
+
     def _refresh_state(self) -> None:
         index = self.stack.currentIndex()
         if index < 0:
@@ -1511,6 +1557,7 @@ class GameCarouselCard(QFrame):
 
 class NotificationCenter(QWidget):
     calendarEventsReady = pyqtSignal(list)
+    gameSlidesReady = pyqtSignal(list)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1597,6 +1644,7 @@ class NotificationCenter(QWidget):
         self._build_window()
         self._build_ui()
         self.calendarEventsReady.connect(self._apply_calendar_events)
+        self.gameSlidesReady.connect(self._apply_game_slides)
         apply_antialias_font(self)
         self._apply_styles()
         self._apply_media_palette()
@@ -1772,32 +1820,57 @@ class NotificationCenter(QWidget):
 
     def _build_game_carousel_card(self) -> QFrame:
         self.game_carousel = GameCarouselCard(self.ui_font, self.material_font)
-        slides = load_lutris_game_slides(2)
-        slides.extend(load_steam_game_slides(2))
-        if not slides:
-            slides = [
-                {
-                    "title": "Cyberpunk 2077",
-                    "stats": ["42h total", "Night City route"],
-                    "logo": LUTRIS_ICON,
-                    "platform": "Lutris library",
-                    "accent": "primary",
-                },
-                {
-                    "title": "Minecraft",
-                    "stats": ["13h total", "Modded survival"],
-                    "logo": STEAM_ICON,
-                    "platform": "Steam library",
-                    "accent": "secondary",
-                },
-            ]
-        for slide in slides[:4]:
+        self.game_carousel.add_slide(
+            "Loading library…",
+            ["Fetching recent playtime"],
+            Path(STEAM_ICON),
+            "Library",
+            self.theme_palette.primary,
+            Path(),
+        )
+
+        def worker() -> None:
+            slides: list[dict] = []
+            try:
+                slides = load_lutris_game_slides(2)
+                slides.extend(load_steam_game_slides(2))
+            except Exception:
+                slides = []
+            if not slides:
+                slides = [
+                    {
+                        "title": "Welcome back",
+                        "stats": ["No launcher telemetry yet"],
+                        "logo": STEAM_ICON,
+                        "platform": "Game library",
+                        "accent": "primary",
+                    }
+                ]
+            try:
+                self.gameSlidesReady.emit(slides[:4])
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+        return self.game_carousel
+
+    def _apply_game_slides(self, slides: list) -> None:
+        if not hasattr(self, "game_carousel"):
+            return
+        carousel = self.game_carousel
+        if not isinstance(carousel, GameCarouselCard):
+            return
+        carousel.clear_slides()
+        safe_slides = slides if isinstance(slides, list) else []
+        for slide in safe_slides[:4]:
+            if not isinstance(slide, dict):
+                continue
             accent = (
                 self.theme_palette.primary
                 if slide.get("accent") == "primary"
                 else self.theme_palette.secondary
             )
-            self.game_carousel.add_slide(
+            carousel.add_slide(
                 str(slide.get("title", "Game")),
                 list(slide.get("stats", [])),
                 Path(slide.get("logo", LUTRIS_ICON)),
@@ -1805,7 +1878,6 @@ class NotificationCenter(QWidget):
                 accent,
                 Path(slide.get("cover", Path())),
             )
-        return self.game_carousel
 
     def _build_calendar_card(self) -> QFrame:
         card = QFrame()
@@ -3180,7 +3252,9 @@ class NotificationCenter(QWidget):
         self.media_content.setGeometry(media_rect)
 
     def _start_polls(self) -> None:
-        self._poll_all()
+        # Defer expensive subprocess polling until after the first paint so the
+        # window appears instantly.
+        QTimer.singleShot(0, self._poll_all)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._poll_all)
