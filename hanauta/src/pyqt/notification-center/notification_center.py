@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCalendarWidget,
+    QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
@@ -73,6 +74,8 @@ HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+GAMES_CACHE_PATH = SERVICE_STATE_DIR / "games.json"
 def _preferred_icon_path(asset_name: str, system_path: str) -> str:
     local_icon = ASSETS_DIR / asset_name
     if local_icon.exists():
@@ -128,7 +131,10 @@ def _resolve_qcal_wrapper_script() -> Path | None:
 
 QCAL_WRAPPER = _resolve_qcal_wrapper_script() or Path()
 LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
-LUTRIS_COVERART_DIR = Path.home() / ".local" / "share" / "lutris" / "coverart"
+LUTRIS_COVERART_DIRS = [
+    Path.home() / ".local" / "share" / "lutris" / "coverart",
+    Path.home() / ".cache" / "lutris" / "coverart",
+]
 SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 VPN_CONTROL_SCRIPT = (
     resolve_plugin_script("vpn_control.py", ["vpn-control", "vpn"]) or Path()
@@ -937,10 +943,16 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
     for name, slug, playtime, lastplayed, runner, platform in rows:
         hours = float(playtime or 0.0)
         platform_label = f"Lutris • {runner or platform or 'Library'}"
-        cover_path = LUTRIS_COVERART_DIR / f"{slug}.jpg" if slug else Path()
-        if not cover_path.exists() and slug:
-            png_path = LUTRIS_COVERART_DIR / f"{slug}.png"
-            cover_path = png_path if png_path.exists() else Path()
+        cover_path = ""
+        if slug:
+            for root in LUTRIS_COVERART_DIRS:
+                for ext in ("jpg", "png", "jpeg", "webp"):
+                    candidate = root / f"{slug}.{ext}"
+                    if candidate.is_file():
+                        cover_path = str(candidate)
+                        break
+                if cover_path:
+                    break
         slides.append(
             {
                 "title": str(name or "Lutris game"),
@@ -951,6 +963,8 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
                 "logo": LUTRIS_ICON,
                 "platform": platform_label,
                 "accent": "primary",
+                "source": "lutris",
+                "lutris_slug": str(slug) if slug else "",
                 "playtime_hours": hours,
                 "cover": cover_path,
             }
@@ -1012,14 +1026,67 @@ def load_steam_game_slides(limit: int = 2) -> list[dict]:
                     "logo": STEAM_ICON,
                     "platform": "Steam library",
                     "accent": "secondary",
+                    "source": "steam",
                     "playtime_hours": hours,
-                    "cover": Path(),
+                    "cover": "",
                 }
             )
         if slides:
             break
     slides.sort(key=lambda item: float(item.get("playtime_hours", 0.0)), reverse=True)
     return slides[:limit]
+
+
+def load_cached_game_slides(limit: int = 4) -> list[dict]:
+    if limit <= 0:
+        return []
+    try:
+        raw = GAMES_CACHE_PATH.read_text(encoding="utf-8", errors="ignore")
+        payload = json.loads(raw or "{}")
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    slides = payload.get("slides", [])
+    if not isinstance(slides, list):
+        return []
+    return [item for item in slides if isinstance(item, dict)][:limit]
+
+
+def load_cached_games_payload() -> dict:
+    try:
+        raw = GAMES_CACHE_PATH.read_text(encoding="utf-8", errors="ignore")
+        payload = json.loads(raw or "{}")
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def any_game_running_fast() -> bool:
+    needles = (
+        "lutris-wrapper",
+        "lutris-wrapper.sh",
+        "steam_app_",
+        "pressure-vessel",
+        "gamescope",
+    )
+    try:
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            cmdline_path = entry / "cmdline"
+            try:
+                raw = cmdline_path.read_bytes()
+            except Exception:
+                continue
+            if not raw:
+                continue
+            text = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").lower()
+            if any(needle in text for needle in needles):
+                return True
+    except Exception:
+        return False
+    return False
 
 
 class QuickSettingButton(QFrame):
@@ -1370,6 +1437,11 @@ class GameCarouselCard(QFrame):
         self.kicker.setObjectName("gameKicker")
         header.addWidget(self.kicker, 1)
 
+        self.play_button = QPushButton("PLAY")
+        self.play_button.setObjectName("playButton")
+        self.play_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        header.addWidget(self.play_button)
+
         self.prev_button = QPushButton(material_icon("chevron_left"))
         self.prev_button.setObjectName("compactIconAction")
         self.prev_button.setFont(QFont(self.material_font, 17))
@@ -1405,11 +1477,33 @@ class GameCarouselCard(QFrame):
     def _cover_pixmap(self, path: Path, width: int = 74, height: int = 92) -> QPixmap:
         fallback = QPixmap(width, height)
         fallback.fill(Qt.GlobalColor.transparent)
-        if not path.exists():
-            return fallback
-        pixmap = QPixmap(str(path))
+        candidate = path if path is not None and path.is_file() else FALLBACK_COVER
+        if not candidate.exists():
+            # Always show a visible placeholder instead of a fully transparent cover.
+            placeholder = QPixmap(width, height)
+            placeholder.fill(QColor(255, 255, 255, 18))
+            painter = QPainter(placeholder)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(QColor(255, 255, 255, 38))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(0, 0, width - 1, height - 1, 18, 18)
+            painter.end()
+            return placeholder
+        pixmap = QPixmap(str(candidate))
         if pixmap.isNull():
-            return fallback
+            placeholder = QPixmap(width, height)
+            placeholder.fill(QColor(255, 255, 255, 18))
+            painter = QPainter(placeholder)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(QColor(255, 255, 255, 38))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(0, 0, width - 1, height - 1, 18, 18)
+            painter.end()
+            return placeholder
         scaled = pixmap.scaled(
             width,
             height,
@@ -1605,6 +1699,9 @@ class NotificationCenter(QWidget):
         self._calendar_fetch_in_progress = False
         self._calendar_last_fetch = 0.0
         self._calendar_render_signature = ""
+        self._games_cache_signature = ""
+        self._game_slides_data: list[dict] = []
+        self._games_any_playing = False
         self._notification_history: list[dict] = []
         self.settings_state = load_notification_settings()
         self.theme_palette = load_theme_palette()
@@ -1828,30 +1925,62 @@ class NotificationCenter(QWidget):
             self.theme_palette.primary,
             Path(),
         )
+        self.game_carousel.play_button.clicked.connect(self._on_game_play_clicked)
+        self.game_carousel.stack.currentChanged.connect(
+            lambda _index: self._refresh_game_play_state()
+        )
+        self._refresh_game_play_state()
 
-        def worker() -> None:
-            slides: list[dict] = []
-            try:
-                slides = load_lutris_game_slides(2)
-                slides.extend(load_steam_game_slides(2))
-            except Exception:
-                slides = []
-            if not slides:
-                slides = [
-                    {
-                        "title": "Welcome back",
-                        "stats": ["No launcher telemetry yet"],
-                        "logo": STEAM_ICON,
-                        "platform": "Game library",
-                        "accent": "primary",
-                    }
-                ]
-            try:
-                self.gameSlidesReady.emit(slides[:4])
-            except Exception:
-                pass
+        def kick_async_load() -> None:
+            # Use the service cache when available (instant UI), and fall back to local
+            # filesystem reads in a background thread.
+            payload = load_cached_games_payload()
+            cached = payload.get("slides", [])
+            any_playing = bool(payload.get("any_playing", False))
+            if isinstance(cached, list) and cached:
+                self._games_any_playing = any_playing
+                self._refresh_game_play_state()
+                try:
+                    self.gameSlidesReady.emit(
+                        [item for item in cached if isinstance(item, dict)][:4]
+                    )
+                except Exception:
+                    pass
+                return
 
-        threading.Thread(target=worker, daemon=True).start()
+            def worker() -> None:
+                slides: list[dict] = []
+                try:
+                    slides = load_lutris_game_slides(2)
+                    slides.extend(load_steam_game_slides(2))
+                except Exception:
+                    slides = []
+                if not slides:
+                    slides = [
+                        {
+                            "title": "Welcome back",
+                            "stats": ["No launcher telemetry yet"],
+                            "logo": str(STEAM_ICON),
+                            "platform": "Game library",
+                            "accent": "primary",
+                            "source": "library",
+                            "lutris_slug": "",
+                        }
+                    ]
+                try:
+                    self.gameSlidesReady.emit(slides[:4])
+                except Exception:
+                    pass
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        # Delay until after signals are connected (avoids a startup race where the
+        # worker emits before `gameSlidesReady` is connected).
+        QTimer.singleShot(80, kick_async_load)
+        self._games_cache_timer = QTimer(self)
+        self._games_cache_timer.setInterval(5000)
+        self._games_cache_timer.timeout.connect(self._sync_games_cache_state)
+        self._games_cache_timer.start()
         return self.game_carousel
 
     def _apply_game_slides(self, slides: list) -> None:
@@ -1860,15 +1989,27 @@ class NotificationCenter(QWidget):
         carousel = self.game_carousel
         if not isinstance(carousel, GameCarouselCard):
             return
+        try:
+            signature = json.dumps(slides, sort_keys=True, default=str)
+        except Exception:
+            signature = ""
+        if signature and signature == getattr(self, "_games_cache_signature", ""):
+            return
+        self._games_cache_signature = signature
         carousel.clear_slides()
         safe_slides = slides if isinstance(slides, list) else []
-        for slide in safe_slides[:4]:
-            if not isinstance(slide, dict):
-                continue
+        self._game_slides_data = [item for item in safe_slides if isinstance(item, dict)][:4]
+        for slide in self._game_slides_data:
             accent = (
                 self.theme_palette.primary
                 if slide.get("accent") == "primary"
                 else self.theme_palette.secondary
+            )
+            cover_value = slide.get("cover", "")
+            cover_path = (
+                Path(cover_value)
+                if isinstance(cover_value, str) and cover_value and cover_value != "."
+                else Path()
             )
             carousel.add_slide(
                 str(slide.get("title", "Game")),
@@ -1876,8 +2017,127 @@ class NotificationCenter(QWidget):
                 Path(slide.get("logo", LUTRIS_ICON)),
                 str(slide.get("platform", "Library")),
                 accent,
-                Path(slide.get("cover", Path())),
+                cover_path,
             )
+        self._refresh_game_play_state()
+
+    def _current_game_slide(self) -> dict:
+        if not hasattr(self, "game_carousel"):
+            return {}
+        try:
+            index = int(self.game_carousel.stack.currentIndex())
+        except Exception:
+            index = 0
+        if index < 0:
+            index = 0
+        if index >= len(getattr(self, "_game_slides_data", [])):
+            return {}
+        slide = self._game_slides_data[index]
+        return slide if isinstance(slide, dict) else {}
+
+    def _refresh_game_play_state(self) -> None:
+        if not hasattr(self, "game_carousel"):
+            return
+        carousel = self.game_carousel
+        if not isinstance(carousel, GameCarouselCard):
+            return
+        slide = self._current_game_slide()
+        slug = str(slide.get("lutris_slug", "") or "")
+        can_launch = bool(slug)
+        any_playing = bool(getattr(self, "_games_any_playing", False))
+        if not can_launch:
+            carousel.play_button.setText("PLAY")
+            carousel.play_button.setEnabled(False)
+            return
+        carousel.play_button.setText("PLAYING" if any_playing else "PLAY")
+        carousel.play_button.setEnabled(not any_playing)
+
+    def _sync_games_cache_state(self) -> None:
+        payload = load_cached_games_payload()
+        if not payload:
+            return
+        any_playing = bool(payload.get("any_playing", False))
+        if any_playing != getattr(self, "_games_any_playing", False):
+            self._games_any_playing = any_playing
+            self._refresh_game_play_state()
+
+    def _on_game_play_clicked(self) -> None:
+        slide = self._current_game_slide()
+        slug = str(slide.get("lutris_slug", "") or "")
+        title = str(slide.get("title", "this game") or "this game")
+        if not slug:
+            return
+
+        if any_game_running_fast():
+            self._games_any_playing = True
+            self._refresh_game_play_state()
+            return
+
+        if not self._confirm_play(title):
+            return
+        self._launch_lutris_game(slug)
+        self._games_any_playing = True
+        self._refresh_game_play_state()
+
+    def _confirm_play(self, title: str) -> bool:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Confirm")
+        dialog.setModal(True)
+        dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        dialog.setStyleSheet(self.styleSheet())
+
+        shell = QFrame(dialog)
+        shell.setObjectName("confirmPopup")
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(16, 16, 16, 16)
+        shell_layout.setSpacing(10)
+
+        title_label = QLabel("Play game?")
+        title_label.setObjectName("confirmTitle")
+        subtitle = QLabel(f"This will start “{title}” in Lutris.")
+        subtitle.setObjectName("confirmSubtitle")
+        subtitle.setWordWrap(True)
+        shell_layout.addWidget(title_label)
+        shell_layout.addWidget(subtitle)
+
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("softButton")
+        cancel.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        play = QPushButton("Play")
+        play.setObjectName("confirmPlayButton")
+        play.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        buttons.addWidget(cancel)
+        buttons.addWidget(play)
+        shell_layout.addLayout(buttons)
+
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(shell)
+
+        cancel.clicked.connect(dialog.reject)
+        play.clicked.connect(dialog.accept)
+
+        dialog.adjustSize()
+        dialog.move(
+            self.geometry().center().x() - dialog.width() // 2,
+            self.geometry().center().y() - dialog.height() // 2,
+        )
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
+    def _launch_lutris_game(self, slug: str) -> None:
+        try:
+            subprocess.Popen(
+                ["lutris", f"lutris:rungame/{slug}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
 
     def _build_calendar_card(self) -> QFrame:
         card = QFrame()
@@ -2873,6 +3133,47 @@ class NotificationCenter(QWidget):
             #compactIconAction:disabled {{
                 color: {theme.inactive};
                 background: {rgba(theme.surface_container_high, 0.44)};
+            }}
+            #playButton {{
+                background: {theme.primary};
+                border: none;
+                border-radius: 999px;
+                color: {theme.active_text};
+                padding: 6px 14px;
+                font-weight: 700;
+                letter-spacing: 0.6px;
+            }}
+            #playButton:hover {{
+                background: {rgba(theme.primary, 0.88)};
+            }}
+            #playButton:disabled {{
+                background: {rgba(theme.surface_container_high, 0.44)};
+                color: {theme.inactive};
+            }}
+            #confirmPopup {{
+                background: {theme.panel_bg};
+                border: 1px solid {theme.panel_border};
+                border-radius: 22px;
+            }}
+            #confirmTitle {{
+                color: {theme.text};
+                font-size: 13px;
+                font-weight: 700;
+            }}
+            #confirmSubtitle {{
+                color: {theme.text_muted};
+                font-size: 11px;
+            }}
+            #confirmPlayButton {{
+                background: {theme.primary};
+                border: none;
+                border-radius: 14px;
+                color: {theme.active_text};
+                padding: 8px 12px;
+                font-weight: 700;
+            }}
+            #confirmPlayButton:hover {{
+                background: {rgba(theme.primary, 0.88)};
             }}
             #settingsInput {{
                 background: {rgba(theme.surface_container_high, 0.88)};

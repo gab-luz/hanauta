@@ -17,6 +17,8 @@ typedef struct {
     gchar *wifi_path;
     gchar *home_assistant_path;
     gchar *status_path;
+    gchar *games_cache_script;
+    gint64 games_cache_next_run;
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
     guint refresh_source;
@@ -502,6 +504,47 @@ static void write_status_json(const gchar *status, const gchar *details) {
     g_free(updated_at);
     g_free(json);
     g_date_time_unref(now);
+}
+
+static gboolean refresh_games_cache(void) {
+    gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+    if (g_service.games_cache_script == NULL || *g_service.games_cache_script == '\0') {
+        return FALSE;
+    }
+    if (g_service.games_cache_next_run > 0 && now < g_service.games_cache_next_run) {
+        return FALSE;
+    }
+    if (!g_file_test(g_service.games_cache_script, G_FILE_TEST_EXISTS)) {
+        g_service.games_cache_next_run = now + 60;
+        return FALSE;
+    }
+
+    const gchar *argv[] = {"python3", g_service.games_cache_script, NULL};
+    GSubprocessLauncher *launcher = g_subprocess_launcher_new(
+        G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE
+    );
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SETTINGS_PATH", g_service.settings_path, TRUE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_STATE_DIR", g_service.state_dir, TRUE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SERVICE_STATE_DIR", g_service.state_dir, TRUE);
+
+    GError *error = NULL;
+    GSubprocess *process = g_subprocess_launcher_spawnv(
+        launcher,
+        (const gchar * const *)argv,
+        &error
+    );
+    gboolean ok = FALSE;
+    if (process != NULL) {
+        if (g_subprocess_wait(process, NULL, &error) && g_subprocess_get_successful(process)) {
+            ok = TRUE;
+        }
+    }
+    g_clear_object(&process);
+    g_clear_object(&launcher);
+    g_clear_error(&error);
+
+    g_service.games_cache_next_run = now + (ok ? 20 : 60);
+    return ok;
 }
 
 static gboolean refresh_weather(void) {
@@ -1875,8 +1918,9 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean crypto_ok = refresh_crypto();
     gboolean home_assistant_ok = refresh_home_assistant();
     gboolean ntfy_ok = refresh_ntfy();
+    gboolean games_ok = refresh_games_cache();
     refresh_plugin_background_tasks();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok;
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -2053,6 +2097,8 @@ int main(int argc, char **argv) {
     g_service.wifi_path = g_build_filename(g_service.state_dir, "wifi.json", NULL);
     g_service.home_assistant_path = g_build_filename(g_service.state_dir, "home_assistant.json", NULL);
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
+    g_service.games_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_recent_games.py", NULL);
+    g_service.games_cache_next_run = 0;
     g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
     g_service.ntfy_seen_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     g_service.plugin_task_next_run = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
@@ -2091,6 +2137,7 @@ int main(int argc, char **argv) {
     g_free(g_service.wifi_path);
     g_free(g_service.home_assistant_path);
     g_free(g_service.status_path);
+    g_free(g_service.games_cache_script);
     g_free(g_service.ntfy_topic_key);
     if (g_service.ntfy_all_topics_cache != NULL) {
         g_ptr_array_free(g_service.ntfy_all_topics_cache, TRUE);
