@@ -16521,23 +16521,19 @@ class SettingsWindow(QWidget):
             }}
             QFrame#shell {{
                 background: {rgba(theme.surface_container, 0.94)};
-                border: 1px solid {rgba(theme.outline, 0.20)};
                 border-radius: 18px;
             }}
             QFrame#topHeader {{
                 background: {rgba(theme.surface_container_high, 0.92)};
-                border-bottom: 1px solid {rgba(theme.outline, 0.16)};
                 border-top-left-radius: 18px;
                 border-top-right-radius: 18px;
             }}
             QFrame#sidebar {{
                 background: {rgba(theme.surface_container_high, 0.92)};
-                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
             QFrame#headerLeadChip, QFrame#sidebarNavSection {{
                 background: {rgba(theme.surface_container_high, 0.88)};
-                border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 14px;
             }}
             QLabel#sidebarTitle {{
