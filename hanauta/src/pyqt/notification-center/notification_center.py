@@ -2985,13 +2985,12 @@ class NotificationCenter(QWidget):
         return button
 
     def _is_light_theme(self, theme) -> bool:
-        surface = theme.surface.lstrip("#")
-        if len(surface) == 6:
-            try:
-                gray = int(surface[0:2], 16) + int(surface[2:4], 16) + int(surface[4:6], 16)
-                return gray > 384
-            except ValueError:
-                pass
+        text_luma = self._css_color_luma(str(getattr(theme, "text", "") or ""))
+        if text_luma is not None:
+            return text_luma < 0.45
+        surface_luma = self._css_color_luma(str(getattr(theme, "surface", "") or ""))
+        if surface_luma is not None:
+            return surface_luma > 0.60
         return False
 
     def _css_color_luma(self, value: str) -> float | None:
