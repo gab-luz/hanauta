@@ -1695,7 +1695,6 @@ class NotificationCenter(QWidget):
         self._media_url = ""
         self._media_duration_cache: dict[str, int] = {}
         self._media_duration_pending: set[str] = set()
-        self._night_light_user_toggled = False
         self._calendar_events: list[dict] = []
         self._calendar_last_error = ""
         self._calendar_fetch_in_progress = False
@@ -3757,6 +3756,21 @@ class NotificationCenter(QWidget):
         header.addWidget(close_button)
         shell_layout.addLayout(header)
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setObjectName("eventsPopupScroll")
+        scroll.setMinimumWidth(420)
+        scroll.setMaximumHeight(420 if len(events) > 2 else 320)
+
+        content = QWidget()
+        content.setObjectName("eventsPopupContent")
+        scroll.setWidget(content)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+
         for event in events:
             item = QFrame()
             item.setObjectName("feedCard")
@@ -3790,7 +3804,9 @@ class NotificationCenter(QWidget):
                 desc.setWordWrap(True)
                 item_layout.addWidget(desc)
 
-            shell_layout.addWidget(item)
+            content_layout.addWidget(item)
+        content_layout.addStretch(1)
+        shell_layout.addWidget(scroll)
 
         root = QVBoxLayout(dialog)
         root.setContentsMargins(0, 0, 0, 0)
@@ -4226,13 +4242,10 @@ class NotificationCenter(QWidget):
             airplane_on, "airplanemode_active", "On" if airplane_on else "Off"
         )
 
-        if not self._night_light_user_toggled:
-            self.quick_buttons["night"].set_state(False, "nightlight", "Off")
-        else:
-            night_on = run_script("redshift", "state") == "on"
-            self.quick_buttons["night"].set_state(
-                night_on, "nightlight", "On" if night_on else "Off"
-            )
+        night_on = run_script("redshift", "state") == "on"
+        self.quick_buttons["night"].set_state(
+            night_on, "nightlight", "On" if night_on else "Off"
+        )
 
         caffeine_on = run_script("caffeine.sh", "status") == "on"
         self.quick_buttons["caffeine"].set_state(
@@ -4922,7 +4935,6 @@ class NotificationCenter(QWidget):
         )
 
     def _toggle_night(self) -> None:
-        self._night_light_user_toggled = True
         run_script_bg("redshift", "toggle")
         QTimer.singleShot(
             300,
