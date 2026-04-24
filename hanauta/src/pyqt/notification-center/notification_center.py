@@ -1400,80 +1400,6 @@ class ElidedLabel(QLabel):
         super().setText(elided)
 
 
-class OutlinedLabel(QLabel):
-    def __init__(
-        self,
-        text: str = "",
-        *,
-        fill: QColor | str = "#000000",
-        stroke: QColor | str = "#ffffff",
-        stroke_width: float = 2.0,
-    ) -> None:
-        super().__init__(text)
-        self._full_text = text
-        self._fill = QColor(fill) if isinstance(fill, str) else fill
-        self._stroke = QColor(stroke) if isinstance(stroke, str) else stroke
-        self._stroke_width = float(stroke_width)
-
-    def setText(self, text: str) -> None:  # type: ignore[override]
-        self._full_text = text
-        super().setText(text)
-        self.update()
-
-    def set_outline_style(
-        self,
-        *,
-        fill: QColor | str | None = None,
-        stroke: QColor | str | None = None,
-        stroke_width: float | None = None,
-    ) -> None:
-        if fill is not None:
-            self._fill = QColor(fill) if isinstance(fill, str) else fill
-        if stroke is not None:
-            self._stroke = QColor(stroke) if isinstance(stroke, str) else stroke
-        if stroke_width is not None:
-            self._stroke_width = float(stroke_width)
-        self.update()
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        rect = self.contentsRect()
-        if rect.width() <= 0 or rect.height() <= 0:
-            return
-        text = str(self._full_text or "")
-        if not text:
-            return
-
-        metrics = self.fontMetrics()
-        flags = self.alignment()
-        if int(flags) == 0:
-            flags = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        flags = flags | Qt.AlignmentFlag.AlignVCenter
-        elided = metrics.elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
-        bound = metrics.boundingRect(
-            rect, int(flags) | int(Qt.TextFlag.TextSingleLine), elided
-        )
-        x = float(bound.left())
-        y = float(bound.top() + metrics.ascent())
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-
-        path = QPainterPath()
-        path.addText(x, y, self.font(), elided)
-
-        pen = QPen(self._stroke, max(0.5, self._stroke_width))
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(path)
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self._fill)
-        painter.drawPath(path)
-
-
 class ClickableLabel(QLabel):
     def __init__(self, callback) -> None:
         super().__init__()
@@ -2458,14 +2384,14 @@ class NotificationCenter(QWidget):
         text = QVBoxLayout(text_wrap)
         text.setContentsMargins(0, 2, 0, 0)
         text.setSpacing(2)
-        self.media_title = OutlinedLabel("No music")
+        self.media_title = QLabel("No music")
         self.media_title.setObjectName("mediaTitle")
         self.media_title.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
         self.media_title.setMinimumWidth(1)
         self.media_title.setWordWrap(False)
-        self.media_artist = OutlinedLabel("No artist")
+        self.media_artist = QLabel("No artist")
         self.media_artist.setObjectName("mediaArtist")
         self.media_artist.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -2491,7 +2417,7 @@ class NotificationCenter(QWidget):
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.setSpacing(8)
-        self.elapsed = OutlinedLabel("0:00")
+        self.elapsed = QLabel("0:00")
         self.elapsed.setObjectName("timeCode")
         self.elapsed.setFont(QFont(self.mono_font, 9))
         controls = QHBoxLayout()
@@ -2506,7 +2432,7 @@ class NotificationCenter(QWidget):
         controls.addWidget(self.prev_btn)
         controls.addWidget(self.play_btn)
         controls.addWidget(self.next_btn)
-        self.total = OutlinedLabel("0:00")
+        self.total = QLabel("0:00")
         self.total.setObjectName("timeCode")
         self.total.setFont(QFont(self.mono_font, 9))
         self.total.setAlignment(
@@ -3068,6 +2994,33 @@ class NotificationCenter(QWidget):
                 pass
         return False
 
+    def _css_color_luma(self, value: str) -> float | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.startswith("rgba(") and text.endswith(")"):
+            parts = [part.strip() for part in text[5:-1].split(",")]
+            if len(parts) >= 3:
+                try:
+                    red = int(float(parts[0]))
+                    green = int(float(parts[1]))
+                    blue = int(float(parts[2]))
+                except ValueError:
+                    return None
+                red = max(0, min(255, red))
+                green = max(0, min(255, green))
+                blue = max(0, min(255, blue))
+                return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0
+        if text.startswith("#"):
+            color = QColor(text)
+            if color.isValid():
+                return (
+                    0.2126 * color.red()
+                    + 0.7152 * color.green()
+                    + 0.0722 * color.blue()
+                ) / 255.0
+        return None
+
     def _apply_styles(self) -> None:
         theme = self.theme_palette
         is_light = self._is_light_theme(theme)
@@ -3607,29 +3560,30 @@ class NotificationCenter(QWidget):
             }}
             """
         )
+        bg_luma = self._css_color_luma(end) or self._css_color_luma(start) or 0.0
+        scrim_is_light = bg_luma > 0.62
         self.media_scrim.setStyleSheet(
-            """
+            f"""
             background: qradialgradient(
                 cx: 0.5, cy: 0.36, radius: 1.05, fx: 0.5, fy: 0.34,
-                stop: 0 rgba(0, 0, 0, 0.25),
-                stop: 0.48 rgba(0, 0, 0, 0.58),
-                stop: 1 rgba(0, 0, 0, 1.0)
+                stop: 0 {"rgba(255, 255, 255, 0.30)" if scrim_is_light else "rgba(0, 0, 0, 0.25)"},
+                stop: 0.48 {"rgba(255, 255, 255, 0.72)" if scrim_is_light else "rgba(0, 0, 0, 0.58)"},
+                stop: 1 {"rgba(255, 255, 255, 0.96)" if scrim_is_light else "rgba(0, 0, 0, 1.0)"}
             );
             border-radius: 20px;
             """
         )
         self.progress_fill.setStyleSheet(f"background: {accent}; border-radius: 2px;")
-        for label, style, stroke_width in (
-            (self.media_title, "font-size: 14px; font-weight: 600;", 2.4),
-            (self.media_artist, "font-size: 12px; font-weight: 500;", 2.1),
-            (self.elapsed, "font-size: 11px; font-weight: 600;", 2.0),
-            (self.total, "font-size: 11px; font-weight: 600;", 2.0),
-        ):
-            label.setStyleSheet(style)
-            if isinstance(label, OutlinedLabel):
-                label.set_outline_style(
-                    fill="#000000", stroke="#ffffff", stroke_width=stroke_width
-                )
+        media_text = "#000000" if bg_luma > 0.62 else "#ffffff"
+        self.media_title.setStyleSheet(
+            f"font-size: 14px; font-weight: 600; color: {media_text};"
+        )
+        self.media_artist.setStyleSheet(
+            f"font-size: 12px; font-weight: 500; color: {media_text};"
+        )
+        time_style = f"font-size: 11px; font-weight: 600; color: {media_text};"
+        self.elapsed.setStyleSheet(time_style)
+        self.total.setStyleSheet(time_style)
         self.play_btn.setStyleSheet(
             f"""
             background: {accent};
@@ -3977,14 +3931,24 @@ class NotificationCenter(QWidget):
             return
         theme = self.theme_palette
         is_light = self._is_light_theme(theme)
-        text_color = "#000000" if is_light else theme.text
+        body_color = QColor("#000000") if is_light else QColor(theme.text)
+        if not body_color.isValid():
+            body_color = QColor("#ffffff" if not is_light else "#000000")
+        if not is_light:
+            body_color.setAlphaF(0.92)
 
         palette = self.calendar_widget.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(text_color))
-        palette.setColor(QPalette.ColorRole.Text, QColor(text_color))
-        palette.setColor(QPalette.ColorRole.ButtonText, QColor(text_color))
+        palette.setColor(QPalette.ColorRole.WindowText, body_color)
+        palette.setColor(QPalette.ColorRole.Text, body_color)
+        palette.setColor(QPalette.ColorRole.ButtonText, body_color)
         palette.setColor(QPalette.ColorRole.Highlight, QColor(theme.primary))
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(theme.active_text))
+        if not is_light:
+            disabled = QColor(body_color)
+            disabled.setAlphaF(0.60)
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, disabled)
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, disabled)
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, disabled)
         base_bg = QColor(theme.surface_container_high)
         base_bg.setAlphaF(0.36 if is_light else 0.20)
         palette.setColor(QPalette.ColorRole.Base, base_bg)
@@ -3997,9 +3961,9 @@ class NotificationCenter(QWidget):
         self.calendar_widget.setHeaderTextFormat(header_fmt)
 
         weekday_fmt = QTextCharFormat()
-        weekday_fmt.setForeground(QColor(text_color))
+        weekday_fmt.setForeground(body_color)
         weekend_fmt = QTextCharFormat()
-        weekend_fmt.setForeground(QColor(theme.primary))
+        weekend_fmt.setForeground(QColor(theme.primary) if is_light else body_color)
 
         self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Monday, weekday_fmt)
         self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Tuesday, weekday_fmt)
@@ -4010,7 +3974,7 @@ class NotificationCenter(QWidget):
         self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, weekend_fmt)
 
         today_fmt = QTextCharFormat()
-        today_fmt.setForeground(QColor(text_color))
+        today_fmt.setForeground(QColor(theme.active_text))
         today_fmt.setBackground(QColor(theme.primary))
         self.calendar_widget.setDateTextFormat(QDate.currentDate(), today_fmt)
 
