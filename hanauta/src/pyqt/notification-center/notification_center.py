@@ -3024,6 +3024,8 @@ class NotificationCenter(QWidget):
     def _apply_styles(self) -> None:
         theme = self.theme_palette
         is_light = self._is_light_theme(theme)
+        calendar_body_text = "#000000" if is_light else "rgba(255,255,255,0.92)"
+        calendar_body_disabled = "#6c6c6c" if is_light else "rgba(255,255,255,0.55)"
         self.setStyleSheet(
             f"""
             QWidget {{
@@ -3391,7 +3393,7 @@ class NotificationCenter(QWidget):
                 color: {theme.text};
             }}
             #miniCalendar QAbstractItemView:enabled {{
-                color: {theme.text};
+                color: {calendar_body_text};
                 background: {rgba(theme.surface_container_high, 0.18)};
                 border: 1px solid {rgba(theme.outline, 0.12)};
                 border-radius: 12px;
@@ -3400,6 +3402,9 @@ class NotificationCenter(QWidget):
                 alternate-background-color: transparent;
                 gridline-color: transparent;
                 outline: 0;
+            }}
+            #miniCalendar QAbstractItemView::item:disabled {{
+                color: {calendar_body_disabled};
             }}
             #miniCalendar QWidget#qt_calendar_navigationbar {{
                 background: transparent;
@@ -3414,7 +3419,7 @@ class NotificationCenter(QWidget):
             }}
             #miniCalendar QAbstractItemView {{
                 background: {theme.chip_bg};
-                color: {theme.text};
+                color: {calendar_body_text};
                 border: 1px solid {theme.chip_border};
                 selection-background-color: {theme.primary};
                 selection-color: {theme.active_text};
@@ -3584,6 +3589,20 @@ class NotificationCenter(QWidget):
         time_style = f"font-size: 11px; font-weight: 600; color: {media_text};"
         self.elapsed.setStyleSheet(time_style)
         self.total.setStyleSheet(time_style)
+        for button in (self.prev_btn, self.next_btn):
+            button.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    color: {media_text};
+                    font-family: "{self.material_font}";
+                }}
+                QPushButton:hover {{
+                    color: {accent};
+                }}
+                """
+            )
         self.play_btn.setStyleSheet(
             f"""
             background: {accent};
