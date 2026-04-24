@@ -248,6 +248,8 @@ from settings_page.picom_config import (
     update_picom_config,
     sync_picom_rule_blocks,
     build_default_picom_config,
+    ensure_picom_rule_files,
+    _picom_rule_files,
 )
 
 PICOM_SHADOW_EXCLUDE_FILE = PICOM_RULES_DIR / "shadow-exclude.rules"
@@ -340,13 +342,6 @@ from settings_page.notification_state import (
 )
 
 
-def _picom_rule_files() -> dict[str, Path]:
-    return {
-        "shadow-exclude": PICOM_SHADOW_EXCLUDE_FILE,
-        "rounded-corners-exclude": PICOM_ROUNDED_EXCLUDE_FILE,
-        "opacity-rule": PICOM_OPACITY_RULE_FILE,
-"fade-exclude": PICOM_FADE_EXCLUDE_FILE,
-    }
 
 
 
