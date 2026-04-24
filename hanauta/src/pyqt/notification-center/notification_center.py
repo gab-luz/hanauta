@@ -1695,6 +1695,7 @@ class NotificationCenter(QWidget):
         self._media_url = ""
         self._media_duration_cache: dict[str, int] = {}
         self._media_duration_pending: set[str] = set()
+        self._night_light_user_toggled = False
         self._calendar_events: list[dict] = []
         self._calendar_last_error = ""
         self._calendar_fetch_in_progress = False
@@ -4150,10 +4151,13 @@ class NotificationCenter(QWidget):
             airplane_on, "airplanemode_active", "On" if airplane_on else "Off"
         )
 
-        night_on = run_script("redshift", "state") == "on"
-        self.quick_buttons["night"].set_state(
-            night_on, "nightlight", "On" if night_on else "Off"
-        )
+        if not self._night_light_user_toggled:
+            self.quick_buttons["night"].set_state(False, "nightlight", "Off")
+        else:
+            night_on = run_script("redshift", "state") == "on"
+            self.quick_buttons["night"].set_state(
+                night_on, "nightlight", "On" if night_on else "Off"
+            )
 
         caffeine_on = run_script("caffeine.sh", "status") == "on"
         self.quick_buttons["caffeine"].set_state(
@@ -4843,6 +4847,7 @@ class NotificationCenter(QWidget):
         )
 
     def _toggle_night(self) -> None:
+        self._night_light_user_toggled = True
         run_script_bg("redshift", "toggle")
         QTimer.singleShot(
             300,
