@@ -19385,42 +19385,6 @@ def _marketplace_normalize_catalog_api(payload: object) -> list[dict[str, object
     return rows
 
 
-def marketplace_api_refresh_catalog_cache(
-    settings: dict,
-) -> tuple[list[dict[str, object]], list[str]]:
-    sources = _marketplace_sources_from_state(settings)
-    merged: list[dict[str, object]] = []
-    seen_ids: set[str] = set()
-    source_errors: list[str] = []
-    for source in sources:
-        repo_url = str(source.get("repo_url", "")).strip()
-        branch = str(source.get("branch", "main")).strip() or "main"
-        manifest_path = str(source.get("manifest_path", "plugins.json")).strip().lstrip("/") or "plugins.json"
-        if not repo_url:
-            continue
-        try:
-            payload = _marketplace_fetch_manifest_payload_api(
-                repo_url, branch, manifest_path
-            )
-            catalog = _marketplace_normalize_catalog_api(payload)
-            for plugin in catalog:
-                plugin_id = str(plugin.get("id", "")).strip()
-                if not plugin_id or plugin_id in seen_ids:
-                    continue
-                plugin["catalog_source"] = repo_url
-                merged.append(plugin)
-                seen_ids.add(plugin_id)
-        except Exception as exc:
-            source_errors.append(f"{repo_url}@{branch}: {exc}")
-    marketplace = settings.setdefault("marketplace", {})
-    if not isinstance(marketplace, dict):
-        marketplace = {}
-        settings["marketplace"] = marketplace
-    marketplace["catalog_cache"] = merged
-    save_settings_state(settings)
-    return merged, source_errors
-
-
 def marketplace_api_installed_plugins(settings: dict) -> list[dict[str, object]]:
     marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
     if not isinstance(marketplace, dict):
