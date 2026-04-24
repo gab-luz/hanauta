@@ -11,6 +11,8 @@ smaller modules.
 ## Extracted Modules (New)
 
 - `settings_page/material_icons.py`: Material icon codepoints + `material_icon(...)`
+- `settings_page/bar_settings.py`: bar defaults + `merged_bar_settings(...)` + bar service icon maps
+- `settings_page/service_settings.py`: default service settings + `merged_service_settings(...)`
 - `settings_page/presets.py`: preset lists for:
   - `VOICE_LANGUAGE_PRESETS` (BCP-47 tags like `pt-BR`)
   - `LOCALE_LANGUAGE_PRESETS` (Linux locales like `pt_BR.UTF-8`)
