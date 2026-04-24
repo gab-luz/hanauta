@@ -38,7 +38,6 @@ from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QCalendarWidget,
     QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
