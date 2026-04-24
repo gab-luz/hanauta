@@ -27,6 +27,7 @@ from PyQt6.QtGui import (
     QFont,
     QFontDatabase,
     QIcon,
+    QPalette,
     QPainter,
     QPainterPath,
     QPen,
@@ -1399,6 +1400,80 @@ class ElidedLabel(QLabel):
         super().setText(elided)
 
 
+class OutlinedLabel(QLabel):
+    def __init__(
+        self,
+        text: str = "",
+        *,
+        fill: QColor | str = "#000000",
+        stroke: QColor | str = "#ffffff",
+        stroke_width: float = 2.0,
+    ) -> None:
+        super().__init__(text)
+        self._full_text = text
+        self._fill = QColor(fill) if isinstance(fill, str) else fill
+        self._stroke = QColor(stroke) if isinstance(stroke, str) else stroke
+        self._stroke_width = float(stroke_width)
+
+    def setText(self, text: str) -> None:  # type: ignore[override]
+        self._full_text = text
+        super().setText(text)
+        self.update()
+
+    def set_outline_style(
+        self,
+        *,
+        fill: QColor | str | None = None,
+        stroke: QColor | str | None = None,
+        stroke_width: float | None = None,
+    ) -> None:
+        if fill is not None:
+            self._fill = QColor(fill) if isinstance(fill, str) else fill
+        if stroke is not None:
+            self._stroke = QColor(stroke) if isinstance(stroke, str) else stroke
+        if stroke_width is not None:
+            self._stroke_width = float(stroke_width)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        rect = self.contentsRect()
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        text = str(self._full_text or "")
+        if not text:
+            return
+
+        metrics = self.fontMetrics()
+        flags = self.alignment()
+        if int(flags) == 0:
+            flags = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        flags = flags | Qt.AlignmentFlag.AlignVCenter
+        elided = metrics.elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
+        bound = metrics.boundingRect(
+            rect, int(flags) | int(Qt.TextFlag.TextSingleLine), elided
+        )
+        x = float(bound.left())
+        y = float(bound.top() + metrics.ascent())
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        path = QPainterPath()
+        path.addText(x, y, self.font(), elided)
+
+        pen = QPen(self._stroke, max(0.5, self._stroke_width))
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._fill)
+        painter.drawPath(path)
+
+
 class ClickableLabel(QLabel):
     def __init__(self, callback) -> None:
         super().__init__()
@@ -2383,14 +2458,14 @@ class NotificationCenter(QWidget):
         text = QVBoxLayout(text_wrap)
         text.setContentsMargins(0, 2, 0, 0)
         text.setSpacing(2)
-        self.media_title = QLabel("No music")
+        self.media_title = OutlinedLabel("No music")
         self.media_title.setObjectName("mediaTitle")
         self.media_title.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
         self.media_title.setMinimumWidth(1)
         self.media_title.setWordWrap(False)
-        self.media_artist = QLabel("No artist")
+        self.media_artist = OutlinedLabel("No artist")
         self.media_artist.setObjectName("mediaArtist")
         self.media_artist.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -2416,7 +2491,7 @@ class NotificationCenter(QWidget):
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.setSpacing(8)
-        self.elapsed = QLabel("0:00")
+        self.elapsed = OutlinedLabel("0:00")
         self.elapsed.setObjectName("timeCode")
         self.elapsed.setFont(QFont(self.mono_font, 9))
         controls = QHBoxLayout()
@@ -2431,9 +2506,12 @@ class NotificationCenter(QWidget):
         controls.addWidget(self.prev_btn)
         controls.addWidget(self.play_btn)
         controls.addWidget(self.next_btn)
-        self.total = QLabel("0:00")
+        self.total = OutlinedLabel("0:00")
         self.total.setObjectName("timeCode")
         self.total.setFont(QFont(self.mono_font, 9))
+        self.total.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
         bottom.addWidget(self.elapsed)
         bottom.addStretch(1)
@@ -2980,8 +3058,19 @@ class NotificationCenter(QWidget):
         button.setFixedSize(28, 28)
         return button
 
+    def _is_light_theme(self, theme) -> bool:
+        surface = theme.surface.lstrip("#")
+        if len(surface) == 6:
+            try:
+                gray = int(surface[0:2], 16) + int(surface[2:4], 16) + int(surface[4:6], 16)
+                return gray > 384
+            except ValueError:
+                pass
+        return False
+
     def _apply_styles(self) -> None:
         theme = self.theme_palette
+        is_light = self._is_light_theme(theme)
         self.setStyleSheet(
             f"""
             QWidget {{
@@ -3530,10 +3619,17 @@ class NotificationCenter(QWidget):
             """
         )
         self.progress_fill.setStyleSheet(f"background: {accent}; border-radius: 2px;")
-        self.media_title.setStyleSheet(
-            f"font-size: 14px; font-weight: 600; color: {theme.text};"
-        )
-        self.media_artist.setStyleSheet(f"font-size: 12px; color: {accent};")
+        for label, style, stroke_width in (
+            (self.media_title, "font-size: 14px; font-weight: 600;", 2.4),
+            (self.media_artist, "font-size: 12px; font-weight: 500;", 2.1),
+            (self.elapsed, "font-size: 11px; font-weight: 600;", 2.0),
+            (self.total, "font-size: 11px; font-weight: 600;", 2.0),
+        ):
+            label.setStyleSheet(style)
+            if isinstance(label, OutlinedLabel):
+                label.set_outline_style(
+                    fill="#000000", stroke="#ffffff", stroke_width=stroke_width
+                )
         self.play_btn.setStyleSheet(
             f"""
             background: {accent};
@@ -3880,13 +3976,28 @@ class NotificationCenter(QWidget):
         if not hasattr(self, "calendar_widget"):
             return
         theme = self.theme_palette
+        is_light = self._is_light_theme(theme)
+        text_color = "#000000" if is_light else theme.text
+
+        palette = self.calendar_widget.palette()
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(text_color))
+        palette.setColor(QPalette.ColorRole.Text, QColor(text_color))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(text_color))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(theme.primary))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(theme.active_text))
+        base_bg = QColor(theme.surface_container_high)
+        base_bg.setAlphaF(0.36 if is_light else 0.20)
+        palette.setColor(QPalette.ColorRole.Base, base_bg)
+        palette.setColor(QPalette.ColorRole.AlternateBase, base_bg)
+        palette.setColor(QPalette.ColorRole.Button, base_bg)
+        self.calendar_widget.setPalette(palette)
 
         header_fmt = QTextCharFormat()
-        header_fmt.setForeground(QColor(theme.primary))
+        header_fmt.setForeground(QColor(theme.primary if not is_light else "#000000"))
         self.calendar_widget.setHeaderTextFormat(header_fmt)
 
         weekday_fmt = QTextCharFormat()
-        weekday_fmt.setForeground(QColor(theme.text))
+        weekday_fmt.setForeground(QColor(text_color))
         weekend_fmt = QTextCharFormat()
         weekend_fmt.setForeground(QColor(theme.primary))
 
@@ -3899,8 +4010,8 @@ class NotificationCenter(QWidget):
         self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, weekend_fmt)
 
         today_fmt = QTextCharFormat()
-        today_fmt.setForeground(QColor(theme.text))
-        today_fmt.setBackground(QColor(self._hex_to_rgba(theme.primary, 0.16)))
+        today_fmt.setForeground(QColor(text_color))
+        today_fmt.setBackground(QColor(theme.primary))
         self.calendar_widget.setDateTextFormat(QDate.currentDate(), today_fmt)
 
     def _request_calendar_refresh(self) -> None:
