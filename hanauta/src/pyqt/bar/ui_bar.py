@@ -102,7 +102,7 @@ from pyqt.shared.plugin_bridge import (
     trigger_fullscreen_alert,
 )
 from pyqt.shared.plugin_runtime import resolve_plugin_script
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
 
 def _load_plugin_backend(module_name: str, candidates: list[Path]) -> Any:
     for candidate in candidates:
@@ -4141,6 +4141,12 @@ class CyberBar(QWidget):
             "transparent" if merge_all_chips else rgba(theme.surface_container, 0.86)
         )
         media_border = "transparent" if merge_all_chips else rgba(theme.outline, 0.20)
+        is_light_theme = False
+        try:
+            is_light_theme = relative_luminance(theme.background) >= 0.35
+        except Exception:
+            is_light_theme = False
+        media_control_color = "#101114" if is_light_theme else "#FFFFFF"
         full_bar_bg = (
             rgba(theme.surface_container, 0.90) if merge_all_chips else "transparent"
         )
@@ -4354,14 +4360,14 @@ class CyberBar(QWidget):
             #mediaControl {{
                 background: transparent;
                 border: none;
-                color: {theme.secondary};
+                color: {media_control_color};
                 font-family: "{self.material_font}";
                 min-width: 22px;
                 max-width: 22px;
                 padding: 0;
             }}
             #mediaChip[active="true"] QPushButton#mediaControl {{
-                color: {theme.primary};
+                color: {media_control_color};
             }}
             #utilityButton {{
                 background: transparent;
