@@ -26,6 +26,7 @@ smaller modules.
 - `settings_page/fs_utils.py`: filesystem helpers (`directory_size_bytes(...)`, `filesystem_usage_bytes(...)`)
 - `settings_page/formatting.py`: small formatting helpers (`format_bytes(...)`, `format_uptime(...)`)
 - `settings_page/display_utils.py`: display helpers (`build_display_command(...)`, `normalize_display_orientation(...)`, `resolution_area(...)`)
+- `settings_page/battery.py`: battery probing + snapshot (`read_battery_snapshot(...)`)
 - `settings_page/__init__.py`: convenience re-exports
 
 ## Existing Modules
