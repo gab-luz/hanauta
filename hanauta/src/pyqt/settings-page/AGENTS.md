@@ -31,6 +31,7 @@ smaller modules.
 - `settings_page/xdg_mail.py`: xdg helpers for mail handler probing + desktop installation detection
 - `settings_page/picom_rules.py`: picom rule file parsing + render/sync of config blocks
 - `settings_page/wallpaper_sources.py`: wallpaper source sync helpers (discovery + git sync + dedupe copy)
+- `settings_page/i3_utils.py`: i3 helpers (`fullscreen_window_active(...)`, `sanitize_output_name(...)`)
 - `settings_page/__init__.py`: convenience re-exports
 
 ## Existing Modules
