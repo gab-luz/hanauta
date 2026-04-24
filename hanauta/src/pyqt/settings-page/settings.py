@@ -359,8 +359,24 @@ from settings_page.presets import LOCALE_LANGUAGE_PRESETS, VOICE_LANGUAGE_PRESET
 from settings_page.notification_rules import (
     DEFAULT_NOTIFICATION_RULES,
     load_notification_rules_state_from_file,
-    save_notification_rules_state_to_file,
 )
+
+from settings_page.startup import (
+    restore_saved_wallpaper,
+    restore_saved_vpn,
+    restore_saved_displays,
+)
+
+from settings_page.services import load_service_cache_json, run_bg, run_text
+
+from settings_page.marketplace import (
+    marketplace_api_refresh_catalog_cache,
+    marketplace_api_installed_plugins,
+    marketplace_api_update_plugin,
+    marketplace_api_update_all_plugins,
+)
+
+from settings_page.notification_state import ensure_settings_state
 
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
