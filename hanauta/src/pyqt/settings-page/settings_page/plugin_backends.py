@@ -1,0 +1,72 @@
+import importlib.util
+from pathlib import Path
+
+
+def load_plugin_backend(module_name: str, candidates: list[Path]):
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        __importlib__sys_modules = __import("sys").modules
+        __importlib__sys_modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ImportError(f"Unable to load plugin backend {module_name}: {candidates}")
+
+
+ROOT = Path(__file__).resolve().parents[2].parents[1]
+
+GAMEMODE_CANDIDATES = [
+    ROOT / "hanauta" / "src" / "pyqt" / "plugin-gamemode" / "gamemode_backend.py",
+    Path.home() / "dev" / "hanauta-plugin-game-mode" / "gamemode_backend.py",
+]
+
+try:
+    _GAMEMODE_BACKEND = load_plugin_backend("hanauta_plugin_gamemode_backend", GAMEMODE_CANDIDATES)
+    gamemode_summary = _GAMEMODE_BACKEND.summary
+except Exception:
+    def gamemode_summary() -> str:
+        return "GameMode unavailable"
+
+
+WEATHER_CANDIDATES = [
+    ROOT / "hanauta" / "src" / "pyqt" / "plugin-weather" / "weather_backend.py",
+    Path.home() / "dev" / "hanauta-plugin-weather" / "weather_backend.py",
+]
+
+WeatherCity = None
+configured_city = None
+search_cities = None
+
+try:
+    _WEATHER_BACKEND = load_plugin_backend("hanauta_plugin_weather_backend", WEATHER_CANDIDATES)
+    WeatherCity = _WEATHER_BACKEND.WeatherCity
+    configured_city = _WEATHER_BACKEND.configured_city
+    search_cities = _WEATHER_BACKEND.search_cities
+except Exception:
+    pass
+
+
+HOME_ASSISTANT_CANDIDATES = [
+    ROOT / "hanauta" / "src" / "pyqt" / "plugin-home-assistant" / "home_assistant_backend.py",
+    Path.home() / "dev" / "hanauta-plugin-home-assistant" / "home_assistant_backend.py",
+]
+
+entity_friendly_name = None
+entity_icon_name = None
+entity_secondary_text = None
+prefetch_entity_icons = None
+
+try:
+    _HOME_ASSISTANT_BACKEND = load_plugin_backend(
+        "hanauta_plugin_home_assistant_backend", HOME_ASSISTANT_CANDIDATES
+    )
+    entity_friendly_name = _HOME_ASSISTANT_BACKEND.entity_friendly_name
+    entity_icon_name = _HOME_ASSISTANT_BACKEND.entity_icon_name
+    entity_secondary_text = _HOME_ASSISTANT_BACKEND.entity_secondary_text
+    prefetch_entity_icons = _HOME_ASSISTANT_BACKEND.prefetch_entity_icons
+except Exception:
+    pass

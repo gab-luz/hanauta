@@ -9,6 +9,9 @@ from pathlib import Path
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 
+PYQT_THEME_DIR = Path.home() / ".local" / "state" / "hanauta" / "theme"
+PYQT_THEME_FILE = PYQT_THEME_DIR / "pyqt_palette.json"
+
 
 def _atomic_write_json_file(path: Path, payload_obj: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

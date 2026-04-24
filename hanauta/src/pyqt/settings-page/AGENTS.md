@@ -1,46 +1,35 @@
 # Agent Notes: `settings-page` (Dismantling Map)
 
-This directory used to be a single giant `settings.py` script. The goal is to keep
-`settings.py` as the runnable entry point while gradually moving data/helpers into
-smaller modules.
+This directory is being dismantled - `settings.py` is being refactored into
+modular components in `settings_page/`.
 
 ## Entry Point
 
-- `settings.py`: main PyQt6 Settings app (still large; being dismantled)
+- `settings.py`: main PyQt6 Settings app (~20K lines, being reduced)
 
-## Extracted Modules (New)
+## Extracted Modules (32 modules in `settings_page/`)
 
-- `settings_page/material_icons.py`: Material icon codepoints + `material_icon(...)`
-- `settings_page/bar_settings.py`: bar defaults + `merged_bar_settings(...)` + bar service icon maps
-- `settings_page/service_settings.py`: default service settings + `merged_service_settings(...)`
-- `settings_page/presets.py`: preset lists for:
-  - `VOICE_LANGUAGE_PRESETS` (BCP-47 tags like `pt-BR`)
-  - `LOCALE_LANGUAGE_PRESETS` (Linux locales like `pt_BR.UTF-8`)
-- `settings_page/notification_rules.py`: default notification rules + load/save INI helpers
-- `settings_page/picom_presets.py`: picom default template + default rule file contents
-- `settings_page/wallpaper_presets.py`: wallpaper source presets (syncable repos)
-- `settings_page/accent_palettes.py`: accent palette helper (`accent_palette(...)`)
-- `settings_page/home_assistant_client.py`: HA URL normalization + small JSON fetch helper
-- `settings_page/ntfy_client.py`: ntfy send helpers + `NTFY_USER_AGENT`
-- `settings_page/settings_store.py`: settings JSON paths + `_atomic_write_json_file(...)` + `save_settings_state(...)`
-- `settings_page/fs_utils.py`: filesystem helpers (`directory_size_bytes(...)`, `filesystem_usage_bytes(...)`)
-- `settings_page/formatting.py`: small formatting helpers (`format_bytes(...)`, `format_uptime(...)`)
-- `settings_page/display_utils.py`: display helpers (`build_display_command(...)`, `normalize_display_orientation(...)`, `resolution_area(...)`)
-- `settings_page/battery.py`: battery probing + snapshot (`read_battery_snapshot(...)`)
-- `settings_page/system_probes.py`: system probes (audio devices, wifi/wireguard interfaces, startup exec lines)
-- `settings_page/xdg_mail.py`: xdg helpers for mail handler probing + desktop installation detection
-- `settings_page/picom_rules.py`: picom rule file parsing + render/sync of config blocks
-- `settings_page/wallpaper_sources.py`: wallpaper source sync helpers (discovery + git sync + dedupe copy)
-- `settings_page/i3_utils.py`: i3 helpers (`fullscreen_window_active(...)`, `sanitize_output_name(...)`)
-- `settings_page/wallpaper_render.py`: wallpaper drawing helpers (`draw_wallpaper_mode(...)`, `rounded_pixmap(...)`)
-- `settings_page/__init__.py`: convenience re-exports
+- `settings_page/theme_data.py` - theme palettes + THEME_LIBRARY + paths
+- `settings_page/theme_gtk.py` - GTK theme install/apply helpers
+- `settings_page/mail_store.py` - MailAccountStore + mail config
+- `settings_page/settings_defaults.py` - load_settings_state() + defaults
+- `settings_page/xrandr.py` - parse_xrandr_state()
+- `settings_page/picom_config.py` - picom config helpers
+- `settings_page/widgets.py` - IconLabel, NavPillButton, etc
+- `settings_page/ui_widgets.py` - SwitchButton, PreviewCard, SettingsRow, etc
+- `settings_page/marketplace.py` - marketplace API
+- `settings_page/startup.py` - restore functions
+- `settings_page/fonts.py` - font helpers
+- `settings_page/dock_settings.py` - dock config
+- `settings_page/workers.py` - background workers
+- `settings_page/notification_state.py` - notification rules state
+- `settings_page/plugin_backends.py` - plugin backends (gamemode, weather, HA)
+- `settings_page/services.py` - service resolution helpers
+- `settings_page/settings_store.py` - settings JSON paths + atomic write
+- +15 more helpers (formatting, display_utils, battery, etc.)
 
-## Existing Modules
+## Refactor Status
 
-- `settings_languages.py`: keyboard layout presets (used by Region tab autocomplete)
-
-## Refactor Direction (Next Moves)
-
-- Move “settings state” IO + defaults into a small module (keep JSON schema stable).
-- Split `SettingsWindow` page builders into `pages/` modules (Overview/Region/Services/...).
-- Split shared UI widgets (`SettingsRow`, cards, switches) into `ui/` modules.
+- Significant code moved out of settings.py
+- Working imports from modular components
+- Still more duplicate code to remove
