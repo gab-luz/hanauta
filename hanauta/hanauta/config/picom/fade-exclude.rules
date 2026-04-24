@@ -1,0 +1,5 @@
+# Hanauta picom fade exceptions
+# Same shortcuts as shadow-exclude.rules.
+
+window_name: Hanauta Launcher
+window_name: Hanauta Settings

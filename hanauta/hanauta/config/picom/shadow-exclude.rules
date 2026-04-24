@@ -1,0 +1,39 @@
+# Hanauta picom shadow exceptions
+# One rule per line. Supported shortcuts:
+#   window_name: Exact Window Title
+#   window_name_contains: Partial Title
+#   class: WM_CLASS
+#   window_type: dock
+#   raw: any-valid-picom-condition
+
+raw: bounding_shaped && !rounded_corners
+class: Eww
+window_type: dock
+window_type: notification
+window_type: utility
+class: Rofi
+class: Conky
+window_name: Hanauta Launcher
+window_name: Hanauta Window Switcher
+window_name: Hanauta Hotkeys
+window_name: Hanauta Weather
+window_name: Hanauta Calendar
+window_name: Hanauta Game Mode
+window_name: Hanauta CAP Alerts
+window_name: Hanauta CAP Alert
+window_name: Hanauta Reminders
+window_name: Hanauta Reminder
+window_name: Hanauta Pomodoro
+window_name: Hanauta OBS
+window_name: Hanauta Crypto
+window_name: Hanauta VPS
+window_name: Hanauta Updates
+window_name: Hanauta AI
+window_name: WireGuard
+window_name: Wi-Fi Control
+window_name: ntfy Publisher
+window_name: Christian Devotion
+class: HanautaNotification
+window_name_contains: Hanauta Notification
+window_name: Hanauta Desktop Clock
+window_name: Hanauta Settings

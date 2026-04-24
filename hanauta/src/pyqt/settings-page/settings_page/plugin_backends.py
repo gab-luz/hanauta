@@ -37,9 +37,18 @@ WEATHER_CANDIDATES = [
     Path.home() / "dev" / "hanauta-plugin-weather" / "weather_backend.py",
 ]
 
+
+def _fallback_configured_city(_settings: object = None) -> None:  # type: ignore[no-redef]
+    return None
+
+
+def _fallback_search_cities(_query: str) -> list:  # type: ignore[no-redef]
+    return []
+
+
 WeatherCity = None
-configured_city = None
-search_cities = None
+configured_city = _fallback_configured_city
+search_cities = _fallback_search_cities
 
 try:
     _WEATHER_BACKEND = load_plugin_backend("hanauta_plugin_weather_backend", WEATHER_CANDIDATES)
@@ -55,10 +64,27 @@ HOME_ASSISTANT_CANDIDATES = [
     Path.home() / "dev" / "hanauta-plugin-home-assistant" / "home_assistant_backend.py",
 ]
 
-entity_friendly_name = None
-entity_icon_name = None
-entity_secondary_text = None
-prefetch_entity_icons = None
+
+def _fallback_entity_friendly_name(entity_id: str, _settings: dict | None = None) -> str:
+    return entity_id
+
+
+def _fallback_entity_icon_name(entity_id: str) -> str:
+    return ""
+
+
+def _fallback_entity_secondary_text(entity_state: dict) -> str:
+    return ""
+
+
+def _fallback_prefetch_entity_icons(entity_ids: list[str]) -> None:
+    pass
+
+
+entity_friendly_name = _fallback_entity_friendly_name
+entity_icon_name = _fallback_entity_icon_name
+entity_secondary_text = _fallback_entity_secondary_text
+prefetch_entity_icons = _fallback_prefetch_entity_icons
 
 try:
     _HOME_ASSISTANT_BACKEND = load_plugin_backend(
@@ -68,5 +94,7 @@ try:
     entity_icon_name = _HOME_ASSISTANT_BACKEND.entity_icon_name
     entity_secondary_text = _HOME_ASSISTANT_BACKEND.entity_secondary_text
     prefetch_entity_icons = _HOME_ASSISTANT_BACKEND.prefetch_entity_icons
+except Exception:
+    pass
 except Exception:
     pass

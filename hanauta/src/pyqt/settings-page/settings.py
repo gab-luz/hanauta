@@ -147,7 +147,7 @@ from settings_page.settings_store import (
 )
 from settings_page.dock_settings import load_dock_settings_state
 from settings_page.accent_palettes import accent_palette
-from settings_page.fonts import load_app_fonts, detect_font, _button_qfont_weight, _button_css_weight
+from settings_page.fonts import load_app_fonts, detect_font, _button_qfont_weight, _button_css_weight, apply_antialias_font
 from settings_page.home_assistant_client import fetch_home_assistant_json, normalize_ha_url
 from settings_page.ntfy_client import (
     NTFY_USER_AGENT,
@@ -206,6 +206,7 @@ from settings_page.ui_widgets import (
     SettingsRow,
     ExpandableServiceSection,
 )
+from settings_page.widgets import NavPillButton, IconLabel, ThemeModeCard, SegmentedChip
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
