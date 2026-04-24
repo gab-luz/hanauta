@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
-from PyQt6.QtCore import QDate, QRect, Qt
+from PyQt6.QtCore import QDate, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPalette, QPen, QTextCharFormat
 from PyQt6.QtWidgets import (
     QCalendarWidget,
@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
 
 
 class HanautaCalendarWidget(QCalendarWidget):
+    eventDateClicked = pyqtSignal(QDate)
+
     def __init__(self) -> None:
         super().__init__()
         self._body_color = QColor("#ffffff")
@@ -22,6 +24,13 @@ class HanautaCalendarWidget(QCalendarWidget):
         self._primary_color = QColor("#d0bcff")
         self._active_text_color = QColor("#1c1b1f")
         self._today_outline_color = QColor("#d0bcff")
+        self._event_dates: set[str] = set()
+        self._event_ring_color = QColor("#ff4d5e")
+        self.clicked.connect(self._handle_clicked)
+
+    def set_event_dates(self, dates: Iterable[QDate]) -> None:
+        self._event_dates = {date.toString(Qt.DateFormat.ISODate) for date in dates}
+        self.updateCells()
 
     def set_theme_colors(
         self,
@@ -38,6 +47,10 @@ class HanautaCalendarWidget(QCalendarWidget):
         self._today_outline_color = QColor(primary)
         self.updateCells()
 
+    def _handle_clicked(self, date: QDate) -> None:
+        if date.toString(Qt.DateFormat.ISODate) in self._event_dates:
+            self.eventDateClicked.emit(date)
+
     def paintCell(  # type: ignore[override]
         self, painter: QPainter, rect: QRect, date: QDate
     ) -> None:
@@ -50,6 +63,8 @@ class HanautaCalendarWidget(QCalendarWidget):
             date.month() == self.monthShown() and date.year() == self.yearShown()
         )
 
+        has_event = date.toString(Qt.DateFormat.ISODate) in self._event_dates
+
         if is_selected:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(self._primary_color)
@@ -61,6 +76,12 @@ class HanautaCalendarWidget(QCalendarWidget):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawRoundedRect(cell_rect, 8, 8)
             text_color = self._body_color if is_current_month else self._muted_color
+
+        if has_event:
+            ring_rect = cell_rect.adjusted(1, 1, -1, -1)
+            painter.setPen(QPen(self._event_ring_color, 1.8))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(ring_rect)
 
         painter.setPen(text_color)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(date.day()))

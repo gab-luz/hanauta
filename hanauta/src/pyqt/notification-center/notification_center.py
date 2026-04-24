@@ -835,7 +835,7 @@ def resolve_rss_widget_script(settings_state: dict | None = None) -> Path:
     return RSS_WIDGET_SCRIPT
 
 
-def load_calendar_events(limit: int = 2) -> list[dict]:
+def load_calendar_events(limit: int = 30) -> list[dict]:
     try:
         if CALENDAR_EVENTS_CACHE.exists():
             payload = json.loads(CALENDAR_EVENTS_CACHE.read_text(encoding="utf-8"))
@@ -1701,6 +1701,7 @@ class NotificationCenter(QWidget):
         self._calendar_fetch_in_progress = False
         self._calendar_last_fetch = 0.0
         self._calendar_render_signature = ""
+        self._calendar_event_dialogs: list[QDialog] = []
         self._games_cache_signature = ""
         self._game_slides_data: list[dict] = []
         self._games_any_playing = False
@@ -2152,6 +2153,8 @@ class NotificationCenter(QWidget):
         )
         self.calendar_widget = calendar
         self.calendar_settings_btn = settings_btn
+        if hasattr(self.calendar_widget, "eventDateClicked"):
+            self.calendar_widget.eventDateClicked.connect(self._show_calendar_day_events)
         return card
 
     def _hidden_scroll(self, name: str) -> tuple[QScrollArea, QWidget, QVBoxLayout]:
@@ -3675,7 +3678,135 @@ class NotificationCenter(QWidget):
             if isinstance(events, list)
             else []
         )
+        self._sync_calendar_event_dates()
         self._render_calendar_events(force=True)
+
+    def _calendar_event_date(self, event: dict) -> QDate | None:
+        start_text = str(event.get("start", "")).strip()
+        if not start_text:
+            return None
+        try:
+            moment = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+            return QDate(moment.year, moment.month, moment.day)
+        except Exception:
+            date = QDate.fromString(start_text[:10], Qt.DateFormat.ISODate)
+            return date if date.isValid() else None
+
+    def _sync_calendar_event_dates(self) -> None:
+        if not hasattr(self, "calendar_widget"):
+            return
+        dates = []
+        for event in self._calendar_events:
+            if str(event.get("title", "")).strip() == "Calendar sync error":
+                continue
+            date = self._calendar_event_date(event)
+            if date is not None and date.isValid():
+                dates.append(date)
+        if hasattr(self.calendar_widget, "set_event_dates"):
+            self.calendar_widget.set_event_dates(dates)
+
+    def _calendar_events_for_date(self, date: QDate) -> list[dict]:
+        events = []
+        for event in self._calendar_events:
+            event_date = self._calendar_event_date(event)
+            if event_date is not None and event_date == date:
+                events.append(event)
+        return events
+
+    def _calendar_event_meta(self, event: dict) -> str:
+        start_text = str(event.get("start", "")).strip()
+        end_text = str(event.get("end", "")).strip()
+        try:
+            start = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+            if end_text:
+                end = datetime.fromisoformat(end_text.replace("Z", "+00:00"))
+                return f"{start.strftime('%H:%M')} - {end.strftime('%H:%M')}"
+            return start.strftime("%H:%M")
+        except Exception:
+            return start_text or "Calendar event"
+
+    def _show_calendar_day_events(self, date: QDate) -> None:
+        events = self._calendar_events_for_date(date)
+        if not events:
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Calendar events")
+        dialog.setModal(False)
+        dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        dialog.setStyleSheet(self.styleSheet())
+
+        shell = QFrame(dialog)
+        shell.setObjectName("confirmPopup")
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(16, 16, 16, 16)
+        shell_layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        title_label = QLabel(date.toString("dddd, d MMMM"))
+        title_label.setObjectName("confirmTitle")
+        close_button = QPushButton(material_icon("close"))
+        close_button.setObjectName("compactIconAction")
+        close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_button.setFont(QFont(self.material_font, 16))
+        close_button.setFixedSize(28, 28)
+        close_button.clicked.connect(dialog.accept)
+        header.addWidget(title_label, 1)
+        header.addWidget(close_button)
+        shell_layout.addLayout(header)
+
+        for event in events:
+            item = QFrame()
+            item.setObjectName("feedCard")
+            item_layout = QVBoxLayout(item)
+            item_layout.setContentsMargins(12, 10, 12, 10)
+            item_layout.setSpacing(4)
+
+            event_title = QLabel(str(event.get("title", "Untitled event")).strip())
+            event_title.setObjectName("feedCardTitle")
+            event_title.setWordWrap(True)
+            meta = QLabel(self._calendar_event_meta(event))
+            meta.setObjectName("feedCardMeta")
+            item_layout.addWidget(event_title)
+            item_layout.addWidget(meta)
+
+            location = str(event.get("location", "")).strip()
+            source = str(event.get("source", "")).strip()
+            detail_parts = [part for part in (location, source) if part]
+            if detail_parts:
+                details = QLabel(" • ".join(detail_parts))
+                details.setObjectName("feedCardBody")
+                details.setWordWrap(True)
+                item_layout.addWidget(details)
+
+            description = str(
+                event.get("description", event.get("body", event.get("notes", "")))
+            ).strip()
+            if description:
+                desc = QLabel(description)
+                desc.setObjectName("feedCardBody")
+                desc.setWordWrap(True)
+                item_layout.addWidget(desc)
+
+            shell_layout.addWidget(item)
+
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(shell)
+        dialog.adjustSize()
+        dialog.move(
+            self.geometry().center().x() - dialog.width() // 2,
+            self.geometry().center().y() - dialog.height() // 2,
+        )
+        self._calendar_event_dialogs.append(dialog)
+        dialog.destroyed.connect(
+            lambda _obj=None, popup=dialog: self._calendar_event_dialogs.remove(popup)
+            if popup in self._calendar_event_dialogs
+            else None
+        )
+        dialog.show()
 
     def _poll_header(self) -> None:
         self.user_label.setText(os.environ.get("USER", "User"))
@@ -3948,7 +4079,7 @@ class NotificationCenter(QWidget):
         self._calendar_last_fetch = monotonic()
 
         def worker() -> None:
-            events = load_calendar_events(2)
+            events = load_calendar_events(30)
             try:
                 self.calendarEventsReady.emit(events)
             except Exception:
