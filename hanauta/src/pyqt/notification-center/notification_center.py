@@ -64,6 +64,7 @@ if str(APP_DIR) not in sys.path:
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
+from pyqt.shared.calendar_card import apply_calendar_theme, build_calendar_card
 
 ROOT = APP_DIR.parents[1]
 SCRIPTS_DIR = ROOT / "hanauta" / "scripts"
@@ -2142,34 +2143,16 @@ class NotificationCenter(QWidget):
             pass
 
     def _build_calendar_card(self) -> QFrame:
-        card = QFrame()
-        card.setObjectName("overviewSection")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(8)
-        title_label = QLabel("Calendar")
-        title_label.setObjectName("sectionTitle")
-        self.calendar_settings_btn = self._circle_icon_button("settings")
-        self.calendar_settings_btn.setFixedSize(30, 30)
-        self.calendar_settings_btn.setFont(QFont(self.material_font, 16))
-        self.calendar_settings_btn.setToolTip("Open calendar service settings")
-        self.calendar_settings_btn.clicked.connect(
-            lambda: self._launch_settings_page("services", "calendar_widget")
+        card, calendar, settings_btn = build_calendar_card(
+            material_font=self.material_font,
+            settings_glyph=material_icon("settings"),
+            on_open_settings=lambda: self._launch_settings_page(
+                "services", "calendar_widget"
+            ),
+            title="Calendar",
         )
-        header.addWidget(title_label)
-        header.addStretch(1)
-        header.addWidget(self.calendar_settings_btn)
-        layout.addLayout(header)
-        self.calendar_widget = QCalendarWidget()
-        self.calendar_widget.setObjectName("miniCalendar")
-        self.calendar_widget.setVerticalHeaderFormat(
-            QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
-        )
-        self.calendar_widget.setGridVisible(False)
-        layout.addWidget(self.calendar_widget)
+        self.calendar_widget = calendar
+        self.calendar_settings_btn = settings_btn
         return card
 
     def _hidden_scroll(self, name: str) -> tuple[QScrollArea, QWidget, QVBoxLayout]:
@@ -3950,52 +3933,14 @@ class NotificationCenter(QWidget):
             return
         theme = self.theme_palette
         is_light = self._is_light_theme(theme)
-        body_color = QColor("#000000") if is_light else QColor(theme.text)
-        if not body_color.isValid():
-            body_color = QColor("#ffffff" if not is_light else "#000000")
-        if not is_light:
-            body_color.setAlphaF(0.92)
-
-        palette = self.calendar_widget.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, body_color)
-        palette.setColor(QPalette.ColorRole.Text, body_color)
-        palette.setColor(QPalette.ColorRole.ButtonText, body_color)
-        palette.setColor(QPalette.ColorRole.Highlight, QColor(theme.primary))
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(theme.active_text))
-        if not is_light:
-            disabled = QColor(body_color)
-            disabled.setAlphaF(0.60)
-            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, disabled)
-            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, disabled)
-            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, disabled)
-        base_bg = QColor(theme.surface_container_high)
-        base_bg.setAlphaF(0.36 if is_light else 0.20)
-        palette.setColor(QPalette.ColorRole.Base, base_bg)
-        palette.setColor(QPalette.ColorRole.AlternateBase, base_bg)
-        palette.setColor(QPalette.ColorRole.Button, base_bg)
-        self.calendar_widget.setPalette(palette)
-
-        header_fmt = QTextCharFormat()
-        header_fmt.setForeground(QColor(theme.primary if not is_light else "#000000"))
-        self.calendar_widget.setHeaderTextFormat(header_fmt)
-
-        weekday_fmt = QTextCharFormat()
-        weekday_fmt.setForeground(body_color)
-        weekend_fmt = QTextCharFormat()
-        weekend_fmt.setForeground(QColor(theme.primary) if is_light else body_color)
-
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Monday, weekday_fmt)
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Tuesday, weekday_fmt)
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Wednesday, weekday_fmt)
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Thursday, weekday_fmt)
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Friday, weekday_fmt)
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, weekend_fmt)
-        self.calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, weekend_fmt)
-
-        today_fmt = QTextCharFormat()
-        today_fmt.setForeground(QColor(theme.active_text))
-        today_fmt.setBackground(QColor(theme.primary))
-        self.calendar_widget.setDateTextFormat(QDate.currentDate(), today_fmt)
+        apply_calendar_theme(
+            self.calendar_widget,
+            theme_primary=theme.primary,
+            theme_active_text=theme.active_text,
+            theme_text=theme.text,
+            theme_surface_container_high=theme.surface_container_high,
+            is_light=is_light,
+        )
 
     def _request_calendar_refresh(self) -> None:
         if self._calendar_fetch_in_progress:
