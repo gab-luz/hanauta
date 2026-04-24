@@ -1,0 +1,28 @@
+# Agent Notes: `settings-page` (Dismantling Map)
+
+This directory used to be a single giant `settings.py` script. The goal is to keep
+`settings.py` as the runnable entry point while gradually moving data/helpers into
+smaller modules.
+
+## Entry Point
+
+- `settings.py`: main PyQt6 Settings app (still large; being dismantled)
+
+## Extracted Modules (New)
+
+- `settings_page/material_icons.py`: Material icon codepoints + `material_icon(...)`
+- `settings_page/presets.py`: preset lists for:
+  - `VOICE_LANGUAGE_PRESETS` (BCP-47 tags like `pt-BR`)
+  - `LOCALE_LANGUAGE_PRESETS` (Linux locales like `pt_BR.UTF-8`)
+- `settings_page/settings_store.py`: settings JSON paths + `_atomic_write_json_file(...)` + `save_settings_state(...)`
+- `settings_page/__init__.py`: convenience re-exports
+
+## Existing Modules
+
+- `settings_languages.py`: keyboard layout presets (used by Region tab autocomplete)
+
+## Refactor Direction (Next Moves)
+
+- Move “settings state” IO + defaults into a small module (keep JSON schema stable).
+- Split `SettingsWindow` page builders into `pages/` modules (Overview/Region/Services/...).
+- Split shared UI widgets (`SettingsRow`, cards, switches) into `ui/` modules.

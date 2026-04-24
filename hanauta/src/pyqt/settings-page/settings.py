@@ -167,8 +167,6 @@ ROOT = APP_DIR.parents[1]
 FONTS_DIR = ROOT / "assets" / "fonts"
 ASSETS_DIR = APP_DIR / "assets"
 WALLS_DIR = ROOT / "hanauta" / "walls"
-STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
-SETTINGS_FILE = STATE_DIR / "settings.json"
 PLUGIN_INSTALL_STATE_DIR = (
     Path.home() / ".local" / "state" / "hanauta" / "plugins" / "install-state"
 )
@@ -195,6 +193,13 @@ BUILTIN_SERVICE_KEYS = {
     "desktop_clock_widget",
     "calendar_widget",
 }
+
+from settings_page.settings_store import (
+    STATE_DIR,
+    SETTINGS_FILE,
+    _atomic_write_json_file,
+    save_settings_state,
+)
 
 
 def resolve_qcal_wrapper() -> Path | None:
@@ -566,90 +571,6 @@ WALLPAPER_SOURCE_PRESETS = {
     },
 }
 
-MATERIAL_ICONS = {
-    "close": "\ue5cd",
-    "menu": "\ue5d2",
-    "search": "\ue8b6",
-    "palette": "\ue40a",
-    "tune": "\ue429",
-    "grid_view": "\ue9b0",
-    "crop_square": "\ue3be",
-    "settings": "\ue8b8",
-    "apps": "\ue5c3",
-    "image": "\ue3f4",
-    "auto_awesome": "\ue65f",
-    "photo_library": "\ue413",
-    "folder_open": "\ue2c8",
-    "light_mode": "\ue518",
-    "dark_mode": "\ue51c",
-    "opacity": "\ue91c",
-    "dock_to_left": "\ue7e6",
-    "web_asset": "\ue069",
-    "public": "\ue80b",
-    "language": "\ue894",
-    "keyboard": "\ue312",
-    "widgets": "\ue1bd",
-    "bolt": "\uea0b",
-    "desktop_windows": "\ue30c",
-    "flip": "\ue3e8",
-    "sync": "\ue627",
-    "shadow": "\ue9df",
-    "refresh": "\ue5d5",
-    "restart_alt": "\uf053",
-    "expand_more": "\ue5cf",
-    "home": "\ue88a",
-    "hub": "\uee20",
-    "lock": "\ue897",
-    "notifications": "\ue7f4",
-    "notifications_active": "\ue7f7",
-    "notifications_off": "\ue7f6",
-    "mail": "\ue158",
-    "person": "\ue7fd",
-    "favorite": "\ue87d",
-    "monitor_heart": "\ueaa2",
-    "partly_cloudy_day": "\uf172",
-    "warning": "\ue002",
-    "science": "\ue39b",
-    "calendar_month": "\ue935",
-    "event_upcoming": "\ue614",
-    "schedule": "\ue8b5",
-    "alarm": "\ue855",
-    "timer": "\ue425",
-    "coffee": "\uefef",
-    "auto_awesome": "\ue65f",
-    "rss_feed": "\ue0e5",
-    "videocam": "\ue04b",
-    "sensors": "\ue51e",
-    "storage": "\ue1db",
-    "show_chart": "\ue6e1",
-    "terminal": "\ue31c",
-    "watch": "\ue334",
-    "sports_esports": "\uea28",
-    "open_in_new": "\ue89e",
-    "location_on": "\ue0c8",
-    "lightbulb": "\ue0f0",
-    "toggle_on": "\ue9f6",
-    "videocam": "\ue04b",
-    "thermostat": "\ue1ff",
-    "device_thermostat": "\ue1ff",
-    "lock": "\ue897",
-    "music_note": "\ue405",
-    "window": "\uefe8",
-    "mode_fan": "\uf168",
-    "shield": "\ue9e0",
-    "water_drop": "\ue798",
-    "description": "\ue873",
-    "push_pin": "\uef3e",
-    "push_pin_outline": "\uf10f",
-    "visibility_off": "\ue8f5",
-    "storefront": "\ue8d1",
-}
-
-
-def material_icon(name: str) -> str:
-    return MATERIAL_ICONS.get(name, "?")
-
-
 DEFAULT_BAR_SETTINGS = {
     "launcher_offset": 0,
     "workspace_offset": 0,
@@ -986,6 +907,9 @@ if _SETTINGS_LANG_FILE.exists():
     from settings_languages import KEYBOARD_LAYOUT_PRESETS
 else:
     KEYBOARD_LAYOUT_PRESETS = []
+
+from settings_page.material_icons import material_icon
+from settings_page.presets import LOCALE_LANGUAGE_PRESETS, VOICE_LANGUAGE_PRESETS
 
 DEFAULT_NOTIFICATION_RULES = {
     "version": 1,
@@ -1612,6 +1536,11 @@ def fullscreen_window_active() -> bool:
 
 def load_settings_state() -> dict:
     default = {
+        "profile": {
+            "first_name": "",
+            "nickname": "",
+            "pronunciations": [],
+        },
         "appearance": {
             "accent": "orchid",
             "wallpaper_mode": "picture",
@@ -2631,6 +2560,26 @@ def load_settings_state() -> dict:
     if not isinstance(outputs, list):
         outputs = []
     display["outputs"] = [item for item in outputs if isinstance(item, dict)]
+    profile = dict(payload.get("profile", {}))
+    profile["first_name"] = str(profile.get("first_name", "")).strip()
+    profile["nickname"] = str(profile.get("nickname", "")).strip()
+    pronunciations_raw = profile.get("pronunciations", [])
+    pronunciations: list[dict[str, str]] = []
+    if isinstance(pronunciations_raw, list):
+        for row in pronunciations_raw:
+            if not isinstance(row, dict):
+                continue
+            lang = str(row.get("lang", row.get("language", ""))).strip().replace("_", "-")
+            pronunciations.append(
+                {
+                    "lang": lang,
+                    "spoken_name": str(row.get("spoken_name", row.get("spoken", ""))).strip(),
+                    "new_email_phrase": str(
+                        row.get("new_email_phrase", row.get("email_new_phrase", ""))
+                    ).strip(),
+                }
+            )
+    profile["pronunciations"] = pronunciations
     region = dict(payload.get("region", {}))
     region["locale_code"] = str(region.get("locale_code", "")).strip()
     region["keyboard_layout"] = (
@@ -2658,6 +2607,7 @@ def load_settings_state() -> dict:
         ai_popup["window_height"] = 930
     services = merged_service_settings(payload.get("services", {}))
     result = {
+        "profile": profile,
         "appearance": appearance,
         "home_assistant": home_assistant,
         "ntfy": ntfy,
@@ -2828,41 +2778,6 @@ def save_notification_rules_state(state: dict) -> None:
         parser.write(handle)
 
 
-def save_settings_state(settings: dict) -> None:
-    _atomic_write_json_file(SETTINGS_FILE, settings)
-
-
-def _atomic_write_json_file(path: Path, payload_obj: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(payload_obj, indent=2)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=str(path.parent),
-            prefix=f"{path.stem}-",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temp_path = Path(handle.name)
-        os.replace(str(temp_path), str(path))
-    except OSError as exc:
-        total, used, free = filesystem_usage_bytes(path.parent)
-        detail = (
-            f"failed to write {path.name} ({exc}). "
-            f"filesystem totals: total={format_bytes(total)}, "
-            f"used={format_bytes(used)}, free={format_bytes(free)}"
-        )
-        raise OSError(detail) from exc
-    finally:
-        if temp_path is not None and temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-
-
 def ensure_settings_state() -> None:
     save_settings_state(load_settings_state())
 
@@ -2957,6 +2872,43 @@ def restore_saved_vpn() -> None:
     iface = str(vpn.get("preferred_interface", "")).strip() or "wg0"
     if not iface:
         return
+    autoconnect_unit = "hanauta-wireguard-autoconnect.service"
+    if shutil.which("systemctl") is not None:
+        try:
+            active = subprocess.run(
+                ["systemctl", "is-active", "--quiet", autoconnect_unit],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+            if active.returncode == 0:
+                run_bg(
+                    [
+                        "notify-send",
+                        "WireGuard",
+                        f"{iface} active (via {autoconnect_unit})",
+                    ]
+                )
+                return
+            failed = subprocess.run(
+                ["systemctl", "is-failed", "--quiet", autoconnect_unit],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+            if failed.returncode == 0:
+                run_bg(
+                    [
+                        "notify-send",
+                        "WireGuard",
+                        f"Auto-connect failed (check: sudo systemctl status {autoconnect_unit})",
+                    ]
+                )
+                return
+        except Exception:
+            pass
     vpn_script = ROOT / "hanauta" / "scripts" / "vpn.sh"
     if not vpn_script.exists():
         return
@@ -2970,6 +2922,7 @@ def restore_saved_vpn() -> None:
         and str(status.get("wireguard", "")).strip() == "on"
         and str(status.get("wg_selected", "")).strip() == iface
     ):
+        run_bg(["notify-send", "WireGuard", f"{iface} active"])
         return
     run_bg([str(vpn_script), "--toggle-wg", iface])
 
@@ -4907,6 +4860,7 @@ class SettingsWindow(QWidget):
         self.sidebar_menu_button.setFixedSize(38, 36)
         self.sidebar_menu_button.setFont(QFont(self.icon_font, 16))
         self.sidebar_menu_button.setProperty("iconButton", True)
+        self.sidebar_menu_button.setProperty("iconButtonBorderless", True)
         self.sidebar_menu_button.clicked.connect(self._toggle_sidebar)
 
         self.search_button = QPushButton(material_icon("search"))
@@ -4914,6 +4868,7 @@ class SettingsWindow(QWidget):
         self.search_button.setFixedSize(38, 36)
         self.search_button.setFont(QFont(self.icon_font, 16))
         self.search_button.setProperty("iconButton", True)
+        self.search_button.setProperty("iconButtonBorderless", True)
         self.search_button.clicked.connect(self._toggle_search)
 
         top_row.addWidget(self.sidebar_title, 1)
@@ -5140,6 +5095,11 @@ class SettingsWindow(QWidget):
             button.set_compact(self._sidebar_collapsed)
 
     SETTINGS_SEARCH_INDEX = {
+        "profile name": ("overview", "First name"),
+        "nickname": ("overview", "Nickname"),
+        "voice phrases": ("overview", "Voice phrases by language"),
+        "spoken name": ("overview", "Name pronunciation"),
+        "new email phrase": ("overview", "New email voice phrase"),
         "wallpaper": ("appearance", "Wallpaper"),
         "theme": ("appearance", "Theme"),
         "colors": ("appearance", "Colors"),
@@ -5539,7 +5499,7 @@ class SettingsWindow(QWidget):
         return scroll
 
     def _build_overview_page(self) -> QWidget:
-        return self._scroll_page(self._build_system_overview_card())
+        return self._scroll_page(self._build_system_overview_card(), self._build_profile_card())
 
     def _build_appearance_page(self) -> QWidget:
         return self._scroll_page(self._build_wallpaper_colors_card())
@@ -5658,6 +5618,299 @@ class SettingsWindow(QWidget):
             self.system_overview_labels[key] = label
             grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
         layout.addLayout(grid)
+        return card
+
+    def _profile_state(self) -> dict:
+        profile = self.settings_state.get("profile", {})
+        if not isinstance(profile, dict):
+            profile = {}
+            self.settings_state["profile"] = profile
+        profile.setdefault("first_name", "")
+        profile.setdefault("nickname", "")
+        pronunciations = profile.get("pronunciations", [])
+        if not isinstance(pronunciations, list):
+            pronunciations = []
+            profile["pronunciations"] = pronunciations
+        return profile
+
+    def _save_profile_name_fields(self) -> None:
+        profile = self._profile_state()
+        first_name = str(getattr(self, "profile_first_name_input", QLineEdit()).text()).strip()
+        nickname = str(getattr(self, "profile_nickname_input", QLineEdit()).text()).strip()
+        profile["first_name"] = first_name
+        profile["nickname"] = nickname
+        save_settings_state(self.settings_state)
+
+    def _add_profile_language_row(self) -> None:
+        profile = self._profile_state()
+        pronunciations = profile.get("pronunciations", [])
+        if not isinstance(pronunciations, list):
+            pronunciations = []
+            profile["pronunciations"] = pronunciations
+        pronunciations.append({"lang": "", "spoken_name": "", "new_email_phrase": ""})
+        save_settings_state(self.settings_state)
+        self._refresh_profile_language_rows()
+
+    def _remove_profile_language_row(self, index: int) -> None:
+        profile = self._profile_state()
+        pronunciations = profile.get("pronunciations", [])
+        if not isinstance(pronunciations, list):
+            return
+        if index < 0 or index >= len(pronunciations):
+            return
+        pronunciations.pop(index)
+        save_settings_state(self.settings_state)
+        self._refresh_profile_language_rows()
+
+    def _update_profile_language_row(self, index: int, key: str, value: str) -> None:
+        profile = self._profile_state()
+        pronunciations = profile.get("pronunciations", [])
+        if not isinstance(pronunciations, list):
+            return
+        if index < 0 or index >= len(pronunciations):
+            return
+        row = pronunciations[index]
+        if not isinstance(row, dict):
+            row = {}
+            pronunciations[index] = row
+        if key == "lang":
+            row[key] = str(value or "").strip().replace("_", "-")
+            save_settings_state(self.settings_state)
+            self._refresh_profile_language_rows()
+            return
+        row[key] = str(value or "").strip()
+        save_settings_state(self.settings_state)
+
+    def _refresh_profile_language_rows(self) -> None:
+        layout = getattr(self, "profile_languages_layout", None)
+        if not isinstance(layout, QVBoxLayout):
+            return
+        while layout.count() > 0:
+            item = layout.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.deleteLater()
+
+        profile = self._profile_state()
+        pronunciations = profile.get("pronunciations", [])
+        if not isinstance(pronunciations, list):
+            pronunciations = []
+
+        for index, row in enumerate(pronunciations):
+            row_dict = row if isinstance(row, dict) else {}
+            lang = str(row_dict.get("lang", "")).strip()
+            spoken_name = str(row_dict.get("spoken_name", "")).strip()
+            phrase = str(row_dict.get("new_email_phrase", "")).strip()
+            label_map = {label: code for label, code in VOICE_LANGUAGE_PRESETS}
+            code_map = {code: label for label, code in VOICE_LANGUAGE_PRESETS}
+            lang_label = code_map.get(lang, lang).strip()
+
+            card = QFrame()
+            card.setObjectName("settingsRow")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 12, 12, 12)
+            card_layout.setSpacing(10)
+
+            top = QHBoxLayout()
+            top.setContentsMargins(0, 0, 0, 0)
+            top.setSpacing(10)
+            title = QLabel(f"Language: {lang_label or '...'}")
+            title.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
+            title.setStyleSheet("color: rgba(246,235,247,0.82);")
+
+            remove_btn = QPushButton(material_icon("delete"))
+            remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            remove_btn.setFixedSize(32, 32)
+            remove_btn.setFont(QFont(self.icon_font, 16))
+            remove_btn.setProperty("iconButton", True)
+            remove_btn.clicked.connect(
+                lambda _checked=False, idx=index: self._remove_profile_language_row(idx)
+            )
+
+            top.addWidget(title, 1)
+            top.addWidget(remove_btn, 0, Qt.AlignmentFlag.AlignRight)
+            card_layout.addLayout(top)
+
+            lang_combo = QComboBox()
+            lang_combo.setObjectName("settingsCombo")
+            lang_combo.setEditable(True)
+            lang_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+            labels = [label for label, _code in VOICE_LANGUAGE_PRESETS]
+            lang_model = QStringListModel(labels, self)
+            lang_completer = QCompleter(lang_model, self)
+            lang_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            lang_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+            lang_combo.setCompleter(lang_completer)
+            for label, code in VOICE_LANGUAGE_PRESETS:
+                lang_combo.addItem(label, code)
+            existing_index = lang_combo.findData(lang)
+            if existing_index >= 0:
+                lang_combo.setCurrentIndex(existing_index)
+            else:
+                lang_combo.setCurrentText(lang)
+            if lang_combo.lineEdit() is not None:
+                lang_combo.lineEdit().setPlaceholderText("English (en), Português (Brasil) (pt-BR), ...")
+
+            def _lang_code_for_text(text: str) -> str:
+                raw = str(text or "").strip()
+                if not raw:
+                    return ""
+                if raw in label_map:
+                    return label_map[raw]
+                return raw.replace("_", "-")
+
+            lang_combo.activated.connect(
+                lambda _=None, idx=index, w=lang_combo: self._update_profile_language_row(
+                    idx, "lang", _lang_code_for_text(w.currentText())
+                )
+            )
+            if lang_combo.lineEdit() is not None:
+                lang_combo.lineEdit().editingFinished.connect(
+                    lambda idx=index, w=lang_combo: self._update_profile_language_row(
+                        idx, "lang", _lang_code_for_text(w.currentText())
+                    )
+                )
+            card_layout.addWidget(
+                SettingsRow(
+                    material_icon("public"),
+                    "Language",
+                    "Pick a language name; Hanauta stores the BCP-47 tag (en, pt-BR, ...).",
+                    self.icon_font,
+                    self.ui_font,
+                    lang_combo,
+                )
+            )
+
+            spoken_input = QLineEdit(spoken_name)
+            spoken_input.setPlaceholderText("What TTS should say (optional)")
+            spoken_input.editingFinished.connect(
+                lambda idx=index, w=spoken_input: self._update_profile_language_row(
+                    idx, "spoken_name", w.text()
+                )
+            )
+            card_layout.addWidget(
+                SettingsRow(
+                    material_icon("person"),
+                    "Name pronunciation",
+                    "Leave empty to use your nickname/first name as-is.",
+                    self.icon_font,
+                    self.ui_font,
+                    spoken_input,
+                )
+            )
+
+            phrase_input = QLineEdit(phrase)
+            phrase_input.setPlaceholderText(
+                "{user}, sorry to interrupt you — you got a new email."
+            )
+            phrase_input.editingFinished.connect(
+                lambda idx=index, w=phrase_input: self._update_profile_language_row(
+                    idx, "new_email_phrase", w.text()
+                )
+            )
+            card_layout.addWidget(
+                SettingsRow(
+                    material_icon("mail"),
+                    "New email voice phrase",
+                    "Template supports {user}. Used by voice-mode interruptions.",
+                    self.icon_font,
+                    self.ui_font,
+                    phrase_input,
+                )
+            )
+
+            layout.addWidget(card)
+
+        layout.addStretch(1)
+
+    def _build_profile_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("person"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Profile")
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title.setFont(QFont(self.display_font, 13))
+        subtitle = QLabel("Your name and voice-mode phrases reused by plugins.")
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setWordWrap(True)
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        profile = self._profile_state()
+
+        self.profile_first_name_input = QLineEdit(str(profile.get("first_name", "")))
+        self.profile_first_name_input.setPlaceholderText("First name")
+        self.profile_first_name_input.editingFinished.connect(self._save_profile_name_fields)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "First name",
+                "Used as a fallback when nickname is empty.",
+                self.icon_font,
+                self.ui_font,
+                self.profile_first_name_input,
+            )
+        )
+
+        self.profile_nickname_input = QLineEdit(str(profile.get("nickname", "")))
+        self.profile_nickname_input.setPlaceholderText("Nickname / preferred name")
+        self.profile_nickname_input.editingFinished.connect(self._save_profile_name_fields)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("person"),
+                "Nickname",
+                "Preferred name used by voice mode and extensions.",
+                self.icon_font,
+                self.ui_font,
+                self.profile_nickname_input,
+            )
+        )
+
+        section_row = QHBoxLayout()
+        section_label = QLabel("Voice phrases by language")
+        section_label.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        section_label.setStyleSheet("color: rgba(246,235,247,0.72);")
+
+        add_btn = QPushButton(material_icon("add"))
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setFixedSize(32, 32)
+        add_btn.setFont(QFont(self.icon_font, 16))
+        add_btn.setProperty("iconButton", True)
+        add_btn.clicked.connect(self._add_profile_language_row)
+
+        section_row.addWidget(section_label, 1)
+        section_row.addWidget(add_btn, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(section_row)
+
+        hint = QLabel(
+            "Add rows with +. You can customize how TTS pronounces your name and templates like new-email interruptions."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: rgba(246,235,247,0.62);")
+        hint.setFont(QFont(self.ui_font, 9))
+        layout.addWidget(hint)
+
+        list_wrap = QWidget()
+        self.profile_languages_layout = QVBoxLayout(list_wrap)
+        self.profile_languages_layout.setContentsMargins(0, 0, 0, 0)
+        self.profile_languages_layout.setSpacing(10)
+        layout.addWidget(list_wrap)
+        self._refresh_profile_language_rows()
+
         return card
 
     def _metric_card(self, title: str, value_label: QLabel) -> QWidget:
@@ -8896,12 +9149,20 @@ class SettingsWindow(QWidget):
         layout.addWidget(startup_apps_subtitle)
 
         self.startup_apps_list = QListWidget()
-        self.startup_apps_list.setObjectName("settingsList")
+        self.startup_apps_list.setObjectName("startupAppsList")
+        self.startup_apps_list.setFrameShape(QFrame.Shape.NoFrame)
         startup_apps = startup_settings.get("startup_apps", [])
         for app in startup_apps:
             item = QListWidgetItem(str(app))
             self.startup_apps_list.addItem(item)
-        layout.addWidget(self.startup_apps_list)
+
+        startup_list_wrap = QFrame()
+        startup_list_wrap.setObjectName("startupAppsListWrap")
+        startup_list_layout = QVBoxLayout(startup_list_wrap)
+        startup_list_layout.setContentsMargins(8, 8, 8, 8)
+        startup_list_layout.setSpacing(0)
+        startup_list_layout.addWidget(self.startup_apps_list)
+        layout.addWidget(startup_list_wrap)
 
         startup_apps_buttons = QHBoxLayout()
         startup_apps_buttons.setSpacing(8)
@@ -9353,18 +9614,42 @@ class SettingsWindow(QWidget):
                     encoding = ""
                 if encoding and "." not in detected_locale:
                     detected_locale = f"{detected_locale}.{encoding}"
-        self.region_locale_input = QLineEdit(
+        self.region_locale_combo = QComboBox()
+        self.region_locale_combo.setObjectName("settingsCombo")
+        self.region_locale_combo.setEditable(True)
+        self.region_locale_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._region_locale_label_to_value: dict[str, str] = {}
+        locale_labels: list[str] = []
+        for label, locale_code in LOCALE_LANGUAGE_PRESETS:
+            self.region_locale_combo.addItem(label, locale_code)
+            self._region_locale_label_to_value[label] = locale_code
+            locale_labels.append(label)
+        locale_model = QStringListModel(locale_labels, self)
+        self.region_locale_completer = QCompleter(locale_model, self)
+        self.region_locale_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.region_locale_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.region_locale_combo.setCompleter(self.region_locale_completer)
+
+        current_locale_code = str(
             self.settings_state["region"].get("locale_code", detected_locale)
-        )
-        self.region_locale_input.setPlaceholderText(detected_locale or "en_US.UTF-8")
+        ).strip()
+        current_index = self.region_locale_combo.findData(current_locale_code)
+        if current_index >= 0:
+            self.region_locale_combo.setCurrentIndex(current_index)
+        else:
+            self.region_locale_combo.setCurrentText(current_locale_code)
+        if self.region_locale_combo.lineEdit() is not None:
+            self.region_locale_combo.lineEdit().setPlaceholderText(
+                detected_locale or "en_US.UTF-8"
+            )
         layout.addWidget(
             SettingsRow(
                 material_icon("language"),
-                "Locale code",
-                "Used by Hanauta for the locale badge and regional formatting preferences. Example: en_US.UTF-8 or pt_BR.UTF-8.",
+                "Locale language",
+                "Autocomplete Linux locale used by Hanauta for formatting. You can also type a custom locale like en_US.UTF-8.",
                 self.icon_font,
                 self.ui_font,
-                self.region_locale_input,
+                self.region_locale_combo,
             )
         )
 
@@ -19178,9 +19463,18 @@ class SettingsWindow(QWidget):
         if hasattr(self, "region_status"):
             self.region_status.setText("Temperature unit updated.")
 
+    def _resolve_region_locale_code(self) -> str:
+        if hasattr(self, "region_locale_combo"):
+            text = str(self.region_locale_combo.currentText()).strip()
+            label_map = getattr(self, "_region_locale_label_to_value", {})
+            if isinstance(label_map, dict) and text in label_map:
+                return str(label_map[text]).strip()
+            return text
+        return str(getattr(self, "region_locale_input", QLineEdit()).text()).strip()
+
     def _save_region_settings(self) -> None:
         region = self.settings_state.setdefault("region", {})
-        region["locale_code"] = self.region_locale_input.text().strip()
+        region["locale_code"] = self._resolve_region_locale_code()
         region["keyboard_layout"] = self._resolve_region_keyboard_layout_value()
         input_settings = self.settings_state.setdefault("input", {})
         input_settings["keyboard_layout"] = str(
@@ -20557,6 +20851,14 @@ class SettingsWindow(QWidget):
                 background: {theme.hover_bg};
                 border-color: {rgba(theme.outline, 0.16)};
             }}
+            QPushButton[iconButtonBorderless="true"] {{
+                background: transparent;
+                border: none;
+            }}
+            QPushButton[iconButtonBorderless="true"]:hover {{
+                background: {theme.hover_bg};
+                border: none;
+            }}
             QFrame#contentCard {{
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
@@ -20801,6 +21103,32 @@ class SettingsWindow(QWidget):
             QListWidget#marketplacePluginList::item:selected {{
                 background: {rgba(theme.primary, 0.20)};
                 color: {theme.text};
+                border-color: {theme.app_focused_border};
+            }}
+            QFrame#startupAppsListWrap {{
+                background: {rgba(theme.surface_container_high, 0.82)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 16px;
+            }}
+            QListWidget#startupAppsList {{
+                background: transparent;
+                border: none;
+                outline: none;
+            }}
+            QListWidget#startupAppsList::item {{
+                color: {theme.text};
+                background: {rgba(theme.surface_container_high, 0.70)};
+                border: 1px solid {rgba(theme.outline, 0.14)};
+                border-radius: 12px;
+                margin: 3px 0;
+                padding: 9px 10px;
+            }}
+            QListWidget#startupAppsList::item:hover {{
+                background: {theme.hover_bg};
+                border-color: {rgba(theme.outline, 0.22)};
+            }}
+            QListWidget#startupAppsList::item:selected {{
+                background: {rgba(theme.primary, 0.20)};
                 border-color: {theme.app_focused_border};
             }}
             QPushButton#primaryButton, QPushButton#secondaryButton, QPushButton#dangerButton {{
