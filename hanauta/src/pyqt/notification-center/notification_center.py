@@ -4943,9 +4943,7 @@ class NotificationCenter(QWidget):
                 "Night Light",
                 "Night light enabled",
                 "Night light disabled",
-                NIGHT_LIGHT_NOTIFICATION_ICON
-                if Path(NIGHT_LIGHT_NOTIFICATION_ICON).exists()
-                else "nightlight",
+                self._night_light_notification_icon(),
             ),
         )
 
@@ -4965,6 +4963,29 @@ class NotificationCenter(QWidget):
                 else "coffee",
             ),
         )
+
+    def _night_light_notification_icon(self) -> str:
+        is_light = self._is_light_theme(self.theme_palette)
+        color = QColor("#000000") if is_light else QColor("#ffffff")
+        suffix = "dark" if is_light else "light"
+        target = STATE_DIR / f"notify-nightlight-{suffix}.png"
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            pixmap = QPixmap(64, 64)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+            painter.setPen(color)
+            painter.setFont(QFont(self.material_font, 44))
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, material_icon("nightlight"))
+            painter.end()
+            pixmap.save(str(target), "PNG")
+            if target.exists():
+                return str(target)
+        except Exception:
+            pass
+        return "nightlight"
 
     def _toggle_dnd(self) -> None:
         dnd_on = parse_bool_text(run_cmd(notification_control_command("is-paused")))
