@@ -187,6 +187,9 @@ from settings_page.wallpaper_sources import (
 from settings_page.workers import (
     WALLPAPER_SOURCE_CACHE_DIR,
     COMMUNITY_WALLPAPER_DIR,
+    WallpaperSourceSyncWorker,
+    MailIntegrationProbeWorker,
+    GameModeSummaryWorker,
 )
 from settings_page.xdg_mail import current_favorite_mail_handler, current_mailto_handler
 from settings_page.plugin_backends import (
