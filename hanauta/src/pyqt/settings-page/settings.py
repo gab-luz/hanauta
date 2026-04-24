@@ -206,6 +206,13 @@ from settings_page.ntfy_client import (
     normalize_ntfy_auth_mode,
     send_ntfy_message,
 )
+from settings_page.fs_utils import directory_size_bytes, filesystem_usage_bytes
+from settings_page.formatting import format_bytes, format_uptime
+from settings_page.display_utils import (
+    build_display_command,
+    normalize_display_orientation,
+    resolution_area,
+)
 
 
 def resolve_qcal_wrapper() -> Path | None:
@@ -750,45 +757,6 @@ def list_wireguard_interfaces() -> list[str]:
         for line in run_text([str(vpn_script), "--interfaces"]).splitlines()
         if line.strip()
     ]
-
-
-def directory_size_bytes(path: Path) -> int:
-    total = 0
-    try:
-        for item in path.rglob("*"):
-            if item.is_file():
-                total += item.stat().st_size
-    except OSError:
-        return 0
-    return total
-
-
-def filesystem_usage_bytes(path: Path) -> tuple[int, int, int]:
-    target = path.expanduser().resolve()
-    while not target.exists() and target != target.parent:
-        target = target.parent
-    try:
-        stats = os.statvfs(str(target))
-        block_size = int(stats.f_frsize or stats.f_bsize or 4096)
-        total = int(stats.f_blocks) * block_size
-        free = int(stats.f_bavail) * block_size
-        used = max(0, total - free)
-        return total, used, free
-    except Exception:
-        usage = shutil.disk_usage(str(target))
-        return int(usage.total), int(usage.used), int(usage.free)
-
-
-def format_bytes(value: int) -> str:
-    size = float(max(0, int(value)))
-    units = ["B", "KB", "MB", "GB", "TB"]
-    for unit in units:
-        if size < 1024.0 or unit == units[-1]:
-            if unit == "B":
-                return f"{int(size)} {unit}"
-            return f"{size:.1f} {unit}"
-        size /= 1024.0
-    return "0 B"
 
 
 def startup_exec_lines() -> list[str]:
@@ -2266,48 +2234,6 @@ def restore_saved_vpn() -> None:
     run_bg([str(vpn_script), "--toggle-wg", iface])
 
 
-def build_display_command(
-    displays: list[dict], primary_name: str, layout_mode: str
-) -> list[str]:
-    cmd = ["xrandr"]
-    ordered = sorted(
-        displays, key=lambda item: (item["name"] != primary_name, item["name"])
-    )
-    previous_enabled: str | None = None
-    for display in ordered:
-        cmd.extend(["--output", str(display["name"])])
-        if not display.get("enabled"):
-            cmd.append("--off")
-            continue
-        resolution = str(display.get("resolution", "")).strip()
-        modes = [str(mode) for mode in display.get("modes", [])]
-        if resolution and modes and resolution not in modes:
-            resolution = ""
-        if not resolution and modes:
-            resolution = sorted(modes, key=resolution_area, reverse=True)[0]
-        if resolution:
-            cmd.extend(["--mode", resolution])
-        refresh = str(display.get("refresh", "")).strip()
-        if refresh and refresh != "Auto":
-            cmd.extend(["--rate", refresh])
-        cmd.extend(["--rotate", str(display.get("orientation", "normal")) or "normal"])
-        if display["name"] == primary_name:
-            cmd.append("--primary")
-        if previous_enabled and layout_mode == "extend":
-            cmd.extend(["--right-of", previous_enabled])
-        elif previous_enabled and layout_mode == "duplicate":
-            cmd.extend(["--same-as", primary_name])
-        previous_enabled = str(display["name"])
-    return cmd
-
-
-def normalize_display_orientation(value: object) -> str:
-    orientation = str(value or "normal").strip().lower()
-    if orientation in {"normal", "left", "right", "inverted"}:
-        return orientation
-    return "normal"
-
-
 def restore_saved_displays() -> None:
     settings = load_settings_state()
     startup_state = settings.get("startup", {})
@@ -2438,26 +2364,6 @@ def restore_saved_displays() -> None:
         if not mismatch:
             return
         time.sleep(retry_delay_sec)
-
-
-def format_uptime(seconds: int) -> str:
-    seconds = max(0, int(seconds))
-    days, rem = divmod(seconds, 86400)
-    hours, rem = divmod(rem, 3600)
-    minutes, _ = divmod(rem, 60)
-    if days:
-        return f"{days}d {hours}h"
-    if hours:
-        return f"{hours}h {minutes}m"
-    return f"{minutes}m"
-
-
-def resolution_area(mode: str) -> int:
-    try:
-        width, height = mode.split("x", 1)
-        return int(width) * int(height)
-    except Exception:
-        return 0
 
 
 def parse_xrandr_state() -> list[dict]:

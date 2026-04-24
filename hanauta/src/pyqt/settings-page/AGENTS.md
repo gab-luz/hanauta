@@ -23,6 +23,9 @@ smaller modules.
 - `settings_page/home_assistant_client.py`: HA URL normalization + small JSON fetch helper
 - `settings_page/ntfy_client.py`: ntfy send helpers + `NTFY_USER_AGENT`
 - `settings_page/settings_store.py`: settings JSON paths + `_atomic_write_json_file(...)` + `save_settings_state(...)`
+- `settings_page/fs_utils.py`: filesystem helpers (`directory_size_bytes(...)`, `filesystem_usage_bytes(...)`)
+- `settings_page/formatting.py`: small formatting helpers (`format_bytes(...)`, `format_uptime(...)`)
+- `settings_page/display_utils.py`: display helpers (`build_display_command(...)`, `normalize_display_orientation(...)`, `resolution_area(...)`)
 - `settings_page/__init__.py`: convenience re-exports
 
 ## Existing Modules
