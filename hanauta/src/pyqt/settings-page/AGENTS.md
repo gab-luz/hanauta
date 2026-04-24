@@ -28,6 +28,7 @@ smaller modules.
 - `settings_page/display_utils.py`: display helpers (`build_display_command(...)`, `normalize_display_orientation(...)`, `resolution_area(...)`)
 - `settings_page/battery.py`: battery probing + snapshot (`read_battery_snapshot(...)`)
 - `settings_page/system_probes.py`: system probes (audio devices, wifi/wireguard interfaces, startup exec lines)
+- `settings_page/xdg_mail.py`: xdg helpers for mail handler probing + desktop installation detection
 - `settings_page/__init__.py`: convenience re-exports
 
 ## Existing Modules

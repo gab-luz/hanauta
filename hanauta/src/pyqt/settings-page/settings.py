@@ -221,6 +221,11 @@ from settings_page.system_probes import (
     list_wireguard_interfaces,
     startup_exec_lines,
 )
+from settings_page.xdg_mail import (
+    current_favorite_mail_handler,
+    current_mailto_handler,
+    hanauta_mail_desktop_installed,
+)
 
 
 def resolve_qcal_wrapper() -> Path | None:
@@ -643,24 +648,6 @@ def run_text(cmd: list[str], timeout: float = 2.5) -> str:
         return result.stdout.strip()
     except Exception:
         return ""
-
-
-def hanauta_mail_desktop_installed() -> bool:
-    return MAIL_DESKTOP_LOCAL.exists() or MAIL_DESKTOP_SYSTEM.exists()
-
-
-def current_mailto_handler() -> str:
-    if shutil.which("xdg-mime") is None:
-        return ""
-    return run_text(["xdg-mime", "query", "default", "x-scheme-handler/mailto"]).strip()
-
-
-def current_favorite_mail_handler() -> str:
-    if shutil.which("xdg-settings") is None:
-        return ""
-    return run_text(
-        ["xdg-settings", "get", "default-url-scheme-handler", "mailto"]
-    ).strip()
 
 
 def _picom_rule_files() -> dict[str, Path]:
@@ -12886,7 +12873,7 @@ class SettingsWindow(QWidget):
         self._mail_integration_probe_worker = None
 
     def _ensure_hanauta_mail_desktop_entry(self) -> bool:
-        if hanauta_mail_desktop_installed():
+        if hanauta_mail_desktop_installed(MAIL_DESKTOP_LOCAL, MAIL_DESKTOP_SYSTEM):
             return True
         if not MAIL_DESKTOP_INSTALL_SCRIPT.exists():
             self.mail_status.setText(
@@ -12899,7 +12886,7 @@ class SettingsWindow(QWidget):
             text=True,
             check=False,
         )
-        if result.returncode == 0 and hanauta_mail_desktop_installed():
+        if result.returncode == 0 and hanauta_mail_desktop_installed(MAIL_DESKTOP_LOCAL, MAIL_DESKTOP_SYSTEM):
             return True
         if not MAIL_DESKTOP_SYSTEM_INSTALL_SCRIPT.exists():
             self.mail_status.setText(
@@ -12920,7 +12907,7 @@ class SettingsWindow(QWidget):
             text=True,
             check=False,
         )
-        if system_result.returncode == 0 and hanauta_mail_desktop_installed():
+        if system_result.returncode == 0 and hanauta_mail_desktop_installed(MAIL_DESKTOP_LOCAL, MAIL_DESKTOP_SYSTEM):
             return True
         self.mail_status.setText("Unable to register the Hanauta Mail desktop entry.")
         return False
