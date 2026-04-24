@@ -57,7 +57,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pyqt.shared.runtime import current_executable_path, entry_command, fonts_root, is_frozen, project_root, python_executable, scripts_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
 
 ROOT = project_root()
 APP_DIR = source_root()
@@ -68,6 +68,7 @@ FONTS_DIR = fonts_root()
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
 VOLUME_SCRIPT = scripts_root() / "volume.sh"
+SET_COLOR_SCHEME_SCRIPT = scripts_root() / "set_color_scheme.sh"
 I3_VOLUME_BIN = Path.home() / ".local" / "bin" / "volume"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "hanauta-dock"
 ICON_CACHE_PATH = CACHE_DIR / "icon_cache.json"
@@ -2108,11 +2109,14 @@ class CyberDock(QWidget):
         self._panel_animation: QPropertyAnimation | None = None
         self._hidden = False
         self._transparency_preview: int | None = None
+        self._last_system_scheme: str | None = None
+        self._last_system_scheme_sync_at: float = 0.0
 
         self._build_window()
         self._build_ui()
         self._apply_shadow()
         self._apply_theme()
+        self._sync_system_color_scheme()
         self._start_timers()
         self._refresh_items()
         self._update_clock()
@@ -2216,11 +2220,36 @@ class CyberDock(QWidget):
         return sep
 
     def _apply_shadow(self) -> None:
+        is_light = False
+        try:
+            is_light = relative_luminance(self.theme.background) >= 0.35
+        except Exception:
+            is_light = False
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(42)
         shadow.setOffset(0, 18)
-        shadow.setColor(QColor(0, 0, 0, 180))
+        shadow.setColor(QColor(0, 0, 0, 130 if is_light else 180))
         self.panel.setGraphicsEffect(shadow)
+
+    def _desired_system_color_scheme(self) -> str:
+        try:
+            return "prefer-light" if relative_luminance(self.theme.background) >= 0.35 else "prefer-dark"
+        except Exception:
+            return "prefer-dark"
+
+    def _sync_system_color_scheme(self, force: bool = False) -> None:
+        if not SET_COLOR_SCHEME_SCRIPT.exists():
+            return
+        desired = self._desired_system_color_scheme()
+        now = float(datetime.now().timestamp())
+        if not force:
+            if desired == self._last_system_scheme:
+                return
+            if now - float(self._last_system_scheme_sync_at or 0.0) < 15.0:
+                return
+        self._last_system_scheme = desired
+        self._last_system_scheme_sync_at = now
+        run_bg(["bash", str(SET_COLOR_SCHEME_SCRIPT), desired])
 
     def _dock_app_height(self) -> int:
         return max(64, int(self.config.get("dock", {}).get("height", 74) or 74))
@@ -2386,8 +2415,24 @@ class CyberDock(QWidget):
     def _apply_theme(self) -> None:
         theme = self.theme
         transparency = self._dock_transparency()
-        panel_bg = multiply_alpha(theme.panel_bg, transparency)
-        panel_border = multiply_alpha(theme.panel_border, transparency)
+        is_light = False
+        try:
+            is_light = relative_luminance(theme.background) >= 0.35
+        except Exception:
+            is_light = False
+        effective_transparency = transparency
+        if is_light:
+            effective_transparency = 1.0 - (1.0 - transparency) ** 1.8
+        panel_bg = (
+            multiply_alpha(rgba(theme.surface_container, 0.92), effective_transparency)
+            if is_light
+            else multiply_alpha(theme.panel_bg, transparency)
+        )
+        panel_border = (
+            multiply_alpha(rgba(theme.outline, 0.22), effective_transparency)
+            if is_light
+            else multiply_alpha(theme.panel_border, transparency)
+        )
         self.panel.setStyleSheet(
             f"""
             QFrame#dockPanel {{
@@ -2419,6 +2464,7 @@ class CyberDock(QWidget):
         )
         self.launcher_separator.setStyleSheet(f"background: {theme.separator};")
         self.utility_separator.setStyleSheet(f"background: {theme.separator};")
+        self._apply_shadow()
         self.volume_button.apply_theme(theme)
         if hasattr(self, "audio_popup") and isinstance(self.audio_popup, AudioDevicePopup):
             self.audio_popup.apply_theme(theme)
@@ -2443,6 +2489,7 @@ class CyberDock(QWidget):
             self._restart_for_theme_refresh()
             return
         self._apply_theme()
+        self._sync_system_color_scheme()
 
     def _restart_for_theme_refresh(self) -> None:
         if getattr(self, "_theme_refresh_restart_pending", False):
