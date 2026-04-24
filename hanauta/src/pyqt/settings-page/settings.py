@@ -232,6 +232,10 @@ from settings_page.picom_rules import (
     render_picom_rule_blocks as render_picom_rule_blocks_impl,
     sync_picom_rule_blocks as sync_picom_rule_blocks_impl,
 )
+from settings_page.wallpaper_sources import (
+    recursive_wallpaper_candidates as recursive_wallpaper_candidates_impl,
+    sync_wallpaper_source_preset as sync_wallpaper_source_preset_impl,
+)
 
 
 def resolve_qcal_wrapper() -> Path | None:
@@ -2526,268 +2530,17 @@ def sync_static_theme_from_settings(
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
-    return recursive_wallpaper_candidates(folder)
-
-
-def recursive_wallpaper_candidates(folder: Path) -> list[Path]:
-    if not folder.exists() or not folder.is_dir():
-        return []
-    return sorted(
-        path
-        for path in folder.rglob("*")
-        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
-    )
-
-
-def file_sha1(path: Path) -> str | None:
-    digest = hashlib.sha1()
-    try:
-        with path.open("rb") as handle:
-            while True:
-                chunk = handle.read(1024 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-    except OSError:
-        return None
-    return digest.hexdigest()
-
-
-def load_json_file(path: Path) -> dict:
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def nested_dict_value(payload: dict, *keys: str) -> object | None:
-    current: object = payload
-    for key in keys:
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    return current
-
-
-def expand_wallpaper_dir(path_value: object) -> Path | None:
-    if not isinstance(path_value, str):
-        return None
-    text = path_value.strip()
-    if not text:
-        return None
-    return Path(os.path.expandvars(text)).expanduser()
-
-
-def caelestia_wallpaper_dirs(cache_dir: Path) -> list[Path]:
-    shell_config = Path.home() / ".config" / "caelestia" / "shell.json"
-    config = load_json_file(shell_config)
-    configured_dir = expand_wallpaper_dir(
-        nested_dict_value(config, "paths", "wallpaperDir")
-    )
-    env_dir = expand_wallpaper_dir(os.environ.get("CAELESTIA_WALLPAPERS_DIR"))
-    candidates = [
-        configured_dir,
-        env_dir,
-        Path.home() / "Wallpaper-Bank" / "wallpapers",
-        Path.home() / "Wallpaper-Bank",
-        Path.home() / "Pictures" / "Wallpapers" / "showcase",
-        Path.home() / "Pictures" / "Wallpapers",
-        cache_dir / "assets",
-    ]
-    results: list[Path] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        if candidate is None:
-            continue
-        key = str(candidate.expanduser())
-        if key in seen:
-            continue
-        seen.add(key)
-        results.append(candidate)
-    return results
-
-
-def end4_wallpaper_dirs(cache_dir: Path) -> list[Path]:
-    shell_config = Path.home() / ".config" / "illogical-impulse" / "config.json"
-    config = load_json_file(shell_config)
-    configured_file = expand_wallpaper_dir(
-        nested_dict_value(config, "background", "wallpaperPath")
-    )
-    configured_dir = (
-        configured_file.parent
-        if configured_file and configured_file.suffix
-        else configured_file
-    )
-    candidates = [
-        configured_dir,
-        Path.home() / "Wallpaper-Bank" / "wallpapers",
-        Path.home() / "Wallpaper-Bank",
-        Path.home() / "Pictures" / "Wallpapers" / "showcase",
-        Path.home() / "Pictures" / "Wallpapers",
-        cache_dir / "dots" / ".config" / "quickshell" / "ii" / "assets" / "images",
-    ]
-    results: list[Path] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        if candidate is None:
-            continue
-        key = str(candidate.expanduser())
-        if key in seen:
-            continue
-        seen.add(key)
-        results.append(candidate)
-    return results
-
-
-def wallpaper_source_directories(source_key: str, cache_dir: Path) -> list[Path]:
-    if source_key == "caelestia":
-        return caelestia_wallpaper_dirs(cache_dir)
-    if source_key == "end4":
-        return end4_wallpaper_dirs(cache_dir)
-
-    preset = WALLPAPER_SOURCE_PRESETS.get(source_key, {})
-    return [cache_dir / str(subdir) for subdir in preset.get("subdirs", [])]
-
-
-def extract_wallpaper_source_archives(source_key: str, cache_dir: Path) -> list[Path]:
-    preset = WALLPAPER_SOURCE_PRESETS.get(source_key, {})
-    archives = preset.get("archives", [])
-    if not isinstance(archives, list):
-        return []
-    extracted_dirs: list[Path] = []
-    for archive_name in archives:
-        archive_path = cache_dir / str(archive_name)
-        if not archive_path.exists() or not archive_path.is_file():
-            continue
-        target_dir = cache_dir / f"{archive_path.stem}-extracted"
-        try:
-            if target_dir.exists():
-                shutil.rmtree(target_dir, ignore_errors=True)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(archive_path) as bundle:
-                bundle.extractall(target_dir)
-            extracted_dirs.append(target_dir)
-        except Exception:
-            shutil.rmtree(target_dir, ignore_errors=True)
-            continue
-    return extracted_dirs
+    return recursive_wallpaper_candidates_impl(folder, IMAGE_SUFFIXES)
 
 
 def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | None]:
-    preset = WALLPAPER_SOURCE_PRESETS.get(source_key)
-    if not preset:
-        return False, "Wallpaper source preset is missing.", None
-
-    repo_url = str(preset.get("repo", "")).strip()
-    if not repo_url:
-        return False, "Wallpaper source repository is missing.", None
-
-    cache_dir = WALLPAPER_SOURCE_CACHE_DIR / source_key
-    target_dir = COMMUNITY_WALLPAPER_DIR / source_key
-    WALLPAPER_SOURCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    COMMUNITY_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
-
-    try:
-        if (cache_dir / ".git").exists():
-            fetch = subprocess.run(
-                ["git", "-C", str(cache_dir), "fetch", "--depth", "1", "origin"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if fetch.returncode != 0:
-                message = (
-                    fetch.stderr
-                    or fetch.stdout
-                    or "Failed to refresh wallpaper source."
-                ).strip()
-                return False, message, None
-            reset = subprocess.run(
-                ["git", "-C", str(cache_dir), "reset", "--hard", "FETCH_HEAD"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if reset.returncode != 0:
-                message = (
-                    reset.stderr or reset.stdout or "Failed to update wallpaper source."
-                ).strip()
-                return False, message, None
-        else:
-            if cache_dir.exists():
-                shutil.rmtree(cache_dir, ignore_errors=True)
-            clone = subprocess.run(
-                ["git", "clone", "--depth", "1", repo_url, str(cache_dir)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if clone.returncode != 0:
-                message = (
-                    clone.stderr or clone.stdout or "Failed to clone wallpaper source."
-                ).strip()
-                return False, message, None
-    except Exception as exc:
-        return False, str(exc), None
-
-    source_dirs = wallpaper_source_directories(source_key, cache_dir)
-    source_dirs.extend(extract_wallpaper_source_archives(source_key, cache_dir))
-    candidates: list[Path] = []
-    source_labels: list[str] = []
-    for source_dir in source_dirs:
-        if not source_dir.exists():
-            continue
-        discovered = recursive_wallpaper_candidates(source_dir)
-        if not discovered:
-            continue
-        candidates.extend(discovered)
-        source_labels.append(str(source_dir))
-    if not candidates:
-        candidates = [
-            path
-            for path in cache_dir.rglob("*")
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
-        ]
-    if not candidates:
-        return (
-            False,
-            f"{preset['label']} does not currently expose wallpaper images in the expected paths.",
-            None,
-        )
-
-    shutil.rmtree(target_dir, ignore_errors=True)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    copied = 0
-    seen_hashes: set[str] = set()
-    for index, source in enumerate(sorted(candidates), start=1):
-        digest = file_sha1(source)
-        if digest and digest in seen_hashes:
-            continue
-        if digest:
-            seen_hashes.add(digest)
-        target = target_dir / f"{copied + 1:03d}-{source.name}"
-        try:
-            shutil.copy2(source, target)
-            copied += 1
-        except OSError:
-            continue
-
-    if copied == 0:
-        return False, f"Hanauta could not copy any images from {preset['label']}.", None
-
-    source_summary = ", ".join(source_labels[:2])
-    if len(source_labels) > 2:
-        source_summary += f", +{len(source_labels) - 2} more"
-    if source_summary:
-        return (
-            True,
-            f"Synced {copied} image(s) from {preset['label']} using {source_summary}.",
-            target_dir,
-        )
-    return True, f"Synced {copied} image(s) from {preset['label']}.", target_dir
+    return sync_wallpaper_source_preset_impl(
+        source_key,
+        presets=WALLPAPER_SOURCE_PRESETS,
+        cache_root=WALLPAPER_SOURCE_CACHE_DIR,
+        community_root=COMMUNITY_WALLPAPER_DIR,
+        image_suffixes=IMAGE_SUFFIXES,
+    )
 
 
 class WallpaperSourceSyncWorker(QThread):

@@ -30,6 +30,7 @@ smaller modules.
 - `settings_page/system_probes.py`: system probes (audio devices, wifi/wireguard interfaces, startup exec lines)
 - `settings_page/xdg_mail.py`: xdg helpers for mail handler probing + desktop installation detection
 - `settings_page/picom_rules.py`: picom rule file parsing + render/sync of config blocks
+- `settings_page/wallpaper_sources.py`: wallpaper source sync helpers (discovery + git sync + dedupe copy)
 - `settings_page/__init__.py`: convenience re-exports
 
 ## Existing Modules
