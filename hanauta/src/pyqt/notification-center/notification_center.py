@@ -1775,7 +1775,7 @@ class NotificationCenter(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         self.panel = QFrame()
