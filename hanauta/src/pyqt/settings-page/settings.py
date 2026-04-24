@@ -451,11 +451,12 @@ class SettingsWindow(QWidget):
         self.setGraphicsEffect(shadow)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 24, 24, 24)
-        outer.setSpacing(18)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
         shell = QFrame()
         shell.setObjectName("shell")
+        shell.setStyleSheet("#shell { border-radius: 18px; background: rgba(31, 22, 38, 0.94); }")
         outer.addWidget(shell)
 
         shell_layout = QVBoxLayout(shell)
