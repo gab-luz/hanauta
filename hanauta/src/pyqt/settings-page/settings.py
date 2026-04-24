@@ -184,7 +184,6 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 PICOM_CONFIG_FILE = ROOT / "picom.conf"
 PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
 I3_CONFIG_FILE = ROOT / "config"
-NTFY_USER_AGENT = "Hanauta/ntfy-integration/1.0"
 HOST_PLUGIN_API_VERSION = 1
 BUILTIN_SERVICE_KEYS = {
     "mail",
@@ -199,6 +198,13 @@ from settings_page.settings_store import (
     SETTINGS_FILE,
     _atomic_write_json_file,
     save_settings_state,
+)
+from settings_page.accent_palettes import accent_palette
+from settings_page.home_assistant_client import fetch_home_assistant_json, normalize_ha_url
+from settings_page.ntfy_client import (
+    NTFY_USER_AGENT,
+    normalize_ntfy_auth_mode,
+    send_ntfy_message,
 )
 
 
@@ -2432,114 +2438,6 @@ def restore_saved_displays() -> None:
         if not mismatch:
             return
         time.sleep(retry_delay_sec)
-
-
-def accent_palette(name: str) -> dict[str, str]:
-    palettes = {
-        "orchid": {
-            "accent": "#D0BCFF",
-            "on_accent": "#381E72",
-            "soft": "rgba(208,188,255,0.18)",
-        },
-        "mint": {
-            "accent": "#8FE3CF",
-            "on_accent": "#11352D",
-            "soft": "rgba(143,227,207,0.18)",
-        },
-        "sunset": {
-            "accent": "#FFB59E",
-            "on_accent": "#4D2418",
-            "soft": "rgba(255,181,158,0.18)",
-        },
-    }
-    return palettes.get(name, palettes["orchid"])
-
-
-def normalize_ha_url(url: str) -> str:
-    return url.strip().rstrip("/")
-
-
-def fetch_home_assistant_json(
-    base_url: str, token: str, path: str
-) -> tuple[object | None, str]:
-    if not base_url or not token:
-        return None, "Home Assistant URL and token are required."
-    try:
-        req = request.Request(
-            f"{normalize_ha_url(base_url)}{path}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-        )
-        with request.urlopen(req, timeout=3.5) as response:
-            return json.loads(response.read().decode("utf-8")), ""
-    except error.HTTPError as exc:
-        return None, f"Home Assistant returned HTTP {exc.code}."
-    except Exception:
-        return None, "Unable to reach Home Assistant."
-
-
-def normalize_ntfy_auth_mode(raw: str | None, has_token: bool = False) -> str:
-    value = str(raw or "").strip().lower()
-    if value in {"token", "access token", "bearer", "bearer token", "access"}:
-        return "token"
-    if value in {"basic", "username & password", "username/password", "basic auth"}:
-        return "basic"
-    if has_token:
-        return "token"
-    return "basic"
-
-
-def send_ntfy_message(
-    server_url: str,
-    topic: str,
-    title: str,
-    message: str,
-    token: str = "",
-    username: str = "",
-    password: str = "",
-    auth_mode: str = "token",
-) -> tuple[bool, str]:
-    base = (server_url or "").strip().rstrip("/")
-    channel = (topic or "").strip()
-    if not base:
-        return False, "Server URL is required."
-    if not channel:
-        return False, "Topic is required."
-    if not message.strip():
-        return False, "Message body is required."
-    url = f"{base}/{parse.quote(channel)}"
-    headers = {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Accept": "text/plain, application/json, */*",
-        "User-Agent": NTFY_USER_AGENT,
-    }
-    if title.strip():
-        headers["Title"] = title.strip()
-    has_token = bool(token.strip())
-    auth_mode_clean = normalize_ntfy_auth_mode(auth_mode, has_token=has_token)
-    if has_token:
-        headers["Authorization"] = f"Bearer {token.strip()}"
-    req = request.Request(
-        url, data=message.encode("utf-8"), headers=headers, method="POST"
-    )
-    if not has_token and auth_mode_clean == "basic" and (username.strip() or password):
-        credentials = f"{username.strip()}:{password}"
-        encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
-        req.add_header("Authorization", f"Basic {encoded}")
-    try:
-        with request.urlopen(req, timeout=8) as response:
-            response.read()
-        return True, "ntfy message sent."
-    except error.HTTPError as exc:
-        try:
-            detail = exc.read().decode("utf-8", errors="ignore").strip()
-        except Exception:
-            detail = ""
-        return False, detail or f"HTTP {exc.code}"
-    except Exception as exc:
-        return False, str(exc)
 
 
 def format_uptime(seconds: int) -> str:

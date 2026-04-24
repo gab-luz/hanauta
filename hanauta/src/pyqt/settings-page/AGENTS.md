@@ -19,6 +19,9 @@ smaller modules.
 - `settings_page/notification_rules.py`: default notification rules + load/save INI helpers
 - `settings_page/picom_presets.py`: picom default template + default rule file contents
 - `settings_page/wallpaper_presets.py`: wallpaper source presets (syncable repos)
+- `settings_page/accent_palettes.py`: accent palette helper (`accent_palette(...)`)
+- `settings_page/home_assistant_client.py`: HA URL normalization + small JSON fetch helper
+- `settings_page/ntfy_client.py`: ntfy send helpers + `NTFY_USER_AGENT`
 - `settings_page/settings_store.py`: settings JSON paths + `_atomic_write_json_file(...)` + `save_settings_state(...)`
 - `settings_page/__init__.py`: convenience re-exports
 
