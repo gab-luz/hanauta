@@ -16,6 +16,9 @@ smaller modules.
 - `settings_page/presets.py`: preset lists for:
   - `VOICE_LANGUAGE_PRESETS` (BCP-47 tags like `pt-BR`)
   - `LOCALE_LANGUAGE_PRESETS` (Linux locales like `pt_BR.UTF-8`)
+- `settings_page/notification_rules.py`: default notification rules + load/save INI helpers
+- `settings_page/picom_presets.py`: picom default template + default rule file contents
+- `settings_page/wallpaper_presets.py`: wallpaper source presets (syncable repos)
 - `settings_page/settings_store.py`: settings JSON paths + `_atomic_write_json_file(...)` + `save_settings_state(...)`
 - `settings_page/__init__.py`: convenience re-exports
 

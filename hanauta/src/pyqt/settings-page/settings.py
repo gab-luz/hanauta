@@ -437,139 +437,15 @@ SERVICE_CACHE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 BAR_SERVICE_CACHE_FILE = SERVICE_CACHE_DIR / "plugins" / "bar-services.json"
 SERVICES_SECTION_CACHE_FILE = SERVICE_CACHE_DIR / "plugins" / "services-sections.json"
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
-PICOM_DEFAULT_TEMPLATE = """backend = "glx";
-vsync = true;
-use-damage = true;
-detect-rounded-corners = true;
-detect-client-opacity = true;
-detect-transient = true;
-mark-wmwin-focused = true;
-mark-ovredir-focused = true;
-log-level = "warn";
+from settings_page.picom_presets import PICOM_DEFAULT_TEMPLATE, picom_rule_file_defaults
+from settings_page.wallpaper_presets import WALLPAPER_SOURCE_PRESETS
 
-shadow = true;
-shadow-radius = 18;
-shadow-opacity = 0.18;
-shadow-offset-x = -12;
-shadow-offset-y = -12;
-shadow-color = "#000000";
-
-fading = false;
-inactive-opacity = 1.0;
-active-opacity = 1.0;
-inactive-opacity-override = false;
-
-corner-radius = 18;
-transparent-clipping = false;
-corner-radius-rules = [
-  "88:name = 'PyQt Notification Center'"
-];
-{picom_rule_blocks}
-
-wintypes:
-{
-  tooltip = { fade = false; shadow = false; focus = true; full-shadow = false; };
-  dock = { shadow = false; clip-shadow-above = true; };
-  dnd = { shadow = false; };
-  popup_menu = { shadow = false; };
-  dropdown_menu = { shadow = false; };
-};
-"""
-
-PICOM_RULE_FILE_DEFAULTS: dict[Path, str] = {
-    PICOM_SHADOW_EXCLUDE_FILE: """# Hanauta picom shadow exceptions
-# One rule per line. Supported shortcuts:
-#   window_name: Exact Window Title
-#   window_name_contains: Partial Title
-#   class: WM_CLASS
-#   window_type: dock
-#   raw: any-valid-picom-condition
-
-raw: bounding_shaped && !rounded_corners
-class: Eww
-window_type: dock
-window_type: notification
-window_type: utility
-class: Rofi
-class: Conky
-window_name: Hanauta Launcher
-window_name: Hanauta Window Switcher
-window_name: Hanauta Hotkeys
-window_name: Hanauta Weather
-window_name: Hanauta Calendar
-window_name: Hanauta Game Mode
-window_name: Hanauta CAP Alerts
-window_name: Hanauta CAP Alert
-window_name: Hanauta Reminders
-window_name: Hanauta Reminder
-window_name: Hanauta Pomodoro
-window_name: Hanauta OBS
-window_name: Hanauta Crypto
-window_name: Hanauta VPS
-window_name: Hanauta Updates
-window_name: Hanauta AI
-window_name: WireGuard
-window_name: Wi-Fi Control
-window_name: ntfy Publisher
-window_name: Christian Devotion
-class: HanautaNotification
-window_name_contains: Hanauta Notification
-window_name: Hanauta Desktop Clock
-window_name: Hanauta Settings
-""",
-    PICOM_ROUNDED_EXCLUDE_FILE: """# Hanauta picom rounded-corner exceptions
-# Same shortcuts as shadow-exclude.rules.
-
-window_type: dock
-window_type: notification
-window_type: utility
-class: Rofi
-class: Conky
-class: mpv
-window_name: PyQt Notification Center
-class: HanautaNotification
-window_name_contains: Hanauta Notification
-window_name: Hanauta Desktop Clock
-window_name: Hanauta Settings
-""",
-    PICOM_OPACITY_RULE_FILE: """# Hanauta picom opacity rules
-# Syntax:
-#   opacity 100: window_name: Exact Window Title
-#   opacity 100: class: kitty
-#   opacity 100: raw: focused
-
-opacity 100: class: Eww
-opacity 100: class: Alacritty
-opacity 100: class: kitty
-opacity 100: window_name: PyQt Notification Center
-opacity 100: window_name: Hanauta Settings
-""",
-    PICOM_FADE_EXCLUDE_FILE: """# Hanauta picom fade exceptions
-# Same shortcuts as shadow-exclude.rules.
-
-window_name: Hanauta Launcher
-window_name: Hanauta Settings
-""",
-}
-
-WALLPAPER_SOURCE_PRESETS = {
-    "caelestia": {
-        "label": "Caelestia shell",
-        "repo": "https://github.com/caelestia-dots/shell.git",
-        "subdirs": ["assets"],
-    },
-    "end4": {
-        "label": "End-4 dots-hyprland",
-        "repo": "https://github.com/end-4/dots-hyprland.git",
-        "subdirs": ["dots/.config/quickshell/ii/assets/images"],
-    },
-    "catholic_hyprland": {
-        "label": "Catholic wallpapers for Hyprland",
-        "repo": "https://github.com/ZZ-Frater/catholic-wallpapers-for-hyprland.git",
-        "subdirs": [],
-        "archives": ["catholic-wallpapers-for-hyprland.zip"],
-    },
-}
+PICOM_RULE_FILE_DEFAULTS: dict[Path, str] = picom_rule_file_defaults(
+    PICOM_SHADOW_EXCLUDE_FILE,
+    PICOM_ROUNDED_EXCLUDE_FILE,
+    PICOM_OPACITY_RULE_FILE,
+    PICOM_FADE_EXCLUDE_FILE,
+)
 
 from settings_page.bar_settings import (
     BAR_SERVICE_ICON_META,
@@ -677,20 +553,11 @@ else:
 
 from settings_page.material_icons import material_icon
 from settings_page.presets import LOCALE_LANGUAGE_PRESETS, VOICE_LANGUAGE_PRESETS
-
-DEFAULT_NOTIFICATION_RULES = {
-    "version": 1,
-    "rules": {
-        "kdeconnect_ignore_whatsapp_when_desktop_client_active": {
-            "enabled": False,
-            "source_app": "KDE Connect",
-            "summary_contains": ["WhatsApp"],
-            "body_contains": ["WhatsApp"],
-            "processes": ["ferdium", "Ferdium", "whatsapp", "WhatsApp"],
-            "action": "ignore",
-        }
-    },
-}
+from settings_page.notification_rules import (
+    DEFAULT_NOTIFICATION_RULES,
+    load_notification_rules_state_from_file,
+    save_notification_rules_state_to_file,
+)
 
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
@@ -2233,136 +2100,15 @@ def load_settings_state() -> dict:
 
 
 def load_notification_rules_state() -> dict:
-    parser = configparser.ConfigParser()
-    parser.optionxform = str
-    try:
-        parser.read(NOTIFICATION_RULES_FILE, encoding="utf-8")
-    except Exception:
-        parser = configparser.ConfigParser()
-        parser.optionxform = str
-    version = DEFAULT_NOTIFICATION_RULES["version"]
-    try:
-        version = int(parser.get("meta", "version", fallback=str(version)))
-    except Exception:
-        version = DEFAULT_NOTIFICATION_RULES["version"]
-
-    rules: dict[str, dict[str, object]] = {}
-    for rule_id, defaults in DEFAULT_NOTIFICATION_RULES["rules"].items():
-        section = f"rule.{rule_id}"
-        rules[rule_id] = {
-            "enabled": parser.getboolean(
-                section, "enabled", fallback=bool(defaults.get("enabled", False))
-            ),
-            "source_app": parser.get(
-                section, "source_app", fallback=str(defaults.get("source_app", ""))
-            ).strip(),
-            "summary_contains": [
-                item.strip()
-                for item in parser.get(
-                    section,
-                    "summary_contains",
-                    fallback=",".join(defaults.get("summary_contains", [])),
-                ).split(",")
-                if item.strip()
-            ],
-            "body_contains": [
-                item.strip()
-                for item in parser.get(
-                    section,
-                    "body_contains",
-                    fallback=",".join(defaults.get("body_contains", [])),
-                ).split(",")
-                if item.strip()
-            ],
-            "processes": [
-                item.strip()
-                for item in parser.get(
-                    section,
-                    "processes",
-                    fallback=",".join(defaults.get("processes", [])),
-                ).split(",")
-                if item.strip()
-            ],
-            "action": parser.get(
-                section, "action", fallback=str(defaults.get("action", "ignore"))
-            ).strip()
-            or "ignore",
-        }
-
-    for section in parser.sections():
-        if not section.startswith("rule."):
-            continue
-        rule_id = section[5:]
-        if rule_id in rules:
-            continue
-        rules[rule_id] = {
-            "enabled": parser.getboolean(section, "enabled", fallback=False),
-            "source_app": parser.get(section, "source_app", fallback="").strip(),
-            "summary_contains": [
-                item.strip()
-                for item in parser.get(section, "summary_contains", fallback="").split(
-                    ","
-                )
-                if item.strip()
-            ],
-            "body_contains": [
-                item.strip()
-                for item in parser.get(section, "body_contains", fallback="").split(",")
-                if item.strip()
-            ],
-            "processes": [
-                item.strip()
-                for item in parser.get(section, "processes", fallback="").split(",")
-                if item.strip()
-            ],
-            "action": parser.get(section, "action", fallback="ignore").strip()
-            or "ignore",
-        }
-
-    return {"version": version, "rules": rules}
+    return load_notification_rules_state_from_file(
+        NOTIFICATION_RULES_FILE, defaults=DEFAULT_NOTIFICATION_RULES
+    )
 
 
 def save_notification_rules_state(state: dict) -> None:
-    parser = configparser.ConfigParser()
-    parser.optionxform = str
-    parser["meta"] = {
-        "version": str(int(state.get("version", DEFAULT_NOTIFICATION_RULES["version"])))
-    }
-    rules = state.get("rules", {})
-    if not isinstance(rules, dict):
-        rules = {}
-    for rule_id, rule in rules.items():
-        if not isinstance(rule, dict):
-            continue
-        parser[f"rule.{rule_id}"] = {
-            "enabled": "true" if bool(rule.get("enabled", False)) else "false",
-            "source_app": str(rule.get("source_app", "")).strip(),
-            "summary_contains": ",".join(
-                [
-                    str(item).strip()
-                    for item in rule.get("summary_contains", [])
-                    if str(item).strip()
-                ]
-            ),
-            "body_contains": ",".join(
-                [
-                    str(item).strip()
-                    for item in rule.get("body_contains", [])
-                    if str(item).strip()
-                ]
-            ),
-            "processes": ",".join(
-                [
-                    str(item).strip()
-                    for item in rule.get("processes", [])
-                    if str(item).strip()
-                ]
-            ),
-            "action": str(rule.get("action", "ignore")).strip() or "ignore",
-        }
-    NOTIFICATION_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with NOTIFICATION_RULES_FILE.open("w", encoding="utf-8") as handle:
-        parser.write(handle)
+    save_notification_rules_state_to_file(
+        NOTIFICATION_RULES_FILE, state, defaults=DEFAULT_NOTIFICATION_RULES
+    )
 
 
 def ensure_settings_state() -> None:
