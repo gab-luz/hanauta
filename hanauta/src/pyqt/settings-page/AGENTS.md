@@ -32,6 +32,7 @@ smaller modules.
 - `settings_page/picom_rules.py`: picom rule file parsing + render/sync of config blocks
 - `settings_page/wallpaper_sources.py`: wallpaper source sync helpers (discovery + git sync + dedupe copy)
 - `settings_page/i3_utils.py`: i3 helpers (`fullscreen_window_active(...)`, `sanitize_output_name(...)`)
+- `settings_page/wallpaper_render.py`: wallpaper drawing helpers (`draw_wallpaper_mode(...)`, `rounded_pixmap(...)`)
 - `settings_page/__init__.py`: convenience re-exports
 
 ## Existing Modules
