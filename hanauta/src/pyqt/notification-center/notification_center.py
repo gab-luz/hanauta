@@ -4965,6 +4965,17 @@ class NotificationCenter(QWidget):
         )
 
     def _night_light_notification_icon(self) -> str:
+        try:
+            current_mtime = palette_mtime()
+        except Exception:
+            current_mtime = None
+        if current_mtime is not None and current_mtime != getattr(self, "_theme_mtime", None):
+            try:
+                self._theme_mtime = current_mtime
+                self.theme_palette = load_theme_palette()
+            except Exception:
+                pass
+
         is_light = self._is_light_theme(self.theme_palette)
         color = QColor("#000000") if is_light else QColor("#ffffff")
         suffix = "dark" if is_light else "light"
@@ -4982,7 +4993,7 @@ class NotificationCenter(QWidget):
             painter.end()
             pixmap.save(str(target), "PNG")
             if target.exists():
-                return str(target)
+                return target.resolve().as_uri()
         except Exception:
             pass
         return "nightlight"
