@@ -267,3 +267,8 @@ def write_pyqt_palette(
     if fonts:
         payload.update(fonts)
     _atomic_write_json_file(PYQT_THEME_FILE, payload)
+
+
+def write_default_pyqt_palette(use_matugen: bool = False) -> None:
+    from settings_page.theme_data import HANAUTA_DARK_PALETTE
+    write_pyqt_palette(HANAUTA_DARK_PALETTE, use_matugen=use_matugen)
