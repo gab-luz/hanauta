@@ -16661,6 +16661,7 @@ class SettingsWindow(QWidget):
             }}
             QPushButton#navPill QLabel#navPillText {{
                 background: transparent;
+                color: {theme.text};
             }}
             QPushButton#actionCard {{
                 background: {rgba(theme.surface_container_high, 0.88)};

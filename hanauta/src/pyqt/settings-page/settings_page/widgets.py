@@ -42,9 +42,6 @@ class NavPillButton(QPushButton):
         nav_font = QFont(text_font, 10, QFont.Weight.DemiBold)
         nav_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         self.text_label.setFont(nav_font)
-        self.text_label.setStyleSheet(
-            "color: rgba(246,235,247,0.92); background: transparent;"
-        )
 
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.text_label, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -85,12 +82,10 @@ class ThemeModeCard(QPushButton):
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon.setFont(QFont(icon_font, 18))
         icon.setProperty("iconRole", True)
-        icon.setStyleSheet("color: #FFFFFF; background: transparent;")
 
         label = QLabel(title)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setFont(QFont(ui_font, 10))
-        label.setStyleSheet("color: #FFFFFF; background: transparent;")
 
         layout.addStretch(1)
         layout.addWidget(icon)
