@@ -182,7 +182,7 @@ from settings_page.picom_rules import (
 )
 from settings_page.wallpaper_sources import (
     recursive_wallpaper_candidates,
-    sync_wallpaper_source_preset,
+    sync_wallpaper_source_preset as sync_wallpaper_source_preset_impl,
 )
 from settings_page.workers import (
     WALLPAPER_SOURCE_CACHE_DIR,
@@ -215,6 +215,7 @@ from settings_page.pages.storage import build_storage_page
 from settings_page.pages.display import build_display_page
 from settings_page.pages.appearance import build_appearance_page, build_wallpaper_colors_card
 from settings_page.pages.marketplace import build_marketplace_page, build_marketplace_card
+from settings_page.pages.services import build_services_page, build_services_card
 from settings_page.shell import (
     build_bar_placeholder as shell_build_bar_placeholder,
     build_header as shell_build_header,
@@ -223,21 +224,6 @@ from settings_page.shell import (
     build_services_placeholder as shell_build_services_placeholder,
     build_sidebar as shell_build_sidebar,
 )
-
-
-def wallpaper_candidates(folder: Path) -> list[Path]:
-    return recursive_wallpaper_candidates(folder, IMAGE_SUFFIXES)
-
-
-def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | None]:
-    from settings_page.wallpaper_presets import WALLPAPER_SOURCE_PRESETS
-    return sync_wallpaper_source_preset(
-        source_key,
-        presets=WALLPAPER_SOURCE_PRESETS,
-        cache_root=WALLPAPER_SOURCE_CACHE_DIR,
-        community_root=COMMUNITY_WALLPAPER_DIR,
-        image_suffixes=IMAGE_SUFFIXES,
-    )
 from settings_page.i3_utils import fullscreen_window_active, sanitize_output_name
 from settings_page.wallpaper_render import draw_wallpaper_mode, rounded_pixmap
 from settings_page.theme_data import (
@@ -257,6 +243,21 @@ from settings_page.theme_gtk import (
 )
 from settings_page.settings_defaults import load_settings_state
 from settings_page.mail_store import MailAccountStore, load_mail_storage_config
+
+
+def wallpaper_candidates(folder: Path) -> list[Path]:
+    return recursive_wallpaper_candidates(folder, IMAGE_SUFFIXES)
+
+
+def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | None]:
+    from settings_page.wallpaper_presets import WALLPAPER_SOURCE_PRESETS
+    return sync_wallpaper_source_preset_impl(
+        source_key,
+        presets=WALLPAPER_SOURCE_PRESETS,
+        cache_root=WALLPAPER_SOURCE_CACHE_DIR,
+        community_root=COMMUNITY_WALLPAPER_DIR,
+        image_suffixes=IMAGE_SUFFIXES,
+    )
 from settings_page.xrandr import parse_xrandr_state
 from settings_page.picom_config import (
     read_picom_text,
@@ -1048,7 +1049,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_region_card())
 
     def _build_services_page(self) -> QWidget:
-        return self._scroll_page(self._build_services_card())
+        return build_services_page(self)
 
     def _build_display_page(self) -> QWidget:
         return build_display_page(self)
@@ -6768,73 +6769,8 @@ class SettingsWindow(QWidget):
         QTimer.singleShot(16, self._process_next_plugin_dir)
 
     def _build_services_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("contentCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 16)
-        layout.setSpacing(12)
+        return build_services_card(self)
 
-        header = QHBoxLayout()
-        icon = IconLabel(material_icon("settings"), self.icon_font, 15, "#F4EAF7")
-        icon.setFixedSize(22, 22)
-        title = QLabel("Services")
-        title.setFont(QFont(self.display_font, 13))
-        title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        header.addWidget(icon)
-        header.addWidget(title)
-        self._services_filter_query = ""
-        self._services_sort_desc = False
-        self._services_visibility_mode = "all"
-        self.services_search_input = QLineEdit()
-        self.services_search_input.setPlaceholderText("Search services/plugins")
-        self.services_search_input.setObjectName("settingsInput")
-        self.services_search_input.setMinimumWidth(220)
-        self.services_search_input.textChanged.connect(self._services_filter_changed)
-        self.services_sort_button = QPushButton("A→Z")
-        self.services_sort_button.setObjectName("secondaryButton")
-        self.services_sort_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.services_sort_button.clicked.connect(self._toggle_services_sort_order)
-        self.services_visibility_button = QPushButton("All")
-        self.services_visibility_button.setObjectName("secondaryButton")
-        self.services_visibility_button.setCursor(
-            QCursor(Qt.CursorShape.PointingHandCursor)
-        )
-        self.services_visibility_button.clicked.connect(
-            self._cycle_services_visibility_mode
-        )
-        header.addWidget(self.services_search_input)
-        header.addWidget(self.services_sort_button)
-        header.addWidget(self.services_visibility_button)
-        header.addStretch(1)
-        layout.addLayout(header)
-
-        self.service_sections: dict[str, ExpandableServiceSection] = {}
-        self.service_display_switches: dict[str, SwitchButton] = {}
-        self._plugin_service_wrappers: dict[str, QWidget] = {}
-        self._services_section_widgets: list[QWidget] = []
-        self._services_widget_insert_counter = 0
-        self._refresh_installed_service_key_index()
-        self._services_build_layout = layout
-        self._services_build_finished = False
-        self._services_core_queue = [
-            ("mail", self._build_mail_service_section),
-            ("kdeconnect", self._build_kdeconnect_service_section),
-            ("weather", self._build_weather_section),
-            ("calendar_widget", self._build_calendar_service_section),
-            ("desktop_clock_widget", self._build_desktop_clock_service_section),
-        ]
-        self._services_plugin_queue: list[dict[str, object]] = []
-        self._services_cached_plugin_queue = self._read_services_section_rows_cache()
-        self._services_cached_plugins_used = bool(self._services_cached_plugin_queue)
-        self._services_loading_label = QLabel("Loading service sections...")
-        self._services_loading_label.setWordWrap(True)
-        self._services_loading_label.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(self._services_loading_label)
-        self._services_sections_built = 0
-        self._plugin_dir_scan_scheduled = False
-        # Let Qt paint the tab immediately, then progressively add sections.
-        QTimer.singleShot(25, self._build_next_services_section)
-        return card
 
     def _add_plugin_service_widget(
         self,
