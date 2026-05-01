@@ -216,6 +216,7 @@ from settings_page.pages.display import build_display_page
 from settings_page.pages.appearance import build_appearance_page, build_wallpaper_colors_card
 from settings_page.pages.marketplace import build_marketplace_page, build_marketplace_card
 from settings_page.pages.services import build_services_page, build_services_card
+from settings_page.pages.audio import build_audio_page, build_audio_card
 from settings_page.shell import (
     build_bar_placeholder as shell_build_bar_placeholder,
     build_header as shell_build_header,
@@ -1025,7 +1026,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_energy_card())
 
     def _build_audio_page(self) -> QWidget:
-        return self._scroll_page(self._build_audio_card())
+        return build_audio_page(self)
 
     def _build_notifications_page(self) -> QWidget:
         return self._scroll_page(self._build_notifications_card())
@@ -2688,131 +2689,7 @@ class SettingsWindow(QWidget):
         return card
 
     def _build_audio_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("contentCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 16)
-        layout.setSpacing(12)
-
-        header = QHBoxLayout()
-        icon = IconLabel(material_icon("music_note"), self.icon_font, 15, "#F4EAF7")
-        icon.setFixedSize(22, 22)
-        title = QLabel("Audio")
-        title.setFont(QFont(self.display_font, 13))
-        title.setStyleSheet("color: rgba(246,235,247,0.72);")
-        subtitle = QLabel(
-            "Default output, mic input, alert sounds, and how Hanauta should behave when audio focus changes."
-        )
-        subtitle.setFont(QFont(self.ui_font, 9))
-        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
-        title_wrap = QVBoxLayout()
-        title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(2)
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-        header.addWidget(icon)
-        header.addLayout(title_wrap)
-        header.addStretch(1)
-        layout.addLayout(header)
-
-        self.audio_sink_combo = QComboBox()
-        self.audio_sink_combo.setObjectName("settingsCombo")
-        layout.addWidget(
-            SettingsRow(
-                material_icon("music_note"),
-                "Default sink",
-                "Choose the default playback device for new apps.",
-                self.icon_font,
-                self.ui_font,
-                self.audio_sink_combo,
-            )
-        )
-
-        self.audio_source_combo = QComboBox()
-        self.audio_source_combo.setObjectName("settingsCombo")
-        layout.addWidget(
-            SettingsRow(
-                material_icon("monitor_heart"),
-                "Microphone source",
-                "Choose the default capture device for voice apps and recordings.",
-                self.icon_font,
-                self.ui_font,
-                self.audio_source_combo,
-            )
-        )
-
-        self.audio_alert_sounds_switch = SwitchButton(
-            bool(self.settings_state["audio"].get("alert_sounds_enabled", True))
-        )
-        layout.addWidget(
-            SettingsRow(
-                material_icon("notifications"),
-                "Alert sounds",
-                "Allow notification and reminder sounds when supported by the widget or daemon.",
-                self.icon_font,
-                self.ui_font,
-                self.audio_alert_sounds_switch,
-            )
-        )
-
-        self.audio_route_switch = SwitchButton(
-            bool(
-                self.settings_state["audio"].get("route_new_apps_to_default_sink", True)
-            )
-        )
-        layout.addWidget(
-            SettingsRow(
-                material_icon("hub"),
-                "Route new apps to default sink",
-                "Prefer the selected sink for fresh app launches instead of leaving routing entirely to PulseAudio defaults.",
-                self.icon_font,
-                self.ui_font,
-                self.audio_route_switch,
-            )
-        )
-
-        self.audio_mute_behavior_combo = QComboBox()
-        self.audio_mute_behavior_combo.setObjectName("settingsCombo")
-        self.audio_mute_behavior_combo.addItem("Leave as is", "leave_as_is")
-        self.audio_mute_behavior_combo.addItem("Mute on lock", "mute_on_lock")
-        self.audio_mute_behavior_combo.addItem("Mute on suspend", "mute_on_suspend")
-        mute_behavior = str(
-            self.settings_state["audio"].get("mute_behavior", "leave_as_is")
-        )
-        mute_index = self.audio_mute_behavior_combo.findData(mute_behavior)
-        self.audio_mute_behavior_combo.setCurrentIndex(max(0, mute_index))
-        layout.addWidget(
-            SettingsRow(
-                material_icon("lock"),
-                "Mute behavior",
-                "What Hanauta should prefer to do when you lock or suspend the session.",
-                self.icon_font,
-                self.ui_font,
-                self.audio_mute_behavior_combo,
-            )
-        )
-
-        self.audio_status = QLabel("Audio routing is ready.")
-        self.audio_status.setWordWrap(True)
-        self.audio_status.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(self.audio_status)
-
-        buttons = QHBoxLayout()
-        buttons.setSpacing(8)
-        self.audio_refresh_button = QPushButton("Refresh devices")
-        self.audio_refresh_button.setObjectName("secondaryButton")
-        self.audio_refresh_button.clicked.connect(self._refresh_audio_devices)
-        self.audio_save_button = QPushButton("Apply audio settings")
-        self.audio_save_button.setObjectName("primaryButton")
-        self.audio_save_button.clicked.connect(self._save_audio_settings)
-        for button in (self.audio_refresh_button, self.audio_save_button):
-            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        buttons.addWidget(self.audio_refresh_button)
-        buttons.addWidget(self.audio_save_button)
-        buttons.addStretch(1)
-        layout.addLayout(buttons)
-        self._refresh_audio_devices()
-        return card
+        return build_audio_card(self)
 
     def _build_notifications_card(self) -> QWidget:
         card = QFrame()
