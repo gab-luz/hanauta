@@ -213,6 +213,14 @@ from settings_page.widgets import NavPillButton, IconLabel, ThemeModeCard, Segme
 from settings_page.pages.overview import build_overview_page
 from settings_page.pages.storage import build_storage_page
 from settings_page.pages.display import build_display_page
+from settings_page.shell import (
+    build_bar_placeholder as shell_build_bar_placeholder,
+    build_header as shell_build_header,
+    build_scroll_body as shell_build_scroll_body,
+    build_search_overlay as shell_build_search_overlay,
+    build_services_placeholder as shell_build_services_placeholder,
+    build_sidebar as shell_build_sidebar,
+)
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
@@ -518,255 +526,22 @@ class SettingsWindow(QWidget):
         return WALLS_DIR
 
     def _build_header(self) -> QWidget:
-        header = QFrame()
-        header.setObjectName("topHeader")
-        header.setFixedHeight(54)
-
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(18, 12, 18, 12)
-        layout.setSpacing(14)
-
-        lead_chip = QFrame()
-        lead_chip.setObjectName("headerLeadChip")
-        lead_layout = QHBoxLayout(lead_chip)
-        lead_layout.setContentsMargins(12, 8, 12, 8)
-        lead_layout.setSpacing(8)
-        lead_icon = QLabel("♪")
-        lead_icon.setProperty("iconRole", True)
-        lead_icon.setObjectName("headerLeadIcon")
-        lead_icon.setFont(QFont(self.icon_font, 14))
-        lead_text = QLabel("hanauta")
-        lead_text.setObjectName("headerLeadText")
-        lead_text.setFont(QFont(self.ui_font, 9, QFont.Weight.DemiBold))
-        lead_layout.addWidget(lead_icon)
-        lead_layout.addWidget(lead_text)
-
-        title_wrap = QVBoxLayout()
-        title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(1)
-        title = QLabel("Settings")
-        title.setObjectName("headerTitle")
-        title.setFont(QFont(self.display_font, 12))
-        subtitle = QLabel("Wallpaper, accents, and shell behavior")
-        subtitle.setObjectName("headerSubtitle")
-        subtitle.setFont(QFont(self.ui_font, 8))
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-
-        close_button = create_close_button(
-            material_icon("close"),
-            self.icon_font,
-            font_size=16,
-        )
-        close_button.setFixedSize(32, 32)
-        close_button.setProperty("iconButton", True)
-        close_button.clicked.connect(self.close)
-
-        layout.addWidget(
-            lead_chip, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
-        layout.addLayout(title_wrap, 1)
-        layout.addWidget(
-            close_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        return header
+        return shell_build_header(self)
 
     def _build_sidebar(self) -> QWidget:
-        self.sidebar = QFrame()
-        self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(244)
-
-        layout = QVBoxLayout(self.sidebar)
-        layout.setContentsMargins(16, 18, 16, 18)
-        layout.setSpacing(12)
-
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(8)
-
-        self.sidebar_title = QLabel("Settings")
-        self.sidebar_title.setObjectName("sidebarTitle")
-        self.sidebar_title.setFont(QFont(self.display_font, 12, QFont.Weight.DemiBold))
-
-        self.sidebar_menu_button = QPushButton(material_icon("menu"))
-        self.sidebar_menu_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar_menu_button.setFixedSize(38, 36)
-        self.sidebar_menu_button.setFont(QFont(self.icon_font, 16))
-        self.sidebar_menu_button.setProperty("iconButton", True)
-        self.sidebar_menu_button.setProperty("iconButtonBorderless", True)
-        self.sidebar_menu_button.clicked.connect(self._toggle_sidebar)
-
-        self.search_button = QPushButton(material_icon("search"))
-        self.search_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.search_button.setFixedSize(38, 36)
-        self.search_button.setFont(QFont(self.icon_font, 16))
-        self.search_button.setProperty("iconButton", True)
-        self.search_button.setProperty("iconButtonBorderless", True)
-        self.search_button.clicked.connect(self._toggle_search)
-
-        top_row.addWidget(self.sidebar_title, 1)
-        top_row.addWidget(self.search_button, 0, Qt.AlignmentFlag.AlignRight)
-        top_row.addWidget(self.sidebar_menu_button, 0, Qt.AlignmentFlag.AlignRight)
-        layout.addLayout(top_row)
-
-        nav_section = QFrame()
-        nav_section.setObjectName("sidebarNavSection")
-        nav_layout = QVBoxLayout(nav_section)
-        nav_layout.setContentsMargins(6, 8, 6, 8)
-        nav_layout.setSpacing(6)
-
-        self.sidebar_section_label = QLabel("Workspace")
-        self.sidebar_section_label.setObjectName("sidebarSectionLabel")
-        self.sidebar_section_label.setFont(
-            QFont(self.ui_font, 8, QFont.Weight.DemiBold)
-        )
-        nav_layout.addWidget(self.sidebar_section_label)
-
-        self.nav_group = QButtonGroup(self)
-        self.nav_group.setExclusive(True)
-        self.nav_buttons: dict[str, NavPillButton] = {}
-
-        items = [
-            ("overview", material_icon("grid_view"), "Overview", False),
-            ("appearance", material_icon("palette"), "Looks", True),
-            ("marketplace", material_icon("storefront"), "Marketplace", False),
-            ("display", material_icon("desktop_windows"), "Display", False),
-            ("energy", material_icon("bolt"), "Energy", False),
-            ("audio", material_icon("music_note"), "Audio", False),
-            ("notifications", material_icon("notifications"), "Notifications", False),
-            ("input", material_icon("language"), "Input", False),
-            ("startup", material_icon("restart_alt"), "Startup", False),
-            ("privacy", material_icon("shield"), "Privacy", False),
-            ("networking", material_icon("hub"), "Networking", False),
-            ("storage", material_icon("storage"), "Storage", False),
-            ("region", material_icon("public"), "Region", False),
-            ("bar", material_icon("crop_square"), "Bar", False),
-            ("services", material_icon("widgets"), "Services", False),
-        ]
-
-        for key, glyph, label, checked in items:
-            button = NavPillButton(glyph, label, self.icon_font, self.ui_font)
-            button.setChecked(checked)
-            button.clicked.connect(
-                lambda checked=False, current=key: self._show_page(current)
-            )
-            self.nav_group.addButton(button)
-            self.nav_buttons[key] = button
-            nav_layout.addWidget(button)
-
-        layout.addWidget(nav_section)
-        layout.addStretch(1)
-        return self.sidebar
+        return shell_build_sidebar(self)
 
     def _build_scroll_body(self) -> QWidget:
-        self.page_stack = QStackedWidget()
-        self.page_stack.addWidget(self._build_overview_page())
-        self.page_stack.addWidget(self._build_appearance_page())
-        self.page_stack.addWidget(self._build_marketplace_page())
-        self.page_stack.addWidget(self._build_display_page())
-        self.page_stack.addWidget(self._build_energy_page())
-        self.page_stack.addWidget(self._build_audio_page())
-        self.page_stack.addWidget(self._build_notifications_page())
-        self.page_stack.addWidget(self._build_input_page())
-        self.page_stack.addWidget(self._build_startup_page())
-        self.page_stack.addWidget(self._build_privacy_page())
-        self.page_stack.addWidget(self._build_networking_page())
-        self.page_stack.addWidget(self._build_storage_page())
-        self.page_stack.addWidget(self._build_region_page())
-        self.bar_page_index = self.page_stack.count()
-        self._bar_page_ready = False
-        self._bar_page_building = False
-        self.page_stack.addWidget(self._build_bar_placeholder())
-        self.services_page_index = self.page_stack.count()
-        self._services_page_ready = False
-        self._services_page_building = False
-        self.page_stack.addWidget(self._build_services_placeholder())
-        self._show_page(self.initial_page)
-
-        self._build_search_overlay()
-
-        return self.page_stack
+        return shell_build_scroll_body(self)
 
     def _build_bar_placeholder(self) -> QWidget:
-        placeholder = QWidget()
-        layout = QVBoxLayout(placeholder)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
-        loading = QLabel("Bar page is loaded on demand for faster startup.")
-        loading.setWordWrap(True)
-        loading.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(loading)
-        layout.addStretch(1)
-        return placeholder
+        return shell_build_bar_placeholder(self)
 
     def _build_search_overlay(self) -> None:
-        self.search_container = QFrame(self.page_stack)
-        self.search_container.setObjectName("searchOverlay")
-        self.search_container.setVisible(False)
-        search_layout = QVBoxLayout(self.search_container)
-        search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(0)
-
-        search_input_container = QFrame()
-        search_input_container.setObjectName("searchInputContainer")
-        input_layout = QHBoxLayout(search_input_container)
-        input_layout.setContentsMargins(16, 12, 16, 12)
-        input_layout.setSpacing(12)
-
-        search_icon = QLabel(material_icon("search"))
-        search_icon.setFont(QFont(self.icon_font, 18))
-        search_icon.setStyleSheet("color: rgba(246,235,247,0.56);")
-        input_layout.addWidget(search_icon)
-
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search settings...")
-        self.search_input.setObjectName("searchInputField")
-        self.search_input.setFont(QFont(self.ui_font, 14))
-        self.search_input.textChanged.connect(self._on_search_changed)
-        input_layout.addWidget(self.search_input, 1)
-
-        close_search_btn = QPushButton(material_icon("close"))
-        close_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_search_btn.setFixedSize(32, 32)
-        close_search_btn.setFont(QFont(self.icon_font, 16))
-        close_search_btn.setProperty("iconButton", True)
-        close_search_btn.clicked.connect(self._toggle_search)
-        input_layout.addWidget(close_search_btn)
-
-        search_layout.addWidget(search_input_container)
-
-        self.search_results_container = QScrollArea()
-        self.search_results_container.setObjectName("searchResultsContainer")
-        self.search_results_container.setWidgetResizable(True)
-        self.search_results_container.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.search_results_layout = QVBoxLayout()
-        self.search_results_layout.setContentsMargins(16, 8, 16, 16)
-        self.search_results_layout.setSpacing(8)
-        self.search_results_layout.addStretch(1)
-
-        results_widget = QWidget()
-        results_widget.setObjectName("searchResultsContent")
-        results_widget.setLayout(self.search_results_layout)
-        self.search_results_container.setWidget(results_widget)
-
-        search_layout.addWidget(self.search_results_container, 1)
-
-        self.search_overlay_index = self.page_stack.count()
-        self.page_stack.addWidget(self.search_container)
+        shell_build_search_overlay(self)
 
     def _build_services_placeholder(self) -> QWidget:
-        placeholder = QWidget()
-        layout = QVBoxLayout(placeholder)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
-        loading = QLabel("Services page is loaded on demand for faster startup.")
-        loading.setWordWrap(True)
-        loading.setStyleSheet("color: rgba(246,235,247,0.72);")
-        layout.addWidget(loading)
-        layout.addStretch(1)
-        return placeholder
+        return shell_build_services_placeholder(self)
 
     def _ensure_services_page_ready(self) -> None:
         if getattr(self, "_services_page_ready", False):
