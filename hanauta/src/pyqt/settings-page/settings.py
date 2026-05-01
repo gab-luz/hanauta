@@ -210,6 +210,7 @@ from settings_page.ui_widgets import (
     ExpandableServiceSection,
 )
 from settings_page.widgets import NavPillButton, IconLabel, ThemeModeCard, SegmentedChip
+from settings_page.pages.overview import build_overview_page
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
@@ -1229,7 +1230,7 @@ class SettingsWindow(QWidget):
         return scroll
 
     def _build_overview_page(self) -> QWidget:
-        return self._scroll_page(self._build_system_overview_card(), self._build_profile_card())
+        return build_overview_page(self)
 
     def _build_appearance_page(self) -> QWidget:
         return self._scroll_page(self._build_wallpaper_colors_card())
@@ -1307,46 +1308,6 @@ class SettingsWindow(QWidget):
             QTimer.singleShot(
                 0, lambda: self._focus_service_section(self.initial_service_section)
             )
-
-    def _build_system_overview_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("contentCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 16)
-        layout.setSpacing(12)
-
-        header = QHBoxLayout()
-        icon = IconLabel(material_icon("grid_view"), self.icon_font, 15, self.theme_palette.primary)
-        icon.setFixedSize(22, 22)
-        title = QLabel("System Overview")
-        title.setFont(QFont(self.display_font, 13))
-        subtitle = QLabel("Quick info for this session and shell environment.")
-        subtitle.setProperty("mutedText", True)
-        subtitle.setFont(QFont(self.ui_font, 9))
-        title_wrap = QVBoxLayout()
-        title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(2)
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-        header.addWidget(icon)
-        header.addLayout(title_wrap)
-        header.addStretch(1)
-        layout.addLayout(header)
-
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 4, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
-        self.system_overview_labels: dict[str, QLabel] = {}
-        for index, key in enumerate(
-            ("Host", "Kernel", "Session", "Python", "Uptime", "Screen")
-        ):
-            label = QLabel("...")
-            label.setFont(QFont(self.ui_font, 10))
-            self.system_overview_labels[key] = label
-            grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
-        layout.addLayout(grid)
-        return card
 
     def _profile_state(self) -> dict:
         profile = self.settings_state.get("profile", {})
@@ -1639,19 +1600,6 @@ class SettingsWindow(QWidget):
         layout.addWidget(list_wrap)
         self._refresh_profile_language_rows()
 
-        return card
-
-    def _metric_card(self, title: str, value_label: QLabel) -> QWidget:
-        card = QFrame()
-        card.setObjectName("settingsRow")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(4)
-        title_label = QLabel(title)
-        title_label.setFont(QFont(self.ui_font, 8))
-        title_label.setStyleSheet("color: rgba(246,235,247,0.62);")
-        layout.addWidget(title_label)
-        layout.addWidget(value_label)
         return card
 
     def _format_slideshow_interval_text(self, value: int) -> str:
@@ -16587,6 +16535,22 @@ class SettingsWindow(QWidget):
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 16px;
+            }}
+            QFrame#overviewHeroCard {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {rgba(theme.primary_container, 0.92)},
+                    stop:1 {rgba(theme.surface_container_high, 0.86)}
+                );
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 18px;
+            }}
+            QLabel#overviewChip {{
+                background: {rgba(theme.surface_container_high, 0.72)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 999px;
+                padding: 6px 10px;
+                color: {theme.text};
             }}
             QFrame#appearanceCard {{
                 background: {rgba(theme.surface_container, 0.92)};
