@@ -212,6 +212,7 @@ from settings_page.ui_widgets import (
 from settings_page.widgets import NavPillButton, IconLabel, ThemeModeCard, SegmentedChip
 from settings_page.pages.overview import build_overview_page
 from settings_page.pages.storage import build_storage_page
+from settings_page.pages.display import build_display_page
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
@@ -1273,7 +1274,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_services_card())
 
     def _build_display_page(self) -> QWidget:
-        return self._scroll_page(self._build_display_card(), self._build_picom_card())
+        return build_display_page(self)
 
     def _build_picom_page(self) -> QWidget:
         return self._scroll_page(self._build_picom_card())
@@ -1960,135 +1961,18 @@ class SettingsWindow(QWidget):
         return card
 
     def _build_display_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("contentCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 16)
-        layout.setSpacing(12)
+        from settings_page.pages.display import build_display_card
 
-        header = QHBoxLayout()
-        icon = IconLabel(
-            material_icon("desktop_windows"), self.icon_font, 15, self.theme_palette.primary
-        )
-        icon.setFixedSize(22, 22)
-        title = QLabel("Displays")
-        title.setFont(QFont(self.display_font, 13))
-        subtitle = QLabel(
-            "Primary monitor, extend or duplicate mode, resolution, refresh rate, and rotation."
-        )
-        subtitle.setFont(QFont(self.ui_font, 9))
-        subtitle.setProperty("mutedText", True)
-        title_wrap = QVBoxLayout()
-        title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(2)
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-        header.addWidget(icon)
-        header.addLayout(title_wrap)
-        header.addStretch(1)
-        layout.addLayout(header)
-
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
-        refresh_button = QPushButton("Refresh")
-        refresh_button.setObjectName("secondaryButton")
-        refresh_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        refresh_button.clicked.connect(self._refresh_display_state)
-        apply_button = QPushButton("Apply displays")
-        apply_button.setObjectName("primaryButton")
-        apply_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        apply_button.clicked.connect(self._apply_display_settings)
-        actions.addWidget(refresh_button)
-        actions.addWidget(apply_button)
-        actions.addStretch(1)
-        layout.addLayout(actions)
-
-        self.display_status = QLabel("")
-        self.display_status.setProperty("mutedText", True)
-        self.display_status.setWordWrap(True)
-        layout.addWidget(self.display_status)
-
-        if not self.display_state:
-            self.display_status.setText("No displays detected through xrandr.")
-            return card
-
-        connected_count = len(self.display_state)
-        if connected_count > 1:
-            layout.addWidget(self._build_display_global_card())
-        else:
-            self.display_status.setText(
-                "Single display detected. Primary and mirror controls are hidden."
-            )
-
-        self.display_outputs_container = QVBoxLayout()
-        self.display_outputs_container.setContentsMargins(0, 0, 0, 0)
-        self.display_outputs_container.setSpacing(10)
-        layout.addLayout(self.display_outputs_container)
-        self._rebuild_display_output_cards()
-        return card
+        return build_display_card(self)
 
     def _build_display_global_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("settingsRow")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(12)
+        from settings_page.pages.display import build_display_global_card
 
-        title = QLabel("Multi-monitor layout")
-        title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
-        detail = QLabel(
-            "Choose the primary display and whether active outputs extend left-to-right or mirror the primary."
-        )
-        detail.setFont(QFont(self.ui_font, 8))
-        detail.setProperty("mutedText", True)
-        detail.setWordWrap(True)
-        layout.addWidget(title)
-        layout.addWidget(detail)
-
-        row = QHBoxLayout()
-        row.setSpacing(10)
-        primary_label = QLabel("Primary")
-        primary_label.setFont(QFont(self.ui_font, 9))
-        primary_label.setProperty("mutedText", True)
-        self.primary_display_combo = QComboBox()
-        self.primary_display_combo.setObjectName("settingsCombo")
-        for display in self.display_state:
-            self.primary_display_combo.addItem(display["name"])
-        primary_name = next(
-            (
-                display["name"]
-                for display in self.display_state
-                if display.get("primary")
-            ),
-            self.display_state[0]["name"],
-        )
-        self.primary_display_combo.setCurrentText(primary_name)
-        row.addWidget(primary_label)
-        row.addWidget(self.primary_display_combo, 1)
-        layout.addLayout(row)
-
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(8)
-        self.display_layout_buttons: dict[str, SegmentedChip] = {}
-        self.display_layout_group = QButtonGroup(self)
-        self.display_layout_group.setExclusive(True)
-        for key, label in (("extend", "Extend"), ("duplicate", "Duplicate")):
-            chip = SegmentedChip(label, checked=(key == "extend"))
-            chip.clicked.connect(
-                lambda checked=False, current=key: self._set_display_layout_mode(
-                    current
-                )
-            )
-            self.display_layout_group.addButton(chip)
-            self.display_layout_buttons[key] = chip
-            mode_row.addWidget(chip)
-        mode_row.addStretch(1)
-        layout.addLayout(mode_row)
-        self.display_layout_mode = "extend"
-        self._set_display_layout_mode("extend")
-        return card
+        return build_display_global_card(self)
 
     def _rebuild_display_output_cards(self) -> None:
+        from settings_page.pages.display import build_settings_labeled_field
+
         while self.display_outputs_container.count():
             item = self.display_outputs_container.takeAt(0)
             widget = item.widget()
@@ -2188,34 +2072,22 @@ class SettingsWindow(QWidget):
             )
 
             control_grid.addWidget(
-                self._settings_labeled_field("Enabled", enabled_switch), 0, 0
+                build_settings_labeled_field(self, "Enabled", enabled_switch), 0, 0
             )
             control_grid.addWidget(
-                self._settings_labeled_field("Resolution", resolution_combo), 0, 1
+                build_settings_labeled_field(self, "Resolution", resolution_combo), 0, 1
             )
             control_grid.addWidget(
-                self._settings_labeled_field("Refresh", refresh_combo), 1, 0
+                build_settings_labeled_field(self, "Refresh", refresh_combo), 1, 0
             )
             control_grid.addWidget(
-                self._settings_labeled_field("Orientation", orientation_combo), 1, 1
+                build_settings_labeled_field(self, "Orientation", orientation_combo), 1, 1
             )
             control_grid.addWidget(
-                self._settings_labeled_field("Wallpaper", wallpaper_combo), 2, 0, 1, 2
+                build_settings_labeled_field(self, "Wallpaper", wallpaper_combo), 2, 0, 1, 2
             )
             layout.addLayout(control_grid)
             self.display_outputs_container.addWidget(card)
-
-    def _settings_labeled_field(self, label_text: str, widget: QWidget) -> QWidget:
-        wrap = QWidget()
-        layout = QVBoxLayout(wrap)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        label = QLabel(label_text)
-        label.setFont(QFont(self.ui_font, 8))
-        label.setProperty("mutedText", True)
-        layout.addWidget(label)
-        layout.addWidget(widget)
-        return wrap
 
     def _sync_refresh_rates_for_output(self, output_name: str, mode: str) -> None:
         controls = self.display_controls.get(output_name, {})
