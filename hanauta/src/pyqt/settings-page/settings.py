@@ -16977,6 +16977,66 @@ class SettingsWindow(QWidget):
             }}
             """
         )
+        self._apply_theme_label_overrides()
+
+    def _apply_theme_label_overrides(self) -> None:
+        theme = self.theme_palette
+        muted = f"color: {theme.text_muted};"
+        primary = f"color: {theme.text};"
+
+        muted_label_names = [
+            "slideshow_interval_label",
+            "display_status",
+            "picom_status",
+            "energy_status",
+            "lockscreen_status",
+            "energy_caffeine_note",
+            "energy_battery_meta",
+            "audio_status",
+            "notifications_status",
+            "input_status",
+            "startup_preview_label",
+            "startup_status",
+            "privacy_status",
+            "networking_status",
+            "storage_status",
+            "region_location_note",
+            "region_status",
+            "_services_loading_label",
+            "mail_status",
+            "ha_status",
+            "kdeconnect_rules_status",
+            "health_status_label",
+            "weather_status",
+            "cap_alerts_status",
+            "calendar_status",
+            "contacts_status",
+            "reminders_status",
+            "pomodoro_status",
+            "rss_status",
+            "obs_status",
+            "crypto_status",
+            "vps_status",
+            "clock_status",
+            "game_mode_availability",
+            "game_mode_status",
+            "virtualization_status",
+            "study_tracker_status",
+            "ntfy_selected_topics_label",
+            "ntfy_status",
+        ]
+        for name in muted_label_names:
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setStyleSheet(muted)
+
+        primary_label_names = [
+            "christian_plugin_status",
+        ]
+        for name in primary_label_names:
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setStyleSheet(primary)
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
