@@ -16669,6 +16669,14 @@ class SettingsWindow(QWidget):
                 color: {theme.text};
                 text-align: left;
             }}
+            QLabel#actionCardTitle {{
+                color: {theme.text};
+                background: transparent;
+            }}
+            QLabel#actionCardDetail {{
+                color: {theme.text_muted};
+                background: transparent;
+            }}
             QPushButton#actionCard:hover {{
                 background: {theme.hover_bg};
                 border: 1px solid {theme.app_focused_border};
@@ -16723,6 +16731,14 @@ class SettingsWindow(QWidget):
                 border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
+            QLabel#settingsRowTitle {{
+                color: {theme.text};
+                background: transparent;
+            }}
+            QLabel#settingsRowDetail {{
+                color: {theme.text_muted};
+                background: transparent;
+            }}
             QFrame#serviceSection {{
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};
@@ -16744,6 +16760,14 @@ class SettingsWindow(QWidget):
             QLabel#serviceChevron {{
                 color: {theme.icon};
                 font-family: "{self.icon_font}";
+            }}
+            QLabel#serviceHeaderTitle {{
+                color: {theme.text};
+                background: transparent;
+            }}
+            QLabel#serviceHeaderDetail {{
+                color: {theme.text_muted};
+                background: transparent;
             }}
             QComboBox#settingsCombo {{
                 min-height: 38px;

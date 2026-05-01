@@ -163,13 +163,11 @@ class ActionCard(QPushButton):
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont(ui_font, 9, QFont.Weight.DemiBold))
         self.title_label.setWordWrap(True)
-        self.title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.title_label.setObjectName("actionCardTitle")
         self.detail_label = QLabel(detail)
         self.detail_label.setWordWrap(True)
         self.detail_label.setFont(QFont(ui_font, 8))
-        self.detail_label.setStyleSheet(
-            "color: rgba(255,255,255,0.82); background: transparent;"
-        )
+        self.detail_label.setObjectName("actionCardDetail")
 
         text_wrap.addWidget(self.title_label)
         text_wrap.addWidget(self.detail_label)
@@ -231,16 +229,14 @@ class SettingsRow(QFrame):
 
         title_label = QLabel(title)
         title_label.setFont(QFont(ui_font, 9))
-        title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        title_label.setObjectName("settingsRowTitle")
         title_label.setWordWrap(True)
         title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         title_label.setMinimumWidth(0)
 
         detail_label = QLabel(detail)
         detail_label.setFont(QFont(ui_font, 8))
-        detail_label.setStyleSheet(
-            "color: rgba(255,255,255,0.78); background: transparent;"
-        )
+        detail_label.setObjectName("settingsRowDetail")
         detail_label.setWordWrap(True)
         detail_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         detail_label.setMinimumWidth(0)
@@ -313,14 +309,12 @@ class ExpandableServiceSection(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont(ui_font, 10, QFont.Weight.DemiBold))
-        self.title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.title_label.setObjectName("serviceHeaderTitle")
         self.title_label.setWordWrap(True)
 
         self.detail_label = QLabel(detail)
         self.detail_label.setFont(QFont(ui_font, 8))
-        self.detail_label.setStyleSheet(
-            "color: rgba(255,255,255,0.78); background: transparent;"
-        )
+        self.detail_label.setObjectName("serviceHeaderDetail")
         self.detail_label.setWordWrap(True)
 
         text_wrap.addWidget(self.title_label)
