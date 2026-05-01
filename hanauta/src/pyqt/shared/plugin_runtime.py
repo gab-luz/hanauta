@@ -152,7 +152,10 @@ def resolve_plugin_script(
         candidate = plugin_dir / target
         if candidate.exists():
             return candidate
-    if not required:
+    # Fallback: some dev/legacy plugins may not ship the standard `hanauta_plugin.py`
+    # entrypoint but still provide standalone scripts that the UI can launch.
+    # Keep this search scoped by hints to avoid accidental matches in unrelated folders.
+    if hints or not required:
         for plugin_dir in discover_plugin_dirs(hints, require_entrypoint=False):
             candidate = plugin_dir / target
             if candidate.exists():
