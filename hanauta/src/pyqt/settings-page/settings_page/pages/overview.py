@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from settings_page.material_icons import material_icon
 from settings_page.ui_widgets import ActionCard
 from settings_page.widgets import IconLabel
+from settings_page.pages.metrics import build_metric_card
 
 
 def build_overview_page(window) -> QWidget:
@@ -120,22 +121,6 @@ def build_system_overview_card(window) -> QWidget:
     return card
 
 
-def build_metric_card(window, title: str, value_label: QLabel) -> QWidget:
-    card = QFrame()
-    card.setObjectName("settingsRow")
-    layout = QVBoxLayout(card)
-    layout.setContentsMargins(14, 12, 14, 12)
-    layout.setSpacing(4)
-    title_label = QLabel(title)
-    title_font = QFont(window.ui_font, 8)
-    title_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-    title_label.setFont(title_font)
-    title_label.setProperty("mutedText", True)
-    layout.addWidget(title_label)
-    layout.addWidget(value_label)
-    return card
-
-
 def build_overview_actions_card(window) -> QWidget:
     card = QFrame()
     card.setObjectName("contentCard")
@@ -213,4 +198,3 @@ def build_overview_actions_card(window) -> QWidget:
     grid.addWidget(plugin_dir, 1, 0)
     layout.addLayout(grid)
     return card
-

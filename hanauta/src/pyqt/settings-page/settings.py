@@ -211,6 +211,7 @@ from settings_page.ui_widgets import (
 )
 from settings_page.widgets import NavPillButton, IconLabel, ThemeModeCard, SegmentedChip
 from settings_page.pages.overview import build_overview_page
+from settings_page.pages.storage import build_storage_page
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
@@ -1263,7 +1264,7 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_networking_card())
 
     def _build_storage_page(self) -> QWidget:
-        return self._scroll_page(self._build_storage_card())
+        return build_storage_page(self)
 
     def _build_region_page(self) -> QWidget:
         return self._scroll_page(self._build_region_card())
@@ -5107,145 +5108,6 @@ class SettingsWindow(QWidget):
         save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         save_button.clicked.connect(self._save_networking_settings)
         layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
-        return card
-
-    def _build_storage_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("contentCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 16)
-        layout.setSpacing(12)
-
-        header = QHBoxLayout()
-        icon = IconLabel(material_icon("storage"), self.icon_font, 15, self.theme_palette.primary)
-        icon.setFixedSize(22, 22)
-        title = QLabel("Storage")
-        title.setFont(QFont(self.display_font, 13))
-        subtitle = QLabel(
-            "Cache sizes, cleanup policies, wallpaper source data, and temporary Hanauta state."
-        )
-        subtitle.setFont(QFont(self.ui_font, 9))
-        subtitle.setProperty("mutedText", True)
-        title_wrap = QVBoxLayout()
-        title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(2)
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-        header.addWidget(icon)
-        header.addLayout(title_wrap)
-        header.addStretch(1)
-        layout.addLayout(header)
-
-        self.storage_cache_cleanup_days_input = QLineEdit(
-            str(
-                int(
-                    self.settings_state["storage"].get(
-                        "wallpaper_cache_cleanup_days", 30
-                    )
-                )
-            )
-        )
-        self.storage_cache_cleanup_days_input.setValidator(QIntValidator(1, 365, self))
-        self.storage_cache_cleanup_days_input.setFixedWidth(96)
-        self.storage_cache_cleanup_days_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(
-            SettingsRow(
-                material_icon("image"),
-                "Wallpaper cache cleanup days",
-                "Preferred retention window for wallpaper source caches and rendered wallpaper assets.",
-                self.icon_font,
-                self.ui_font,
-                self.storage_cache_cleanup_days_input,
-            )
-        )
-
-        self.storage_log_retention_days_input = QLineEdit(
-            str(int(self.settings_state["storage"].get("log_retention_days", 14)))
-        )
-        self.storage_log_retention_days_input.setValidator(QIntValidator(1, 365, self))
-        self.storage_log_retention_days_input.setFixedWidth(96)
-        self.storage_log_retention_days_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(
-            SettingsRow(
-                material_icon("schedule"),
-                "Log retention days",
-                "Preferred retention window for Hanauta logs and debugging traces.",
-                self.icon_font,
-                self.ui_font,
-                self.storage_log_retention_days_input,
-            )
-        )
-
-        self.storage_clean_temp_switch = SwitchButton(
-            bool(
-                self.settings_state["storage"].get("clean_temp_state_on_startup", False)
-            )
-        )
-        layout.addWidget(
-            SettingsRow(
-                material_icon("refresh"),
-                "Clean temp state on startup",
-                "Remember whether short-lived cache and temp state should be cleaned when the session boots.",
-                self.icon_font,
-                self.ui_font,
-                self.storage_clean_temp_switch,
-            )
-        )
-
-        self.storage_metrics: dict[str, QLabel] = {}
-        metrics_grid = QGridLayout()
-        metrics_grid.setContentsMargins(0, 0, 0, 0)
-        metrics_grid.setHorizontalSpacing(10)
-        metrics_grid.setVerticalSpacing(10)
-        for index, key in enumerate(
-            (
-                "Wallpaper Source Cache",
-                "Rendered Wallpapers",
-                "Mail Attachments",
-                "State Root",
-                "Filesystem Total",
-                "Filesystem Free",
-            )
-        ):
-            label = QLabel("...")
-            label.setFont(QFont(self.ui_font, 10))
-            self.storage_metrics[key] = label
-            metrics_grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
-        layout.addLayout(metrics_grid)
-
-        self.storage_status = QLabel("Storage tools are ready.")
-        self.storage_status.setWordWrap(True)
-        self.storage_status.setProperty("mutedText", True)
-        layout.addWidget(self.storage_status)
-
-        buttons = QHBoxLayout()
-        buttons.setSpacing(8)
-        refresh_button = QPushButton("Refresh sizes")
-        refresh_button.setObjectName("secondaryButton")
-        refresh_button.clicked.connect(self._refresh_storage_metrics)
-        clear_wallpaper_button = QPushButton("Clear wallpaper cache")
-        clear_wallpaper_button.setObjectName("secondaryButton")
-        clear_wallpaper_button.clicked.connect(self._clear_wallpaper_cache)
-        clear_temp_button = QPushButton("Clean temp state")
-        clear_temp_button.setObjectName("secondaryButton")
-        clear_temp_button.clicked.connect(self._clear_temp_state)
-        save_button = QPushButton("Save storage settings")
-        save_button.setObjectName("primaryButton")
-        save_button.clicked.connect(self._save_storage_settings)
-        for button in (
-            refresh_button,
-            clear_wallpaper_button,
-            clear_temp_button,
-            save_button,
-        ):
-            button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        buttons.addWidget(refresh_button)
-        buttons.addWidget(clear_wallpaper_button)
-        buttons.addWidget(clear_temp_button)
-        buttons.addWidget(save_button)
-        buttons.addStretch(1)
-        layout.addLayout(buttons)
-        self._refresh_storage_metrics()
         return card
 
     def _build_region_card(self) -> QWidget:
