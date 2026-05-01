@@ -1316,13 +1316,12 @@ class SettingsWindow(QWidget):
         layout.setSpacing(12)
 
         header = QHBoxLayout()
-        icon = IconLabel(material_icon("grid_view"), self.icon_font, 15, "#F4EAF7")
+        icon = IconLabel(material_icon("grid_view"), self.icon_font, 15, self.theme_palette.primary)
         icon.setFixedSize(22, 22)
         title = QLabel("System Overview")
-        title.setStyleSheet("color: rgba(246,235,247,0.72);")
         title.setFont(QFont(self.display_font, 13))
         subtitle = QLabel("Quick info for this session and shell environment.")
-        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle.setProperty("mutedText", True)
         subtitle.setFont(QFont(self.ui_font, 9))
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
@@ -1344,7 +1343,6 @@ class SettingsWindow(QWidget):
         ):
             label = QLabel("...")
             label.setFont(QFont(self.ui_font, 10))
-            label.setStyleSheet("color: #FFFFFF;")
             self.system_overview_labels[key] = label
             grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
         layout.addLayout(grid)
@@ -2021,17 +2019,16 @@ class SettingsWindow(QWidget):
 
         header = QHBoxLayout()
         icon = IconLabel(
-            material_icon("desktop_windows"), self.icon_font, 15, "#F4EAF7"
+            material_icon("desktop_windows"), self.icon_font, 15, self.theme_palette.primary
         )
         icon.setFixedSize(22, 22)
         title = QLabel("Displays")
         title.setFont(QFont(self.display_font, 13))
-        title.setStyleSheet("color: rgba(246,235,247,0.72);")
         subtitle = QLabel(
             "Primary monitor, extend or duplicate mode, resolution, refresh rate, and rotation."
         )
         subtitle.setFont(QFont(self.ui_font, 9))
-        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle.setProperty("mutedText", True)
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
         title_wrap.setSpacing(2)
@@ -2058,7 +2055,7 @@ class SettingsWindow(QWidget):
         layout.addLayout(actions)
 
         self.display_status = QLabel("")
-        self.display_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.display_status.setProperty("mutedText", True)
         self.display_status.setWordWrap(True)
         layout.addWidget(self.display_status)
 
@@ -2090,12 +2087,11 @@ class SettingsWindow(QWidget):
 
         title = QLabel("Multi-monitor layout")
         title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
-        title.setStyleSheet("color: #FFFFFF;")
         detail = QLabel(
             "Choose the primary display and whether active outputs extend left-to-right or mirror the primary."
         )
         detail.setFont(QFont(self.ui_font, 8))
-        detail.setStyleSheet("color: rgba(246,235,247,0.72);")
+        detail.setProperty("mutedText", True)
         detail.setWordWrap(True)
         layout.addWidget(title)
         layout.addWidget(detail)
@@ -2104,7 +2100,7 @@ class SettingsWindow(QWidget):
         row.setSpacing(10)
         primary_label = QLabel("Primary")
         primary_label.setFont(QFont(self.ui_font, 9))
-        primary_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+        primary_label.setProperty("mutedText", True)
         self.primary_display_combo = QComboBox()
         self.primary_display_combo.setObjectName("settingsCombo")
         for display in self.display_state:
@@ -2267,7 +2263,7 @@ class SettingsWindow(QWidget):
         layout.setSpacing(6)
         label = QLabel(label_text)
         label.setFont(QFont(self.ui_font, 8))
-        label.setStyleSheet("color: rgba(246,235,247,0.62);")
+        label.setProperty("mutedText", True)
         layout.addWidget(label)
         layout.addWidget(widget)
         return wrap
@@ -5173,16 +5169,15 @@ class SettingsWindow(QWidget):
         layout.setSpacing(12)
 
         header = QHBoxLayout()
-        icon = IconLabel(material_icon("storage"), self.icon_font, 15, "#F4EAF7")
+        icon = IconLabel(material_icon("storage"), self.icon_font, 15, self.theme_palette.primary)
         icon.setFixedSize(22, 22)
         title = QLabel("Storage")
         title.setFont(QFont(self.display_font, 13))
-        title.setStyleSheet("color: rgba(246,235,247,0.72);")
         subtitle = QLabel(
             "Cache sizes, cleanup policies, wallpaper source data, and temporary Hanauta state."
         )
         subtitle.setFont(QFont(self.ui_font, 9))
-        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle.setProperty("mutedText", True)
         title_wrap = QVBoxLayout()
         title_wrap.setContentsMargins(0, 0, 0, 0)
         title_wrap.setSpacing(2)
@@ -5266,14 +5261,13 @@ class SettingsWindow(QWidget):
         ):
             label = QLabel("...")
             label.setFont(QFont(self.ui_font, 10))
-            label.setStyleSheet("color: #FFFFFF;")
             self.storage_metrics[key] = label
             metrics_grid.addWidget(self._metric_card(key, label), index // 2, index % 2)
         layout.addLayout(metrics_grid)
 
         self.storage_status = QLabel("Storage tools are ready.")
         self.storage_status.setWordWrap(True)
-        self.storage_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        self.storage_status.setProperty("mutedText", True)
         layout.addWidget(self.storage_status)
 
         buttons = QHBoxLayout()
@@ -16519,6 +16513,10 @@ class SettingsWindow(QWidget):
                 background: transparent;
                 color: {theme.text};
                 font-family: "{self.ui_font}";
+            }}
+            QLabel[mutedText="true"] {{
+                color: {theme.text_muted};
+                background: transparent;
             }}
             QFrame#shell {{
                 background: {rgba(theme.surface_container, 0.94)};
