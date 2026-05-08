@@ -161,32 +161,66 @@ def build_sidebar(window) -> QWidget:
 
 def build_scroll_body(window) -> QWidget:
     window.page_stack = QStackedWidget()
-    window.page_stack.addWidget(window._build_overview_page())
-    window.page_stack.addWidget(window._build_appearance_page())
-    window.page_stack.addWidget(window._build_marketplace_page())
-    window.page_stack.addWidget(window._build_display_page())
-    window.page_stack.addWidget(window._build_energy_page())
-    window.page_stack.addWidget(window._build_audio_page())
-    window.page_stack.addWidget(window._build_notifications_page())
-    window.page_stack.addWidget(window._build_input_page())
-    window.page_stack.addWidget(window._build_startup_page())
-    window.page_stack.addWidget(window._build_privacy_page())
-    window.page_stack.addWidget(window._build_networking_page())
-    window.page_stack.addWidget(window._build_storage_page())
-    window.page_stack.addWidget(window._build_region_page())
-    window.bar_page_index = window.page_stack.count()
-    window._bar_page_ready = False
-    window._bar_page_building = False
-    window.page_stack.addWidget(build_bar_placeholder(window))
-    window.services_page_index = window.page_stack.count()
-    window._services_page_ready = False
-    window._services_page_building = False
-    window.page_stack.addWidget(build_services_placeholder(window))
+    window.page_indices = {}
+    window.page_ready = set()
+
+    def _add_page(key: str, widget: QWidget, ready: bool = False) -> None:
+        window.page_indices[key] = window.page_stack.count()
+        window.page_stack.addWidget(widget)
+        if ready:
+            window.page_ready.add(key)
+
+    _add_page("overview", window._build_overview_page(), ready=True)
+    _add_page("appearance", window._build_appearance_page(), ready=True)
+    _add_page("marketplace", build_lazy_placeholder(window, "Marketplace"))
+    _add_page("display", build_display_placeholder(window))
+    _add_page("energy", build_lazy_placeholder(window, "Energy"))
+    _add_page("audio", build_lazy_placeholder(window, "Audio"))
+    _add_page("notifications", build_lazy_placeholder(window, "Notifications"))
+    _add_page("input", build_lazy_placeholder(window, "Input"))
+    _add_page("startup", build_lazy_placeholder(window, "Startup"))
+    _add_page("privacy", build_lazy_placeholder(window, "Privacy"))
+    _add_page("networking", build_lazy_placeholder(window, "Networking"))
+    _add_page("storage", build_lazy_placeholder(window, "Storage"))
+    _add_page("region", build_lazy_placeholder(window, "Region"))
+    _add_page("bar", build_bar_placeholder(window))
+    _add_page("services", build_services_placeholder(window))
+
     window._show_page(window.initial_page)
 
     build_search_overlay(window)
 
     return window.page_stack
+
+
+def build_lazy_placeholder(window, label: str) -> QWidget:
+    placeholder = QWidget()
+    layout = QVBoxLayout(placeholder)
+    layout.setContentsMargins(16, 16, 16, 16)
+    layout.setSpacing(8)
+    loading = QLabel(f"{label} page is loaded on demand for faster startup.")
+    loading.setWordWrap(True)
+    loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+    layout.addWidget(loading)
+    layout.addStretch(1)
+    return placeholder
+
+
+def build_display_placeholder(window) -> QWidget:
+    placeholder = QWidget()
+    layout = QVBoxLayout(placeholder)
+    layout.setContentsMargins(16, 16, 16, 16)
+    layout.setSpacing(8)
+    loading = QLabel("Display controls are temporarily disabled in this build.")
+    loading.setWordWrap(True)
+    loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+    hint = QLabel("Other settings pages should work normally.")
+    hint.setWordWrap(True)
+    hint.setStyleSheet("color: rgba(246,235,247,0.56);")
+    layout.addWidget(loading)
+    layout.addWidget(hint)
+    layout.addStretch(1)
+    return placeholder
 
 
 def build_bar_placeholder(window) -> QWidget:
@@ -271,4 +305,3 @@ def build_search_overlay(window) -> None:
 
     window.search_overlay_index = window.page_stack.count()
     window.page_stack.addWidget(window.search_container)
-

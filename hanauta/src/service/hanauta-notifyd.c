@@ -1543,7 +1543,26 @@ static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *imag
         resolved_path = g_filename_from_uri(icon_name, NULL, NULL);
     }
     gchar *bundled_weather_icon = NULL;
+    gchar *alias_path = NULL;
     const gchar *effective_icon = (resolved_path != NULL && *resolved_path != '\0') ? resolved_path : icon_name;
+    if (g_strcmp0(effective_icon, "@hanauta-mail") == 0) {
+        alias_path = g_build_filename(
+            g_get_home_dir(),
+            ".config",
+            "i3",
+            "hanauta",
+            "src",
+            "assets",
+            "hanauta-mail.svg",
+            NULL
+        );
+        if (alias_path != NULL && *alias_path != '\0' && g_file_test(alias_path, G_FILE_TEST_EXISTS)) {
+            effective_icon = alias_path;
+        } else {
+            g_free(alias_path);
+            alias_path = NULL;
+        }
+    }
     if (!g_file_test(effective_icon, G_FILE_TEST_EXISTS)) {
         bundled_weather_icon = resolve_bundled_weather_icon_path(effective_icon);
         if (bundled_weather_icon != NULL && *bundled_weather_icon != '\0') {
@@ -1572,6 +1591,7 @@ static GtkWidget *make_notification_icon(const gchar *icon_name, GdkPixbuf *imag
         gtk_image_set_pixel_size(GTK_IMAGE(image), MAX(16, target_size));
     }
     g_free(bundled_weather_icon);
+    g_free(alias_path);
     g_free(resolved_path);
     if (image == NULL) {
         return NULL;

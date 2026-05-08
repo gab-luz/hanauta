@@ -16,6 +16,7 @@ import os
 import platform
 import random
 import re
+import secrets
 import shlex
 import shutil
 import signal
@@ -217,6 +218,7 @@ from settings_page.pages.appearance import build_appearance_page, build_wallpape
 from settings_page.pages.marketplace import build_marketplace_page, build_marketplace_card
 from settings_page.pages.services import build_services_page, build_services_card
 from settings_page.pages.audio import build_audio_page, build_audio_card
+from settings_page.pages.metrics import build_metric_card
 from settings_page.shell import (
     build_bar_placeholder as shell_build_bar_placeholder,
     build_header as shell_build_header,
@@ -298,6 +300,62 @@ SERVICE_CACHE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 BAR_SERVICE_CACHE_FILE = SERVICE_CACHE_DIR / "plugins" / "bar-services.json"
 SERVICES_SECTION_CACHE_FILE = SERVICE_CACHE_DIR / "plugins" / "services-sections.json"
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
+HANAUTA_CONFIG_DIR = Path.home() / ".config" / "hanauta"
+HANAUTA_CONFIG_TOML = HANAUTA_CONFIG_DIR / "config.toml"
+
+
+def load_email_client_api_key() -> str:
+    if tomllib is None or not HANAUTA_CONFIG_TOML.exists():
+        return ""
+    try:
+        payload = tomllib.loads(HANAUTA_CONFIG_TOML.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    current: object = payload
+    for key in ("plugin", "email_client", "api_key"):
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+    return str(current or "").strip()
+
+
+def save_email_client_api_key(value: str) -> None:
+    value = str(value or "").strip()
+    HANAUTA_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    existing = ""
+    try:
+        existing = HANAUTA_CONFIG_TOML.read_text(encoding="utf-8")
+    except Exception:
+        existing = ""
+    lines = existing.splitlines()
+    if not lines:
+        HANAUTA_CONFIG_TOML.write_text(f"[plugin.email_client]\napi_key = {json.dumps(value)}\n", encoding="utf-8")
+        return
+    section_header = "[plugin.email_client]"
+    start = -1
+    for idx, line in enumerate(lines):
+        if line.strip() == section_header:
+            start = idx
+            break
+    if start == -1:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend([section_header, f"api_key = {json.dumps(value)}"])
+        HANAUTA_CONFIG_TOML.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return
+    end = len(lines)
+    for idx in range(start + 1, len(lines)):
+        if lines[idx].startswith("[") and lines[idx].strip().endswith("]"):
+            end = idx
+            break
+    key_line = f"api_key = {json.dumps(value)}"
+    for idx in range(start + 1, end):
+        if lines[idx].lstrip().startswith("api_key"):
+            lines[idx] = key_line
+            break
+    else:
+        lines.insert(end, key_line)
+    HANAUTA_CONFIG_TOML.write_text("\n".join(lines) + "\n", encoding="utf-8")
 from settings_page.picom_presets import PICOM_DEFAULT_TEMPLATE, picom_rule_file_defaults
 from settings_page.wallpaper_presets import WALLPAPER_SOURCE_PRESETS
 
@@ -548,7 +606,7 @@ class SettingsWindow(QWidget):
         return shell_build_services_placeholder(self)
 
     def _ensure_services_page_ready(self) -> None:
-        if getattr(self, "_services_page_ready", False):
+        if "services" in getattr(self, "page_ready", set()):
             return
         if bool(getattr(self, "_services_page_building", False)):
             return
@@ -557,13 +615,13 @@ class SettingsWindow(QWidget):
         def _build() -> None:
             try:
                 services_page = self._build_services_page()
-                index = int(getattr(self, "services_page_index", 14))
+                index = int(getattr(self, "page_indices", {}).get("services", 14))
                 old_widget = self.page_stack.widget(index)
                 if old_widget is not None:
                     self.page_stack.removeWidget(old_widget)
                     old_widget.deleteLater()
                 self.page_stack.insertWidget(index, services_page)
-                self._services_page_ready = True
+                getattr(self, "page_ready", set()).add("services")
                 if str(getattr(self, "current_page", "")) == "services":
                     self.page_stack.setCurrentIndex(index)
             finally:
@@ -572,7 +630,7 @@ class SettingsWindow(QWidget):
         QTimer.singleShot(0, _build)
 
     def _ensure_bar_page_ready(self) -> None:
-        if getattr(self, "_bar_page_ready", False):
+        if "bar" in getattr(self, "page_ready", set()):
             return
         if bool(getattr(self, "_bar_page_building", False)):
             return
@@ -581,13 +639,13 @@ class SettingsWindow(QWidget):
         def _build() -> None:
             try:
                 bar_page = self._build_bar_page()
-                index = int(getattr(self, "bar_page_index", 13))
+                index = int(getattr(self, "page_indices", {}).get("bar", 13))
                 old_widget = self.page_stack.widget(index)
                 if old_widget is not None:
                     self.page_stack.removeWidget(old_widget)
                     old_widget.deleteLater()
                 self.page_stack.insertWidget(index, bar_page)
-                self._bar_page_ready = True
+                getattr(self, "page_ready", set()).add("bar")
                 if str(getattr(self, "current_page", "")) == "bar":
                     self.page_stack.setCurrentIndex(index)
             finally:
@@ -1059,36 +1117,86 @@ class SettingsWindow(QWidget):
         return self._scroll_page(self._build_picom_card())
 
     def _show_page(self, key: str) -> None:
-        order = {
-            "overview": 0,
-            "appearance": 1,
-            "marketplace": 2,
-            "display": 3,
-            "energy": 4,
-            "audio": 5,
-            "notifications": 6,
-            "input": 7,
-            "startup": 8,
-            "privacy": 9,
-            "networking": 10,
-            "storage": 11,
-            "region": 12,
-            "bar": 13,
-            "services": 14,
+        indices = getattr(self, "page_indices", {}) or {}
+        supported = set(indices.keys()) if indices else {
+            "overview",
+            "appearance",
+            "marketplace",
+            "display",
+            "energy",
+            "audio",
+            "notifications",
+            "input",
+            "startup",
+            "privacy",
+            "networking",
+            "storage",
+            "region",
+            "bar",
+            "services",
         }
-        resolved = key if key in order else "appearance"
+        resolved = key if key in supported else "appearance"
+
         if resolved == "bar":
             self._ensure_bar_page_ready()
-        if resolved == "services":
+        elif resolved == "services":
             self._ensure_services_page_ready()
+        else:
+            self._ensure_page_ready(resolved)
+
         self.current_page = resolved
-        self.page_stack.setCurrentIndex(order[resolved])
+        index = int(indices.get(resolved, 0))
+        self.page_stack.setCurrentIndex(index)
         for button_key, button in getattr(self, "nav_buttons", {}).items():
             button.setChecked(button_key == resolved)
         if resolved == "services" and self.initial_service_section:
             QTimer.singleShot(
                 0, lambda: self._focus_service_section(self.initial_service_section)
             )
+
+    def _ensure_page_ready(self, key: str) -> None:
+        ready = getattr(self, "page_ready", set())
+        if key in ready:
+            return
+        if key in {"overview", "appearance", "display"}:
+            return
+        if not hasattr(self, "_lazy_page_building"):
+            self._lazy_page_building = set()
+        if key in self._lazy_page_building:
+            return
+        builders = {
+            "marketplace": self._build_marketplace_page,
+            "networking": self._build_networking_page,
+            "audio": self._build_audio_page,
+            "energy": self._build_energy_page,
+            "notifications": self._build_notifications_page,
+            "input": self._build_input_page,
+            "startup": self._build_startup_page,
+            "privacy": self._build_privacy_page,
+            "storage": self._build_storage_page,
+        }
+        builder = builders.get(key)
+        if builder is None:
+            return
+        self._lazy_page_building.add(key)
+
+        def _build() -> None:
+            try:
+                page = builder()
+                index = int(getattr(self, "page_indices", {}).get(key, 0))
+                old_widget = self.page_stack.widget(index)
+                if old_widget is not None:
+                    self.page_stack.removeWidget(old_widget)
+                    old_widget.deleteLater()
+                self.page_stack.insertWidget(index, page)
+                ready.add(key)
+                self.page_ready = ready
+                if str(getattr(self, "current_page", "")) == key:
+                    self.page_stack.setCurrentIndex(index)
+            finally:
+                self._lazy_page_building.discard(key)
+
+        QTimer.singleShot(0, _build)
 
     def _profile_state(self) -> dict:
         profile = self.settings_state.get("profile", {})
@@ -6430,6 +6538,71 @@ class SettingsWindow(QWidget):
             roots.append(candidate)
         return roots
 
+    def _plugin_api_versions_from_row(self, row: object) -> tuple[int, int]:
+        if not isinstance(row, dict):
+            return 1, HOST_PLUGIN_API_VERSION
+        try:
+            api_min_version = int(row.get("api_min_version", 1) or 1)
+        except Exception:
+            api_min_version = 1
+        try:
+            api_target_version = int(
+                row.get("api_target_version", HOST_PLUGIN_API_VERSION)
+                or HOST_PLUGIN_API_VERSION
+            )
+        except Exception:
+            api_target_version = HOST_PLUGIN_API_VERSION
+        return max(1, api_min_version), max(1, api_target_version)
+
+    def _populate_monitor_target_combo(
+        self, combo: QComboBox, monitor_mode: str, monitor_name: str
+    ) -> None:
+        combo.clear()
+        combo.setObjectName("settingsCombo")
+
+        entries: list[tuple[str, str, str]] = [
+            ("Primary monitor", "primary", ""),
+            ("Follow mouse", "follow_mouse", ""),
+        ]
+
+        primary_output_name = ""
+        for display in getattr(self, "display_state", []) or []:
+            if isinstance(display, dict) and bool(display.get("primary")):
+                primary_output_name = str(display.get("name", "")).strip()
+                break
+
+        try:
+            from PyQt6.QtWidgets import QApplication
+
+            seen: set[str] = set()
+            for screen in QApplication.screens():
+                name = str(screen.name() or "").strip()
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                label = f"{name} (primary)" if name == primary_output_name else name
+                entries.append((label, "named", name))
+        except Exception:
+            pass
+
+        for label, mode, name in entries:
+            combo.addItem(label, {"mode": mode, "name": name})
+
+        normalized_mode = str(monitor_mode or "primary").strip().lower()
+        if normalized_mode not in {"primary", "follow_mouse", "named"}:
+            normalized_mode = "primary"
+        normalized_name = str(monitor_name or "").strip()
+
+        selected_index = 0
+        for index in range(combo.count()):
+            payload = combo.itemData(index)
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("mode") == normalized_mode and payload.get("name") == normalized_name:
+                selected_index = index
+                break
+        combo.setCurrentIndex(selected_index)
+
     def _discover_plugin_dirs(self) -> list[Path]:
         marketplace = self.settings_state.get("marketplace", {})
         installed_entries = marketplace.get("installed_plugins", [])
@@ -7242,6 +7415,31 @@ class SettingsWindow(QWidget):
             )
         )
 
+        api_key_row = QWidget()
+        api_key_layout = QHBoxLayout(api_key_row)
+        api_key_layout.setContentsMargins(0, 0, 0, 0)
+        api_key_layout.setSpacing(8)
+        self.mail_api_key_input = QLineEdit(load_email_client_api_key())
+        self.mail_api_key_input.setPlaceholderText("Unset")
+        self.mail_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mail_api_key_input.editingFinished.connect(self._save_mail_api_key_setting)
+        api_key_layout.addWidget(self.mail_api_key_input, 1)
+        self.mail_api_key_generate_button = QPushButton("Generate")
+        self.mail_api_key_generate_button.setObjectName("secondaryButton")
+        self.mail_api_key_generate_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.mail_api_key_generate_button.clicked.connect(self._generate_mail_api_key_setting)
+        api_key_layout.addWidget(self.mail_api_key_generate_button)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("key"),
+                "Email API key",
+                "Required to access the local mail plugin API on 127.0.0.1:11426.",
+                self.icon_font,
+                self.ui_font,
+                api_key_row,
+            )
+        )
+
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self.mail_new_button = QPushButton("New account")
@@ -7671,6 +7869,25 @@ class SettingsWindow(QWidget):
         )
         save_settings_state(self.settings_state)
 
+    def _save_mail_api_key_setting(self) -> None:
+        if not hasattr(self, "mail_api_key_input"):
+            return
+        value = str(self.mail_api_key_input.text() or "").strip()
+        try:
+            save_email_client_api_key(value)
+        except Exception as exc:
+            if hasattr(self, "mail_status"):
+                self.mail_status.setText(f"Failed to save email API key: {exc}")
+            return
+        if hasattr(self, "mail_status"):
+            self.mail_status.setText("Email API key saved.")
+
+    def _generate_mail_api_key_setting(self) -> None:
+        if not hasattr(self, "mail_api_key_input"):
+            return
+        self.mail_api_key_input.setText(secrets.token_urlsafe(32))
+        self._save_mail_api_key_setting()
+
     def _choose_mail_avatar(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -7977,6 +8194,68 @@ class SettingsWindow(QWidget):
             lambda enabled: self._set_service_enabled("kdeconnect", enabled),
         )
         self.service_sections["kdeconnect"] = section
+        return section
+
+    def _build_disk_space_service_section(self) -> QWidget:
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        service = self.settings_state["services"].setdefault("disk_space", {})
+        min_free = int(service.get("min_free_gb", 6) or 6)
+        min_free = max(1, min(1024, min_free))
+        service["min_free_gb"] = min_free
+
+        self.disk_space_min_free_slider = QSlider(Qt.Orientation.Horizontal)
+        self.disk_space_min_free_slider.setRange(1, 1024)
+        self.disk_space_min_free_slider.setValue(min(1024, min_free))
+        self.disk_space_min_free_slider.valueChanged.connect(
+            self._set_disk_space_min_free_gb
+        )
+        self.disk_space_min_free_label = QLabel(f"{min(1024, min_free)} GB")
+        self.disk_space_min_free_label.setFixedWidth(72)
+        self.disk_space_min_free_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.disk_space_min_free_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+
+        threshold_wrap = QWidget()
+        threshold_layout = QHBoxLayout(threshold_wrap)
+        threshold_layout.setContentsMargins(0, 0, 0, 0)
+        threshold_layout.setSpacing(10)
+        threshold_layout.addWidget(self.disk_space_min_free_slider)
+        threshold_layout.addWidget(self.disk_space_min_free_label)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("storage"),
+                "Minimum free space",
+                "Trigger a fullscreen alert when free disk space (on your home filesystem) drops to this value or lower.",
+                self.icon_font,
+                self.ui_font,
+                threshold_wrap,
+            )
+        )
+
+        self.disk_space_status = QLabel(
+            f"Fullscreen alerts enabled at ≤ {min(1024, min_free)} GB free (cooldown ~30 min)."
+        )
+        self.disk_space_status.setWordWrap(True)
+        self.disk_space_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.disk_space_status)
+
+        section = ExpandableServiceSection(
+            "disk_space",
+            "Disk Space",
+            "Fullscreen warning when storage is running out.",
+            material_icon("storage"),
+            self.icon_font,
+            self.ui_font,
+            content,
+            self._service_enabled("disk_space"),
+            lambda enabled: self._set_service_enabled("disk_space", enabled),
+        )
+        self.service_sections["disk_space"] = section
         return section
 
     def _build_vpn_service_section(self) -> QWidget:
@@ -11969,6 +12248,18 @@ class SettingsWindow(QWidget):
                 f"Fullscreen low-battery alerts are enabled at {threshold}% for KDE Connect."
             )
 
+    def _set_disk_space_min_free_gb(self, value: int) -> None:
+        threshold = max(1, min(1024, int(value)))
+        service = self.settings_state["services"].setdefault("disk_space", {})
+        service["min_free_gb"] = threshold
+        save_settings_state(self.settings_state)
+        if hasattr(self, "disk_space_min_free_label"):
+            self.disk_space_min_free_label.setText(f"{min(1024, threshold)} GB")
+        if hasattr(self, "disk_space_status"):
+            self.disk_space_status.setText(
+                f"Fullscreen alerts enabled at ≤ {threshold} GB free (cooldown ~30 min)."
+            )
+
     def _set_calendar_show_week_numbers(self, enabled: bool) -> None:
         self.settings_state.setdefault("calendar", {})["show_week_numbers"] = bool(
             enabled
@@ -13438,6 +13729,56 @@ class SettingsWindow(QWidget):
         switch.toggledValue.connect(self._set_use_matugen_palette)
         self.matugen_palette_switch = switch
         return switch
+
+    def _slider_settings_row(
+        self,
+        title: str,
+        subtitle: str,
+        min_value: int,
+        max_value: int,
+        current_value: int,
+        icon: str,
+        setting_key: str,
+    ) -> QWidget:
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(int(min_value), int(max_value))
+        slider.setValue(int(current_value))
+        slider.setFixedWidth(164)
+
+        label = QLabel(str(int(current_value)))
+        label.setFixedWidth(56)
+        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        label.setStyleSheet("color: rgba(246,235,247,0.78);")
+
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(10)
+        row_layout.addWidget(slider)
+        row_layout.addWidget(label)
+
+        slider_attr = f"{setting_key}_slider"
+        label_attr = f"{setting_key}_label"
+        setattr(self, slider_attr, slider)
+        setattr(self, label_attr, label)
+
+        handler = getattr(self, f"_set_{setting_key}", None)
+
+        def on_value_changed(value: int) -> None:
+            if handler is not None:
+                handler(int(value))
+                label.setText(str(int(self.settings_state["appearance"].get(setting_key, value))))
+                return
+            self.settings_state["appearance"][setting_key] = int(value)
+            save_settings_state(self.settings_state)
+            label.setText(str(int(value)))
+
+        slider.valueChanged.connect(on_value_changed)
+
+        return SettingsRow(icon, title, subtitle, self.icon_font, self.ui_font, row_widget)
+
+    def _metric_card(self, title: str, value_label: QLabel) -> QFrame:
+        return build_metric_card(self, title, value_label)
 
     def _set_transparency(self, enabled: bool) -> None:
         self.settings_state["appearance"]["transparency"] = bool(enabled)

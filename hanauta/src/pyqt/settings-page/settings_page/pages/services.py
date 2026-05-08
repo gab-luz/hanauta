@@ -72,6 +72,7 @@ def build_services_card(window) -> QWidget:
     window._services_core_queue = [
         ("mail", window._build_mail_service_section),
         ("kdeconnect", window._build_kdeconnect_service_section),
+        ("disk_space", window._build_disk_space_service_section),
         ("weather", window._build_weather_section),
         ("calendar_widget", window._build_calendar_service_section),
         ("desktop_clock_widget", window._build_desktop_clock_service_section),
@@ -88,4 +89,3 @@ def build_services_card(window) -> QWidget:
     # Let Qt paint the tab immediately, then progressively add sections.
     QTimer.singleShot(25, window._build_next_services_section)
     return card
-

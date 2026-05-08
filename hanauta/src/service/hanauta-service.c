@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/statvfs.h>
 
 typedef struct {
     gchar *settings_path;
@@ -19,6 +20,9 @@ typedef struct {
     gchar *status_path;
     gchar *games_cache_script;
     gint64 games_cache_next_run;
+    gchar *fullscreen_alert_script;
+    gint64 disk_space_next_check;
+    gint64 disk_space_last_alert_at;
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
     guint refresh_source;
@@ -650,6 +654,119 @@ cleanup:
         g_date_time_unref(now);
     }
     return ok;
+}
+
+static gboolean spawn_fullscreen_alert(const gchar *title, const gchar *body, const gchar *severity) {
+    if (g_service.fullscreen_alert_script == NULL || *g_service.fullscreen_alert_script == '\0') {
+        return FALSE;
+    }
+    if (!g_file_test(g_service.fullscreen_alert_script, G_FILE_TEST_EXISTS)) {
+        return FALSE;
+    }
+
+    const gchar *argv[] = {
+        "python3",
+        g_service.fullscreen_alert_script,
+        "--title",
+        title != NULL ? title : "Alert",
+        "--body",
+        body != NULL ? body : "",
+        "--severity",
+        severity != NULL ? severity : "disturbing",
+        NULL
+    };
+
+    GSubprocessLauncher *launcher = g_subprocess_launcher_new(
+        G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE
+    );
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SETTINGS_PATH", g_service.settings_path, TRUE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_STATE_DIR", g_service.state_dir, TRUE);
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SERVICE_STATE_DIR", g_service.state_dir, TRUE);
+
+    GError *error = NULL;
+    GSubprocess *process = g_subprocess_launcher_spawnv(launcher, (const gchar * const *)argv, &error);
+    if (process == NULL) {
+        g_clear_error(&error);
+        g_clear_object(&launcher);
+        return FALSE;
+    }
+    g_clear_object(&process);
+    g_clear_object(&launcher);
+    g_clear_error(&error);
+    return TRUE;
+}
+
+static gboolean refresh_disk_space(void) {
+    const gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+    if (g_service.disk_space_next_check > 0 && now < g_service.disk_space_next_check) {
+        return FALSE;
+    }
+    g_service.disk_space_next_check = now + 30;
+
+    gchar *settings = load_file_text(g_service.settings_path);
+    gchar *services_obj = extract_object_block(settings, "services");
+    gchar *service_obj = NULL;
+    gboolean enabled = TRUE;
+    gdouble min_free_gb = 6.0;
+    gboolean should_alert = FALSE;
+    struct statvfs vfs = {0};
+    guint64 free_bytes = 0;
+    gdouble free_gb = 0.0;
+    gchar *title = NULL;
+    gchar *body = NULL;
+
+    if (services_obj != NULL) {
+        service_obj = extract_object_block(services_obj, "disk_space");
+    }
+    if (service_obj != NULL) {
+        enabled = object_bool(service_obj, "enabled", TRUE);
+        min_free_gb = object_number(service_obj, "min_free_gb", 6.0);
+    }
+    if (!enabled || min_free_gb <= 0.0) {
+        goto cleanup;
+    }
+    if (statvfs(g_get_home_dir(), &vfs) != 0) {
+        goto cleanup;
+    }
+
+    free_bytes = (guint64)vfs.f_bavail * (guint64)vfs.f_frsize;
+    free_gb = (gdouble)free_bytes / (1024.0 * 1024.0 * 1024.0);
+
+    if (free_gb <= min_free_gb) {
+        const gint64 cooldown_seconds = 30 * 60;
+        if (g_service.disk_space_last_alert_at == 0 || (now - g_service.disk_space_last_alert_at) >= cooldown_seconds) {
+            should_alert = TRUE;
+        }
+    }
+
+    if (should_alert) {
+        title = g_strdup("Low disk space");
+        body = g_strdup_printf(
+            "Only %.1f GB free in %s (threshold: %.1f GB).\n\n"
+            "Please free up space to avoid system instability.",
+            free_gb,
+            g_get_home_dir(),
+            min_free_gb
+        );
+        if (spawn_fullscreen_alert(title, body, "disturbing")) {
+            g_service.disk_space_last_alert_at = now;
+            g_service.disk_space_next_check = now + 60;
+            g_free(settings);
+            g_free(services_obj);
+            g_free(service_obj);
+            g_free(title);
+            g_free(body);
+            return TRUE;
+        }
+    }
+
+cleanup:
+    g_free(settings);
+    g_free(services_obj);
+    g_free(service_obj);
+    g_free(title);
+    g_free(body);
+    return FALSE;
 }
 
 static gboolean refresh_wifi(void) {
@@ -1919,8 +2036,9 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean home_assistant_ok = refresh_home_assistant();
     gboolean ntfy_ok = refresh_ntfy();
     gboolean games_ok = refresh_games_cache();
+    gboolean disk_ok = refresh_disk_space();
     refresh_plugin_background_tasks();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok;
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || disk_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -2099,6 +2217,9 @@ int main(int argc, char **argv) {
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
     g_service.games_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_recent_games.py", NULL);
     g_service.games_cache_next_run = 0;
+    g_service.fullscreen_alert_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "pyqt", "shared", "fullscreen_alert.py", NULL);
+    g_service.disk_space_next_check = 0;
+    g_service.disk_space_last_alert_at = 0;
     g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
     g_service.ntfy_seen_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     g_service.plugin_task_next_run = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
@@ -2138,6 +2259,7 @@ int main(int argc, char **argv) {
     g_free(g_service.home_assistant_path);
     g_free(g_service.status_path);
     g_free(g_service.games_cache_script);
+    g_free(g_service.fullscreen_alert_script);
     g_free(g_service.ntfy_topic_key);
     if (g_service.ntfy_all_topics_cache != NULL) {
         g_ptr_array_free(g_service.ntfy_all_topics_cache, TRUE);

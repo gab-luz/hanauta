@@ -74,6 +74,7 @@ BIN_DIR = ROOT / "bin"
 HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
+HANAUTA_MAIL_ICON = ASSETS_DIR / "hanauta-mail.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
 SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 GAMES_CACHE_PATH = SERVICE_STATE_DIR / "games.json"
@@ -3978,6 +3979,8 @@ class NotificationCenter(QWidget):
         body: str = "",
     ) -> QPixmap:
         normalized = app_name.strip().lower()
+        icon_name_normalized = icon_name.strip().lower()
+        desktop_entry_normalized = desktop_entry.strip().lower()
         summary_normalized = summary.strip().lower()
         body_normalized = body.strip().lower()
         if icon_name:
@@ -3986,6 +3989,15 @@ class NotificationCenter(QWidget):
                 direct = render_svg_pixmap(direct_icon_path, 18)
                 if not direct.isNull():
                     return direct
+        is_mail = (
+            normalized in {"hanauta mail", "hanautamail"}
+            or icon_name_normalized == "@hanauta-mail"
+            or desktop_entry_normalized in {"hanauta-mail.desktop", "hanauta-mail"}
+        )
+        if is_mail and HANAUTA_MAIL_ICON.exists():
+            return tinted_svg_pixmap(
+                HANAUTA_MAIL_ICON, QColor(self.theme_palette.primary), 18
+            )
         is_caffeine = (
             "caffeine" in normalized
             or "caffeine" in summary_normalized

@@ -107,6 +107,11 @@ DEFAULT_SERVICE_SETTINGS = {
         "enabled": True,
         "show_in_notification_center": False,
     },
+    "disk_space": {
+        "enabled": True,
+        "show_in_notification_center": False,
+        "min_free_gb": 6,
+    },
 }
 
 
@@ -211,6 +216,23 @@ def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))
             )
+        elif key == "disk_space":
+            try:
+                merged[key]["min_free_gb"] = max(
+                    1,
+                    min(
+                        1024,
+                        int(
+                            current.get(
+                                "min_free_gb",
+                                defaults.get("min_free_gb", 6),
+                            )
+                            or defaults.get("min_free_gb", 6)
+                        ),
+                    ),
+                )
+            except Exception:
+                merged[key]["min_free_gb"] = int(defaults.get("min_free_gb", 6))
         elif key == "reminders_widget":
             merged[key]["show_in_bar"] = bool(
                 current.get("show_in_bar", defaults.get("show_in_bar", False))

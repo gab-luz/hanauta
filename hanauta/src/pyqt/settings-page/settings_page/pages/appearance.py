@@ -129,7 +129,7 @@ def build_wallpaper_colors_card(window) -> QWidget:
         "custom": custom,
         "wallpaper_aware": wallpaper_aware,
     }
-    window.mode_group = QButtonGroup(self)
+    window.mode_group = QButtonGroup(window)
     window.mode_group.setExclusive(True)
     for key, button in window.theme_buttons.items():
         window.mode_group.addButton(button)
@@ -167,7 +167,7 @@ def build_wallpaper_colors_card(window) -> QWidget:
         "dracula": dracula,
         "caelestia": caelestia,
     }
-    window.custom_theme_group = QButtonGroup(self)
+    window.custom_theme_group = QButtonGroup(window)
     window.custom_theme_group.setExclusive(True)
     for key, button in window.custom_theme_buttons.items():
         window.custom_theme_group.addButton(button)
@@ -355,4 +355,3 @@ def build_wallpaper_colors_card(window) -> QWidget:
     layout.addWidget(matugen_notifications)
     layout.addWidget(wallpaper_change_notifications)
     return card
-

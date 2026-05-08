@@ -12,13 +12,15 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from settings_page.material_icons import material_icon
-from settings_page.ui_widgets import ActionCard
+from settings_page.settings_defaults import ROOT
+from settings_page.ui_widgets import ActionCard, SettingsRow
 from settings_page.widgets import IconLabel
 
 def build_marketplace_page(window) -> QWidget:
@@ -274,4 +276,3 @@ def build_marketplace_card(window) -> QWidget:
 
     window._marketplace_populate_catalog(list(marketplace.get("catalog_cache", [])))
     return card
-
