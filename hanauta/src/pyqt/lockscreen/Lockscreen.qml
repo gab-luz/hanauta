@@ -36,13 +36,10 @@ Item {
                 x: (index === 0 ? -width * 0.25 : (index === 1 ? root.width - width * 0.7 : root.width * 0.1))
                 y: (index === 0 ? root.height * 0.15 : (index === 1 ? -height * 0.35 : root.height - height * 0.55))
 
-                transform: Rotation {
-                    origin.x: width / 2
-                    origin.y: height / 2
-                    angle: 0
-                }
+                transformOrigin: Item.Center
+                rotation: 0
 
-                SequentialAnimation on rotation.angle {
+                SequentialAnimation on rotation {
                     loops: Animation.Infinite
                     NumberAnimation { from: 0; to: 360; duration: 26000 + index * 6000; easing.type: Easing.InOutSine }
                 }
@@ -113,4 +110,3 @@ Item {
         }
     }
 }
-
