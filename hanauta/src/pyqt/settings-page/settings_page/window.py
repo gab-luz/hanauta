@@ -379,11 +379,33 @@ from settings_page.bar_settings import (
 
 from settings_page.service_settings import DEFAULT_SERVICE_SETTINGS, merged_service_settings
 
-_SETTINGS_LANG_FILE = Path(__file__).parent / "settings_languages.py"
-if _SETTINGS_LANG_FILE.exists():
+_SETTINGS_LANG_FILE = Path(__file__).resolve().parents[1] / "settings_languages.py"
+try:
     from settings_languages import KEYBOARD_LAYOUT_PRESETS
-else:
-    KEYBOARD_LAYOUT_PRESETS = []
+except Exception:
+    if _SETTINGS_LANG_FILE.exists():
+        try:
+            import importlib.util as _importlib_util
+
+            _spec = _importlib_util.spec_from_file_location(
+                "hanauta_settings_languages", _SETTINGS_LANG_FILE
+            )
+            _module = (
+                _importlib_util.module_from_spec(_spec)
+                if _spec is not None and _spec.loader is not None
+                else None
+            )
+            if _module is not None:
+                _spec.loader.exec_module(_module)
+                KEYBOARD_LAYOUT_PRESETS = list(
+                    getattr(_module, "KEYBOARD_LAYOUT_PRESETS", [])
+                )
+            else:
+                KEYBOARD_LAYOUT_PRESETS = []
+        except Exception:
+            KEYBOARD_LAYOUT_PRESETS = []
+    else:
+        KEYBOARD_LAYOUT_PRESETS = []
 
 from settings_page.material_icons import material_icon
 from settings_page.presets import LOCALE_LANGUAGE_PRESETS, VOICE_LANGUAGE_PRESETS
@@ -3080,6 +3102,14 @@ class SettingsWindow(QWidget):
         text = " ".join(part for part in text.split() if part)
         return text or "us"
 
+    def _enable_combo_autocomplete(self, combo: QComboBox, completer: QCompleter) -> None:
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        combo.setCompleter(completer)
+        line_edit = combo.lineEdit()
+        if line_edit is None:
+            return
+        line_edit.textEdited.connect(lambda _text: completer.complete())
+
     def _keyboard_layout_label_for_value(self, value: str) -> str:
         normalized = self._normalize_keyboard_layout_value(value)
         lowered = normalized.casefold()
@@ -3089,10 +3119,14 @@ class SettingsWindow(QWidget):
         return normalized
 
     def _resolve_keyboard_layout_value(self) -> str:
-        combo = getattr(self, "input_keyboard_layout_combo", None)
-        if not isinstance(combo, QComboBox):
-            return "us"
-        text = combo.currentText().strip()
+        line_edit = getattr(self, "input_keyboard_layout_input", None)
+        if isinstance(line_edit, QLineEdit):
+            text = line_edit.text().strip()
+        else:
+            combo = getattr(self, "input_keyboard_layout_combo", None)
+            if not isinstance(combo, QComboBox):
+                return "us"
+            text = combo.currentText().strip()
         if hasattr(self, "_keyboard_layout_label_to_value"):
             label_map = getattr(self, "_keyboard_layout_label_to_value", {})
             if isinstance(label_map, dict):
@@ -3109,18 +3143,24 @@ class SettingsWindow(QWidget):
                 if suffix:
                     return self._normalize_keyboard_layout_value(suffix)
             return self._normalize_keyboard_layout_value(text)
-        data = combo.currentData()
-        if isinstance(data, str) and data.strip():
-            return self._normalize_keyboard_layout_value(data)
+        combo = getattr(self, "input_keyboard_layout_combo", None)
+        if isinstance(combo, QComboBox):
+            data = combo.currentData()
+            if isinstance(data, str) and data.strip():
+                return self._normalize_keyboard_layout_value(data)
         return "us"
 
     def _resolve_region_keyboard_layout_value(self) -> str:
-        combo = getattr(self, "region_keyboard_layout_combo", None)
-        if not isinstance(combo, QComboBox):
-            return self._normalize_keyboard_layout_value(
-                str(self.settings_state.get("region", {}).get("keyboard_layout", "us"))
-            )
-        text = combo.currentText().strip()
+        line_edit = getattr(self, "region_keyboard_layout_input", None)
+        if isinstance(line_edit, QLineEdit):
+            text = line_edit.text().strip()
+        else:
+            combo = getattr(self, "region_keyboard_layout_combo", None)
+            if not isinstance(combo, QComboBox):
+                return self._normalize_keyboard_layout_value(
+                    str(self.settings_state.get("region", {}).get("keyboard_layout", "us"))
+                )
+            text = combo.currentText().strip()
         if hasattr(self, "_region_keyboard_layout_label_to_value"):
             label_map = getattr(self, "_region_keyboard_layout_label_to_value", {})
             if isinstance(label_map, dict):
@@ -3137,9 +3177,11 @@ class SettingsWindow(QWidget):
                 if suffix:
                     return self._normalize_keyboard_layout_value(suffix)
             return self._normalize_keyboard_layout_value(text)
-        data = combo.currentData()
-        if isinstance(data, str) and data.strip():
-            return self._normalize_keyboard_layout_value(data)
+        combo = getattr(self, "region_keyboard_layout_combo", None)
+        if isinstance(combo, QComboBox):
+            data = combo.currentData()
+            if isinstance(data, str) and data.strip():
+                return self._normalize_keyboard_layout_value(data)
         return self._normalize_keyboard_layout_value(
             str(self.settings_state.get("region", {}).get("keyboard_layout", "us"))
         )
@@ -3182,35 +3224,35 @@ class SettingsWindow(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
-        self.input_keyboard_layout_combo = QComboBox()
-        self.input_keyboard_layout_combo.setObjectName("settingsCombo")
-        self.input_keyboard_layout_combo.setEditable(True)
-        self.input_keyboard_layout_combo.setInsertPolicy(
-            QComboBox.InsertPolicy.NoInsert
-        )
         self._keyboard_layout_label_to_value: dict[str, str] = {}
         labels: list[str] = []
         for label, layout_value in KEYBOARD_LAYOUT_PRESETS:
-            self.input_keyboard_layout_combo.addItem(label, layout_value)
             self._keyboard_layout_label_to_value[label] = layout_value
             labels.append(label)
+        self.input_keyboard_layout_input = QLineEdit()
+        self.input_keyboard_layout_input.setObjectName("settingsInput")
+        self.input_keyboard_layout_input.setPlaceholderText("Type keyboard language")
         completer_model = QStringListModel(labels, self)
         self.input_keyboard_layout_completer = QCompleter(completer_model, self)
         self.input_keyboard_layout_completer.setCaseSensitivity(
             Qt.CaseSensitivity.CaseInsensitive
         )
         self.input_keyboard_layout_completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.input_keyboard_layout_combo.setCompleter(
+        self.input_keyboard_layout_completer.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+        self.input_keyboard_layout_input.setCompleter(
             self.input_keyboard_layout_completer
+        )
+        self.input_keyboard_layout_input.textEdited.connect(
+            lambda _text: self.input_keyboard_layout_completer.complete()
         )
         current_layout = self._normalize_keyboard_layout_value(
             str(self.settings_state["input"].get("keyboard_layout", "us"))
         )
-        current_index = self.input_keyboard_layout_combo.findData(current_layout)
-        if current_index >= 0:
-            self.input_keyboard_layout_combo.setCurrentIndex(current_index)
-        else:
-            self.input_keyboard_layout_combo.setCurrentText(current_layout)
+        self.input_keyboard_layout_input.setText(
+            self._keyboard_layout_label_for_value(current_layout)
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("language"),
@@ -3218,7 +3260,7 @@ class SettingsWindow(QWidget):
                 "Choose a layout by language name. Hanauta saves and applies it to the current i3 session.",
                 self.icon_font,
                 self.ui_font,
-                self.input_keyboard_layout_combo,
+                self.input_keyboard_layout_input,
             )
         )
 
@@ -3866,21 +3908,27 @@ class SettingsWindow(QWidget):
             )
         )
 
-        self.region_keyboard_layout_combo = QComboBox()
-        self.region_keyboard_layout_combo.setObjectName("settingsCombo")
-        self.region_keyboard_layout_combo.setEditable(True)
-        self.region_keyboard_layout_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._region_keyboard_layout_label_to_value: dict[str, str] = {}
         region_labels: list[str] = []
         for label, layout_value in KEYBOARD_LAYOUT_PRESETS:
-            self.region_keyboard_layout_combo.addItem(label, layout_value)
             self._region_keyboard_layout_label_to_value[label] = layout_value
             region_labels.append(label)
+        self.region_keyboard_layout_input = QLineEdit()
+        self.region_keyboard_layout_input.setObjectName("settingsInput")
+        self.region_keyboard_layout_input.setPlaceholderText("Type keyboard language")
         region_model = QStringListModel(region_labels, self)
         self.region_keyboard_layout_completer = QCompleter(region_model, self)
         self.region_keyboard_layout_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.region_keyboard_layout_completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.region_keyboard_layout_combo.setCompleter(self.region_keyboard_layout_completer)
+        self.region_keyboard_layout_completer.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+        self.region_keyboard_layout_input.setCompleter(
+            self.region_keyboard_layout_completer
+        )
+        self.region_keyboard_layout_input.textEdited.connect(
+            lambda _text: self.region_keyboard_layout_completer.complete()
+        )
         current_region_layout = self._normalize_keyboard_layout_value(
             str(
                 self.settings_state["region"].get(
@@ -3889,13 +3937,9 @@ class SettingsWindow(QWidget):
                 )
             )
         )
-        current_region_layout_index = self.region_keyboard_layout_combo.findData(current_region_layout)
-        if current_region_layout_index >= 0:
-            self.region_keyboard_layout_combo.setCurrentIndex(current_region_layout_index)
-        else:
-            self.region_keyboard_layout_combo.setCurrentText(
-                self._keyboard_layout_label_for_value(current_region_layout)
-            )
+        self.region_keyboard_layout_input.setText(
+            self._keyboard_layout_label_for_value(current_region_layout)
+        )
         layout.addWidget(
             SettingsRow(
                 material_icon("keyboard"),
@@ -3903,7 +3947,7 @@ class SettingsWindow(QWidget):
                 "Autocomplete keyboard layout used by the current session (setxkbmap). Example: us, br, br abnt2.",
                 self.icon_font,
                 self.ui_font,
-                self.region_keyboard_layout_combo,
+                self.region_keyboard_layout_input,
                 str(ASSETS_DIR / "keyboard.svg"),
             )
         )
