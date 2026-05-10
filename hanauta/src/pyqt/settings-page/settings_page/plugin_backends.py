@@ -1,5 +1,8 @@
 import importlib.util
+import json
+from dataclasses import dataclass
 from pathlib import Path
+from urllib import parse, request
 
 
 def load_plugin_backend(module_name: str, candidates: list[Path]):
@@ -89,6 +92,88 @@ try:
     search_cities = _WEATHER_BACKEND.search_cities
 except Exception:
     pass
+
+if search_cities is _fallback_search_cities or configured_city is _fallback_configured_city:
+    @dataclass(frozen=True)
+    class _BuiltinWeatherCity:
+        name: str
+        admin1: str
+        country: str
+        latitude: float
+        longitude: float
+        timezone: str
+
+        @property
+        def label(self) -> str:
+            parts = [self.name]
+            if self.admin1:
+                parts.append(self.admin1)
+            if self.country:
+                parts.append(self.country)
+            return ", ".join(parts)
+
+    def _builtin_configured_city(_settings: object = None):
+        settings_path = (
+            Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+        )
+        try:
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        weather = payload.get("weather", {}) if isinstance(payload, dict) else {}
+        if not isinstance(weather, dict) or not weather.get("enabled", False):
+            return None
+        try:
+            return _BuiltinWeatherCity(
+                name=str(weather.get("name", "")).strip(),
+                admin1=str(weather.get("admin1", "")).strip(),
+                country=str(weather.get("country", "")).strip(),
+                latitude=float(weather.get("latitude")),
+                longitude=float(weather.get("longitude")),
+                timezone=str(weather.get("timezone", "auto")).strip() or "auto",
+            )
+        except Exception:
+            return None
+
+    def _builtin_search_cities(query: str) -> list:
+        cleaned = str(query or "").strip()
+        if len(cleaned) < 2:
+            return []
+        params = parse.urlencode(
+            {"name": cleaned, "count": "8", "language": "en", "format": "json"}
+        )
+        url = f"https://geocoding-api.open-meteo.com/v1/search?{params}"
+        try:
+            req = request.Request(url, headers={"User-Agent": "Hanauta Settings/1.0"})
+            with request.urlopen(req, timeout=4.0) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return []
+        rows = payload.get("results", []) if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            return []
+        cities: list[_BuiltinWeatherCity] = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            try:
+                cities.append(
+                    _BuiltinWeatherCity(
+                        name=str(item.get("name", "")).strip(),
+                        admin1=str(item.get("admin1", "")).strip(),
+                        country=str(item.get("country", "")).strip(),
+                        latitude=float(item.get("latitude")),
+                        longitude=float(item.get("longitude")),
+                        timezone=str(item.get("timezone", "auto")).strip() or "auto",
+                    )
+                )
+            except Exception:
+                continue
+        return cities
+
+    WeatherCity = _BuiltinWeatherCity
+    configured_city = _builtin_configured_city
+    search_cities = _builtin_search_cities
 
 
 HOME_ASSISTANT_CANDIDATES = _plugin_candidates(

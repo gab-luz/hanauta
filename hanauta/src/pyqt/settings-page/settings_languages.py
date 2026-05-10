@@ -17,7 +17,7 @@ KEYBOARD_LAYOUT_PRESETS: list[tuple[str, str]] = [
     ("English (UK, Intl)", "gb intl"),
     ("English (Scottish)", "gb scouse"),
     ("English (Irish)", "gb ie"),
-    ("Portuguese (Brazil)", "br"),
+    ("Brazilian Portuguese", "br"),
     ("Brazilian Portuguese (ABNT2)", "br abnt2"),
     ("Brazilian Portuguese (US)", "br us"),
     ("Portuguese (Portugal)", "pt"),
