@@ -154,8 +154,15 @@ def build_sidebar(window) -> QWidget:
         window.nav_buttons[key] = button
         nav_layout.addWidget(button)
 
-    layout.addWidget(nav_section)
-    layout.addStretch(1)
+    nav_scroll = QScrollArea()
+    nav_scroll.setObjectName("sidebarNavScroll")
+    nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
+    nav_scroll.setWidgetResizable(True)
+    nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    nav_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    nav_scroll.setWidget(nav_section)
+
+    layout.addWidget(nav_scroll, 1)
     return window.sidebar
 
 

@@ -170,6 +170,7 @@ bindsym $mod+b split h
 bindsym $mod+f fullscreen toggle
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+r exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/safe_i3_restart.sh"
+bindsym $mod+Ctrl+r exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/safe_i3_restart.sh"
 
 # Hanauta marketplace shortcuts for wallpaper_manager
 # hanauta-plugin-shortcut:wallpaper_manager:Mod4+w

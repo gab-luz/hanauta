@@ -1174,6 +1174,7 @@ class SettingsWindow(QWidget):
             "startup": self._build_startup_page,
             "privacy": self._build_privacy_page,
             "storage": self._build_storage_page,
+            "region": self._build_region_page,
         }
         builder = builders.get(key)
         if builder is None:
@@ -3079,6 +3080,14 @@ class SettingsWindow(QWidget):
         text = " ".join(part for part in text.split() if part)
         return text or "us"
 
+    def _keyboard_layout_label_for_value(self, value: str) -> str:
+        normalized = self._normalize_keyboard_layout_value(value)
+        lowered = normalized.casefold()
+        for label, layout_value in KEYBOARD_LAYOUT_PRESETS:
+            if self._normalize_keyboard_layout_value(layout_value).casefold() == lowered:
+                return str(label)
+        return normalized
+
     def _resolve_keyboard_layout_value(self) -> str:
         combo = getattr(self, "input_keyboard_layout_combo", None)
         if not isinstance(combo, QComboBox):
@@ -3884,7 +3893,9 @@ class SettingsWindow(QWidget):
         if current_region_layout_index >= 0:
             self.region_keyboard_layout_combo.setCurrentIndex(current_region_layout_index)
         else:
-            self.region_keyboard_layout_combo.setCurrentText(current_region_layout)
+            self.region_keyboard_layout_combo.setCurrentText(
+                self._keyboard_layout_label_for_value(current_region_layout)
+            )
         layout.addWidget(
             SettingsRow(
                 material_icon("keyboard"),
@@ -3965,6 +3976,7 @@ class SettingsWindow(QWidget):
             self.region_location_input.setText(self._selected_weather_city.label)
         self.region_location_input.setPlaceholderText("Type a city, region, or country")
         self.region_location_input.textEdited.connect(self._queue_weather_city_search)
+        self.region_location_input.textChanged.connect(self._queue_weather_city_search)
         self.region_location_model = QStringListModel(self)
         self.region_location_completer = QCompleter(self.region_location_model, self)
         self.region_location_completer.setCaseSensitivity(
@@ -8742,6 +8754,7 @@ class SettingsWindow(QWidget):
             self.weather_city_input.setText(self._selected_weather_city.label)
         self.weather_city_input.setPlaceholderText("Type a city, region, or country")
         self.weather_city_input.textEdited.connect(self._queue_weather_city_search)
+        self.weather_city_input.textChanged.connect(self._queue_weather_city_search)
 
         self.weather_city_model = QStringListModel(self)
         self.weather_city_completer = QCompleter(self.weather_city_model, self)

@@ -11,6 +11,10 @@ fi
 # relaunching the long-lived Hanauta UI processes.
 "$I3MSG" reload >/dev/null 2>&1 || true
 
+# Close settings if it is open so restart behavior matches other shell UIs.
+pkill -x hanauta-settings 2>/dev/null || true
+pkill -f "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" 2>/dev/null || true
+
 "$HOME/.config/i3/startup.sh" >/tmp/i3-startup-wrapper.log 2>&1 &
 
 exit 0
