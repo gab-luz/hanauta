@@ -4116,6 +4116,53 @@ class SettingsWindow(QWidget):
             deduped.append(item)
         return deduped
 
+    def _permission_icon_asset_for_key(self, key: str) -> str | None:
+        icon_file = ASSETS_DIR / f"permission-{key}.svg"
+        if icon_file.exists():
+            return str(icon_file)
+        known = {
+            "storage": "folder_open",
+            "network": "public",
+            "notifications": "notifications_active",
+            "audio": "music_note",
+            "input": "keyboard",
+            "display": "desktop_windows",
+            "shell": "terminal",
+            "clipboard": "content_paste",
+            "file_system": "description",
+            "fs": "description",
+            "fs_hosts": "description",
+        }
+        alt = known.get(key)
+        if alt:
+            candidate = ASSETS_DIR / f"permission-{alt}.svg"
+            if candidate.exists():
+                return str(candidate)
+        return None
+
+    def _permission_icon_for_key(self, key: str) -> str:
+        icon_map = {
+            "polkit": material_icon("shield"),
+            "fullscreen_alert": material_icon("warning"),
+            "fullscreen_overlay": material_icon("desktop_windows"),
+            "i3_config": material_icon("tune"),
+            "privileged": material_icon("lock"),
+            "desktop_files": material_icon("widgets"),
+            "storage": material_icon("storage"),
+            "network": material_icon("public"),
+            "notifications": material_icon("notifications_active"),
+            "audio": material_icon("music_note"),
+            "input": material_icon("keyboard"),
+            "display": material_icon("desktop_windows"),
+            "shell": material_icon("terminal"),
+            "clipboard": material_icon("description"),
+            "file_system": material_icon("description"),
+            "fs": material_icon("description"),
+            "fs_hosts": material_icon("description"),
+        }
+        key_lower = key.lower()
+        return icon_map.get(key_lower, material_icon("lock"))
+
     def _marketplace_show_permission_dialog(
         self,
         *,
