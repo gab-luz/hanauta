@@ -8,7 +8,7 @@ from pathlib import Path
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
-from settings_page.settings_defaults import load_settings_state
+from settings_page.settings_defaults import ensure_settings_state, load_settings_state
 from settings_page.marketplace import (
     marketplace_api_refresh_catalog_cache,
     marketplace_api_installed_plugins,

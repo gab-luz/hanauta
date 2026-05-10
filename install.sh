@@ -415,8 +415,8 @@ setup_wireguard_systemd() {
   fi
 
   if [ ! -f "/etc/wireguard/${iface}.conf" ]; then
-    error "Expected /etc/wireguard/${iface}.conf but it was not found."
-    return 1
+    warn "Expected /etc/wireguard/${iface}.conf but it was not found. Skipping."
+    return 0
   fi
 
   info "Enabling the systemd WireGuard unit for ${iface}..."
@@ -973,7 +973,7 @@ install_packages_debian() {
     libxcb-cursor0
     sassc
     inkscape
-    xcursorgen
+    x11-apps
     xdg-user-dirs
     libgtk-3-bin
     dbus-x11
@@ -982,7 +982,7 @@ install_packages_debian() {
   )
   local -a optional_pkgs=(
     copyq clipit plank ukui-window-switch
-    kdeconnect qt6-tools-dev-tools policykit-1-gnome
+    kdeconnect qt6-tools-dev-tools     polkitd
   )
 
   echo -e "${CYAN}[*]${NC} Updating package lists..."
@@ -1297,8 +1297,8 @@ build_and_install_volnoti_from_source() {
   # newer generated DBus client stubs accept notify(proxy, volume, error)
   # while some source snapshots still call notify(proxy, volume, muted, error).
   if [ -f "$repo_root/src/client.c" ] && [ -f "$repo_root/src/value-client-stub.h" ]; then
-    if rg -q 'uk_ac_cam_db538_VolumeNotification_notify\s*\([^,]+,\s*[^,]+,\s*GError \*\*error\)' "$repo_root/src/value-client-stub.h" 2>/dev/null; then
-      perl -0pi -e 's/uk_ac_cam_db538_VolumeNotification_notify\s*\(\s*proxy\s*,\s*volume\s*,\s*muted\s*,\s*&error\s*\)\s*;/uk_ac_cam_db538_VolumeNotification_notify(proxy, volume, \&error);/g' "$repo_root/src/client.c"
+    if grep -q 'GError \*\*error)' "$repo_root/src/value-client-stub.h" 2>/dev/null; then
+      perl -i -pe 's/\buk_ac_cam_db538_VolumeNotification_notify\s*\([^)]+\);/uk_ac_cam_db538_VolumeNotification_notify(proxy, volume, \&error);/g' "$repo_root/src/client.c"
     fi
   fi
 
@@ -1663,7 +1663,7 @@ install_custom_themes_for_root() {
 
   mkdir -p "$destination_root"
   for theme in "${themes[@]}"; do
-    install_selected_theme_to_root "$theme" "$destination_root"
+    install_selected_theme_to_root "$theme" "$destination_root" || true
   done
 }
 
@@ -2130,6 +2130,12 @@ main() {
     warn "sudo not found; package install may fail unless run as root."
   fi
 
+  copy_dotfiles
+  link_configs
+  make_exec
+  install_local_binaries
+  install_rubik_fonts
+
   install_rich
 
   if detect_debian_like; then
@@ -2160,15 +2166,10 @@ main() {
   fi
 
   setup_python_venv
-  copy_dotfiles
-  install_rubik_fonts
   build_native_services
   ensure_dock_defaults
   ensure_hanauta_settings
   install_sweet_cursor_theme
-  link_configs
-  make_exec
-  install_local_binaries
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     install_i3_volume
   fi

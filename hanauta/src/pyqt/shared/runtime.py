@@ -89,8 +89,11 @@ def scripts_root() -> Path:
 
 def python_executable() -> str:
     venv_python = project_root() / ".venv" / "bin" / "python"
-    if venv_python.exists():
-        return str(venv_python)
+    try:
+        if venv_python.exists():
+            return str(venv_python)
+    except PermissionError:
+        pass
     uv_bin = shutil.which("uv")
     if uv_bin:
         try:

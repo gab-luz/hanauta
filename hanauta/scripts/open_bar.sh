@@ -17,7 +17,14 @@ pkill -x hanauta-ai-popup 2>/dev/null || true
 pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true
 
 PYTHON_BIN="$HOME/.config/i3/.venv/bin/python"
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="$(command -v python3 || true)"
+fi
 printf 'python=%s\n' "$PYTHON_BIN"
+if [ -z "$PYTHON_BIN" ] || [ ! -x "$PYTHON_BIN" ]; then
+  printf 'status=failed reason=python-not-found\n' >>"$LAUNCH_LOG"
+  exit 1
+fi
 
 nohup "$PYTHON_BIN" \
   "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" \
