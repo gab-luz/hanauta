@@ -25,6 +25,9 @@ INSTALL_CURSOR_ONLY=false
 INSTALL_CURSOR_THEME_TO_SYSTEM=false
 INSTALL_GTK_THEME_ONLY=false
 INSTALL_RUBIK_FONT_ONLY=false
+INSTALL_BLESH_ONLY=false
+INSTALL_ZSH_THEME_ONLY=false
+INSTALL_FISH_THEME_ONLY=false
 GTK_THEME_SELECTION=""
 ADW_GTK_REPO="lassekongo83/adw-gtk3"
 I3_VOLUME_REPO_URL="https://github.com/hastinbe/i3-volume.git"
@@ -194,6 +197,9 @@ Options:
   --cursor-theme-system         Also install cursor theme into /usr/share/icons using sudo
   --gtk-theme=NAME              Install only GTK theme by name (supported: adw-gtk3, adw-gtk3-dark)
   --rubik-font                  Install only bundled Rubik fonts (user + optional system-wide)
+  --blesh                       Customize Bash prompt theme (ble.sh style) only
+  --zsh                         Customize Zsh prompt theme only
+  --fish                        Customize Fish prompt theme only
 EOF
 }
 
@@ -300,6 +306,15 @@ parse_args() {
       --rubik-font)
         INSTALL_RUBIK_FONT_ONLY=true
         ;;
+      --blesh)
+        INSTALL_BLESH_ONLY=true
+        ;;
+      --zsh)
+        INSTALL_ZSH_THEME_ONLY=true
+        ;;
+      --fish)
+        INSTALL_FISH_THEME_ONLY=true
+        ;;
       -h|--help)
         print_help
         exit 0
@@ -330,6 +345,269 @@ confirm_default_yes() {
   case "${reply,,}" in
     n|no) return 1 ;;
     *) return 0 ;;
+  esac
+}
+
+update_managed_block() {
+  local file_path="$1"
+  local marker="$2"
+  local block_content="$3"
+  local tmp_file=""
+  local begin_marker="# >>> hanauta ${marker} >>>"
+  local end_marker="# <<< hanauta ${marker} <<<"
+
+  mkdir -p "$(dirname "$file_path")"
+  touch "$file_path"
+
+  tmp_file="$(mktemp)"
+  awk -v begin="$begin_marker" -v end="$end_marker" '
+    BEGIN { in_block=0 }
+    $0 == begin { in_block=1; next }
+    $0 == end { in_block=0; next }
+    in_block == 0 { print }
+  ' "$file_path" > "$tmp_file"
+
+  mv "$tmp_file" "$file_path"
+
+  {
+    echo ""
+    echo "$begin_marker"
+    printf "%s\n" "$block_content"
+    echo "$end_marker"
+  } >> "$file_path"
+}
+
+install_bash_theme_blesh() {
+  local bashrc="$HOME/.bashrc"
+  local block_content=""
+  block_content='if [ -f "$HOME/.local/share/blesh/out/ble.sh" ]; then
+  source "$HOME/.local/share/blesh/out/ble.sh"
+elif [ -f "$HOME/.local/share/blesh/ble.sh" ]; then
+  source "$HOME/.local/share/blesh/ble.sh"
+elif [ -f "/usr/share/blesh/out/ble.sh" ]; then
+  source "/usr/share/blesh/out/ble.sh"
+elif [ -f "/usr/share/blesh/ble.sh" ]; then
+  source "/usr/share/blesh/ble.sh"
+fi
+if [ -n "${BLE_VERSION-}" ] && [ "${BLE_ATTACHED-}" != 1 ]; then
+  ble-attach 2>/dev/null || true
+fi
+
+# Enable predictive completion menu behavior when ble.sh is active.
+if [ -n "${BLE_VERSION-}" ]; then
+  bleopt complete_auto_complete=1 2>/dev/null || true
+fi
+
+# Load bash-completion when available for richer completion sources.
+if [ -f "/usr/share/bash-completion/bash_completion" ]; then
+  source "/usr/share/bash-completion/bash_completion"
+elif [ -f "/etc/bash_completion" ]; then
+  source "/etc/bash_completion"
+fi
+
+# Load git prompt helper if available so we can render branch/status in prompt.
+if [ -z "${__git_ps1-}" ]; then
+  if [ -f "/usr/lib/git-core/git-sh-prompt" ]; then
+    source "/usr/lib/git-core/git-sh-prompt"
+  elif [ -f "/usr/share/git/completion/git-prompt.sh" ]; then
+    source "/usr/share/git/completion/git-prompt.sh"
+  fi
+fi
+
+__hanauta_prompt_segment_git() {
+  if declare -F __git_ps1 >/dev/null 2>&1; then
+    __git_ps1 " [git:%s]"
+  fi
+}
+
+__hanauta_prompt_segment_venv() {
+  if [ -n "${VIRTUAL_ENV-}" ]; then
+    printf " [venv:%s]" "${VIRTUAL_ENV##*/}"
+  fi
+}
+
+if [ -n "${BASH_VERSION-}" ] && [ "${TERM-}" != "dumb" ]; then
+  GIT_PS1_SHOWDIRTYSTATE=1
+  GIT_PS1_SHOWSTASHSTATE=1
+  GIT_PS1_SHOWUNTRACKEDFILES=1
+
+  __hanauta_render_prompt() {
+    local last_exit="$?"
+    local status_segment=""
+    local prompt_symbol="$"
+    if [ "$last_exit" -ne 0 ]; then
+      status_segment="\[\e[38;5;203m\][x:$last_exit]\[\e[0m\] "
+    fi
+    if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+      prompt_symbol="#"
+    fi
+    PS1="${status_segment}\[\e[38;5;45m\][\u@\h]\[\e[0m\] \[\e[38;5;81m\][\w]\[\e[0m\]\[\e[38;5;214m\]\$(__hanauta_prompt_segment_git)\[\e[0m\]\[\e[38;5;141m\]\$(__hanauta_prompt_segment_venv)\[\e[0m\]\n\[\e[38;5;39m\]${prompt_symbol}\[\e[0m\] "
+  }
+
+  PROMPT_COMMAND="__hanauta_render_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+fi'
+  update_managed_block "$bashrc" "bash-theme-blesh" "$block_content"
+  success "Bash theme customization applied to $bashrc"
+  if [ ! -f "$HOME/.local/share/blesh/out/ble.sh" ] && \
+     [ ! -f "$HOME/.local/share/blesh/ble.sh" ] && \
+     [ ! -f "/usr/share/blesh/out/ble.sh" ] && \
+     [ ! -f "/usr/share/blesh/ble.sh" ]; then
+    warn "ble.sh not found after setup; applied prompt fallback only."
+  fi
+}
+
+install_zsh_theme() {
+  local zshrc="$HOME/.zshrc"
+  local block_content=""
+  block_content='autoload -Uz colors && colors
+setopt PROMPT_SUBST
+PROMPT="%F{45}%n@%m%f %F{81}%~%f %# "'
+  update_managed_block "$zshrc" "zsh-theme" "$block_content"
+  success "Zsh theme customization applied to $zshrc"
+}
+
+install_fish_theme() {
+  local fish_conf="$HOME/.config/fish/config.fish"
+  local block_content=""
+  block_content='function fish_prompt
+    set_color 45
+    printf "%s@%s " $USER (prompt_hostname)
+    set_color 81
+    printf "%s" (prompt_pwd)
+    set_color normal
+    printf " > "
+end'
+  update_managed_block "$fish_conf" "fish-theme" "$block_content"
+  success "Fish theme customization applied to $fish_conf"
+}
+
+install_blesh_from_official_repo() {
+  local target_dir="$HOME/.local/share/blesh"
+  local tmp_root=""
+  local repo_dir=""
+
+  if ! need_cmd git; then
+    warn "git is required to install ble.sh from the official repository."
+    return 1
+  fi
+
+  tmp_root="$(mktemp -d)"
+  repo_dir="$tmp_root/ble.sh"
+
+  info "Cloning official ble.sh repository..."
+  if ! git clone --depth 1 https://github.com/akinomyoga/ble.sh.git "$repo_dir" >/dev/null 2>&1; then
+    rm -rf "$tmp_root"
+    warn "Failed to clone ble.sh official repository."
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$target_dir")"
+  rm -rf "$target_dir"
+  mkdir -p "$target_dir"
+  rsync -a --delete --exclude '.git' "$repo_dir/" "$target_dir/"
+  rm -rf "$tmp_root"
+  success "ble.sh installed to $target_dir"
+  return 0
+}
+
+ensure_shell_theme_dependency() {
+  local target="$1"
+
+  case "$target" in
+    blesh)
+      if [ -f "$HOME/.local/share/blesh/out/ble.sh" ] || \
+         [ -f "$HOME/.local/share/blesh/ble.sh" ] || \
+         [ -f "/usr/share/blesh/out/ble.sh" ] || \
+         [ -f "/usr/share/blesh/ble.sh" ]; then
+        return 0
+      fi
+      if ! confirm_yes "ble.sh was not found. Install it now from the official GitHub repo?"; then
+        warn "ble.sh is required for --blesh customization. Skipping."
+        return 1
+      fi
+      install_blesh_from_official_repo || return 1
+      if [ -f "$HOME/.local/share/blesh/out/ble.sh" ] || \
+         [ -f "$HOME/.local/share/blesh/ble.sh" ] || \
+         [ -f "/usr/share/blesh/out/ble.sh" ] || \
+         [ -f "/usr/share/blesh/ble.sh" ]; then
+        return 0
+      fi
+      warn "ble.sh is still not available after install attempt."
+      return 1
+      ;;
+    zsh)
+      if need_cmd zsh; then
+        return 0
+      fi
+      if ! confirm_yes "zsh is not installed. Install it now?"; then
+        warn "zsh is required for --zsh customization. Skipping."
+        return 1
+      fi
+      if detect_debian_like; then
+        echo -e "${CYAN}[*]${NC} Updating package lists..."
+        sudo apt-get update -qq
+        install_apt_group "zsh shell dependency" zsh
+      elif detect_arch; then
+        install_pacman_group "zsh shell dependency" zsh
+      else
+        warn "Unknown distro. Auto-install is supported only on Debian-like and Arch Linux."
+        return 1
+      fi
+      need_cmd zsh
+      return $?
+      ;;
+    fish)
+      if need_cmd fish; then
+        return 0
+      fi
+      if ! confirm_yes "fish is not installed. Install it now?"; then
+        warn "fish is required for --fish customization. Skipping."
+        return 1
+      fi
+      if detect_debian_like; then
+        echo -e "${CYAN}[*]${NC} Updating package lists..."
+        sudo apt-get update -qq
+        install_apt_group "fish shell dependency" fish
+      elif detect_arch; then
+        install_pacman_group "fish shell dependency" fish
+      else
+        warn "Unknown distro. Auto-install is supported only on Debian-like and Arch Linux."
+        return 1
+      fi
+      need_cmd fish
+      return $?
+      ;;
+    *)
+      warn "Unknown shell dependency target: $target"
+      return 1
+      ;;
+  esac
+}
+
+offer_shell_theme_customization() {
+  local choice=""
+  echo ""
+  echo -e "${MAGENTA}${BOLD}Optional Shell Theme Customization${NC}"
+  echo -e "Apply prompt theme customization for ${BOLD}Bash (ble.sh style)${NC}, ${BOLD}Zsh${NC}, or ${BOLD}Fish${NC}."
+  echo ""
+
+  if ! confirm_yes "Do you want to customize shell themes now?"; then
+    info "Skipping shell theme customization."
+    return 0
+  fi
+
+  echo "Choose a shell to customize:"
+  echo "  1. Bash (ble.sh style)"
+  echo "  2. Zsh"
+  echo "  3. Fish"
+  echo "  4. Skip"
+  read -r -p "Select [1-4]: " choice
+  case "$choice" in
+    1) ensure_shell_theme_dependency blesh && install_bash_theme_blesh ;;
+    2) ensure_shell_theme_dependency zsh && install_zsh_theme ;;
+    3) ensure_shell_theme_dependency fish && install_fish_theme ;;
+    4) info "Skipped shell theme customization." ;;
+    *) warn "Unknown selection. Skipping shell theme customization." ;;
   esac
 }
 
@@ -2029,6 +2307,38 @@ main() {
     return 1
   fi
 
+  local shell_only_count=0
+  if [ "$INSTALL_BLESH_ONLY" = true ]; then
+    shell_only_count=$((shell_only_count + 1))
+  fi
+  if [ "$INSTALL_ZSH_THEME_ONLY" = true ]; then
+    shell_only_count=$((shell_only_count + 1))
+  fi
+  if [ "$INSTALL_FISH_THEME_ONLY" = true ]; then
+    shell_only_count=$((shell_only_count + 1))
+  fi
+  if [ "$shell_only_count" -gt 1 ]; then
+    error "Use only one of --blesh, --zsh, or --fish."
+    return 1
+  fi
+
+  if [ "$shell_only_count" -eq 1 ] && \
+     { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \
+       [ "$INSTALL_CURSOR_ONLY" = true ] || \
+       [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
+       [ "$INSTALL_VSCODE_ONLY" = true ] || \
+       [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
+       [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
+       [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
+       [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
+       [ "$INSTALL_SDDM_ONLY" = true ] || \
+       [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ]; }; then
+    error "--blesh, --zsh, and --fish must be used by themselves."
+    return 1
+  fi
+
   if [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ]; then
     print_banner
     install_printer_plugin_only
@@ -2068,6 +2378,27 @@ main() {
   if [ "$INSTALL_RUBIK_FONT_ONLY" = true ]; then
     print_banner
     install_rubik_fonts
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_BLESH_ONLY" = true ]; then
+    print_banner
+    ensure_shell_theme_dependency blesh && install_bash_theme_blesh
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_ZSH_THEME_ONLY" = true ]; then
+    print_banner
+    ensure_shell_theme_dependency zsh && install_zsh_theme
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_FISH_THEME_ONLY" = true ]; then
+    print_banner
+    ensure_shell_theme_dependency fish && install_fish_theme
     info "Done!"
     return 0
   fi
@@ -2178,6 +2509,7 @@ main() {
   fi
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     offer_mail_desktop_setup
+    offer_shell_theme_customization
     offer_custom_theme_install
     offer_silent_sddm_install
   fi
