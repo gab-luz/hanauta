@@ -17,17 +17,23 @@ Window {
     property string pendingActionKey: ""
     property string pendingActionLabel: ""
     property string pendingActionIcon: ""
+    property url pendingActionIconSource: ""
     property color pendingActionColor: "#D0BCFF"
 
     function openConfirmation(actionKey, actionLabel, actionIcon, actionColor, actionIndex) {
         pendingActionKey = actionKey
         pendingActionLabel = actionLabel
         pendingActionIcon = actionIcon
+        pendingActionIconSource = iconSource(actionIcon)
         pendingActionColor = actionColor
         pendingActionIndex = actionIndex
         confirmChoiceIndex = 1
         confirmationMode = true
         confirmFocusTimer.start()
+    }
+
+    function iconSource(iconName) {
+        return Qt.resolvedUrl("assets/" + iconName + ".svg")
     }
 
     function cancelConfirmation() {
@@ -155,6 +161,7 @@ Window {
     // Adaptive tile sizing
     property int tileSize: Math.max(96, Math.min(140, Math.round(Math.min(width, height) * 0.13)))
     property int tileRadius: 24
+    property int svgRenderSize: 256
 
 
 
@@ -273,13 +280,28 @@ Window {
                 border.color: Qt.rgba(1, 1, 1, closeBtn.hovered ? 0.20 : 0.10)
             }
 
-            contentItem: Text {
-                text: "close"
-                color: closeBtn.hovered ? "white" : Qt.rgba(1, 1, 1, 0.60)
-                font.family: "Material Symbols Rounded"
-                font.pixelSize: 22
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+            contentItem: Item {
+                implicitWidth: 22
+                implicitHeight: 22
+
+                Image {
+                    id: topCloseIconImage
+                    anchors.fill: parent
+                    source: root.iconSource("close")
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                    sourceSize.width: root.svgRenderSize
+                    sourceSize.height: root.svgRenderSize
+                    visible: false
+                }
+
+                MultiEffect {
+                    anchors.fill: topCloseIconImage
+                    source: topCloseIconImage
+                    colorization: 1.0
+                    colorizationColor: closeBtn.hovered ? "white" : Qt.rgba(1, 1, 1, 0.60)
+                }
             }
         }
 
@@ -385,22 +407,40 @@ Window {
                                     }
                                 }
 
-                                contentItem: Text {
-                                    id: iconText
-                                    text: model.icon
-                                    color: model.accent
-                                    font.family: "Material Symbols Rounded"
-                                    font.pixelSize: Math.round(root.tileSize * 0.42)
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    anchors.centerIn: parent
+                                contentItem: Item {
+                                    anchors.fill: parent
 
-                                    transformOrigin: Item.Center
-                                    scale: tileBtn.tileHighlighted ? 1.10 : 1.0
-                                    rotation: tileBtn.tileHighlighted ? model.hoverRotation : 0
+                                    Item {
+                                        id: actionIconWrap
+                                        width: Math.round(root.tileSize * 0.42)
+                                        height: width
+                                        anchors.centerIn: parent
+                                        transformOrigin: Item.Center
+                                        scale: tileBtn.tileHighlighted ? 1.10 : 1.0
+                                        rotation: tileBtn.tileHighlighted ? model.hoverRotation : 0
 
-                                    Behavior on scale { NumberAnimation { duration: 220 } }
-                                    Behavior on rotation { NumberAnimation { duration: 500 } }
+                                        Behavior on scale { NumberAnimation { duration: 220 } }
+                                        Behavior on rotation { NumberAnimation { duration: 500 } }
+
+                                        Image {
+                                            id: actionIconImage
+                                            anchors.fill: parent
+                                            source: root.iconSource(model.icon)
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                            mipmap: true
+                                            sourceSize.width: root.svgRenderSize
+                                            sourceSize.height: root.svgRenderSize
+                                            visible: false
+                                        }
+
+                                        MultiEffect {
+                                            anchors.fill: actionIconImage
+                                            source: actionIconImage
+                                            colorization: 1.0
+                                            colorizationColor: model.accent
+                                        }
+                                    }
                                 }
                             }
 
@@ -451,12 +491,29 @@ Window {
                                 opacity: 0.18
                             }
 
-                            Text {
+                            Item {
+                                width: 42
+                                height: 42
                                 anchors.centerIn: parent
-                                text: root.pendingActionIcon
-                                color: root.pendingActionColor
-                                font.family: "Material Symbols Rounded"
-                                font.pixelSize: 42
+
+                                Image {
+                                    id: pendingIconImage
+                                    anchors.fill: parent
+                                    source: root.pendingActionIconSource
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    mipmap: true
+                                    sourceSize.width: root.svgRenderSize
+                                    sourceSize.height: root.svgRenderSize
+                                    visible: false
+                                }
+
+                                MultiEffect {
+                                    anchors.fill: pendingIconImage
+                                    source: pendingIconImage
+                                    colorization: 1.0
+                                    colorizationColor: root.pendingActionColor
+                                }
                             }
                         }
 
@@ -513,12 +570,29 @@ Window {
                                         anchors.centerIn: parent
                                         spacing: 8
 
-                                        Text {
-                                            text: "close"
-                                            color: "white"
-                                            font.family: "Material Symbols Rounded"
-                                            font.pixelSize: 20
+                                        Item {
+                                            width: 20
+                                            height: 20
                                             anchors.verticalCenter: parent.verticalCenter
+
+                                            Image {
+                                                id: closeIconImage
+                                                anchors.fill: parent
+                                                source: root.iconSource("close")
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                                mipmap: true
+                                                sourceSize.width: root.svgRenderSize
+                                                sourceSize.height: root.svgRenderSize
+                                                visible: false
+                                            }
+
+                                            MultiEffect {
+                                                anchors.fill: closeIconImage
+                                                source: closeIconImage
+                                                colorization: 1.0
+                                                colorizationColor: "white"
+                                            }
                                         }
 
                                         Text {
@@ -561,12 +635,29 @@ Window {
                                         anchors.centerIn: parent
                                         spacing: 8
 
-                                        Text {
-                                            text: "check"
-                                            color: root.pendingActionColor
-                                            font.family: "Material Symbols Rounded"
-                                            font.pixelSize: 20
+                                        Item {
+                                            width: 20
+                                            height: 20
                                             anchors.verticalCenter: parent.verticalCenter
+
+                                            Image {
+                                                id: checkIconImage
+                                                anchors.fill: parent
+                                                source: root.iconSource("check")
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                                mipmap: true
+                                                sourceSize.width: root.svgRenderSize
+                                                sourceSize.height: root.svgRenderSize
+                                                visible: false
+                                            }
+
+                                            MultiEffect {
+                                                anchors.fill: checkIconImage
+                                                source: checkIconImage
+                                                colorization: 1.0
+                                                colorizationColor: root.pendingActionColor
+                                            }
                                         }
 
                                         Text {
