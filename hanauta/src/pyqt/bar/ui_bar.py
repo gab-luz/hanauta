@@ -299,8 +299,11 @@ WIFI_CONTROL_PY: Path | None = resolve_plugin_script(
 )
 WIFI_CONTROL_BINARY = HANAUTA_ROOT / "bin" / "hanauta-wifi-control"
 WIFI_CONTROL = WIFI_CONTROL_PY
-VPN_CONTROL: Path | None = resolve_plugin_script(
-    "vpn_control.py", ["vpn-control", "vpn"]
+_VPN_CONTROL_PLUGIN = (
+    Path.home() / "dev" / "hanauta-plugin-vpn-control" / "vpn_control.py"
+)
+VPN_CONTROL: Path | None = (
+    _VPN_CONTROL_PLUGIN if _VPN_CONTROL_PLUGIN.exists() else None
 )
 CHRISTIAN_WIDGET: Path | None = resolve_plugin_script(
     "christian_widget.py", ["religion-christian", "christian"]
@@ -2221,8 +2224,6 @@ class SystemStateWorker(QThread):
     def run(self) -> None:
         payload: dict[str, object] = {
             "connected": run_script("network.sh", "status") == "Connected",
-            "wg_active": False,
-            "selected_iface": "",
             "caffeine_on": run_script("caffeine.sh", "status") == "on",
             "caps_on": run_script("lockstatus.sh", "--caps-status") == "on",
             "num_on": run_script("lockstatus.sh", "--num-status") == "on",
@@ -2230,17 +2231,6 @@ class SystemStateWorker(QThread):
             "battery_capacity": 0,
             "battery_status": "",
         }
-        raw = run_script("vpn.sh", "--status")
-        if raw:
-            try:
-                vpn_payload = json.loads(raw)
-            except Exception:
-                vpn_payload = {}
-            if isinstance(vpn_payload, dict):
-                payload["wg_active"] = vpn_payload.get("wireguard") == "on"
-                payload["selected_iface"] = str(
-                    vpn_payload.get("wg_selected", "")
-                ).strip()
 
         if self._battery_base is not None:
             try:
@@ -5152,14 +5142,6 @@ class CyberBar(QWidget):
             16,
         )
 
-        wg_active = bool(payload.get("wg_active", False))
-        selected_iface = str(payload.get("selected_iface", "")).strip()
-        self._set_vpn_button_icon(wg_active)
-        self.vpn_icon.setProperty("active", wg_active)
-        self.vpn_icon.setToolTip(f"WireGuard: {selected_iface or 'No config selected'}")
-        self.style().unpolish(self.vpn_icon)
-        self.style().polish(self.vpn_icon)
-
         caffeine_on = bool(payload.get("caffeine_on", False))
         self.caffeine_icon.setVisible(caffeine_on)
         self._apply_icon_to_widget(
@@ -6319,32 +6301,6 @@ class CyberBar(QWidget):
             material_icon("wifi" if connected else "wifi_off"),
             16,
         )
-        vpn_payload = {}
-        parsed_status = False
-        raw = run_script("vpn.sh", "--status")
-        if raw:
-            try:
-                vpn_payload = json.loads(raw)
-                parsed_status = True
-            except Exception:
-                vpn_payload = {}
-        wireguard_state = str(vpn_payload.get("wireguard", "")).strip().lower()
-        wg_active = wireguard_state == "on"
-        wg_inactive = wireguard_state == "off"
-        selected_iface = str(vpn_payload.get("wg_selected", "")).strip()
-        wg_alert = (
-            (not raw.strip())
-            or (raw.strip() and not parsed_status)
-            or (parsed_status and not (wg_active or wg_inactive))
-            or (parsed_status and not selected_iface)
-        )
-        self._set_vpn_button_icon(wg_active, alert=wg_alert)
-        self.vpn_icon.setProperty("active", wg_active)
-        self.vpn_icon.setProperty("alert", wg_alert)
-        self.vpn_icon.setToolTip(f"WireGuard: {selected_iface or 'No config selected'}")
-        self.style().unpolish(self.vpn_icon)
-        self.style().polish(self.vpn_icon)
-
     def _widget_icon_tint_color(self) -> QColor:
         return QColor(self.theme.primary)
 
