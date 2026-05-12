@@ -1886,6 +1886,28 @@ offer_mail_desktop_setup() {
   fi
 }
 
+
+disable_conflicting_notification_autostarts() {
+  local autostart_dir="$HOME/.config/autostart"
+  local override_file="$autostart_dir/xfce4-notifyd.desktop"
+
+  mkdir -p "$autostart_dir"
+  cat >"$override_file" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=XFCE Notification Daemon
+Hidden=true
+EOF
+  success "Disabled xfce4-notifyd XDG autostart override at $override_file"
+
+  pkill -x xfce4-notifyd 2>/dev/null || true
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop xfce4-notifyd.service 2>/dev/null || true
+    systemctl --user disable xfce4-notifyd.service 2>/dev/null || true
+    systemctl --user mask xfce4-notifyd.service 2>/dev/null || true
+  fi
+}
+
 ensure_hanauta_settings() {
   local settings_script="$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py"
   local state_dir="$HOME/.local/state/hanauta/notification-center"
@@ -2575,6 +2597,7 @@ main() {
   install_hanauta_service_root
   ensure_dock_defaults
   ensure_hanauta_settings
+  disable_conflicting_notification_autostarts
   install_sweet_cursor_theme
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     install_i3_volume
