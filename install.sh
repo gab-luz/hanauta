@@ -18,6 +18,7 @@ INSTALL_WIREGUARD_SYSTEMD_ONLY=false
 INSTALL_SDDM_ONLY=false
 INSTALL_I3_VOLUME_ONLY=false
 INSTALL_PRINTER_PLUGIN_ONLY=false
+INSTALL_HANAUTA_SERVICE_ONLY=false
 INSTALL_CUSTOM_THEMES=false
 CUSTOM_THEMES_SELECTION=""
 INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
@@ -189,6 +190,7 @@ Options:
   --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
   --i3-volume                   Install only i3-volume + volnoti integration
   --printer-plugin              Install/update only the Hanauta printer plugin from git
+  --hanauta-service            Install/update Hanauta root service unit only
   --sddm                        Install and configure SilentSDDM only
   --custom-themes               Install all vendored custom themes (retrowave + dracula)
   --custom-themes=NAME          Install custom themes by selection: retrowave, dracula, all
@@ -271,6 +273,9 @@ parse_args() {
         ;;
       --printer-plugin)
         INSTALL_PRINTER_PLUGIN_ONLY=true
+        ;;
+      --hanauta-service)
+        INSTALL_HANAUTA_SERVICE_ONLY=true
         ;;
       --sddm)
         INSTALL_SDDM_ONLY=true
@@ -1431,6 +1436,62 @@ build_native_services() {
   return 1
 }
 
+install_hanauta_service_root() {
+  local root="$HOME/.config/i3"
+  local src_bin="$root/hanauta/bin/hanauta-service"
+  local dst_bin="/usr/local/bin/hanauta-service"
+  local unit="/etc/systemd/system/hanauta-service-root.service"
+  local runtime_user="${SUDO_USER:-$USER}"
+
+  if [ ! -x "$src_bin" ]; then
+    warn "hanauta-service binary not found at $src_bin. Building services first..."
+    build_native_services || return 1
+  fi
+  if [ ! -x "$src_bin" ]; then
+    error "hanauta-service binary is still missing after build."
+    return 1
+  fi
+
+  run_privileged_cmd \
+    "Installing Hanauta root service binary to $dst_bin." \
+    install -D -m 0755 "$src_bin" "$dst_bin" || return 1
+
+  local unit_content=""
+  unit_content="[Unit]
+Description=Hanauta Root Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$dst_bin
+Restart=always
+RestartSec=2
+User=root
+Environment=HOME=/home/$runtime_user
+Environment=HANAUTA_SETTINGS_PATH=/home/$runtime_user/.local/state/hanauta/notification-center/settings.json
+Environment=HANAUTA_SERVICE_STATE_DIR=/home/$runtime_user/.local/state/hanauta/service
+
+[Install]
+WantedBy=multi-user.target"
+
+  local tmp_unit
+  tmp_unit="$(mktemp)"
+  printf '%s\n' "$unit_content" > "$tmp_unit"
+  run_privileged_cmd \
+    "Installing Hanauta root service unit." \
+    install -D -m 0644 "$tmp_unit" "$unit" || { rm -f "$tmp_unit"; return 1; }
+  rm -f "$tmp_unit"
+
+  run_privileged_cmd \
+    "Reloading systemd and enabling hanauta-service-root.service." \
+    systemctl daemon-reload || return 1
+  run_privileged_cmd \
+    "Enabling and starting hanauta-service-root.service." \
+    systemctl enable --now hanauta-service-root.service || return 1
+
+  success "Hanauta root service installed and active: hanauta-service-root.service"
+}
+
 copy_dotfiles() {
   local target="$HOME/.config/i3"
   if [ -d "$target" ] && [ ! -L "$target" ]; then
@@ -2272,7 +2333,8 @@ main() {
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
-       [ "$INSTALL_SDDM_ONLY" = true ]; }; then
+       [ "$INSTALL_SDDM_ONLY" = true ] || \
+       [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; }; then
     error "--printer-plugin must be used by itself."
     return 1
   fi
@@ -2287,7 +2349,8 @@ main() {
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
-       [ "$INSTALL_QUICKSHELL_ONLY" = true ]; }; then
+       [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
+       [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; }; then
     error "--sddm must be used by itself."
     return 1
   fi
@@ -2302,7 +2365,8 @@ main() {
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
-       [ "$INSTALL_SDDM_ONLY" = true ]; }; then
+       [ "$INSTALL_SDDM_ONLY" = true ] || \
+       [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; }; then
     error "--i3-volume must be used by itself."
     return 1
   fi
@@ -2334,7 +2398,8 @@ main() {
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
        [ "$INSTALL_SDDM_ONLY" = true ] || \
-       [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ]; }; then
+       [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ] || \
+       [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; }; then
     error "--blesh, --zsh, and --fish must be used by themselves."
     return 1
   fi
@@ -2342,6 +2407,15 @@ main() {
   if [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ]; then
     print_banner
     install_printer_plugin_only
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; then
+    print_banner
+    copy_dotfiles
+    build_native_services
+    install_hanauta_service_root
     info "Done!"
     return 0
   fi
@@ -2498,6 +2572,7 @@ main() {
 
   setup_python_venv
   build_native_services
+  install_hanauta_service_root
   ensure_dock_defaults
   ensure_hanauta_settings
   install_sweet_cursor_theme
