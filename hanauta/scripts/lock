@@ -25,6 +25,7 @@ date_format="%A, %d %B %Y"
 greeter_text="Hanauta locked • Type your password to unlock"
 verifying_text="Verifying..."
 wrong_text="Wrong password"
+lock_cache_dir="${HOME}/.cache/betterlockscreen/current"
 
 run_quick() {
     # Keep pre-lock probes from stalling the lock path (notably mpc when MPD is down).
@@ -209,10 +210,10 @@ ensure_hanauta_theme_file() {
     local theme_dir="$HOME/.config/betterlockscreen/themes"
     local theme_file="$theme_dir/hanauta-anime.theme"
     mkdir -p "$theme_dir"
-    cat > "$theme_file" <<'EOF'
-loginshadow=101417
-loginbox=101417cc
-locktext="Hanauta lock"
+cat > "$theme_file" <<'EOF'
+loginshadow=00000000
+loginbox=00000000
+locktext="♪ Hanauta lock"
 ringcolor=97ccf9cc
 font=Rubik
 insidecolor=10141788
@@ -283,7 +284,7 @@ render_hanauta_lock_image() {
         -font "Rubik" -fill '#97ccf9' -pointsize 34 -gravity south -annotate +0+150 "$day_text" \
         -font "Rubik" -fill '#a9b1d6' -pointsize 26 -gravity south -annotate +0+112 "$date_text" \
         -font "Rubik" -fill '#8ce9b0' -pointsize 20 -gravity south -annotate +0+88 "$weather_text" \
-        -font "Rubik" -fill '#bb9af7' -pointsize 18 -gravity south -annotate +0+72 "hanauta" \
+        -font "Rubik" -fill '#bb9af7' -pointsize 18 -gravity south -annotate +0+72 "♪ hanauta" \
         "$out"
 }
 
@@ -305,6 +306,8 @@ get_weather_overlay_text() {
 import json
 import sys
 from pathlib import Path
+import re
+import os
 
 path = Path(sys.argv[1])
 try:
@@ -313,14 +316,45 @@ except Exception:
     print("Weather unavailable")
     raise SystemExit(0)
 
-current = payload.get("current", {}) if isinstance(payload, dict) else {}
-location = payload.get("location", {}) if isinstance(payload, dict) else {}
+if not isinstance(payload, dict):
+    print("Weather unavailable")
+    raise SystemExit(0)
+
+requested = payload.get("requested", {}) if isinstance(payload.get("requested"), dict) else {}
+forecast_payload = payload.get("payload", {}) if isinstance(payload.get("payload"), dict) else {}
+current = forecast_payload.get("current", {}) if isinstance(forecast_payload.get("current"), dict) else {}
+lang = (os.environ.get("LC_ALL") or os.environ.get("LANG") or os.environ.get("LC_MESSAGES") or "en").lower()
+is_pt = lang.startswith("pt")
 
 temp = current.get("temperature_2m")
 code = current.get("weather_code")
-name = location.get("name", "")
+humidity = current.get("relative_humidity_2m")
+wind = current.get("wind_speed_10m")
+name = requested.get("name", "")
 
-code_map = {
+def fix_name(raw):
+    if not raw:
+        return ""
+    text = str(raw)
+    if "\\u" in text:
+        try:
+            return text.encode("utf-8").decode("unicode_escape")
+        except Exception:
+            return text
+    if re.search(r"u00[0-9a-fA-F]{2}", text):
+        try:
+            return re.sub(
+                r"u00([0-9a-fA-F]{2})",
+                lambda m: bytes.fromhex(m.group(1)).decode("latin-1"),
+                text,
+            )
+        except Exception:
+            return text
+    return text
+
+name = fix_name(name)
+
+code_map_en = {
     0: "Clear",
     1: "Mainly clear",
     2: "Partly cloudy",
@@ -343,7 +377,31 @@ code_map = {
     96: "Thunder + hail",
     99: "Severe thunder + hail",
 }
-desc = code_map.get(code, "Weather")
+code_map_pt = {
+    0: "Céu limpo",
+    1: "Pred. limpo",
+    2: "Parc. nublado",
+    3: "Encoberto",
+    45: "Neblina",
+    48: "Nevoeiro",
+    51: "Garoa fraca",
+    53: "Garoa",
+    55: "Garoa forte",
+    61: "Chuva fraca",
+    63: "Chuva",
+    65: "Chuva forte",
+    71: "Neve fraca",
+    73: "Neve",
+    75: "Neve forte",
+    80: "Panc. de chuva",
+    81: "Aguaceiros",
+    82: "Panc. fortes",
+    95: "Tempestade",
+    96: "Temp. + granizo",
+    99: "Temp. severa",
+}
+code_map = code_map_pt if is_pt else code_map_en
+desc = code_map.get(code, "Tempo" if is_pt else "Weather")
 
 if temp is None:
     line = desc
@@ -354,14 +412,53 @@ else:
         temp_txt = f"{temp}°C"
     line = f"{desc} · {temp_txt}"
 
+if humidity is not None:
+    try:
+        line = f"{line} · {'UR' if is_pt else 'RH'} {int(round(float(humidity)))}%"
+    except Exception:
+        pass
+if wind is not None:
+    try:
+        wind_label = "Vento" if is_pt else "Wind"
+        line = f"{line} · {wind_label} {int(round(float(wind)))} km/h"
+    except Exception:
+        pass
+
 if name:
     line = f"{line} · {name}"
 
-print(line or "Weather unavailable")
+print(line or ("Tempo indisponível" if is_pt else "Weather unavailable"))
 PY
     )"
 
     printf '%s\n' "${text:-Weather unavailable}"
+}
+
+prepare_lock_cache_async() {
+    local src_image="$1"
+    local blur_mode="$2"
+    (
+        set +e
+        local prepared="$src_image"
+        local rendered=""
+
+        if [[ -n "$prepared" && -f "$prepared" ]] && command -v magick >/dev/null 2>&1; then
+            rendered="$(mktemp --suffix=.png)"
+            if render_hanauta_lock_image "$prepared" "$rendered"; then
+                prepared="$rendered"
+            else
+                rm -f "$rendered"
+            fi
+        fi
+
+        if [[ -n "$prepared" && -f "$prepared" ]]; then
+            "$betterlockscreen_bin" -u "$prepared" >/dev/null 2>&1 || true
+        fi
+
+        if [[ -n "$rendered" && -f "$rendered" ]]; then
+            rm -f "$rendered"
+        fi
+    ) >/dev/null 2>&1 &
 }
 
 load_lock_settings
@@ -434,14 +531,6 @@ if [[ -n "$lock_image" && -f "$lock_image" ]]; then
             ;;
     esac
 fi
-# Produce a themed lock image with clock/day overlay.
-if [[ -n "$lock_image" && -f "$lock_image" ]] && command -v magick >/dev/null 2>&1; then
-    tmp_raw="$(mktemp --suffix=.png)"
-    if render_hanauta_lock_image "$lock_image" "$tmp_raw"; then
-        lock_image="$tmp_raw"
-    fi
-fi
-
 betterlockscreen_bin="$(command -v betterlockscreen || true)"
 if [[ -z "$betterlockscreen_bin" && -x "$HOME/.local/bin/betterlockscreen" ]]; then
     betterlockscreen_bin="$HOME/.local/bin/betterlockscreen"
@@ -453,12 +542,26 @@ if [[ -z "$betterlockscreen_bin" ]]; then
 fi
 
 # Keep betterlockscreen cache aligned to the current wallpaper.
-if [[ -n "$lock_image" && -f "$lock_image" ]]; then
-    "$betterlockscreen_bin" -u "$lock_image" >/dev/null 2>&1 || true
+effect="dim"
+if [[ "$blur_enabled" == "1" ]]; then
+    effect="blur"
 fi
 
-if [[ "$blur_enabled" == "1" ]]; then
-    "$betterlockscreen_bin" -l blur
+# Speed path: lock immediately using existing cache, then refresh heavy render for next lock.
+cache_file="${lock_cache_dir}/wall_${effect}.png"
+if [[ -f "$cache_file" ]]; then
+    prepare_lock_cache_async "$lock_image" "$effect"
+    "$betterlockscreen_bin" -l "$effect"
 else
-    "$betterlockscreen_bin" -l dim
+    # First-run fallback: prepare once, then lock.
+    if [[ -n "$lock_image" && -f "$lock_image" ]]; then
+        if command -v magick >/dev/null 2>&1; then
+            tmp_raw="$(mktemp --suffix=.png)"
+            if render_hanauta_lock_image "$lock_image" "$tmp_raw"; then
+                lock_image="$tmp_raw"
+            fi
+        fi
+        "$betterlockscreen_bin" -u "$lock_image" >/dev/null 2>&1 || true
+    fi
+    "$betterlockscreen_bin" -l "$effect"
 fi
