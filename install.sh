@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
 VSCODE_EXTENSION_SRC="$SCRIPT_DIR/hanauta/vscode-wallpaper-theme"
 VSCODE_EXTENSION_ID="hanauta.hanauta-wallpaper-theme"
 SWEET_CURSOR_THEME_NAME="sweet-cursors"
@@ -22,6 +23,8 @@ INSTALL_HANAUTA_SERVICE_ONLY=false
 INSTALL_CUSTOM_THEMES=false
 CUSTOM_THEMES_SELECTION=""
 INSTALL_CUSTOM_THEMES_TO_SYSTEM=true
+INSTALL_UPDATE_MODE=false
+ENABLE_SAFETY_BACKUPS=true
 INSTALL_CURSOR_ONLY=false
 INSTALL_CURSOR_THEME_TO_SYSTEM=false
 INSTALL_GTK_THEME_ONLY=false
@@ -36,6 +39,7 @@ I3_VOLUME_REPO_BRANCH="master"
 PRINTER_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-printer"
 PRINTER_PLUGIN_REPO_BRANCH="main"
 PRINTER_PLUGIN_ID="printer_widget"
+SAFETY_BACKUP_ROOT="${HOME}/.config/i3/backups/install-${RUN_ID}"
 
 RICH_AVAILABLE=false
 if python3 -c "import rich" 2>/dev/null; then
@@ -55,6 +59,18 @@ info() { printf "${CYAN}[INFO]${NC} %s\n" "$*"; }
 warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$*"; }
 error() { printf "${RED}[ERROR]${NC} %s\n" "$*"; }
 success() { printf "${GREEN}[OK]${NC} %s\n" "$*"; }
+
+on_install_error() {
+  local exit_code="$?"
+  local line_no="${1:-unknown}"
+  error "install.sh failed at line ${line_no} (exit ${exit_code})."
+  if [ "${ENABLE_SAFETY_BACKUPS}" = true ]; then
+    warn "Safety backups for this run are in: ${SAFETY_BACKUP_ROOT}"
+  fi
+  exit "$exit_code"
+}
+
+trap 'on_install_error $LINENO' ERR
 
 detect_debian_like() {
   if [ -r /etc/os-release ]; then
@@ -202,7 +218,34 @@ Options:
   --blesh                       Customize Bash prompt theme (ble.sh style) only
   --zsh                         Customize Zsh prompt theme only
   --fish                        Customize Fish prompt theme only
+  --update                      Updater mode: preserve local state and avoid destructive replacements when possible
 EOF
+}
+
+init_safety_backups() {
+  if [ "${ENABLE_SAFETY_BACKUPS}" != true ]; then
+    return 0
+  fi
+  mkdir -p "$SAFETY_BACKUP_ROOT"
+}
+
+backup_path_if_exists() {
+  local path="$1"
+  local label="${2:-path}"
+  local base=""
+  local backup_path=""
+
+  [ "${ENABLE_SAFETY_BACKUPS}" = true ] || return 0
+  [ -e "$path" ] || return 0
+
+  init_safety_backups
+  base="$(basename "$path")"
+  backup_path="${SAFETY_BACKUP_ROOT}/${base}"
+  if [ -e "$backup_path" ]; then
+    backup_path="${backup_path}-$(date +%s)"
+  fi
+  cp -a "$path" "$backup_path"
+  info "Safety backup (${label}): $path -> $backup_path"
 }
 
 install_editor_extension_dir() {
@@ -216,6 +259,7 @@ install_editor_extension_dir() {
   fi
 
   mkdir -p "$target_root"
+  backup_path_if_exists "$target_dir" "$label extension"
   rm -rf "$target_dir"
   mkdir -p "$target_dir"
   cp -a "$VSCODE_EXTENSION_SRC/." "$target_dir/"
@@ -320,6 +364,9 @@ parse_args() {
       --fish)
         INSTALL_FISH_THEME_ONLY=true
         ;;
+      --update)
+        INSTALL_UPDATE_MODE=true
+        ;;
       -h|--help)
         print_help
         exit 0
@@ -363,6 +410,7 @@ update_managed_block() {
 
   mkdir -p "$(dirname "$file_path")"
   touch "$file_path"
+  backup_path_if_exists "$file_path" "$marker"
 
   tmp_file="$(mktemp)"
   awk -v begin="$begin_marker" -v end="$end_marker" '
@@ -1231,6 +1279,7 @@ install_pacman_group() {
 install_packages_debian() {
   local -a core_pkgs=(
     git
+    ripgrep
     xorg xinit
     i3-wm rofi feh picom
     x11-xserver-utils x11-utils xdotool xclip
@@ -1240,6 +1289,7 @@ install_packages_debian() {
     pulseaudio-utils pamixer
     network-manager wireless-tools
     i3lock
+    betterlockscreen
     xfce4-power-manager lxqt-policykit
     libnotify-bin
     kitty
@@ -1279,6 +1329,7 @@ install_packages_debian() {
 install_packages_arch() {
   local -a core_pkgs=(
     git
+    ripgrep
     xorg-server xorg-xinit
     i3-wm rofi feh picom
     xorg-xrandr xorg-xsetroot xorg-xwininfo xorg-xev xorg-xrdb xdotool xclip
@@ -1288,6 +1339,7 @@ install_packages_arch() {
     pulseaudio pamixer
     networkmanager wireless_tools
     i3lock
+    betterlockscreen
     xfce4-power-manager lxqt-policykit
     libnotify
     kitty
@@ -1740,6 +1792,7 @@ install_i3_volume() {
   else
     info "Cloning i3-volume into $repo_root..."
     mkdir -p "$(dirname "$repo_root")"
+    backup_path_if_exists "$repo_root" "i3-volume checkout"
     rm -rf "$repo_root"
     if ! git clone --depth 1 --branch "$I3_VOLUME_REPO_BRANCH" "$I3_VOLUME_REPO_URL" "$repo_root" >/dev/null 2>&1; then
       error "Failed to clone i3-volume from $I3_VOLUME_REPO_URL"
@@ -1813,13 +1866,19 @@ sync_printer_plugin_repo() {
         warn "Could not fast-forward printer plugin checkout; keeping existing revision."
       }
     else
+      if [ "$INSTALL_UPDATE_MODE" = true ]; then
+        warn "Existing $target_dir has a different git origin. Updater mode will preserve it and skip replacement."
+        return 0
+      fi
       warn "Existing $target_dir is a git repo with a different origin. Replacing it."
+      backup_path_if_exists "$target_dir" "printer plugin checkout"
       rm -rf "$target_dir"
     fi
   fi
 
   if [ ! -d "$target_dir/.git" ]; then
     info "Cloning printer plugin into $target_dir..."
+    backup_path_if_exists "$target_dir" "printer plugin checkout"
     rm -rf "$target_dir"
     if ! git clone --depth 1 --branch "$PRINTER_PLUGIN_REPO_BRANCH" "$PRINTER_PLUGIN_REPO_URL" "$target_dir" >/dev/null 2>&1; then
       error "Failed to clone printer plugin from $PRINTER_PLUGIN_REPO_URL"
@@ -2343,6 +2402,11 @@ post_notes() {
 
 main() {
   parse_args "$@"
+  init_safety_backups
+  if [ "$INSTALL_UPDATE_MODE" = true ]; then
+    info "Updater mode enabled: preserve local state and avoid destructive replacements where possible."
+    info "Safety backups root: $SAFETY_BACKUP_ROOT"
+  fi
 
   if [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ] && \
      { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \

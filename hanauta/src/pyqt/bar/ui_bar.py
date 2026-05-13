@@ -299,11 +299,8 @@ WIFI_CONTROL_PY: Path | None = resolve_plugin_script(
 )
 WIFI_CONTROL_BINARY = HANAUTA_ROOT / "bin" / "hanauta-wifi-control"
 WIFI_CONTROL = WIFI_CONTROL_PY
-_VPN_CONTROL_PLUGIN = (
-    Path.home() / "dev" / "hanauta-plugin-vpn-control" / "vpn_control.py"
-)
-VPN_CONTROL: Path | None = (
-    _VPN_CONTROL_PLUGIN if _VPN_CONTROL_PLUGIN.exists() else None
+VPN_CONTROL: Path | None = resolve_plugin_script(
+    "vpn_control.py", ["vpn-control", "vpn"], required=False
 )
 CHRISTIAN_WIDGET: Path | None = resolve_plugin_script(
     "christian_widget.py", ["religion-christian", "christian"]
@@ -2797,6 +2794,7 @@ class CyberBar(QWidget):
         self._control_center_process: Optional[subprocess.Popen] = None
         self._wifi_popup_process: Optional[subprocess.Popen] = None
         self._vpn_popup_process: Optional[subprocess.Popen] = None
+        self._vpn_control_script: Path | None = VPN_CONTROL
         self._christian_widget_process: Optional[subprocess.Popen] = None
         self._health_widget_process: Optional[subprocess.Popen] = None
         self._reminders_widget_process: Optional[subprocess.Popen] = None
@@ -7023,11 +7021,12 @@ class CyberBar(QWidget):
         QTimer.singleShot(150, self._sync_wifi_button)
 
     def _toggle_vpn_popup(self) -> None:
-        if VPN_CONTROL is None or not VPN_CONTROL.exists():
+        vpn_script = getattr(self, "_vpn_control_script", VPN_CONTROL)
+        if vpn_script is None or not vpn_script.exists():
             self.vpn_icon.setChecked(False)
             return
         self._toggle_singleton_process(
-            "_vpn_popup_process", VPN_CONTROL, python_bin=self._python_bin()
+            "_vpn_popup_process", vpn_script, python_bin=self._python_bin()
         )
         QTimer.singleShot(150, self._sync_vpn_button)
 
@@ -7220,13 +7219,15 @@ class CyberBar(QWidget):
         script_path: Path | None,
         *,
         tooltip: str | None = None,
+        sync_active_property: bool = True,
     ) -> bool:
         process = getattr(self, process_attr, None)
         active = self._singleton_active(process, script_path)
         if not active:
             setattr(self, process_attr, None)
         button.setChecked(active)
-        button.setProperty("active", active)
+        if sync_active_property:
+            button.setProperty("active", active)
         if tooltip is not None:
             button.setToolTip(tooltip)
         button.update()
@@ -7240,10 +7241,12 @@ class CyberBar(QWidget):
         )
 
     def _sync_vpn_button(self) -> None:
+        vpn_script = getattr(self, "_vpn_control_script", VPN_CONTROL)
         self._sync_popup_button(
             self.vpn_icon,
             "_vpn_popup_process",
-            VPN_CONTROL,
+            vpn_script,
+            sync_active_property=False,
         )
 
     def _sync_weather_button(self) -> None:

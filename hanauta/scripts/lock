@@ -120,6 +120,91 @@ slowfade () {
     fi
 }
 
+resolve_current_wallpaper() {
+    local candidate=""
+    local from_fehbg=""
+
+    # Primary Hanauta path written by set_wallpaper.sh.
+    candidate="$HOME/.wallpapers/wallpaper.png"
+    if [[ -f "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    # If it is a symlink and target still exists, use the resolved target.
+    if [[ -L "$candidate" ]]; then
+        candidate="$(readlink -f "$candidate" 2>/dev/null || true)"
+        if [[ -n "$candidate" && -f "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    fi
+
+    # Fallback to current feh state.
+    if [[ -f "$HOME/.fehbg" ]]; then
+        from_fehbg="$(
+            python3 - "$HOME/.fehbg" <<'PY'
+import shlex
+import sys
+from pathlib import Path
+
+fehbg = Path(sys.argv[1])
+line = ""
+try:
+    for raw in fehbg.read_text(encoding="utf-8").splitlines():
+        raw = raw.strip()
+        if raw and not raw.startswith("#"):
+            line = raw
+            break
+except Exception:
+    pass
+
+if not line:
+    print("")
+    raise SystemExit(0)
+
+try:
+    parts = shlex.split(line)
+except Exception:
+    print("")
+    raise SystemExit(0)
+
+path = ""
+for tok in reversed(parts):
+    if tok.startswith("-"):
+        continue
+    path = tok
+    break
+
+print(path)
+PY
+        )"
+        if [[ -n "$from_fehbg" && -f "$from_fehbg" ]]; then
+            printf '%s\n' "$from_fehbg"
+            return 0
+        fi
+    fi
+
+    # Last resort: known bundled wallpaper candidates.
+    for candidate in \
+        "$HOME/.config/i3/hanauta/walls/ryan-3.png" \
+        "$HOME/.config/i3/hanauta/walls/ryan-4.png" \
+        "$HOME/.config/i3/hanauta/walls/ryan-6.png" \
+        "$HOME/.config/i3/hanauta/walls/ryan-7.png" \
+        "$HOME/.config/i3/hanauta/walls/ryan-8.png" \
+        "$HOME/.config/i3/hanauta/walls/"*.png \
+        "$HOME/.config/i3/hanauta/walls/"*.jpg \
+        "$HOME/.config/i3/hanauta/walls/"*.jpeg
+    do
+        if [[ -f "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    printf '%s\n' ""
+}
+
 load_lock_settings
 
 if [[ "$refresh_rate" =~ ^[0-9]+$ ]]; then
@@ -156,30 +241,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-wallpaper="$HOME/.wallpapers/wallpaper.png"
-if [[ ! -f "$wallpaper" ]]; then
-    wallpaper=""
-fi
-
-local_i3lock_color="$HOME/.config/i3/bin/i3lock-color"
-
-if [[ -z "$wallpaper" ]]; then
-    for candidate in \
-        "$HOME/.config/i3/hanauta/walls/ryan-3.png" \
-        "$HOME/.config/i3/hanauta/walls/ryan-4.png" \
-        "$HOME/.config/i3/hanauta/walls/ryan-6.png" \
-        "$HOME/.config/i3/hanauta/walls/ryan-7.png" \
-        "$HOME/.config/i3/hanauta/walls/ryan-8.png" \
-        "$HOME/.config/i3/hanauta/walls/"*.png \
-        "$HOME/.config/i3/hanauta/walls/"*.jpg \
-        "$HOME/.config/i3/hanauta/walls/"*.jpeg
-    do
-        if [[ -f "$candidate" ]]; then
-            wallpaper="$candidate"
-            break
-        fi
-    done
-fi
+wallpaper="$(resolve_current_wallpaper)"
 
 lock_image="$wallpaper"
 blur_enabled="${LOCK_SCREENSHOT_BLUR:-$lock_blur}"
@@ -193,6 +255,22 @@ if [[ "$blur_enabled" == "1" ]] && command -v maim >/dev/null 2>&1 && command -v
     fi
 fi
 
+# betterlockscreen/i3lock image path compatibility:
+# if current wallpaper is not PNG, convert to a temporary PNG first.
+if [[ -n "$lock_image" && -f "$lock_image" ]]; then
+    case "${lock_image,,}" in
+        *.png) ;;
+        *)
+            if command -v magick >/dev/null 2>&1; then
+                tmp_lock="$(mktemp --suffix=.png)"
+                if run_quick magick "$lock_image" "$tmp_lock" >/dev/null 2>&1; then
+                    lock_image="$tmp_lock"
+                fi
+            fi
+            ;;
+    esac
+fi
+
 ind_pos="x+w/2:y+h/2+42"
 time_pos="x+w/2:y+h/2-150"
 date_pos="x+w/2:y+h/2-100"
@@ -200,105 +278,23 @@ greeter_pos="x+w/2:y+h/2-56"
 layout_pos="x+w/2:y+h/2-24"
 status_pos="x+w/2:y+h/2+120"
 
-locker="$HOME/.config/i3/bin/i3lock"
-if ! "$locker" --help >/dev/null 2>&1; then
-    locker="$(command -v i3lock || true)"
+betterlockscreen_bin="$(command -v betterlockscreen || true)"
+if [[ -z "$betterlockscreen_bin" && -x "$HOME/.local/bin/betterlockscreen" ]]; then
+    betterlockscreen_bin="$HOME/.local/bin/betterlockscreen"
 fi
 
-# Prefer local i3lock-color only when configured and runnable.
-if [[ "$prefer_i3lock_color" == "1" ]] && [[ -x "$local_i3lock_color" ]] && "$local_i3lock_color" -v >/dev/null 2>&1; then
-    color_cmd=("$local_i3lock_color" "-n" "-i" "$lock_image" "-e")
-    if [[ "$show_clock" == "1" ]]; then
-        color_cmd+=("--force-clock")
-    fi
-    if [[ "$show_indicator" == "1" ]]; then
-        color_cmd+=("--indicator")
-    fi
-    color_cmd+=(
-        "--radius=${ring_radius}"
-        "--ring-width=${ring_width}"
-        "--line-uses-inside"
-        "--inside-color=00000000"
-        "--ring-color=${fg}dd"
-        "--separator-color=00000000"
-        "--insidever-color=00000000"
-        "--ringver-color=${verify}ff"
-        "--insidewrong-color=00000000"
-        "--ringwrong-color=${wrong}ff"
-        "--keyhl-color=${verify}ff"
-        "--bshl-color=${wrong}ff"
-        "--time-str=${time_format}"
-        "--time-size=88"
-        "--time-font=Roboto:style=Bold"
-        "--time-color=${fg}ff"
-        "--time-align=1"
-        "--time-pos=${time_pos}"
-        "--date-str=${date_format}"
-        "--date-size=24"
-        "--date-font=Roboto"
-        "--date-color=${date}ff"
-        "--date-align=1"
-        "--date-pos=${date_pos}"
-        "--greeter-text=${greeter_text}"
-        "--greeter-size=18"
-        "--greeter-font=Roboto"
-        "--greeter-color=${dim_text}ff"
-        "--greeter-align=1"
-        "--greeter-pos=${greeter_pos}"
-        "--layout-color=${layout}ff"
-        "--layout-size=16"
-        "--layout-font=Roboto"
-        "--layout-align=1"
-        "--layout-pos=${layout_pos}"
-        "--verif-text=${verifying_text}"
-        "--verif-size=16"
-        "--verif-font=Roboto"
-        "--verif-color=${verify}ff"
-        "--verif-align=1"
-        "--verif-pos=${status_pos}"
-        "--wrong-text=${wrong_text}"
-        "--wrong-size=16"
-        "--wrong-font=Roboto"
-        "--wrong-color=${wrong}ff"
-        "--wrong-align=1"
-        "--wrong-pos=${status_pos}"
-        "--noinput-text="
-        "--ind-pos=${ind_pos}"
-        "--pointer=default"
-        "--refresh-rate=${refresh_rate}"
-    )
-    if [[ "$pass_media_keys" == "1" ]]; then
-        color_cmd+=("--pass-media-keys")
-    fi
-    if [[ "$pass_volume_keys" == "1" ]]; then
-        color_cmd+=("--pass-volume-keys")
-    fi
-    "${color_cmd[@]}"
-elif [[ -n "$locker" ]]; then
-    plain_cmd=("$locker" "-n" "-e" "-i" "$lock_image" "-p" "default")
-    if [[ "$show_clock" == "1" ]]; then
-        plain_cmd+=("--force-clock")
-    fi
-    if [[ "$show_indicator" == "1" ]]; then
-        plain_cmd+=("--indicator")
-    fi
-    plain_cmd+=(
-        "--radius=${ring_radius}"
-        "--ring-width=${ring_width}"
-        "--time-str=${time_format}"
-        "--date-str=${date_format}"
-        "--greeter-text=${greeter_text}"
-        "--verif-text=${verifying_text}"
-        "--wrong-text=${wrong_text}"
-        "--refresh-rate=${refresh_rate}"
-    )
-    if [[ "$pass_media_keys" == "1" ]]; then
-        plain_cmd+=("--pass-media-keys")
-    fi
-    if [[ "$pass_volume_keys" == "1" ]]; then
-        plain_cmd+=("--pass-volume-keys")
-    fi
-    "${plain_cmd[@]}"
-else
+if [[ -z "$betterlockscreen_bin" ]]; then
+    echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
     exit 1
+fi
+
+# Keep betterlockscreen cache aligned to the current wallpaper.
+if [[ -n "$lock_image" && -f "$lock_image" ]]; then
+    run_quick "$betterlockscreen_bin" -u "$lock_image" >/dev/null 2>&1 || true
+fi
+
+if [[ "$blur_enabled" == "1" ]]; then
+    "$betterlockscreen_bin" -l blur
+else
+    "$betterlockscreen_bin" -l dim
 fi
