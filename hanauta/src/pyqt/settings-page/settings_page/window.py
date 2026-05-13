@@ -3900,8 +3900,8 @@ class SettingsWindow(QWidget):
         layout.addWidget(
             SettingsRow(
                 material_icon("language"),
-                "Locale language",
-                "Autocomplete Linux locale used by Hanauta for formatting. You can also type a custom locale like en_US.UTF-8.",
+                "System locale",
+                "Set the desktop locale Hanauta should apply for your session and terminals. You can type a custom locale like en_US.UTF-8.",
                 self.icon_font,
                 self.ui_font,
                 self.region_locale_combo,
@@ -13551,6 +13551,100 @@ class SettingsWindow(QWidget):
             return text
         return str(getattr(self, "region_locale_input", QLineEdit()).text()).strip()
 
+    def _write_managed_shell_block(self, path: Path, marker: str, content: str) -> None:
+        begin = f"# >>> hanauta {marker} >>>"
+        end = f"# <<< hanauta {marker} <<<"
+        try:
+            existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        except Exception:
+            existing = ""
+        lines: list[str] = []
+        in_block = False
+        for line in existing.splitlines():
+            if line == begin:
+                in_block = True
+                continue
+            if line == end:
+                in_block = False
+                continue
+            if not in_block:
+                lines.append(line)
+        body = "\n".join(lines).rstrip()
+        block = f"{begin}\n{content.rstrip()}\n{end}"
+        final = f"{body}\n\n{block}\n" if body else f"{block}\n"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(final, encoding="utf-8")
+
+    def _apply_user_locale_files(self, locale_code: str) -> None:
+        locale_value = str(locale_code).strip()
+        language_value = locale_value.split(".", 1)[0].split("_", 1)[0] or locale_value
+        env_dir = Path.home() / ".config" / "environment.d"
+        env_dir.mkdir(parents=True, exist_ok=True)
+        (env_dir / "90-hanauta-locale.conf").write_text(
+            f'LANG="{locale_value}"\nLANGUAGE="{language_value}"\n',
+            encoding="utf-8",
+        )
+
+        fish_dir = Path.home() / ".config" / "fish" / "conf.d"
+        fish_dir.mkdir(parents=True, exist_ok=True)
+        (fish_dir / "90-hanauta-locale.fish").write_text(
+            f'set -gx LANG "{locale_value}"\nset -gx LANGUAGE "{language_value}"\n',
+            encoding="utf-8",
+        )
+
+        shell_block = f'export LANG="{locale_value}"\nexport LANGUAGE="{language_value}"'
+        self._write_managed_shell_block(Path.home() / ".profile", "system-locale", shell_block)
+        self._write_managed_shell_block(Path.home() / ".bashrc", "system-locale", shell_block)
+        self._write_managed_shell_block(Path.home() / ".zshenv", "system-locale", shell_block)
+
+    def _apply_session_locale_env(self, locale_code: str) -> None:
+        locale_value = str(locale_code).strip()
+        language_value = locale_value.split(".", 1)[0].split("_", 1)[0] or locale_value
+        os.environ["LANG"] = locale_value
+        os.environ["LANGUAGE"] = language_value
+        os.environ.pop("LC_ALL", None)
+        try:
+            pylocale.setlocale(pylocale.LC_ALL, locale_value)
+        except Exception:
+            pass
+        env = {"LANG": locale_value, "LANGUAGE": language_value}
+        for command in (
+            ["dbus-update-activation-environment", "--systemd", f"LANG={locale_value}", f"LANGUAGE={language_value}"],
+            ["systemctl", "--user", "import-environment", "LANG", "LANGUAGE"],
+        ):
+            try:
+                subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**os.environ, **env})
+            except Exception:
+                pass
+
+    def _apply_system_locale_privileged(self, locale_code: str) -> bool:
+        locale_value = str(locale_code).strip()
+        if not locale_value or not polkit_available():
+            return False
+        if shutil.which("localectl"):
+            if run_with_polkit(
+                ["localectl", "set-locale", f"LANG={locale_value}"],
+                detached=False,
+                timeout=120,
+            ):
+                return True
+        if shutil.which("update-locale"):
+            if run_with_polkit(
+                ["update-locale", f"LANG={locale_value}"],
+                detached=False,
+                timeout=120,
+            ):
+                return True
+        shell_script = (
+            f'printf \'LANG="{locale_value}"\\n\' > /etc/locale.conf\n'
+            f'printf \'LANG="{locale_value}"\\n\' > /etc/default/locale\n'
+        )
+        return run_with_polkit(
+            ["bash", "-lc", shell_script],
+            detached=False,
+            timeout=120,
+        )
+
     def _save_region_settings(self) -> None:
         region = self.settings_state.setdefault("region", {})
         region["locale_code"] = self._resolve_region_locale_code()
@@ -13566,11 +13660,41 @@ class SettingsWindow(QWidget):
         )
         save_settings_state(self.settings_state)
         self._apply_keyboard_layout(str(region.get("keyboard_layout", "us")))
+        locale_code = str(region.get("locale_code", "")).strip()
+        if locale_code:
+            self._apply_user_locale_files(locale_code)
+            self._apply_session_locale_env(locale_code)
+            if polkit_available():
+                QMessageBox.information(
+                    self,
+                    "Apply system locale",
+                    "Hanauta will now request your password through Polkit to apply this locale system-wide.",
+                )
+            privileged_ok = self._apply_system_locale_privileged(locale_code)
+        else:
+            privileged_ok = False
         if hasattr(self, "region_status"):
-            locale_label = region["locale_code"] or "system default"
+            locale_label = locale_code or "system default"
             keyboard_label = str(region.get("keyboard_layout", "us")).strip() or "us"
-            self.region_status.setText(
-                f"Region settings saved for {locale_label} • keyboard {keyboard_label}."
+            if locale_code:
+                if privileged_ok:
+                    message = f"System locale applied as {locale_label} • keyboard {keyboard_label}."
+                else:
+                    message = f"Locale saved as {locale_label} for new sessions and terminals • keyboard {keyboard_label}."
+            else:
+                message = f"Region settings saved for {locale_label} • keyboard {keyboard_label}."
+            self.region_status.setText(message)
+        if locale_code and not privileged_ok and not polkit_available():
+            QMessageBox.warning(
+                self,
+                "System locale not elevated",
+                "pkexec is unavailable, so Hanauta saved the locale for your user session only. Install or enable Polkit to apply it system-wide.",
+            )
+        if locale_code:
+            QMessageBox.information(
+                self,
+                "Locale change applied",
+                "Locale changes are saved now. Open new terminal windows to pick it up immediately. For full system-wide effect across all apps, sign out and sign back in (or reboot).",
             )
 
     def _save_bar_settings(self) -> None:

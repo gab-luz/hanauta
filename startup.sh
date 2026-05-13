@@ -12,6 +12,30 @@ CURSOR_THEME_DEFAULT="sweet-cursors"
 CURSOR_SIZE_DEFAULT="24"
 HANAUTA_SCRIPTS_DIR="$HOME/.config/i3/hanauta/scripts"
 
+apply_saved_locale() {
+  local locale_code=""
+  locale_code="$("$PYTHON_BIN" - <<'PY' 2>/dev/null || true
+import json
+from pathlib import Path
+
+settings_path = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
+try:
+    payload = json.loads(settings_path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+region = payload.get("region", {}) if isinstance(payload, dict) else {}
+value = str(region.get("locale_code", "")).strip() if isinstance(region, dict) else ""
+print(value)
+PY
+)"
+  if [ -n "$locale_code" ]; then
+    export LANG="$locale_code"
+    export LANGUAGE="${locale_code%%[_\.]*}"
+  fi
+}
+
+apply_saved_locale
+
 resolve_plugin_script_path() {
   local plugin_hint="$1"
   local script_name="$2"
