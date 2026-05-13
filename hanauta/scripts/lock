@@ -262,6 +262,7 @@ render_hanauta_lock_image() {
     local clock_text=""
     local day_text=""
     local date_text=""
+    local weather_text=""
 
     [[ -f "$src" ]] || return 1
     command -v magick >/dev/null 2>&1 || return 1
@@ -269,6 +270,7 @@ render_hanauta_lock_image() {
     clock_text="$(date '+%H:%M')"
     day_text="$(date '+%A')"
     date_text="$(date '+%d %B %Y')"
+    weather_text="$(get_weather_overlay_text)"
 
     magick "$src" \
         -auto-orient \
@@ -280,8 +282,86 @@ render_hanauta_lock_image() {
         -font "Rubik" -fill '#e0e3e8' -pointsize 112 -gravity south -annotate +0+220 "$clock_text" \
         -font "Rubik" -fill '#97ccf9' -pointsize 34 -gravity south -annotate +0+150 "$day_text" \
         -font "Rubik" -fill '#a9b1d6' -pointsize 26 -gravity south -annotate +0+112 "$date_text" \
+        -font "Rubik" -fill '#8ce9b0' -pointsize 20 -gravity south -annotate +0+88 "$weather_text" \
         -font "Rubik" -fill '#bb9af7' -pointsize 18 -gravity south -annotate +0+72 "hanauta" \
         "$out"
+}
+
+get_weather_overlay_text() {
+    local weather_cache="${HOME}/.local/state/hanauta/service/weather.json"
+    local text=""
+
+    [[ -f "$weather_cache" ]] || {
+        printf '%s\n' "Weather unavailable"
+        return 0
+    }
+    command -v python3 >/dev/null 2>&1 || {
+        printf '%s\n' "Weather unavailable"
+        return 0
+    }
+
+    text="$(
+        python3 - "$weather_cache" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("Weather unavailable")
+    raise SystemExit(0)
+
+current = payload.get("current", {}) if isinstance(payload, dict) else {}
+location = payload.get("location", {}) if isinstance(payload, dict) else {}
+
+temp = current.get("temperature_2m")
+code = current.get("weather_code")
+name = location.get("name", "")
+
+code_map = {
+    0: "Clear",
+    1: "Mainly clear",
+    2: "Partly cloudy",
+    3: "Overcast",
+    45: "Fog",
+    48: "Rime fog",
+    51: "Light drizzle",
+    53: "Drizzle",
+    55: "Dense drizzle",
+    61: "Light rain",
+    63: "Rain",
+    65: "Heavy rain",
+    71: "Light snow",
+    73: "Snow",
+    75: "Heavy snow",
+    80: "Rain showers",
+    81: "Showers",
+    82: "Heavy showers",
+    95: "Thunderstorm",
+    96: "Thunder + hail",
+    99: "Severe thunder + hail",
+}
+desc = code_map.get(code, "Weather")
+
+if temp is None:
+    line = desc
+else:
+    try:
+        temp_txt = f"{float(temp):.0f}°C"
+    except Exception:
+        temp_txt = f"{temp}°C"
+    line = f"{desc} · {temp_txt}"
+
+if name:
+    line = f"{line} · {name}"
+
+print(line or "Weather unavailable")
+PY
+    )"
+
+    printf '%s\n' "${text:-Weather unavailable}"
 }
 
 load_lock_settings
