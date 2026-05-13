@@ -25,7 +25,20 @@ date_format="%A, %d %B %Y"
 greeter_text="Hanauta locked • Type your password to unlock"
 verifying_text="Verifying..."
 wrong_text="Wrong password"
-lock_cache_dir="${HOME}/.cache/betterlockscreen/current"
+theme_root="${HOME}/.config/betterlockscreen"
+theme_dir="${theme_root}/themes"
+active_theme_file="${theme_root}/betterlockscreenrc"
+active_theme_marker="${HOME}/.cache/betterlockscreen/.betterlock-theme.txt"
+theme_name="hanauta-anime"
+theme_font="Rubik"
+theme_time_color="e0e3e8ff"
+theme_greeter_color="a9b1d6ff"
+theme_layout_color="bb9af7ff"
+theme_weather_color="8ce9b0ff"
+theme_panel_fill="#101417aa"
+overlay_width=860
+overlay_height=300
+overlay_bottom_margin=84
 
 run_quick() {
     # Keep pre-lock probes from stalling the lock path (notably mpc when MPD is down).
@@ -102,6 +115,87 @@ for key, default in defaults.items():
     print(f"{key}={out}")
 PY
     )
+}
+
+ensure_theme_creator_theme() {
+    local theme_file="${theme_dir}/${theme_name}.theme"
+    mkdir -p "$theme_dir" "$(dirname "$active_theme_marker")"
+    cat > "$theme_file" <<'EOF'
+loginshadow=00000000
+loginbox=00000000
+locktext="♪ hanauta"
+ringcolor=97ccf9cc
+font=Rubik
+insidecolor=10141788
+separatorcolor=00000000
+ringvercolor=8ce9b0ff
+insidevercolor=10141788
+ringwrongcolor=ffb4abff
+insidewrongcolor=10141788
+timecolor=e0e3e8ff
+time_format=%H:%M
+greetercolor=a9b1d6ff
+layoutcolor=bb9af7ff
+keyhlcolor=8ce9b0ff
+bshlcolor=ffb4abff
+veriftext="Verifying..."
+verifcolor=8ce9b0ff
+wrongtext="Wrong password"
+wrongcolor=ffb4abff
+modifcolor=97ccf9ff
+bgcolor=101417ff
+EOF
+    cp -f "$theme_file" "$active_theme_file"
+    printf '%s\n' "$theme_file" > "$active_theme_marker"
+}
+
+load_active_theme() {
+    local source_file="$active_theme_file"
+    if [[ -f "$active_theme_marker" ]]; then
+        local marked
+        marked="$(cat "$active_theme_marker" 2>/dev/null || true)"
+        if [[ -n "$marked" && -f "$marked" ]]; then
+            source_file="$marked"
+        fi
+    fi
+    [[ -f "$source_file" ]] || return 0
+
+    # Theme files come from betterlockscreen-theme-creator and are shell-style assignments.
+    # shellcheck disable=SC1090
+    source "$source_file"
+
+    [[ -n "${font:-}" ]] && theme_font="$font"
+    [[ -n "${timecolor:-}" ]] && theme_time_color="$timecolor"
+    [[ -n "${greetercolor:-}" ]] && theme_greeter_color="$greetercolor"
+    [[ -n "${layoutcolor:-}" ]] && theme_layout_color="$layoutcolor"
+}
+
+get_primary_monitor_size() {
+    command -v xrandr >/dev/null 2>&1 || {
+        printf '%s\n' "1920 1080"
+        return 0
+    }
+    python3 - <<'PY'
+import re
+import subprocess
+
+try:
+    out = subprocess.check_output(["xrandr", "--query"], text=True)
+except Exception:
+    print("1920 1080")
+    raise SystemExit(0)
+
+primary = re.search(r"^\S+\s+connected\s+primary\s+(\d+)x(\d+)\+\d+\+\d+", out, re.M)
+if primary:
+    print(primary.group(1), primary.group(2))
+    raise SystemExit(0)
+
+any_conn = re.search(r"^\S+\s+connected(?:\s+primary)?\s+(\d+)x(\d+)\+\d+\+\d+", out, re.M)
+if any_conn:
+    print(any_conn.group(1), any_conn.group(2))
+else:
+    print("1920 1080")
+PY
 }
 
 slowfade () {
@@ -206,37 +300,6 @@ PY
     printf '%s\n' ""
 }
 
-ensure_hanauta_theme_file() {
-    local theme_dir="$HOME/.config/betterlockscreen/themes"
-    local theme_file="$theme_dir/hanauta-anime.theme"
-    mkdir -p "$theme_dir"
-cat > "$theme_file" <<'EOF'
-loginshadow=00000000
-loginbox=00000000
-locktext="♪ Hanauta lock"
-ringcolor=97ccf9cc
-font=Rubik
-insidecolor=10141788
-separatorcolor=00000000
-ringvercolor=8ce9b0ff
-insidevercolor=10141788
-ringwrongcolor=ffb4abff
-insidewrongcolor=10141788
-timecolor=e0e3e8ff
-time_format=%H:%M
-greetercolor=a9b1d6ff
-layoutcolor=bb9af7ff
-keyhlcolor=8ce9b0ff
-bshlcolor=ffb4abff
-veriftext="Verifying..."
-verifcolor=8ce9b0ff
-wrongtext="Wrong password"
-wrongcolor=ffb4abff
-modifcolor=97ccf9ff
-bgcolor=101417ff
-EOF
-}
-
 pick_random_anime_wallpaper() {
     local roots=(
         "$HOME/.local/share/hanauta/walls"
@@ -264,6 +327,8 @@ render_hanauta_lock_image() {
     local day_text=""
     local date_text=""
     local weather_text=""
+    local screen_w=1920
+    local screen_h=1080
 
     [[ -f "$src" ]] || return 1
     command -v magick >/dev/null 2>&1 || return 1
@@ -272,19 +337,25 @@ render_hanauta_lock_image() {
     day_text="$(date '+%A')"
     date_text="$(date '+%d %B %Y')"
     weather_text="$(get_weather_overlay_text)"
+    local monitor_size
+    monitor_size="$(get_primary_monitor_size)"
+    if [[ "$monitor_size" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
+        screen_w="${BASH_REMATCH[1]}"
+        screen_h="${BASH_REMATCH[2]}"
+    fi
 
     magick "$src" \
         -auto-orient \
-        -resize '1920x1080^' \
+        -resize "${screen_w}x${screen_h}^" \
         -gravity center \
-        -extent 1920x1080 \
-        \( -size 860x300 xc:none -fill '#101417aa' -draw 'roundrectangle 0,0 859,299 34,34' \) \
-        -gravity south -geometry +0+84 -composite \
-        -font "Rubik" -fill '#e0e3e8' -pointsize 112 -gravity south -annotate +0+220 "$clock_text" \
-        -font "Rubik" -fill '#97ccf9' -pointsize 34 -gravity south -annotate +0+150 "$day_text" \
-        -font "Rubik" -fill '#a9b1d6' -pointsize 26 -gravity south -annotate +0+112 "$date_text" \
-        -font "Rubik" -fill '#8ce9b0' -pointsize 20 -gravity south -annotate +0+88 "$weather_text" \
-        -font "Rubik" -fill '#bb9af7' -pointsize 18 -gravity south -annotate +0+72 "♪ hanauta" \
+        -extent "${screen_w}x${screen_h}" \
+        \( -size "${overlay_width}x${overlay_height}" xc:none -fill "$theme_panel_fill" -draw "roundrectangle 0,0 $((overlay_width - 1)),$((overlay_height - 1)) 34,34" \) \
+        -gravity south -geometry "+0+${overlay_bottom_margin}" -composite \
+        -font "$theme_font" -fill "#${theme_time_color:0:6}" -pointsize 112 -gravity south -annotate +0+220 "$clock_text" \
+        -font "$theme_font" -fill '#97ccf9' -pointsize 34 -gravity south -annotate +0+150 "$day_text" \
+        -font "$theme_font" -fill "#${theme_greeter_color:0:6}" -pointsize 26 -gravity south -annotate +0+112 "$date_text" \
+        -font "$theme_font" -fill "#${theme_weather_color:0:6}" -pointsize 20 -gravity south -annotate +0+88 "$weather_text" \
+        -font "$theme_font" -fill "#${theme_layout_color:0:6}" -pointsize 18 -gravity south -annotate +0+72 "♪ hanauta" \
         "$out"
 }
 
@@ -304,19 +375,15 @@ get_weather_overlay_text() {
     text="$(
         python3 - "$weather_cache" <<'PY'
 import json
+import os
+import re
 import sys
 from pathlib import Path
-import re
-import os
 
 path = Path(sys.argv[1])
 try:
     payload = json.loads(path.read_text(encoding="utf-8"))
 except Exception:
-    print("Weather unavailable")
-    raise SystemExit(0)
-
-if not isinstance(payload, dict):
     print("Weather unavailable")
     raise SystemExit(0)
 
@@ -419,8 +486,7 @@ if humidity is not None:
         pass
 if wind is not None:
     try:
-        wind_label = "Vento" if is_pt else "Wind"
-        line = f"{line} · {wind_label} {int(round(float(wind)))} km/h"
+        line = f"{line} · {('Vento' if is_pt else 'Wind')} {int(round(float(wind)))} km/h"
     except Exception:
         pass
 
@@ -434,34 +500,9 @@ PY
     printf '%s\n' "${text:-Weather unavailable}"
 }
 
-prepare_lock_cache_async() {
-    local src_image="$1"
-    local blur_mode="$2"
-    (
-        set +e
-        local prepared="$src_image"
-        local rendered=""
-
-        if [[ -n "$prepared" && -f "$prepared" ]] && command -v magick >/dev/null 2>&1; then
-            rendered="$(mktemp --suffix=.png)"
-            if render_hanauta_lock_image "$prepared" "$rendered"; then
-                prepared="$rendered"
-            else
-                rm -f "$rendered"
-            fi
-        fi
-
-        if [[ -n "$prepared" && -f "$prepared" ]]; then
-            "$betterlockscreen_bin" -u "$prepared" >/dev/null 2>&1 || true
-        fi
-
-        if [[ -n "$rendered" && -f "$rendered" ]]; then
-            rm -f "$rendered"
-        fi
-    ) >/dev/null 2>&1 &
-}
-
 load_lock_settings
+ensure_theme_creator_theme
+load_active_theme
 
 if [[ "$refresh_rate" =~ ^[0-9]+$ ]]; then
     refresh_rate=$(( refresh_rate < 0 ? 0 : (refresh_rate > 30 ? 30 : refresh_rate) ))
@@ -497,8 +538,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-ensure_hanauta_theme_file
-
 wallpaper="$(pick_random_anime_wallpaper)"
 if [[ -z "$wallpaper" ]]; then
     wallpaper="$(resolve_current_wallpaper)"
@@ -531,37 +570,23 @@ if [[ -n "$lock_image" && -f "$lock_image" ]]; then
             ;;
     esac
 fi
-betterlockscreen_bin="$(command -v betterlockscreen || true)"
-if [[ -z "$betterlockscreen_bin" && -x "$HOME/.local/bin/betterlockscreen" ]]; then
-    betterlockscreen_bin="$HOME/.local/bin/betterlockscreen"
+# Produce a themed lock image with clock/day overlay.
+if [[ -n "$lock_image" && -f "$lock_image" ]] && command -v magick >/dev/null 2>&1; then
+    tmp_raw="$(mktemp --suffix=.png)"
+    if render_hanauta_lock_image "$lock_image" "$tmp_raw"; then
+        lock_image="$tmp_raw"
+    fi
 fi
 
-if [[ -z "$betterlockscreen_bin" ]]; then
-    echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
+locker="$(command -v i3lock || true)"
+if [[ -z "$locker" ]]; then
+    echo "i3lock is required but not installed. Install it and rerun lock." >&2
     exit 1
 fi
 
-# Keep betterlockscreen cache aligned to the current wallpaper.
-effect="dim"
-if [[ "$blur_enabled" == "1" ]]; then
-    effect="blur"
-fi
-
-# Speed path: lock immediately using existing cache, then refresh heavy render for next lock.
-cache_file="${lock_cache_dir}/wall_${effect}.png"
-if [[ -f "$cache_file" ]]; then
-    prepare_lock_cache_async "$lock_image" "$effect"
-    "$betterlockscreen_bin" -l "$effect"
+# Direct i3lock image path avoids betterlockscreen fallback artifacts/extra login box.
+if [[ -n "$lock_image" && -f "$lock_image" ]]; then
+    "$locker" -n -e -t -i "$lock_image" -p default
 else
-    # First-run fallback: prepare once, then lock.
-    if [[ -n "$lock_image" && -f "$lock_image" ]]; then
-        if command -v magick >/dev/null 2>&1; then
-            tmp_raw="$(mktemp --suffix=.png)"
-            if render_hanauta_lock_image "$lock_image" "$tmp_raw"; then
-                lock_image="$tmp_raw"
-            fi
-        fi
-        "$betterlockscreen_bin" -u "$lock_image" >/dev/null 2>&1 || true
-    fi
-    "$betterlockscreen_bin" -l "$effect"
+    "$locker" -n -e -c 000000 -p default
 fi
