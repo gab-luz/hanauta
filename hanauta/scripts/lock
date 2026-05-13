@@ -205,6 +205,85 @@ PY
     printf '%s\n' ""
 }
 
+ensure_hanauta_theme_file() {
+    local theme_dir="$HOME/.config/betterlockscreen/themes"
+    local theme_file="$theme_dir/hanauta-anime.theme"
+    mkdir -p "$theme_dir"
+    cat > "$theme_file" <<'EOF'
+loginshadow=101417
+loginbox=101417cc
+locktext="Hanauta lock"
+ringcolor=97ccf9cc
+font=Rubik
+insidecolor=10141788
+separatorcolor=00000000
+ringvercolor=8ce9b0ff
+insidevercolor=10141788
+ringwrongcolor=ffb4abff
+insidewrongcolor=10141788
+timecolor=e0e3e8ff
+time_format=%H:%M
+greetercolor=a9b1d6ff
+layoutcolor=bb9af7ff
+keyhlcolor=8ce9b0ff
+bshlcolor=ffb4abff
+veriftext="Verifying..."
+verifcolor=8ce9b0ff
+wrongtext="Wrong password"
+wrongcolor=ffb4abff
+modifcolor=97ccf9ff
+bgcolor=101417ff
+EOF
+}
+
+pick_random_anime_wallpaper() {
+    local roots=(
+        "$HOME/.local/share/hanauta/walls"
+        "$HOME/.config/i3/hanauta/walls"
+    )
+    local root=""
+    local picked=""
+
+    for root in "${roots[@]}"; do
+        [[ -d "$root" ]] || continue
+        picked="$(find "$root" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) | shuf -n 1)"
+        if [[ -n "$picked" && -f "$picked" ]]; then
+            printf '%s\n' "$picked"
+            return 0
+        fi
+    done
+
+    printf '%s\n' ""
+}
+
+render_hanauta_lock_image() {
+    local src="$1"
+    local out="$2"
+    local clock_text=""
+    local day_text=""
+    local date_text=""
+
+    [[ -f "$src" ]] || return 1
+    command -v magick >/dev/null 2>&1 || return 1
+
+    clock_text="$(date '+%H:%M')"
+    day_text="$(date '+%A')"
+    date_text="$(date '+%d %B %Y')"
+
+    magick "$src" \
+        -auto-orient \
+        -resize '1920x1080^' \
+        -gravity center \
+        -extent 1920x1080 \
+        \( -size 860x300 xc:none -fill '#101417aa' -draw 'roundrectangle 0,0 859,299 34,34' \) \
+        -gravity south -geometry +0+84 -composite \
+        -font "Rubik" -fill '#e0e3e8' -pointsize 112 -gravity south -annotate +0+220 "$clock_text" \
+        -font "Rubik" -fill '#97ccf9' -pointsize 34 -gravity south -annotate +0+150 "$day_text" \
+        -font "Rubik" -fill '#a9b1d6' -pointsize 26 -gravity south -annotate +0+112 "$date_text" \
+        -font "Rubik" -fill '#bb9af7' -pointsize 18 -gravity south -annotate +0+72 "hanauta" \
+        "$out"
+}
+
 load_lock_settings
 
 if [[ "$refresh_rate" =~ ^[0-9]+$ ]]; then
@@ -241,7 +320,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-wallpaper="$(resolve_current_wallpaper)"
+ensure_hanauta_theme_file
+
+wallpaper="$(pick_random_anime_wallpaper)"
+if [[ -z "$wallpaper" ]]; then
+    wallpaper="$(resolve_current_wallpaper)"
+fi
 
 lock_image="$wallpaper"
 blur_enabled="${LOCK_SCREENSHOT_BLUR:-$lock_blur}"
@@ -270,13 +354,13 @@ if [[ -n "$lock_image" && -f "$lock_image" ]]; then
             ;;
     esac
 fi
-
-ind_pos="x+w/2:y+h/2+42"
-time_pos="x+w/2:y+h/2-150"
-date_pos="x+w/2:y+h/2-100"
-greeter_pos="x+w/2:y+h/2-56"
-layout_pos="x+w/2:y+h/2-24"
-status_pos="x+w/2:y+h/2+120"
+# Produce a themed lock image with clock/day overlay.
+if [[ -n "$lock_image" && -f "$lock_image" ]] && command -v magick >/dev/null 2>&1; then
+    tmp_raw="$(mktemp --suffix=.png)"
+    if render_hanauta_lock_image "$lock_image" "$tmp_raw"; then
+        lock_image="$tmp_raw"
+    fi
+fi
 
 betterlockscreen_bin="$(command -v betterlockscreen || true)"
 if [[ -z "$betterlockscreen_bin" && -x "$HOME/.local/bin/betterlockscreen" ]]; then
@@ -290,7 +374,7 @@ fi
 
 # Keep betterlockscreen cache aligned to the current wallpaper.
 if [[ -n "$lock_image" && -f "$lock_image" ]]; then
-    run_quick "$betterlockscreen_bin" -u "$lock_image" >/dev/null 2>&1 || true
+    "$betterlockscreen_bin" -u "$lock_image" >/dev/null 2>&1 || true
 fi
 
 if [[ "$blur_enabled" == "1" ]]; then
