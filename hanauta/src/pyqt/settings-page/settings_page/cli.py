@@ -9,6 +9,11 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
 from settings_page.settings_defaults import ensure_settings_state, load_settings_state
+from settings_page.startup import (
+    restore_saved_displays,
+    restore_saved_wallpaper,
+    restore_saved_vpn,
+)
 from settings_page.marketplace import (
     marketplace_api_refresh_catalog_cache,
     marketplace_api_installed_plugins,
@@ -126,4 +131,3 @@ def main(argv: list[str] | None = None) -> int:
     )
     window.show()
     return app.exec()
-
