@@ -1949,6 +1949,9 @@ offer_mail_desktop_setup() {
 disable_conflicting_notification_autostarts() {
   local autostart_dir="$HOME/.config/autostart"
   local override_file="$autostart_dir/xfce4-notifyd.desktop"
+  local dbus_service_dir="$HOME/.local/share/dbus-1/services"
+  local dbus_service_file="$dbus_service_dir/org.freedesktop.Notifications.service"
+  local hanauta_notifyd="$HOME/.config/i3/hanauta/bin/hanauta-notifyd"
 
   mkdir -p "$autostart_dir"
   cat >"$override_file" <<'EOF'
@@ -1959,7 +1962,19 @@ Hidden=true
 EOF
   success "Disabled xfce4-notifyd XDG autostart override at $override_file"
 
+  mkdir -p "$dbus_service_dir"
+  cat >"$dbus_service_file" <<EOF
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=$hanauta_notifyd
+EOF
+  success "Configured Hanauta as the user DBus notification service at $dbus_service_file"
+
   pkill -x xfce4-notifyd 2>/dev/null || true
+  pkill -x notification-daemon 2>/dev/null || true
+  pkill -x mate-notification-daemon 2>/dev/null || true
+  pkill -x dunst 2>/dev/null || true
+  pkill -x deadd-notification-center 2>/dev/null || true
   if command -v systemctl >/dev/null 2>&1; then
     systemctl --user stop xfce4-notifyd.service 2>/dev/null || true
     systemctl --user disable xfce4-notifyd.service 2>/dev/null || true

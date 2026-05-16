@@ -109,6 +109,8 @@ def run_cmd(cmd: list[str], timeout: float = 3.0) -> str:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )
@@ -308,6 +310,8 @@ def sh(cmd: list[str], timeout: float = 4.0) -> subprocess.CompletedProcess[str]
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
     )

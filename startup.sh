@@ -75,6 +75,51 @@ warm_hanauta_service_caches() {
   fi
 }
 
+ensure_hanauta_notification_dbus_service() {
+  local notifyd="$HOME/.config/i3/hanauta/bin/hanauta-notifyd"
+  local service_dir="$HOME/.local/share/dbus-1/services"
+  local service_file="$service_dir/org.freedesktop.Notifications.service"
+
+  [ -x "$notifyd" ] || return 0
+  mkdir -p "$service_dir"
+  cat >"$service_file" <<EOF
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=$notifyd
+EOF
+}
+
+stop_conflicting_notification_daemons() {
+  pkill -f "$HOME/.config/i3/hanauta/src/pyqt/notification-daemon/notification_daemon.py" 2>/dev/null || true
+  pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" 2>/dev/null || true
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop xfce4-notifyd.service 2>/dev/null || true
+    systemctl --user disable xfce4-notifyd.service 2>/dev/null || true
+  fi
+
+  pkill -x dunst 2>/dev/null || true
+  pkill -x deadd-notification-center 2>/dev/null || true
+  pkill -x xfce4-notifyd 2>/dev/null || true
+  pkill -x notification-daemon 2>/dev/null || true
+  pkill -x mate-notification-daemon 2>/dev/null || true
+  pkill -f cinnamon-settings-daemon.*notifications 2>/dev/null || true
+  pkill -f plasma.*notification 2>/dev/null || true
+}
+
+launch_hanauta_notification_daemon() {
+  local notifyd="$HOME/.config/i3/hanauta/bin/hanauta-notifyd"
+
+  stop_conflicting_notification_daemons
+  ensure_hanauta_notification_dbus_service
+
+  if [ -x "$notifyd" ]; then
+    setsid -f "$notifyd" >/tmp/hanauta-notification-daemon.log 2>&1
+  else
+    echo "Hanauta notification daemon is missing or not executable: $notifyd"
+  fi
+}
+
 read_gtk_setting() {
   local key="$1"
   local file="$HOME/.config/gtk-3.0/settings.ini"
@@ -243,8 +288,6 @@ PY
       fi
     fi
   fi
-  pkill -f "$HOME/.config/i3/hanauta/src/pyqt/notification-daemon/notification_daemon.py" 2>/dev/null || true
-  pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-service" 2>/dev/null || true
   kill_script_if_running "$REMINDER_DAEMON_SCRIPT"
   kill_script_if_running "$KDECONNECT_DAEMON_SCRIPT"
@@ -258,12 +301,10 @@ PY
   kill_script_if_running "$LOCK_OSD_DAEMON_SCRIPT"
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" 2>/dev/null || true
   pkill -x volnoti 2>/dev/null || true
-  pkill -x dunst 2>/dev/null || true
-  pkill -x deadd-notification-center 2>/dev/null || true
   if command -v volnoti >/dev/null 2>&1; then
     volnoti >/tmp/volnoti.log 2>&1 &
   fi
-  "$HOME/.config/i3/hanauta/bin/hanauta-notifyd" >/tmp/hanauta-notification-daemon.log 2>&1 &
+  launch_hanauta_notification_daemon
   if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-service" ]; then
     "$HOME/.config/i3/hanauta/bin/hanauta-service" >/tmp/hanauta-service.log 2>&1 &
   fi
