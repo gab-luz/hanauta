@@ -360,6 +360,7 @@ EMAIL_CLIENT: Path | None = resolve_plugin_script(
 OPEN_MAIL_MESSAGE = APP_DIR / "pyqt" / "shared" / "open_mail_message.py"
 SCRIPTS_DIR = scripts_root()
 LAUNCHER_SCRIPT = SCRIPTS_DIR / "open_launcher.sh"
+VPN_SCRIPT = SCRIPTS_DIR / "vpn.sh"
 FONTS_DIR = fonts_root()
 ASSETS_DIR = source_root() / "assets"
 VPN_ICON_ON = ASSETS_DIR / "vpn_key.svg"
@@ -502,6 +503,28 @@ def run_script(script_name: str, *args: str) -> str:
     if not script_path.exists():
         return ""
     return run_cmd([str(script_path), *args])
+
+
+def vpn_status_payload() -> dict[str, str]:
+    if not VPN_SCRIPT.exists():
+        return {}
+    raw = run_script("vpn.sh", "--status")
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(key): str(value) for key, value in payload.items()}
+
+
+def vpn_connected(payload: dict[str, str]) -> bool:
+    return (
+        payload.get("wireguard", "").strip().lower() == "on"
+        or payload.get("tailscale", "").strip().lower() == "on"
+    )
 
 
 def run_script_bg(script_name: str, *args: str) -> None:
@@ -2219,8 +2242,11 @@ class SystemStateWorker(QThread):
         self._battery_base = battery_base
 
     def run(self) -> None:
+        vpn_payload = vpn_status_payload()
         payload: dict[str, object] = {
             "connected": run_script("network.sh", "status") == "Connected",
+            "vpn_connected": vpn_connected(vpn_payload),
+            "vpn_status": vpn_payload,
             "caffeine_on": run_script("caffeine.sh", "status") == "on",
             "caps_on": run_script("lockstatus.sh", "--caps-status") == "on",
             "num_on": run_script("lockstatus.sh", "--num-status") == "on",
@@ -3206,6 +3232,7 @@ class CyberBar(QWidget):
         self.vpn_icon.setObjectName("statusIconButton")
         self.vpn_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.vpn_icon.setCheckable(True)
+        self.vpn_icon.setProperty("active", False)
         self.vpn_icon.setText(self._icon_text("vpn_key"))
         self.vpn_icon.clicked.connect(self._toggle_vpn_popup)
         self.christian_button = QPushButton("")
@@ -5139,6 +5166,7 @@ class CyberBar(QWidget):
             material_icon("wifi" if connected else "wifi_off"),
             16,
         )
+        self._apply_vpn_state(bool(payload.get("vpn_connected", False)))
 
         caffeine_on = bool(payload.get("caffeine_on", False))
         self.caffeine_icon.setVisible(caffeine_on)
@@ -5187,6 +5215,17 @@ class CyberBar(QWidget):
 
     def _finish_system_state_worker(self) -> None:
         self._system_state_worker = None
+
+    def _apply_vpn_state(self, active: bool) -> None:
+        previous = self.vpn_icon.property("active") == True
+        if previous == active:
+            self._set_vpn_button_icon(active)
+            return
+        self.vpn_icon.setProperty("active", active)
+        self._set_vpn_button_icon(active)
+        self.style().unpolish(self.vpn_icon)
+        self.style().polish(self.vpn_icon)
+        self.vpn_icon.update()
 
     def _poll_updates_count(self) -> None:
         if self._updates_worker is not None and self._updates_worker.isRunning():
@@ -7029,6 +7068,7 @@ class CyberBar(QWidget):
             "_vpn_popup_process", vpn_script, python_bin=self._python_bin()
         )
         QTimer.singleShot(150, self._sync_vpn_button)
+        QTimer.singleShot(700, self._poll_system)
 
     def _toggle_ai_popup(self) -> None:
         if AI_POPUP is None or not AI_POPUP.exists():

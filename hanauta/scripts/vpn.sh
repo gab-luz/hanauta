@@ -37,9 +37,24 @@ get_wg_status() {
     fi
     if ip link show "$iface" 2>/dev/null | grep -q "UP"; then
         echo "on"
+    elif get_active_wg_interface | grep -q .; then
+        echo "on"
     else
         echo "off"
     fi
+}
+
+get_active_wg_interface() {
+    if command -v wg >/dev/null 2>&1; then
+        wg show interfaces 2>/dev/null | tr ' ' '\n' | while read -r iface; do
+            [ -n "$iface" ] || continue
+            if ip link show "$iface" 2>/dev/null | grep -q "UP"; then
+                echo "$iface"
+            fi
+        done
+        return
+    fi
+    ip -brief link show type wireguard 2>/dev/null | awk '$3 ~ /UP/ { print $1 }'
 }
 
 get_tailscale_status() {
@@ -164,6 +179,10 @@ case "$1" in
         WG_STATUS=$(get_wg_status)
         TS_STATUS=$(get_tailscale_status)
         SELECTED=$(get_selected_wg)
+        ACTIVE_WG=$(get_active_wg_interface | head -1)
+        if [ "$WG_STATUS" = "on" ] && [ -n "$ACTIVE_WG" ] && ! ip link show "$SELECTED" 2>/dev/null | grep -q "UP"; then
+            SELECTED="$ACTIVE_WG"
+        fi
         
         echo "{\"wireguard\": \"$WG_STATUS\", \"tailscale\": \"$TS_STATUS\", \"wg_selected\": \"$SELECTED\"}"
         ;;
