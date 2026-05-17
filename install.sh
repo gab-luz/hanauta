@@ -39,6 +39,12 @@ I3_VOLUME_REPO_BRANCH="master"
 PRINTER_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-printer"
 PRINTER_PLUGIN_REPO_BRANCH="main"
 PRINTER_PLUGIN_ID="printer_widget"
+VPN_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-vpn-control"
+VPN_PLUGIN_REPO_BRANCH="main"
+VPN_PLUGIN_ID="vpn-control"
+WIFI_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-wifi-control"
+WIFI_PLUGIN_REPO_BRANCH="main"
+WIFI_PLUGIN_ID="wifi-control"
 SAFETY_BACKUP_ROOT="${HOME}/.config/i3/backups/install-${RUN_ID}"
 
 RICH_AVAILABLE=false
@@ -2254,6 +2260,197 @@ install_printer_plugin_only() {
   return 0
 }
 
+sync_vpn_plugin_repo() {
+  local target_root="$HOME/.config/i3/hanauta/plugins"
+  local target_dir="$target_root/hanauta-plugin-vpn-control"
+  local origin_url=""
+
+  mkdir -p "$target_root"
+
+  if [ -d "$target_dir/.git" ]; then
+    origin_url="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
+    if [ "$origin_url" = "$VPN_PLUGIN_REPO_URL" ]; then
+      info "Updating VPN Control plugin at $target_dir..."
+      git -C "$target_dir" fetch --depth 1 origin "$VPN_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" checkout -q "$VPN_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" pull --ff-only >/dev/null 2>&1 || true
+    else
+      if [ "$INSTALL_UPDATE_MODE" = true ]; then
+        warn "Existing VPN plugin checkout has a different origin. Updater mode keeps it unchanged."
+        return 0
+      fi
+      warn "Replacing VPN plugin checkout with expected upstream."
+      backup_path_if_exists "$target_dir" "vpn plugin checkout"
+      rm -rf "$target_dir"
+    fi
+  fi
+
+  if [ ! -d "$target_dir/.git" ]; then
+    info "Cloning VPN Control plugin into $target_dir..."
+    backup_path_if_exists "$target_dir" "vpn plugin checkout"
+    rm -rf "$target_dir"
+    if ! git clone --depth 1 --branch "$VPN_PLUGIN_REPO_BRANCH" "$VPN_PLUGIN_REPO_URL" "$target_dir" >/dev/null 2>&1; then
+      error "Failed to clone VPN Control plugin from $VPN_PLUGIN_REPO_URL"
+      return 1
+    fi
+  fi
+
+  success "VPN Control plugin is installed at $target_dir"
+  return 0
+}
+
+register_vpn_plugin_in_settings() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  local install_path="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-vpn-control"
+  [ -f "$settings_file" ] || return 0
+  python3 - "$settings_file" "$install_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+install_path = str(Path(sys.argv[2]).expanduser())
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+marketplace = payload.setdefault("marketplace", {})
+if not isinstance(marketplace, dict):
+    marketplace = {}
+    payload["marketplace"] = marketplace
+installed = marketplace.setdefault("installed_plugins", [])
+if not isinstance(installed, list):
+    installed = []
+    marketplace["installed_plugins"] = installed
+plugin_id = "vpn-control"
+record = {
+    "id": plugin_id,
+    "name": "VPN Control",
+    "repo": "https://github.com/gab-luz/hanauta-plugin-vpn-control",
+    "branch": "main",
+    "install_path": install_path,
+}
+installed = [row for row in installed if not (isinstance(row, dict) and str(row.get("id", "")) == plugin_id)]
+installed.append(record)
+marketplace["installed_plugins"] = installed
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+}
+
+wifi_card_available() {
+  local net_root="/sys/class/net"
+  [ -d "$net_root" ] || return 1
+  local iface=""
+  for iface in "$net_root"/*; do
+    [ -d "$iface" ] || continue
+    local name
+    name="$(basename "$iface")"
+    [ "$name" = "lo" ] && continue
+    if [ -d "$iface/wireless" ]; then
+      return 0
+    fi
+    case "$name" in
+      wl*|wlan*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+sync_wifi_plugin_repo() {
+  local target_root="$HOME/.config/i3/hanauta/plugins"
+  local target_dir="$target_root/hanauta-plugin-wifi-control"
+  local origin_url=""
+
+  mkdir -p "$target_root"
+
+  if [ -d "$target_dir/.git" ]; then
+    origin_url="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
+    if [ "$origin_url" = "$WIFI_PLUGIN_REPO_URL" ]; then
+      info "Updating Wi-Fi Control plugin at $target_dir..."
+      git -C "$target_dir" fetch --depth 1 origin "$WIFI_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" checkout -q "$WIFI_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" pull --ff-only >/dev/null 2>&1 || true
+    else
+      if [ "$INSTALL_UPDATE_MODE" = true ]; then
+        warn "Existing Wi-Fi plugin checkout has a different origin. Updater mode keeps it unchanged."
+        return 0
+      fi
+      warn "Replacing Wi-Fi plugin checkout with expected upstream."
+      backup_path_if_exists "$target_dir" "wifi plugin checkout"
+      rm -rf "$target_dir"
+    fi
+  fi
+
+  if [ ! -d "$target_dir/.git" ]; then
+    info "Cloning Wi-Fi Control plugin into $target_dir..."
+    backup_path_if_exists "$target_dir" "wifi plugin checkout"
+    rm -rf "$target_dir"
+    if ! git clone --depth 1 --branch "$WIFI_PLUGIN_REPO_BRANCH" "$WIFI_PLUGIN_REPO_URL" "$target_dir" >/dev/null 2>&1; then
+      error "Failed to clone Wi-Fi Control plugin from $WIFI_PLUGIN_REPO_URL"
+      return 1
+    fi
+  fi
+
+  success "Wi-Fi Control plugin is installed at $target_dir"
+  return 0
+}
+
+register_wifi_plugin_in_settings() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  local install_path="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-wifi-control"
+  [ -f "$settings_file" ] || return 0
+  python3 - "$settings_file" "$install_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+install_path = str(Path(sys.argv[2]).expanduser())
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+marketplace = payload.setdefault("marketplace", {})
+if not isinstance(marketplace, dict):
+    marketplace = {}
+    payload["marketplace"] = marketplace
+installed = marketplace.setdefault("installed_plugins", [])
+if not isinstance(installed, list):
+    installed = []
+    marketplace["installed_plugins"] = installed
+plugin_id = "wifi-control"
+record = {
+    "id": plugin_id,
+    "name": "Wi-Fi Control",
+    "repo": "https://github.com/gab-luz/hanauta-plugin-wifi-control",
+    "branch": "main",
+    "install_path": install_path,
+}
+installed = [row for row in installed if not (isinstance(row, dict) and str(row.get("id", "")) == plugin_id)]
+installed.append(record)
+marketplace["installed_plugins"] = installed
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+}
+
+install_wifi_plugin_if_available() {
+  if ! wifi_card_available; then
+    info "No Wi-Fi hardware detected; skipping Wi-Fi popup plugin auto-install."
+    return 0
+  fi
+  if ! need_cmd git; then
+    warn "git is not available; skipping Wi-Fi popup plugin auto-install."
+    return 0
+  fi
+  sync_wifi_plugin_repo || return 1
+  register_wifi_plugin_in_settings || true
+  return 0
+}
+
 offer_mail_desktop_setup() {
   local helper="$HOME/.config/i3/hanauta/scripts/install_mail_desktop.sh"
   local desktop_id="hanauta-mail.desktop"
@@ -2372,8 +2569,14 @@ configure_wireguard_support_prompt() {
   echo
   echo -e "${MAGENTA}WireGuard support${NC}"
   echo -e "Enable Hanauta VPN Control integration now?"
-  echo -e "If enabled, Hanauta will expose its WireGuard/VPN controls in Settings and helper flows."
+  echo -e "If enabled, Hanauta installs the VPN widget plugin and uses /etc/wireguard configs by default."
   if confirm_yes "Enable WireGuard support now?"; then
+    if need_cmd git; then
+      sync_vpn_plugin_repo || warn "VPN plugin install failed; you can retry later from Marketplace."
+      register_vpn_plugin_in_settings || true
+    else
+      warn "git is not available; skipping automatic VPN plugin install."
+    fi
     python3 - "$settings_file" <<'PY'
 import json
 import sys
@@ -2397,6 +2600,7 @@ if not isinstance(vpn, dict):
 vpn["enabled"] = True
 vpn.setdefault("show_in_notification_center", False)
 vpn.setdefault("reconnect_on_login", False)
+vpn.setdefault("preferred_interface", "")
 path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
     success "WireGuard support enabled in Hanauta settings."
@@ -3093,6 +3297,7 @@ main() {
   install_hanauta_service_root
   ensure_dock_defaults
   ensure_hanauta_settings
+  install_wifi_plugin_if_available
   configure_wireguard_support_prompt
   disable_conflicting_notification_autostarts
   install_sweet_cursor_theme

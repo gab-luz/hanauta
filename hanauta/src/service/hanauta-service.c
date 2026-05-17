@@ -21,6 +21,7 @@ typedef struct {
     gchar *games_cache_script;
     gint64 games_cache_next_run;
     gchar *fullscreen_alert_script;
+    gchar *wifi_plugin_offer_marker_path;
     gint64 disk_space_next_check;
     gint64 disk_space_last_alert_at;
     GFileMonitor *settings_monitor;
@@ -767,6 +768,88 @@ cleanup:
     g_free(title);
     g_free(body);
     return FALSE;
+}
+
+static gboolean wifi_card_present(void) {
+    GDir *dir = g_dir_open("/sys/class/net", 0, NULL);
+    if (dir == NULL) {
+        return FALSE;
+    }
+    gboolean found = FALSE;
+    const gchar *name = NULL;
+    while (!found && (name = g_dir_read_name(dir)) != NULL) {
+        if (g_strcmp0(name, "lo") == 0) {
+            continue;
+        }
+        gchar *wireless_path = g_build_filename("/sys/class/net", name, "wireless", NULL);
+        if (g_file_test(wireless_path, G_FILE_TEST_IS_DIR)) {
+            found = TRUE;
+            g_free(wireless_path);
+            break;
+        }
+        g_free(wireless_path);
+        if (g_str_has_prefix(name, "wl") || g_str_has_prefix(name, "wlan")) {
+            found = TRUE;
+            break;
+        }
+    }
+    g_dir_close(dir);
+    return found;
+}
+
+static gboolean wifi_plugin_installed(void) {
+    gchar *plugin_py = g_build_filename(
+        g_get_home_dir(),
+        ".config",
+        "i3",
+        "hanauta",
+        "plugins",
+        "hanauta-plugin-wifi-control",
+        "wifi_control.py",
+        NULL
+    );
+    gchar *plugin_bin = g_build_filename(
+        g_get_home_dir(),
+        ".config",
+        "i3",
+        "hanauta",
+        "bin",
+        "hanauta-wifi-control",
+        NULL
+    );
+    gboolean installed = g_file_test(plugin_py, G_FILE_TEST_EXISTS) || g_file_test(plugin_bin, G_FILE_TEST_EXISTS);
+    g_free(plugin_py);
+    g_free(plugin_bin);
+    return installed;
+}
+
+static gboolean maybe_offer_wifi_plugin_install(void) {
+    if (!wifi_card_present()) {
+        return FALSE;
+    }
+    if (wifi_plugin_installed()) {
+        return FALSE;
+    }
+    if (g_service.wifi_plugin_offer_marker_path == NULL || *g_service.wifi_plugin_offer_marker_path == '\0') {
+        return FALSE;
+    }
+    if (g_file_test(g_service.wifi_plugin_offer_marker_path, G_FILE_TEST_EXISTS)) {
+        return FALSE;
+    }
+
+    const gchar *title = "Wi-Fi Plugin Available";
+    const gchar *body =
+        "Hanauta detected Wi-Fi hardware, but the Wi-Fi popup plugin is missing.\n\n"
+        "To install it now:\n"
+        "bash ~/.config/i3/hanauta/install.sh\n\n"
+        "The installer will auto-install hanauta-plugin-wifi-control when Wi-Fi hardware is present.";
+
+    if (!spawn_fullscreen_alert(title, body, "discrete")) {
+        return FALSE;
+    }
+
+    g_file_set_contents(g_service.wifi_plugin_offer_marker_path, "shown\n", -1, NULL);
+    return TRUE;
 }
 
 static gboolean refresh_wifi(void) {
@@ -2037,8 +2120,9 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean ntfy_ok = refresh_ntfy();
     gboolean games_ok = refresh_games_cache();
     gboolean disk_ok = refresh_disk_space();
+    gboolean wifi_offer_ok = maybe_offer_wifi_plugin_install();
     refresh_plugin_background_tasks();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || disk_ok;
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || disk_ok || wifi_offer_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -2218,6 +2302,7 @@ int main(int argc, char **argv) {
     g_service.games_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_recent_games.py", NULL);
     g_service.games_cache_next_run = 0;
     g_service.fullscreen_alert_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "pyqt", "shared", "fullscreen_alert.py", NULL);
+    g_service.wifi_plugin_offer_marker_path = g_build_filename(g_service.state_dir, "wifi_plugin_offer_shown.state", NULL);
     g_service.disk_space_next_check = 0;
     g_service.disk_space_last_alert_at = 0;
     g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
@@ -2260,6 +2345,7 @@ int main(int argc, char **argv) {
     g_free(g_service.status_path);
     g_free(g_service.games_cache_script);
     g_free(g_service.fullscreen_alert_script);
+    g_free(g_service.wifi_plugin_offer_marker_path);
     g_free(g_service.ntfy_topic_key);
     if (g_service.ntfy_all_topics_cache != NULL) {
         g_ptr_array_free(g_service.ntfy_all_topics_cache, TRUE);

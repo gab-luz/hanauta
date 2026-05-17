@@ -319,6 +319,32 @@ CRYPTO_WIDGET: Path | None = resolve_plugin_script("crypto_widget.py", ["crypto"
 VPS_WIDGET: Path | None = resolve_plugin_script("vps_widget.py", ["vps"])
 
 
+def resolve_wifi_control_target() -> Path | None:
+    candidates: list[Path] = []
+    resolved = resolve_plugin_script("wifi_control.py", ["wifi-control", "wifi"])
+    if resolved is not None:
+        candidates.append(resolved)
+    if WIFI_CONTROL is not None:
+        candidates.append(WIFI_CONTROL)
+    candidates.append(
+        Path.home()
+        / ".config"
+        / "i3"
+        / "hanauta"
+        / "plugins"
+        / "hanauta-plugin-wifi-control"
+        / "wifi_control.py"
+    )
+    candidates.append(
+        ROOT / "hanauta" / "plugins" / "hanauta-plugin-wifi-control" / "wifi_control.py"
+    )
+    candidates.append(WIFI_CONTROL_BINARY)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _resolve_desktop_clock_widget() -> Path | None:
     resolved = resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
     if resolved is not None and resolved.exists():
@@ -7087,22 +7113,16 @@ class CyberBar(QWidget):
         if not wifi_interface_available():
             self.net_icon.setChecked(False)
             return
-        wifi_target: Path | None = None
-        if WIFI_CONTROL is not None and WIFI_CONTROL.exists():
-            wifi_target = WIFI_CONTROL
-        elif WIFI_CONTROL_BINARY.exists():
-            wifi_target = WIFI_CONTROL_BINARY
+        wifi_target = resolve_wifi_control_target()
         if wifi_target is None:
-            opened_fallback = False
-            if (SCRIPTS_DIR / "networkmenu.sh").exists():
-                run_script_bg("networkmenu.sh")
-                opened_fallback = True
-            elif shutil.which("nm-connection-editor"):
-                opened_fallback = run_bg_detached(["nm-connection-editor"])
-            if not opened_fallback:
-                logging.warning(
-                    "Wi-Fi control target is unavailable; no safe fallback launcher found."
-                )
+            trigger_fullscreen_alert(
+                "Wi-Fi Plugin Missing",
+                "Wi-Fi hardware was detected, but Hanauta could not find hanauta-plugin-wifi-control. Install the plugin to open the Wi-Fi popup.",
+                "discrete",
+            )
+            logging.warning(
+                "Wi-Fi control target is unavailable; hanauta-plugin-wifi-control is missing."
+            )
             self.net_icon.setChecked(False)
             return
         self._toggle_singleton_process(
@@ -7338,11 +7358,7 @@ class CyberBar(QWidget):
         return active
 
     def _sync_wifi_button(self) -> None:
-        wifi_target: Path | None = None
-        if WIFI_CONTROL is not None and WIFI_CONTROL.exists():
-            wifi_target = WIFI_CONTROL
-        elif WIFI_CONTROL_BINARY.exists():
-            wifi_target = WIFI_CONTROL_BINARY
+        wifi_target = resolve_wifi_control_target()
         self._sync_popup_button(
             self.net_icon,
             "_wifi_popup_process",
