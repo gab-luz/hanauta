@@ -489,6 +489,10 @@ elif [ -f "/etc/bash_completion" ]; then
   source "/etc/bash_completion"
 fi
 
+# Make path/tab completion case-insensitive (e.g. "cd do" -> "Downloads").
+bind "set completion-ignore-case on" 2>/dev/null || true
+bind "set show-all-if-ambiguous on" 2>/dev/null || true
+
 # Load git prompt helper if available so we can render branch/status in prompt.
 if [ -z "${__git_ps1-}" ]; then
   if [ -f "/usr/lib/git-core/git-sh-prompt" ]; then
