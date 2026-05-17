@@ -1135,6 +1135,185 @@ class SettingsWindow(QWidget):
     def _build_display_page(self) -> QWidget:
         return build_display_page(self)
 
+    def _refresh_display_state(self) -> None:
+        self.display_state = parse_xrandr_state()
+        display_page_index = int(getattr(self, "page_indices", {}).get("display", -1))
+        if display_page_index < 0:
+            return
+        page = self._build_display_page()
+        old_widget = self.page_stack.widget(display_page_index)
+        if old_widget is not None:
+            self.page_stack.removeWidget(old_widget)
+            old_widget.deleteLater()
+        self.page_stack.insertWidget(display_page_index, page)
+        if str(getattr(self, "current_page", "")) == "display":
+            self.page_stack.setCurrentIndex(display_page_index)
+
+    def _set_display_layout_mode(self, mode: str) -> None:
+        normalized = (
+            "duplicate" if str(mode).strip().lower() == "duplicate" else "extend"
+        )
+        display_settings = self.settings_state.setdefault("display", {})
+        if not isinstance(display_settings, dict):
+            display_settings = {}
+            self.settings_state["display"] = display_settings
+        display_settings["layout_mode"] = normalized
+        buttons = getattr(self, "display_layout_buttons", {})
+        if isinstance(buttons, dict):
+            button = buttons.get(normalized)
+            if button is not None:
+                button.setChecked(True)
+        save_settings_state(self.settings_state)
+
+    def _rebuild_display_output_cards(self) -> None:
+        container = getattr(self, "display_outputs_container", None)
+        if container is None:
+            return
+        while container.count():
+            item = container.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+        # Reuse the existing page builder helper that populates output cards.
+        from settings_page.pages.display import build_display_global_card
+
+        build_display_global_card(self)
+
+    def _sync_refresh_rates_for_output(self, output_name: str, mode: str) -> None:
+        controls = self.display_controls.get(output_name, {})
+        refresh_combo = controls.get("refresh")
+        if refresh_combo is None:
+            return
+        display = next(
+            (
+                item
+                for item in self.display_state
+                if str(item.get("name", "")).strip() == output_name
+            ),
+            None,
+        )
+        if not isinstance(display, dict):
+            return
+        refresh_rates = display.get("refresh_rates", {})
+        rates = []
+        if isinstance(refresh_rates, dict):
+            rates = refresh_rates.get(mode, [])
+        if not isinstance(rates, list):
+            rates = []
+        current = refresh_combo.currentText().strip()
+        refresh_combo.blockSignals(True)
+        refresh_combo.clear()
+        refresh_combo.addItem("Auto")
+        for rate in rates:
+            value = str(rate).strip()
+            if value:
+                refresh_combo.addItem(value)
+        preferred = str(display.get("current_refresh", "")).strip()
+        if preferred and refresh_combo.findText(preferred) >= 0:
+            refresh_combo.setCurrentText(preferred)
+        elif current and refresh_combo.findText(current) >= 0:
+            refresh_combo.setCurrentText(current)
+        else:
+            refresh_combo.setCurrentText("Auto")
+        refresh_combo.blockSignals(False)
+
+    def _set_display_wallpaper_mode(self, output_name: str, mode: str) -> None:
+        appearance = self.settings_state.setdefault("appearance", {})
+        if not isinstance(appearance, dict):
+            appearance = {}
+            self.settings_state["appearance"] = appearance
+        fit_modes = appearance.setdefault("wallpaper_fit_modes", {})
+        if not isinstance(fit_modes, dict):
+            fit_modes = {}
+            appearance["wallpaper_fit_modes"] = fit_modes
+        normalized = str(mode).strip().lower()
+        if normalized not in {"fill", "fit", "center", "stretch", "tile"}:
+            normalized = "fill"
+        fit_modes[str(output_name).strip()] = normalized
+        save_settings_state(self.settings_state)
+        self._apply_current_wallpaper_layout()
+
+    def _apply_display_settings(self) -> None:
+        if not self.display_state:
+            if hasattr(self, "display_status"):
+                self.display_status.setText("No displays detected through xrandr.")
+            return
+
+        primary_name = ""
+        primary_combo = getattr(self, "primary_display_combo", None)
+        if primary_combo is not None:
+            primary_name = str(primary_combo.currentText()).strip()
+        if not primary_name:
+            primary_name = str(self.display_state[0].get("name", "")).strip()
+
+        display_settings = self.settings_state.setdefault("display", {})
+        if not isinstance(display_settings, dict):
+            display_settings = {}
+            self.settings_state["display"] = display_settings
+        layout_mode = str(display_settings.get("layout_mode", "extend")).strip().lower()
+        if layout_mode not in {"extend", "duplicate"}:
+            layout_mode = "extend"
+
+        payload: list[dict[str, object]] = []
+        for display in self.display_state:
+            name = str(display.get("name", "")).strip()
+            if not name:
+                continue
+            controls = self.display_controls.get(name, {})
+            enabled_switch = controls.get("enabled")
+            resolution_combo = controls.get("resolution")
+            refresh_combo = controls.get("refresh")
+            orientation_combo = controls.get("orientation")
+
+            enabled = (
+                bool(enabled_switch.isChecked())
+                if enabled_switch is not None
+                else bool(display.get("enabled", True))
+            )
+            resolution = (
+                str(resolution_combo.currentText()).strip()
+                if resolution_combo is not None
+                else str(display.get("current_mode", "")).strip()
+            )
+            refresh = (
+                str(refresh_combo.currentText()).strip()
+                if refresh_combo is not None
+                else str(display.get("current_refresh", "")).strip()
+            )
+            orientation = normalize_display_orientation(
+                orientation_combo.currentText()
+                if orientation_combo is not None
+                else display.get("orientation", "normal")
+            )
+            payload.append(
+                {
+                    "name": name,
+                    "enabled": enabled,
+                    "resolution": resolution,
+                    "refresh": refresh,
+                    "orientation": orientation,
+                    "modes": display.get("modes", []),
+                }
+            )
+
+        cmd = build_display_command(payload, primary_name, layout_mode)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip() or "xrandr failed."
+            if hasattr(self, "display_status"):
+                self.display_status.setText(
+                    f"Failed to apply display settings: {detail}"
+                )
+            return
+
+        display_settings["primary"] = primary_name
+        display_settings["layout_mode"] = layout_mode
+        display_settings["outputs"] = payload
+        save_settings_state(self.settings_state)
+        if hasattr(self, "display_status"):
+            self.display_status.setText("Display settings applied.")
+        self._refresh_display_state()
+
     def _build_picom_page(self) -> QWidget:
         return self._scroll_page(self._build_picom_card())
 
@@ -14835,6 +15014,98 @@ class SettingsWindow(QWidget):
         }
         for key, label in getattr(self, "system_overview_labels", {}).items():
             label.setText(values.get(key, "..."))
+
+    def _build_picom_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel("Picom")
+        title.setFont(QFont(self.display_font, 13))
+        subtitle = QLabel(
+            "Compositor controls for shadows, opacity, corner radius, and related rendering behavior."
+        )
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setProperty("mutedText", True)
+        subtitle.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        self.picom_backend_combo = QComboBox()
+        self.picom_backend_combo.setObjectName("settingsCombo")
+        for option in ("glx", "xrender"):
+            self.picom_backend_combo.addItem(option)
+
+        self.picom_vsync_switch = SwitchButton(True)
+        self.picom_damage_switch = SwitchButton(True)
+        self.picom_shadow_switch = SwitchButton(True)
+        self.picom_fading_switch = SwitchButton(False)
+        self.picom_clip_switch = SwitchButton(False)
+        self.picom_rounded_switch = SwitchButton(True)
+
+        self.picom_shadow_radius_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_shadow_radius_slider.setRange(0, 100)
+        self.picom_shadow_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_shadow_opacity_slider.setRange(0, 100)
+        self.picom_shadow_offset_x_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_shadow_offset_x_slider.setRange(-80, 80)
+        self.picom_shadow_offset_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_shadow_offset_y_slider.setRange(-80, 80)
+        self.picom_active_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_active_opacity_slider.setRange(0, 100)
+        self.picom_inactive_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_inactive_opacity_slider.setRange(0, 100)
+        self.picom_corner_radius_slider = QSlider(Qt.Orientation.Horizontal)
+        self.picom_corner_radius_slider.setRange(0, 64)
+
+        for row in (
+            SettingsRow(material_icon("developer_board"), "Backend", "Picom renderer backend.", self.icon_font, self.ui_font, self.picom_backend_combo),
+            SettingsRow(material_icon("sync"), "VSync", "Reduce tearing when possible.", self.icon_font, self.ui_font, self.picom_vsync_switch),
+            SettingsRow(material_icon("tune"), "Use Damage", "Track damaged regions for more efficient redraws.", self.icon_font, self.ui_font, self.picom_damage_switch),
+            SettingsRow(material_icon("gradient"), "Shadows", "Enable window shadows.", self.icon_font, self.ui_font, self.picom_shadow_switch),
+            SettingsRow(material_icon("blur_on"), "Shadow Radius", "Blur radius for shadows.", self.icon_font, self.ui_font, self.picom_shadow_radius_slider),
+            SettingsRow(material_icon("opacity"), "Shadow Opacity", "Opacity for window shadows.", self.icon_font, self.ui_font, self.picom_shadow_opacity_slider),
+            SettingsRow(material_icon("swap_horiz"), "Shadow Offset X", "Horizontal offset for shadows.", self.icon_font, self.ui_font, self.picom_shadow_offset_x_slider),
+            SettingsRow(material_icon("swap_vert"), "Shadow Offset Y", "Vertical offset for shadows.", self.icon_font, self.ui_font, self.picom_shadow_offset_y_slider),
+            SettingsRow(material_icon("animation"), "Fading", "Enable fade transitions.", self.icon_font, self.ui_font, self.picom_fading_switch),
+            SettingsRow(material_icon("filter_center_focus"), "Active Opacity", "Opacity for focused windows.", self.icon_font, self.ui_font, self.picom_active_opacity_slider),
+            SettingsRow(material_icon("filter_alt"), "Inactive Opacity", "Opacity for unfocused windows.", self.icon_font, self.ui_font, self.picom_inactive_opacity_slider),
+            SettingsRow(material_icon("rounded_corner"), "Corner Radius", "Rounded corner radius in pixels.", self.icon_font, self.ui_font, self.picom_corner_radius_slider),
+            SettingsRow(material_icon("crop_din"), "Transparent Clipping", "Clip transparent regions more aggressively.", self.icon_font, self.ui_font, self.picom_clip_switch),
+            SettingsRow(material_icon("radio_button_checked"), "Detect Rounded Corners", "Honor rounded-corner hints from apps.", self.icon_font, self.ui_font, self.picom_rounded_switch),
+        ):
+            layout.addWidget(row)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        apply_button = QPushButton("Apply Picom")
+        apply_button.setObjectName("primaryButton")
+        apply_button.clicked.connect(self._apply_picom_settings)
+        restart_button = QPushButton("Restart Picom")
+        restart_button.setObjectName("secondaryButton")
+        restart_button.clicked.connect(self._restart_picom)
+        defaults_button = QPushButton("Reset Defaults")
+        defaults_button.setObjectName("secondaryButton")
+        defaults_button.clicked.connect(self._reset_picom_defaults)
+        rules_button = QPushButton("Open Rule Files")
+        rules_button.setObjectName("secondaryButton")
+        rules_button.clicked.connect(self._open_picom_rule_dir)
+        actions.addWidget(apply_button)
+        actions.addWidget(restart_button)
+        actions.addWidget(defaults_button)
+        actions.addWidget(rules_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        self.picom_status = QLabel("")
+        self.picom_status.setProperty("mutedText", True)
+        self.picom_status.setWordWrap(True)
+        layout.addWidget(self.picom_status)
+
+        self._sync_picom_controls()
+        return card
 
     def _current_picom_values(self) -> dict[str, object]:
         return {

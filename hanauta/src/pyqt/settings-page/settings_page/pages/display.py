@@ -74,6 +74,10 @@ def build_display_card(window) -> QWidget:
         window.display_status.setText("No displays detected through xrandr.")
         return card
 
+    window.display_outputs_container = QVBoxLayout()
+    window.display_outputs_container.setContentsMargins(0, 0, 0, 0)
+    window.display_outputs_container.setSpacing(10)
+
     connected_count = len(window.display_state)
     if connected_count > 1:
         layout.addWidget(build_display_global_card(window))
@@ -82,9 +86,6 @@ def build_display_card(window) -> QWidget:
             "Single display detected. Primary and mirror controls are hidden."
         )
 
-    window.display_outputs_container = QVBoxLayout()
-    window.display_outputs_container.setContentsMargins(0, 0, 0, 0)
-    window.display_outputs_container.setSpacing(10)
     layout.addLayout(window.display_outputs_container)
     window._rebuild_display_output_cards()
     return card

@@ -14,7 +14,7 @@ DEFAULT_SERVICE_SETTINGS = {
         "show_in_bar": False,
     },
     "vpn_control": {
-        "enabled": True,
+        "enabled": False,
         "show_in_notification_center": False,
         "reconnect_on_login": False,
         "preferred_interface": "",

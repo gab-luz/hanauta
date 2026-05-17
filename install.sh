@@ -2362,6 +2362,73 @@ ensure_hanauta_settings() {
   fi
 }
 
+configure_wireguard_support_prompt() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  if [ ! -f "$settings_file" ]; then
+    warn "Hanauta settings file not found; skipping WireGuard support prompt."
+    return 0
+  fi
+
+  echo
+  echo -e "${MAGENTA}WireGuard support${NC}"
+  echo -e "Enable Hanauta VPN Control integration now?"
+  echo -e "If enabled, Hanauta will expose its WireGuard/VPN controls in Settings and helper flows."
+  if confirm_yes "Enable WireGuard support now?"; then
+    python3 - "$settings_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+services = payload.setdefault("services", {})
+if not isinstance(services, dict):
+    services = {}
+    payload["services"] = services
+vpn = services.setdefault("vpn_control", {})
+if not isinstance(vpn, dict):
+    vpn = {}
+    services["vpn_control"] = vpn
+vpn["enabled"] = True
+vpn.setdefault("show_in_notification_center", False)
+vpn.setdefault("reconnect_on_login", False)
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+    success "WireGuard support enabled in Hanauta settings."
+  else
+    python3 - "$settings_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+services = payload.setdefault("services", {})
+if not isinstance(services, dict):
+    services = {}
+    payload["services"] = services
+vpn = services.setdefault("vpn_control", {})
+if not isinstance(vpn, dict):
+    vpn = {}
+    services["vpn_control"] = vpn
+vpn["enabled"] = False
+vpn["reconnect_on_login"] = False
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+    info "WireGuard support left disabled (can be enabled later in Settings > Services > VPN Control)."
+  fi
+}
+
 copy_theme_tree() {
   local source_dir="$1"
   local target_dir="$2"
@@ -3026,6 +3093,7 @@ main() {
   install_hanauta_service_root
   ensure_dock_defaults
   ensure_hanauta_settings
+  configure_wireguard_support_prompt
   disable_conflicting_notification_autostarts
   install_sweet_cursor_theme
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then

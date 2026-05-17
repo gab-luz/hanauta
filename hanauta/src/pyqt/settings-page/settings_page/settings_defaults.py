@@ -12,6 +12,40 @@ from settings_page.service_settings import merged_service_settings
 
 WALLS_DIR = ROOT / "hanauta" / "walls"
 CURRENT_WALLPAPER = Path.home() / ".wallpapers" / "wallpaper.png"
+DEFAULT_PLUGIN_INSTALL_DIR = ROOT / "hanauta" / "plugins"
+DEFAULT_WIFI_PLUGIN_ID = "wifi-control"
+DEFAULT_WIFI_PLUGIN_REPO = "https://github.com/gab-luz/hanauta-plugin-wifi-control"
+
+
+def _default_wifi_plugin_entry() -> dict[str, object]:
+    return {
+        "id": DEFAULT_WIFI_PLUGIN_ID,
+        "name": "Wi-Fi Control",
+        "repo": DEFAULT_WIFI_PLUGIN_REPO,
+        "branch": "main",
+        "install_path": str(
+            DEFAULT_PLUGIN_INSTALL_DIR / "hanauta-plugin-wifi-control"
+        ),
+    }
+
+
+def _ensure_default_installed_plugins(rows: object) -> list[dict[str, object]]:
+    normalized = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    found_wifi = False
+    for row in normalized:
+        if str(row.get("id", "")).strip() == DEFAULT_WIFI_PLUGIN_ID:
+            found_wifi = True
+            row.setdefault("name", "Wi-Fi Control")
+            row.setdefault("repo", DEFAULT_WIFI_PLUGIN_REPO)
+            row.setdefault("branch", "main")
+            row.setdefault(
+                "install_path",
+                str(DEFAULT_PLUGIN_INSTALL_DIR / "hanauta-plugin-wifi-control"),
+            )
+            break
+    if not found_wifi:
+        normalized.append(_default_wifi_plugin_entry())
+    return normalized
 
 
 def load_settings_state() -> dict:
@@ -279,9 +313,9 @@ def load_settings_state() -> dict:
                     "manifest_path": "plugins.json",
                 }
             ],
-            "install_dir": str(ROOT / "hanauta" / "plugins"),
+            "install_dir": str(DEFAULT_PLUGIN_INSTALL_DIR),
             "catalog_cache": [],
-            "installed_plugins": [],
+            "installed_plugins": [_default_wifi_plugin_entry()],
         },
         "region": {
             "locale_code": "",
@@ -433,15 +467,14 @@ def load_settings_state() -> dict:
         ]
     marketplace["catalog_sources"] = normalized_sources
     marketplace["install_dir"] = str(
-        marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))
-    ).strip() or str(ROOT / "hanauta" / "plugins")
+        marketplace.get("install_dir", str(DEFAULT_PLUGIN_INSTALL_DIR))
+    ).strip() or str(DEFAULT_PLUGIN_INSTALL_DIR)
     catalog_cache = marketplace.get("catalog_cache", [])
     marketplace["catalog_cache"] = (
         catalog_cache if isinstance(catalog_cache, list) else []
     )
-    installed_plugins = marketplace.get("installed_plugins", [])
-    marketplace["installed_plugins"] = (
-        installed_plugins if isinstance(installed_plugins, list) else []
+    marketplace["installed_plugins"] = _ensure_default_installed_plugins(
+        marketplace.get("installed_plugins", [])
     )
     weather = dict(payload.get("weather", {}))
     weather.setdefault("enabled", False)

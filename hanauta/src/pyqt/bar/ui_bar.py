@@ -558,6 +558,26 @@ def run_bg(cmd: list[str]) -> None:
     run_bg_detached(cmd)
 
 
+def wifi_interface_available() -> bool:
+    try:
+        net_root = Path("/sys/class/net")
+        if not net_root.exists():
+            return False
+        for iface in net_root.iterdir():
+            if not iface.is_dir():
+                continue
+            name = iface.name.strip().lower()
+            if not name or name == "lo":
+                continue
+            if (iface / "wireless").exists():
+                return True
+            if name.startswith(("wl", "wlan")):
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def action_notifications_supported() -> bool:
     return ACTION_NOTIFICATION_SCRIPT.exists() and HAS_DBUS_NEXT
 
@@ -2243,8 +2263,11 @@ class SystemStateWorker(QThread):
 
     def run(self) -> None:
         vpn_payload = vpn_status_payload()
+        wifi_available = wifi_interface_available()
         payload: dict[str, object] = {
-            "connected": run_script("network.sh", "status") == "Connected",
+            "connected": wifi_available
+            and run_script("network.sh", "status") == "Connected",
+            "wifi_available": wifi_available,
             "vpn_connected": vpn_connected(vpn_payload),
             "vpn_status": vpn_payload,
             "caffeine_on": run_script("caffeine.sh", "status") == "on",
@@ -5159,6 +5182,10 @@ class CyberBar(QWidget):
 
     def _apply_system_state(self, payload_obj: object) -> None:
         payload = payload_obj if isinstance(payload_obj, dict) else {}
+        wifi_available = bool(payload.get("wifi_available", True))
+        if self.net_icon.isVisible() != wifi_available:
+            self.net_icon.setVisible(wifi_available)
+            self._sync_status_overflow()
         connected = bool(payload.get("connected", False))
         self._apply_icon_to_widget(
             self.net_icon,
@@ -6331,6 +6358,12 @@ class CyberBar(QWidget):
         self.weather_icon.setVisible(enabled and valid_city)
 
     def _poll_network(self) -> None:
+        wifi_available = wifi_interface_available()
+        if self.net_icon.isVisible() != wifi_available:
+            self.net_icon.setVisible(wifi_available)
+            self._sync_status_overflow()
+        if not wifi_available:
+            return
         connected = run_script("network.sh", "status") == "Connected"
         self._apply_icon_to_widget(
             self.net_icon,
@@ -7051,17 +7084,38 @@ class CyberBar(QWidget):
         )
 
     def _toggle_wifi_popup(self) -> None:
-        if WIFI_CONTROL is None or not WIFI_CONTROL.exists():
+        if not wifi_interface_available():
+            self.net_icon.setChecked(False)
+            return
+        wifi_target: Path | None = None
+        if WIFI_CONTROL is not None and WIFI_CONTROL.exists():
+            wifi_target = WIFI_CONTROL
+        elif WIFI_CONTROL_BINARY.exists():
+            wifi_target = WIFI_CONTROL_BINARY
+        if wifi_target is None:
+            opened_fallback = False
+            if (SCRIPTS_DIR / "networkmenu.sh").exists():
+                run_script_bg("networkmenu.sh")
+                opened_fallback = True
+            elif shutil.which("nm-connection-editor"):
+                opened_fallback = run_bg_detached(["nm-connection-editor"])
+            if not opened_fallback:
+                logging.warning(
+                    "Wi-Fi control target is unavailable; no safe fallback launcher found."
+                )
             self.net_icon.setChecked(False)
             return
         self._toggle_singleton_process(
-            "_wifi_popup_process", WIFI_CONTROL, python_bin=self._python_bin()
+            "_wifi_popup_process", wifi_target, python_bin=self._python_bin()
         )
         QTimer.singleShot(150, self._sync_wifi_button)
 
     def _toggle_vpn_popup(self) -> None:
         vpn_script = getattr(self, "_vpn_control_script", VPN_CONTROL)
         if vpn_script is None or not vpn_script.exists():
+            if VPN_SCRIPT.exists():
+                run_script_bg("vpn.sh", "--toggle-wg")
+                QTimer.singleShot(250, self._poll_system)
             self.vpn_icon.setChecked(False)
             return
         self._toggle_singleton_process(
@@ -7220,7 +7274,17 @@ class CyberBar(QWidget):
         self.btn_power.setChecked(active)
 
     def _open_clipboard(self) -> None:
-        run_bg([str(SCRIPTS_DIR / "openapps"), "--clip"])
+        candidate_commands: list[list[str]] = [
+            [str(SCRIPTS_DIR / "openapps"), "--clip"],
+            [str(PROJECT_ROOT / "scripts" / "openapps"), "--clip"],
+            [str(SCRIPTS_DIR / "clip.sh")],
+            [str(PROJECT_ROOT / "scripts" / "clip.sh")],
+        ]
+        for command in candidate_commands:
+            target = Path(command[0])
+            if target.exists():
+                run_bg(command)
+                return
 
     def _check_updates(self) -> None:
         anchor = self.datetime_chip.mapToGlobal(self.datetime_chip.rect().bottomLeft())
@@ -7274,10 +7338,15 @@ class CyberBar(QWidget):
         return active
 
     def _sync_wifi_button(self) -> None:
+        wifi_target: Path | None = None
+        if WIFI_CONTROL is not None and WIFI_CONTROL.exists():
+            wifi_target = WIFI_CONTROL
+        elif WIFI_CONTROL_BINARY.exists():
+            wifi_target = WIFI_CONTROL_BINARY
         self._sync_popup_button(
             self.net_icon,
             "_wifi_popup_process",
-            WIFI_CONTROL,
+            wifi_target,
         )
 
     def _sync_vpn_button(self) -> None:
