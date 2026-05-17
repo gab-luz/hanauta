@@ -94,6 +94,33 @@ detect_arch() {
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+resolve_uv_bin() {
+  if need_cmd uv; then
+    command -v uv
+    return 0
+  fi
+  if [ -x "$HOME/.local/bin/uv" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
+    printf '%s\n' "$HOME/.local/bin/uv"
+    return 0
+  fi
+  return 1
+}
+
+ensure_uv_available() {
+  if resolve_uv_bin >/dev/null 2>&1; then
+    return 0
+  fi
+  info "Installing uv (fast Python package manager)..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! resolve_uv_bin >/dev/null 2>&1; then
+    error "Failed to install uv"
+    return 1
+  fi
+  success "uv is available"
+}
+
 run_privileged_cmd() {
   local reason="${1:-This action requires elevated privileges.}"
   shift || true
@@ -432,6 +459,7 @@ update_managed_block() {
 
 install_bash_theme_blesh() {
   local bashrc="$HOME/.bashrc"
+  local marker_file="$HOME/.local/state/hanauta/.blesh_nerd_font_hint_shown"
   local block_content=""
   block_content='if [ -f "$HOME/.local/share/blesh/out/ble.sh" ]; then
   source "$HOME/.local/share/blesh/out/ble.sh"
@@ -446,9 +474,12 @@ if [ -n "${BLE_VERSION-}" ] && [ "${BLE_ATTACHED-}" != 1 ]; then
   ble-attach 2>/dev/null || true
 fi
 
-# Enable predictive completion menu behavior when ble.sh is active.
+# Enable predictive completion behavior when ble.sh is active.
 if [ -n "${BLE_VERSION-}" ]; then
   bleopt complete_auto_complete=1 2>/dev/null || true
+  bleopt complete_menu_style=desc 2>/dev/null || true
+  bleopt complete_ambiguous=1 2>/dev/null || true
+  bleopt complete_auto_history=1 2>/dev/null || true
 fi
 
 # Load bash-completion when available for richer completion sources.
@@ -469,13 +500,13 @@ fi
 
 __hanauta_prompt_segment_git() {
   if declare -F __git_ps1 >/dev/null 2>&1; then
-    __git_ps1 " [git:%s]"
+    __git_ps1 "%s"
   fi
 }
 
 __hanauta_prompt_segment_venv() {
   if [ -n "${VIRTUAL_ENV-}" ]; then
-    printf " [venv:%s]" "${VIRTUAL_ENV##*/}"
+    printf "%s" "${VIRTUAL_ENV##*/}"
   fi
 }
 
@@ -484,28 +515,99 @@ if [ -n "${BASH_VERSION-}" ] && [ "${TERM-}" != "dumb" ]; then
   GIT_PS1_SHOWSTASHSTATE=1
   GIT_PS1_SHOWUNTRACKEDFILES=1
 
+  __hanauta_nf_or_ascii() {
+    local nf="$1"
+    local ascii="$2"
+    if [ "${HANAUTA_PROMPT_ASCII_ONLY:-0}" = "1" ]; then
+      printf "%s" "$ascii"
+    else
+      printf "%s" "$nf"
+    fi
+  }
+
   __hanauta_render_prompt() {
     local last_exit="$?"
-    local status_segment=""
-    local prompt_symbol="$"
+    local status_segment="" time_segment="" user_host_segment="" cwd_segment="" git_segment="" venv_segment="" top_line=""
+    local icon_time icon_user icon_dir icon_git icon_venv sep_right prompt_symbol
+    icon_time="$(__hanauta_nf_or_ascii "" "time")"
+    icon_user="$(__hanauta_nf_or_ascii "" "user")"
+    icon_dir="$(__hanauta_nf_or_ascii "" "dir")"
+    icon_git="$(__hanauta_nf_or_ascii "" "git")"
+    icon_venv="$(__hanauta_nf_or_ascii "" "venv")"
+    sep_right="$(__hanauta_nf_or_ascii "" ">")"
+    prompt_symbol="$(__hanauta_nf_or_ascii "❯" "$")"
     if [ "$last_exit" -ne 0 ]; then
       status_segment="\[\e[38;5;203m\][x:$last_exit]\[\e[0m\] "
     fi
     if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-      prompt_symbol="#"
+      prompt_symbol="$(__hanauta_nf_or_ascii "" "#")"
     fi
-    PS1="${status_segment}\[\e[38;5;45m\][\u@\h]\[\e[0m\] \[\e[38;5;81m\][\w]\[\e[0m\]\[\e[38;5;214m\]\$(__hanauta_prompt_segment_git)\[\e[0m\]\[\e[38;5;141m\]\$(__hanauta_prompt_segment_venv)\[\e[0m\]\n\[\e[38;5;39m\]${prompt_symbol}\[\e[0m\] "
+    time_segment="\[\e[38;5;110m\]${icon_time} \A\[\e[0m\]"
+    user_host_segment="\[\e[38;5;45m\]${icon_user} \u@\h\[\e[0m\]"
+    cwd_segment="\[\e[38;5;81m\]${icon_dir} \w\[\e[0m\]"
+    git_segment="$(__hanauta_prompt_segment_git)"
+    if [ -n "$git_segment" ]; then
+      git_segment="\[\e[38;5;214m\] ${icon_git} ${git_segment}\[\e[0m\]"
+    fi
+    venv_segment="$(__hanauta_prompt_segment_venv)"
+    if [ -n "$venv_segment" ]; then
+      venv_segment="\[\e[38;5;141m\] ${icon_venv} ${venv_segment}\[\e[0m\]"
+    fi
+    top_line="${status_segment}${time_segment} \[\e[38;5;244m\]${sep_right}\[\e[0m\] ${user_host_segment} \[\e[38;5;244m\]${sep_right}\[\e[0m\] ${cwd_segment}${git_segment}${venv_segment}"
+    PS1="${top_line}\n\[\e[38;5;39m\]${prompt_symbol}\[\e[0m\] "
   }
 
   PROMPT_COMMAND="__hanauta_render_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi'
   update_managed_block "$bashrc" "bash-theme-blesh" "$block_content"
   success "Bash theme customization applied to $bashrc"
+  if [ ! -f "$marker_file" ]; then
+    mkdir -p "$(dirname "$marker_file")"
+    cat <<'EOF'
+[INFO] For the best prompt rendering, set your terminal font to a Nerd Font.
+[INFO] Recommended: MesloLGS NF (installed by this script).
+[INFO] Kitty example: set `font_family MesloLGS NF` in ~/.config/kitty/kitty.conf
+EOF
+    : > "$marker_file"
+  fi
   if [ ! -f "$HOME/.local/share/blesh/out/ble.sh" ] && \
      [ ! -f "$HOME/.local/share/blesh/ble.sh" ] && \
      [ ! -f "/usr/share/blesh/out/ble.sh" ] && \
      [ ! -f "/usr/share/blesh/ble.sh" ]; then
     warn "ble.sh not found after setup; applied prompt fallback only."
+  fi
+}
+
+install_nerd_font_user() {
+  local font_dir="$HOME/.local/share/fonts/MesloLGS_NF"
+  local base_url="https://github.com/romkatv/powerlevel10k-media/raw/master"
+  local -a files=(
+    MesloLGS%20NF%20Regular.ttf
+    MesloLGS%20NF%20Bold.ttf
+    MesloLGS%20NF%20Italic.ttf
+    MesloLGS%20NF%20Bold%20Italic.ttf
+  )
+  local file=""
+  local target=""
+
+  if ! need_cmd curl; then
+    warn "curl not found; skipping Nerd Font download."
+    return 0
+  fi
+
+  mkdir -p "$font_dir"
+  for file in "${files[@]}"; do
+    target="$font_dir/${file//%20/ }"
+    if [ ! -f "$target" ]; then
+      info "Installing Nerd Font file: ${file//%20/ }"
+      if ! curl -fsSL -o "$target" "$base_url/$file"; then
+        warn "Failed to download $file"
+      fi
+    fi
+  done
+
+  if need_cmd fc-cache; then
+    fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || fc-cache -f >/dev/null 2>&1 || true
   fi
 }
 
@@ -538,14 +640,27 @@ install_blesh_from_official_repo() {
   local target_dir="$HOME/.local/share/blesh"
   local tmp_root=""
   local repo_dir=""
+  local make_bin=""
+  local build_log=""
+  local install_log=""
 
   if ! need_cmd git; then
     warn "git is required to install ble.sh from the official repository."
     return 1
   fi
+  if need_cmd gmake; then
+    make_bin="gmake"
+  elif need_cmd make; then
+    make_bin="make"
+  else
+    warn "GNU make is required to build ble.sh."
+    return 1
+  fi
 
   tmp_root="$(mktemp -d)"
   repo_dir="$tmp_root/ble.sh"
+  build_log="$tmp_root/ble-build.log"
+  install_log="$tmp_root/ble-install.log"
 
   info "Cloning official ble.sh repository..."
   if ! git clone --depth 1 https://github.com/akinomyoga/ble.sh.git "$repo_dir" >/dev/null 2>&1; then
@@ -554,13 +669,76 @@ install_blesh_from_official_repo() {
     return 1
   fi
 
+  info "Building ble.sh runtime files..."
+  if ! "$make_bin" -C "$repo_dir" -f GNUmakefile build >"$build_log" 2>&1; then
+    warn "Failed to build ble.sh runtime files."
+    if [ -s "$build_log" ]; then
+      warn "ble.sh build log (last lines):"
+      tail -n 20 "$build_log" >&2 || true
+    fi
+    return 1
+  fi
+
+  if [ ! -f "$repo_dir/out/ble.sh" ] || [ ! -f "$repo_dir/out/lib/init-term.sh" ]; then
+    warn "ble.sh build finished but required runtime files are missing in out/."
+    return 1
+  fi
+
   mkdir -p "$(dirname "$target_dir")"
   rm -rf "$target_dir"
-  mkdir -p "$target_dir"
-  rsync -a --delete --exclude '.git' "$repo_dir/" "$target_dir/"
+  info "Installing ble.sh into $target_dir..."
+  if ! "$make_bin" -C "$repo_dir" -f GNUmakefile install INSDIR="$target_dir" >"$install_log" 2>&1; then
+    warn "Failed to install ble.sh runtime files."
+    if [ -s "$install_log" ]; then
+      warn "ble.sh install log (last lines):"
+      tail -n 20 "$install_log" >&2 || true
+    fi
+    return 1
+  fi
+  # Ensure the runtime layout used by our bashrc source path always exists.
+  mkdir -p "$target_dir/out"
+  rsync -a "$repo_dir/out/" "$target_dir/out/" >/dev/null 2>&1 || true
+  if [ -f "$repo_dir/out/ble.sh" ]; then
+    cp -f "$repo_dir/out/ble.sh" "$target_dir/ble.sh" >/dev/null 2>&1 || true
+  fi
+  # Keep top-level docs/helpers for local inspection; runtime comes from make install.
+  rsync -a --delete --exclude '.git' --exclude 'out' "$repo_dir/" "$target_dir/" >/dev/null 2>&1 || true
   rm -rf "$tmp_root"
+
   success "ble.sh installed to $target_dir"
   return 0
+}
+
+blesh_install_is_usable() {
+  local base="$1"
+  # Accept both layouts:
+  # 1) out/ble.sh + out/lib/* (build-tree style)
+  # 2) ble.sh + lib/*        (make install INSDIR style)
+  if [ -f "$base/out/ble.sh" ] &&
+     [ -f "$base/out/lib/init-term.sh" ] &&
+     [ -f "$base/out/lib/core-cmdspec.sh" ] &&
+     [ -f "$base/out/lib/init-cmap.sh" ] &&
+     [ -f "$base/out/lib/init-bind.sh" ]; then
+    return 0
+  fi
+
+  if [ -f "$base/out/ble.sh" ] &&
+     [ -f "$base/lib/init-term.sh" ] &&
+     [ -f "$base/lib/core-cmdspec.sh" ] &&
+     [ -f "$base/lib/init-cmap.sh" ] &&
+     [ -f "$base/lib/init-bind.sh" ]; then
+    return 0
+  fi
+
+  if [ -f "$base/ble.sh" ] &&
+     [ -f "$base/lib/init-term.sh" ] &&
+     [ -f "$base/lib/core-cmdspec.sh" ] &&
+     [ -f "$base/lib/init-cmap.sh" ] &&
+     [ -f "$base/lib/init-bind.sh" ]; then
+    return 0
+  fi
+
+  return 1
 }
 
 ensure_shell_theme_dependency() {
@@ -568,20 +746,47 @@ ensure_shell_theme_dependency() {
 
   case "$target" in
     blesh)
-      if [ -f "$HOME/.local/share/blesh/out/ble.sh" ] || \
+      install_nerd_font_user
+
+      if ! need_cmd gawk; then
+        info "GNU awk (gawk) is required for ble.sh; installing it first..."
+        if detect_debian_like; then
+          echo -e "${CYAN}[*]${NC} Updating package lists..."
+          sudo apt-get update -qq
+          install_apt_group "ble.sh dependency" gawk
+        elif detect_arch; then
+          install_pacman_group "ble.sh dependency" gawk
+        else
+          warn "Unknown distro. Auto-install for gawk is supported only on Debian-like and Arch Linux."
+          return 1
+        fi
+        if ! need_cmd gawk; then
+          warn "gawk is still unavailable; cannot continue with ble.sh setup."
+          return 1
+        fi
+      fi
+
+      if blesh_install_is_usable "$HOME/.local/share/blesh" || \
+         blesh_install_is_usable "/usr/share/blesh" || \
          [ -f "$HOME/.local/share/blesh/ble.sh" ] || \
-         [ -f "/usr/share/blesh/out/ble.sh" ] || \
          [ -f "/usr/share/blesh/ble.sh" ]; then
         return 0
+      fi
+      if [ -f "$HOME/.local/share/blesh/out/ble.sh" ] && ! blesh_install_is_usable "$HOME/.local/share/blesh"; then
+        warn "Existing ble.sh install looks incomplete; repairing it now."
+        install_blesh_from_official_repo || return 1
+        if blesh_install_is_usable "$HOME/.local/share/blesh"; then
+          return 0
+        fi
       fi
       if ! confirm_yes "ble.sh was not found. Install it now from the official GitHub repo?"; then
         warn "ble.sh is required for --blesh customization. Skipping."
         return 1
       fi
       install_blesh_from_official_repo || return 1
-      if [ -f "$HOME/.local/share/blesh/out/ble.sh" ] || \
+      if blesh_install_is_usable "$HOME/.local/share/blesh" || \
+         blesh_install_is_usable "/usr/share/blesh" || \
          [ -f "$HOME/.local/share/blesh/ble.sh" ] || \
-         [ -f "/usr/share/blesh/out/ble.sh" ] || \
          [ -f "/usr/share/blesh/ble.sh" ]; then
         return 0
       fi
@@ -668,11 +873,15 @@ install_rubik_fonts() {
   local fonts_src_root="$SCRIPT_DIR/assets/fonts"
   local user_dest_root="$HOME/.local/share/fonts/Rubik"
   local system_dest_root="/usr/local/share/fonts/Rubik"
+  local system_share_dest_root="/usr/share/fonts/Rubik"
   local -a rubik_files=(
     Rubik-VariableFont_wght.ttf
     Rubik-Italic-VariableFont_wght.ttf
   )
   local file=""
+  local user_has_all=true
+  local system_has_all=true
+  local system_share_has_all=true
 
   if [ ! -d "$fonts_src_root" ]; then
     warn "Font source directory not found: $fonts_src_root"
@@ -686,14 +895,34 @@ install_rubik_fonts() {
     fi
   done
 
-  mkdir -p "$user_dest_root"
   for file in "${rubik_files[@]}"; do
-    cp -f "$fonts_src_root/$file" "$user_dest_root/"
+    [ -f "$user_dest_root/$file" ] || user_has_all=false
+    [ -f "$system_dest_root/$file" ] || system_has_all=false
+    [ -f "$system_share_dest_root/$file" ] || system_share_has_all=false
   done
-  success "Rubik fonts installed for user at $user_dest_root"
+
+  if [ "$user_has_all" = true ]; then
+    info "Rubik fonts already installed for user at $user_dest_root"
+  else
+    mkdir -p "$user_dest_root"
+    for file in "${rubik_files[@]}"; do
+      cp -f "$fonts_src_root/$file" "$user_dest_root/"
+    done
+    success "Rubik fonts installed for user at $user_dest_root"
+  fi
 
   if need_cmd fc-cache; then
     fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || fc-cache -f >/dev/null 2>&1 || true
+  fi
+
+  if [ "$system_has_all" = true ] || [ "$system_share_has_all" = true ]; then
+    info "Rubik fonts already installed system-wide; skipping system install prompt."
+    return 0
+  fi
+
+  if [ "$user_has_all" = true ]; then
+    info "Rubik fonts are already installed in user fonts; skipping system install prompt."
+    return 0
   fi
 
   if ! confirm_default_yes "Also install Rubik fonts system-wide to $system_dest_root using sudo?"; then
@@ -763,10 +992,18 @@ setup_wireguard_systemd() {
 }
 
 offer_wireguard_systemd_setup() {
+  if need_cmd systemctl; then
+    if systemctl list-unit-files 'wg-quick@*.service' --no-legend 2>/dev/null | awk '$2=="enabled"{found=1} END{exit(found?0:1)}'; then
+      info "WireGuard systemd auto-start is already enabled; skipping optional WireGuard prompt."
+      return 0
+    fi
+  fi
+
   echo ""
   echo -e "${MAGENTA}${BOLD}Optional WireGuard Setup${NC}"
-  echo -e "Enable a ${BOLD}systemd-based WireGuard auto-start${NC} for one interface."
-  echo -e "This uses ${BOLD}sudo${NC}, enables ${BOLD}wg-quick@interface.service${NC}, and can reconnect the tunnel outside the i3 session."
+  echo -e "Continuing will enable ${BOLD}WireGuard VPN auto-start on login/boot${NC} for one interface."
+  echo -e "This uses ${BOLD}sudo${NC}, enables ${BOLD}wg-quick@interface.service${NC}, and may reconnect VPN outside the i3 session."
+  echo -e "If you do ${BOLD}not${NC} use WireGuard, choose ${BOLD}No${NC} in the next prompt."
   echo ""
 
   if ! confirm_yes "Do you want to continue with the systemd-based WireGuard setup?"; then
@@ -833,11 +1070,51 @@ install_sddm_packages_debian() {
   else
     warn "No Debian package found for Qt6 multimedia runtime (needed by SilentSDDM)."
   fi
+
+  info "If your package manager prompts for a display manager, choose SDDM on that screen."
 }
 
 install_sddm_packages_arch() {
   install_pacman_group "SilentSDDM dependencies" \
     sddm qt6-svg qt6-virtualkeyboard qt6-multimedia-ffmpeg
+
+  info "SDDM packages installed. We'll set sddm.service as the active display manager next."
+}
+
+set_sddm_as_default_display_manager() {
+  if ! need_cmd sudo; then
+    warn "sudo not found; cannot auto-set SDDM as default display manager."
+    return 0
+  fi
+
+  if detect_debian_like; then
+    local dm_file="/etc/X11/default-display-manager"
+    local sddm_path=""
+    sddm_path="$(command -v sddm 2>/dev/null || true)"
+    if [ -z "$sddm_path" ]; then
+      sddm_path="/usr/bin/sddm"
+    fi
+    info "Setting default display manager to SDDM (Debian/Ubuntu)..."
+    printf '%s\n' "$sddm_path" | sudo tee "$dm_file" >/dev/null || true
+    if need_cmd debconf-set-selections; then
+      printf 'sddm shared/default-x-display-manager select sddm\n' | sudo debconf-set-selections || true
+    fi
+    success "Default display manager preference set to SDDM."
+    return 0
+  fi
+
+  if detect_arch; then
+    if need_cmd systemctl; then
+      info "Setting default display manager to SDDM (Arch Linux)..."
+      sudo systemctl disable gdm.service lightdm.service lxdm.service ly.service xdm.service >/dev/null 2>&1 || true
+      sudo systemctl enable sddm.service >/dev/null 2>&1 || true
+      success "sddm.service enabled as default display manager."
+    fi
+    return 0
+  fi
+
+  warn "Unknown distro: please choose SDDM as your display manager if prompted."
+  return 0
 }
 
 check_sddm_version_requirement() {
@@ -1017,7 +1294,9 @@ offer_sddm_service_enable() {
     info "Skipped enabling sddm.service."
   fi
 
-  if confirm_yes "Start SDDM right now? (This may interrupt your current graphical session)"; then
+  echo -e "${RED}${BOLD}[DANGER]${NC} ${RED}Starting SDDM right now can immediately end your current graphical session.${NC}"
+  echo -e "${RED}If you continue, open apps or unsaved documents may be lost.${NC}"
+  if confirm_yes "Start SDDM right now?"; then
     sudo systemctl restart sddm.service
     success "SDDM restarted"
   else
@@ -1087,6 +1366,7 @@ install_silent_sddm() {
   fi
 
   check_sddm_version_requirement
+  set_sddm_as_default_display_manager
   install_silent_sddm_theme_files
   configure_sddm_for_silent_theme
   offer_sddm_service_enable
@@ -1094,10 +1374,19 @@ install_silent_sddm() {
 }
 
 offer_silent_sddm_install() {
+  if need_cmd sddm && [ -d "/usr/share/sddm/themes/silent" ] && \
+     [ -f "/etc/sddm.conf" ] && \
+     rg -q '^[[:space:]]*Current[[:space:]]*=[[:space:]]*silent[[:space:]]*$' /etc/sddm.conf 2>/dev/null; then
+    info "SilentSDDM is already installed and configured; skipping optional SDDM prompt."
+    return 0
+  fi
+
   echo ""
   echo -e "${MAGENTA}${BOLD}Optional SDDM Setup (SilentSDDM)${NC}"
   echo -e "Install and configure ${BOLD}SDDM + SilentSDDM${NC} as your login manager."
   echo -e "This is a ${BOLD}system-level change${NC} and may affect login behavior."
+  echo -e "If an installer prompt appears asking for display manager selection, choose ${BOLD}SDDM${NC}."
+  echo -e "Hanauta will also try to set SDDM as the default automatically."
   echo ""
 
   if ! confirm_yes "Do you want to install and configure SilentSDDM now?"; then
@@ -1129,12 +1418,7 @@ EOF
 }
 
 install_rich() {
-  if ! need_cmd uv; then
-    info "Installing uv (fast Python package manager)..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    need_cmd uv || { error "Failed to install uv"; return 1; }
-  fi
+  ensure_uv_available || return 1
   
   if ! python3 -c "import rich" 2>/dev/null; then
     info "Installing rich for colorful output..."
@@ -1145,19 +1429,15 @@ install_rich() {
 setup_python_venv() {
   local venv_dir="$SCRIPT_DIR/.venv"
   
+  ensure_uv_available || return 1
+
   if [ -d "$venv_dir" ]; then
-    info "Python venv already exists"
-    return 0
+    info "Python venv already exists; syncing dependencies..."
+  else
+    info "Creating Python virtual environment..."
+    uv venv "$venv_dir"
   fi
-  
-  if ! need_cmd uv; then
-    error "uv not found. Cannot create Python environment."
-    return 1
-  fi
-  
-  info "Creating Python virtual environment..."
-  uv venv "$venv_dir"
-  
+
   info "Installing Python dependencies from pyproject.toml..."
   cd "$SCRIPT_DIR"
   uv_sync_with_recovery
@@ -1284,12 +1564,12 @@ install_packages_debian() {
     i3-wm rofi feh picom
     x11-xserver-utils x11-utils xdotool xclip
     jq curl ffmpeg rsync
+    gawk
     flameshot scrot maim
     playerctl brightnessctl
     pulseaudio-utils pamixer
     network-manager wireless-tools
     i3lock
-    betterlockscreen
     xfce4-power-manager lxqt-policykit
     libnotify-bin
     kitty
@@ -1310,7 +1590,6 @@ install_packages_debian() {
     xdg-user-dirs
     libgtk-3-bin
     dbus-x11
-    volnoti
     bc
   )
   local -a optional_pkgs=(
@@ -1334,12 +1613,12 @@ install_packages_arch() {
     i3-wm rofi feh picom
     xorg-xrandr xorg-xsetroot xorg-xwininfo xorg-xev xorg-xrdb xdotool xclip
     jq curl ffmpeg rsync
+    gawk
     flameshot scrot maim
     playerctl brightnessctl
     pulseaudio pamixer
     networkmanager wireless_tools
     i3lock
-    betterlockscreen
     xfce4-power-manager lxqt-policykit
     libnotify
     kitty
@@ -1358,7 +1637,6 @@ install_packages_arch() {
     xorg-xcursorgen
     xdg-user-dirs
     gtk3
-    volnoti
     bc
   )
   local -a optional_pkgs=(
@@ -1546,6 +1824,21 @@ WantedBy=multi-user.target"
 
 copy_dotfiles() {
   local target="$HOME/.config/i3"
+  local dry_run_output=""
+
+  mkdir -p "$target"
+  dry_run_output="$(rsync -ani \
+    --exclude '.git' \
+    --exclude 'backups' \
+    --exclude 'install.sh' \
+    "$SCRIPT_DIR/" \
+    "$target/" || true)"
+
+  if [ -z "$dry_run_output" ]; then
+    success "Dotfiles already up to date; skipping copy"
+    return 0
+  fi
+
   if [ -d "$target" ] && [ ! -L "$target" ]; then
     local backup="$HOME/.config/i3.backup-$(date +%Y%m%d-%H%M%S)"
     info "Backing up existing i3 config to $backup"
@@ -1554,7 +1847,6 @@ copy_dotfiles() {
   fi
 
   info "Copying dotfiles..."
-  mkdir -p "$target"
   rsync -a \
     --exclude '.git' \
     --exclude 'backups' \
@@ -1711,34 +2003,44 @@ build_and_install_volnoti_from_source() {
   success "volnoti installed from source"
 }
 
-ensure_volnoti_available() {
-  if need_cmd volnoti; then
+run_missing_component_installer() {
+  local cmd_name="$1"
+  local script_path="$2"
+  local label="$3"
+
+  if need_cmd "$cmd_name"; then
+    info "$label is already installed"
     return 0
   fi
 
-  warn "volnoti was not found after package installation. Falling back to source build."
-  if detect_debian_like; then
-    install_volnoti_build_deps_debian
-  elif detect_arch; then
-    install_volnoti_build_deps_arch
-  else
-    warn "Unknown distro; cannot auto-install volnoti build dependencies."
+  if [ ! -x "$script_path" ]; then
+    error "$label installer not found or not executable: $script_path"
     return 1
   fi
 
-  if ! pkg-config --exists dbus-glib-1; then
-    error "dbus-glib-1 development files were not found (pkg-config lookup failed)."
-    error "On Debian/Ubuntu, install libdbus-glib-1-dev and rerun: ./install.sh --i3-volume"
-    return 1
-  fi
-
-  build_and_install_volnoti_from_source
-  if need_cmd volnoti; then
+  info "$label is missing; running installer script..."
+  "$script_path"
+  if need_cmd "$cmd_name"; then
+    success "$label is now available"
     return 0
   fi
 
-  error "volnoti is still unavailable after source build."
+  error "$label is still unavailable after running installer script."
   return 1
+}
+
+ensure_volnoti_available() {
+  run_missing_component_installer \
+    "volnoti" \
+    "$HOME/.config/i3/hanauta/scripts/install_volnoti.sh" \
+    "volnoti"
+}
+
+ensure_betterlockscreen_available() {
+  run_missing_component_installer \
+    "betterlockscreen" \
+    "$HOME/.config/i3/hanauta/scripts/install_betterlockscreen.sh" \
+    "betterlockscreen"
 }
 
 apply_i3_volume_compat_patches() {
@@ -1766,6 +2068,35 @@ apply_i3_volume_compat_patches() {
     perl -0pi -e 's@command_exists "\$executable" \|\| \{ error "\$executable not found\. Please install it or set VOLNOTI_PATH to the correct path\."; exit "\$EX_UNAVAILABLE"; \}@command_exists "\$executable" || { error "\$executable not found. Please install it or set VOLNOTI_PATH to the correct path."; exit "$EX_UNAVAILABLE"; }\n    vol_int=\$(awk -v v="\${vol:-0}" '\''BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; print n }'\'')@' "$volnoti_plugin"
     perl -0pi -e 's@"\$executable" -m "\$vol"@"\$executable" -m "\$vol_int"@g; s@"\$executable" "\$vol"@"\$executable" "\$vol_int"@g' "$volnoti_plugin"
   fi
+
+  if [ -f "$volnoti_plugin" ]; then
+    cat >"$volnoti_plugin" <<'EOF'
+#!/bin/bash
+# Built-in volnoti notification plugin
+notify_volume_volnoti() {
+    # shellcheck disable=SC2034  # icon, summary, and body are part of the plugin interface but unused by volnoti
+    local vol=$1 icon=$2 summary=$3 body=${*:4}
+    local vol_int
+    local executable="${VOLNOTI_PATH:+${VOLNOTI_PATH%/}/}volnoti-show"
+
+    command_exists "$executable" || { error "$executable not found. Please install it or set VOLNOTI_PATH to the correct path."; exit "$EX_UNAVAILABLE"; }
+    vol_int=$(awk -v v="${vol:-0}" 'BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; print n }')
+
+    # volnoti-show requires the volnoti daemon; start it if needed.
+    if ! pgrep -x volnoti >/dev/null 2>&1; then
+        volnoti >/tmp/volnoti.log 2>&1 &
+        sleep 0.05
+    fi
+
+    if is_muted; then "$executable" -m "$vol_int" || true
+    else "$executable" "$vol_int" || true
+    fi
+    # Do not fall back to libnotify/notify-send when volnoti is selected.
+    return 0
+}
+EOF
+    chmod +x "$volnoti_plugin" 2>/dev/null || true
+  fi
 }
 
 install_i3_volume() {
@@ -1779,6 +2110,9 @@ install_i3_volume() {
     return 1
   fi
   ensure_volnoti_available || return 1
+  if ! pgrep -x volnoti >/dev/null 2>&1; then
+    volnoti >/tmp/volnoti.log 2>&1 &
+  fi
 
   if [ -d "$repo_root/.git" ]; then
     info "Updating i3-volume at $repo_root..."
@@ -1918,7 +2252,14 @@ install_printer_plugin_only() {
 
 offer_mail_desktop_setup() {
   local helper="$HOME/.config/i3/hanauta/scripts/install_mail_desktop.sh"
+  local desktop_id="hanauta-mail.desktop"
+  local target_desktop="$HOME/.local/share/applications/$desktop_id"
   local -a args=()
+
+  if [ -f "$target_desktop" ]; then
+    info "Hanauta Mail desktop integration is already installed; skipping optional mail integration prompt."
+    return 0
+  fi
 
   echo ""
   echo -e "${MAGENTA}${BOLD}Optional Hanauta Mail Desktop Integration${NC}"
@@ -2167,6 +2508,11 @@ install_sweet_cursor_theme_files() {
   local destination_dir="$destination_root/$SWEET_CURSOR_THEME_NAME"
 
   mkdir -p "$destination_root"
+  if [ -d "$destination_dir/cursors" ] && [ -f "$destination_dir/index.theme" ]; then
+    info "$SWEET_CURSOR_THEME_NAME is already installed at $destination_dir; skipping rebuild."
+    return 0
+  fi
+
   tmp_root="$(mktemp -d)"
   repo_root="$tmp_root/sweet-repo"
 
@@ -2614,11 +2960,11 @@ main() {
     if detect_debian_like; then
       echo -e "${CYAN}[*]${NC} Updating package lists..."
       sudo apt-get update -qq
-      install_apt_group "i3-volume + volnoti" volnoti bc
+      install_apt_group "i3-volume prerequisites" bc
     elif detect_arch; then
-      install_pacman_group "i3-volume + volnoti" volnoti bc
+      install_pacman_group "i3-volume prerequisites" bc
     else
-      warn "Unknown distro; skipping package install for volnoti/bc."
+      warn "Unknown distro; skipping package install for i3-volume prerequisites."
     fi
     install_i3_volume
     info "Done!"
@@ -2678,6 +3024,9 @@ main() {
   ensure_hanauta_settings
   disable_conflicting_notification_autostarts
   install_sweet_cursor_theme
+  if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
+    ensure_betterlockscreen_available
+  fi
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     install_i3_volume
   fi

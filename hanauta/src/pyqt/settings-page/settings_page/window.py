@@ -1180,13 +1180,14 @@ class SettingsWindow(QWidget):
         ready = getattr(self, "page_ready", set())
         if key in ready:
             return
-        if key in {"overview", "appearance", "display"}:
+        if key in {"overview", "appearance"}:
             return
         if not hasattr(self, "_lazy_page_building"):
             self._lazy_page_building = set()
         if key in self._lazy_page_building:
             return
         builders = {
+            "display": self._build_display_page,
             "marketplace": self._build_marketplace_page,
             "networking": self._build_networking_page,
             "audio": self._build_audio_page,

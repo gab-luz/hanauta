@@ -74,11 +74,7 @@ exec --no-startup-id sh -c 'if command -v clipit >/dev/null 2>&1; then clipit; e
 # Picom is managed by startup.sh for consistent behavior on login and safe restarts.
 exec_always --no-startup-id sh -c '"$HOME/.config/i3/startup.sh" >/tmp/i3-startup-wrapper.log 2>&1 &'
 
-# CyberDock
-exec_always --no-startup-id sh -c '"$HOME/.config/i3/hanauta/scripts/open_dock.sh" >/tmp/hanauta-dock-launcher.log 2>&1 &'
-
-# CyberBar (PyQt6 top bar)
-exec_always --no-startup-id sh -c '"$HOME/.config/i3/hanauta/scripts/open_bar.sh" >/tmp/hanauta-bar-launcher.log 2>&1 &'
+# Dock/bar are launched by startup.sh to avoid duplicate races during i3 startup.
 
 # Window rules (translated from bspwm rules)
 for_window [class=Peek] floating enable

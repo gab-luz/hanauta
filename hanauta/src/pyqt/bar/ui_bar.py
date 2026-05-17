@@ -475,7 +475,7 @@ DEFAULT_BAR_SETTINGS = {
     "tray_tint_with_matugen": True,
     "use_color_widget_icons": False,
     "debug_tooltips": False,
-    "merge_all_chips": False,
+    "merge_all_chips": True,
     "full_bar_radius": 18,
     "orientation_mode": "horizontal_top",
     "monitor_mode": MONITOR_MODE_PRIMARY,
