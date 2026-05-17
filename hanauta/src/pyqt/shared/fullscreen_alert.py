@@ -110,7 +110,7 @@ def material_icon(name: str) -> str:
 
 
 class ReminderAlert(QWidget):
-    def __init__(self, title: str, body: str, severity: str) -> None:
+    def __init__(self, title: str, body: str, severity: str, mode: str = "reminder") -> None:
         super().__init__()
         fonts = load_app_fonts()
         self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
@@ -120,6 +120,9 @@ class ReminderAlert(QWidget):
         self.title_text = title.strip() or "Reminder"
         self.body_text = body.strip() or "Time is up."
         self.severity = (severity or "discrete").strip().lower()
+        self.mode = (mode or "reminder").strip().lower()
+        if self.mode not in {"reminder", "confirm"}:
+            self.mode = "reminder"
         self._fade: QPropertyAnimation | None = None
         self._audio_player = None
         self._audio_output = None
@@ -203,7 +206,12 @@ class ReminderAlert(QWidget):
         severity.setMinimumWidth(120)
         card_layout.addWidget(severity, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        hint = QLabel("Choose an action so Hanauta knows whether to clear it or remind you again.")
+        hint_text = (
+            "Choose Yes, No, or Cancel."
+            if self.mode == "confirm"
+            else "Choose an action so Hanauta knows whether to clear it or remind you again."
+        )
+        hint = QLabel(hint_text)
         hint.setObjectName("hint")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setWordWrap(True)
@@ -216,17 +224,30 @@ class ReminderAlert(QWidget):
         actions.setContentsMargins(10, 10, 10, 10)
         actions.setSpacing(12)
 
-        dismiss_button = self._action_button("Done", material_icon("check"), primary=True)
-        dismiss_button.clicked.connect(self.close)
-        actions.addWidget(dismiss_button)
+        if self.mode == "confirm":
+            yes_btn = self._action_button("Yes", material_icon("check"), primary=True)
+            yes_btn.clicked.connect(self.close)
+            actions.addWidget(yes_btn)
 
-        snooze_short = self._action_button("Snooze 5 min", material_icon("snooze"))
-        snooze_short.clicked.connect(lambda: self._snooze(5))
-        actions.addWidget(snooze_short)
+            no_btn = self._action_button("No", material_icon("close"))
+            no_btn.clicked.connect(self.close)
+            actions.addWidget(no_btn)
 
-        snooze_long = self._action_button("Snooze 15 min", material_icon("alarm"))
-        snooze_long.clicked.connect(lambda: self._snooze(15))
-        actions.addWidget(snooze_long)
+            cancel_btn = self._action_button("Cancel", material_icon("close"))
+            cancel_btn.clicked.connect(self.close)
+            actions.addWidget(cancel_btn)
+        else:
+            dismiss_button = self._action_button("Done", material_icon("check"), primary=True)
+            dismiss_button.clicked.connect(self.close)
+            actions.addWidget(dismiss_button)
+
+            snooze_short = self._action_button("Snooze 5 min", material_icon("snooze"))
+            snooze_short.clicked.connect(lambda: self._snooze(5))
+            actions.addWidget(snooze_short)
+
+            snooze_long = self._action_button("Snooze 15 min", material_icon("alarm"))
+            snooze_long.clicked.connect(lambda: self._snooze(15))
+            actions.addWidget(snooze_long)
 
         card_layout.addWidget(self.actions_wrap)
         root_wrap.addWidget(self.card, 0, Qt.AlignmentFlag.AlignCenter)
@@ -331,8 +352,9 @@ class ReminderAlert(QWidget):
         QShortcut(QKeySequence("Return"), self, activated=self.close)
         QShortcut(QKeySequence("Enter"), self, activated=self.close)
         QShortcut(QKeySequence("1"), self, activated=self.close)
-        QShortcut(QKeySequence("2"), self, activated=lambda: self._snooze(5))
-        QShortcut(QKeySequence("3"), self, activated=lambda: self._snooze(15))
+        if self.mode == "reminder":
+            QShortcut(QKeySequence("2"), self, activated=lambda: self._snooze(5))
+            QShortcut(QKeySequence("3"), self, activated=lambda: self._snooze(15))
 
     def _animate_in(self) -> None:
         self.setWindowOpacity(0.0)
@@ -449,6 +471,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--title", default="Reminder")
     parser.add_argument("--body", default="Time is up.")
     parser.add_argument("--severity", default="discrete")
+    parser.add_argument("--mode", default="reminder", choices=["reminder", "confirm"])
     return parser.parse_args(argv)
 
 
@@ -456,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Fullscreen Alert")
-    window = ReminderAlert(args.title, args.body, args.severity)
+    window = ReminderAlert(args.title, args.body, args.severity, args.mode)
     window.show()
     window.raise_()
     window.activateWindow()

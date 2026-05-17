@@ -45,6 +45,12 @@ VPN_PLUGIN_ID="vpn-control"
 WIFI_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-wifi-control"
 WIFI_PLUGIN_REPO_BRANCH="main"
 WIFI_PLUGIN_ID="wifi-control"
+WEATHER_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-weather"
+WEATHER_PLUGIN_REPO_BRANCH="main"
+WEATHER_PLUGIN_ID="weather_widget"
+KDECONNECT_PLUGIN_REPO_URL="https://github.com/gab-luz/hanauta-plugin-kdeconnect"
+KDECONNECT_PLUGIN_REPO_BRANCH="main"
+KDECONNECT_PLUGIN_ID="kdeconnect"
 SAFETY_BACKUP_ROOT="${HOME}/.config/i3/backups/install-${RUN_ID}"
 
 RICH_AVAILABLE=false
@@ -1832,6 +1838,41 @@ WantedBy=multi-user.target"
   success "Hanauta root service installed and active: hanauta-service-root.service"
 }
 
+reload_hanauta_runtime_after_update() {
+  local startup_script="$HOME/.config/i3/startup.sh"
+  local restarted_any=false
+
+  info "Updater mode: reloading Hanauta runtime components..."
+
+  if [ -x "$startup_script" ]; then
+    if bash "$startup_script"; then
+      success "Reloaded Hanauta user session components via startup.sh (bar, dock, widgets, user service)."
+      restarted_any=true
+    else
+      warn "startup.sh reload returned a non-zero status; some components may require a manual restart."
+    fi
+  else
+    warn "startup.sh not found at $startup_script; skipping user-session component reload."
+  fi
+
+  if need_cmd systemctl; then
+    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'hanauta-service-root.service'; then
+      if run_privileged_cmd \
+        "Restarting hanauta-service-root.service so root-level Hanauta service changes apply immediately." \
+        systemctl restart hanauta-service-root.service; then
+        success "Restarted hanauta-service-root.service."
+        restarted_any=true
+      else
+        warn "Could not restart hanauta-service-root.service automatically."
+      fi
+    fi
+  fi
+
+  if [ "$restarted_any" = false ]; then
+    warn "No Hanauta runtime components were restarted automatically."
+  fi
+}
+
 copy_dotfiles() {
   local target="$HOME/.config/i3"
   local dry_run_output=""
@@ -2435,6 +2476,214 @@ installed.append(record)
 marketplace["installed_plugins"] = installed
 path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
+}
+
+sync_weather_plugin_repo() {
+  local target_root="$HOME/.config/i3/hanauta/plugins"
+  local target_dir="$target_root/hanauta-plugin-weather"
+  local origin_url=""
+
+  mkdir -p "$target_root"
+
+  if [ -d "$target_dir/.git" ]; then
+    origin_url="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
+    if [ "$origin_url" = "$WEATHER_PLUGIN_REPO_URL" ]; then
+      info "Updating Weather plugin at $target_dir..."
+      git -C "$target_dir" fetch --depth 1 origin "$WEATHER_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" checkout -q "$WEATHER_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" pull --ff-only >/dev/null 2>&1 || true
+    else
+      if [ "$INSTALL_UPDATE_MODE" = true ]; then
+        warn "Existing Weather plugin checkout has a different origin. Updater mode keeps it unchanged."
+        return 0
+      fi
+      warn "Replacing Weather plugin checkout with expected upstream."
+      backup_path_if_exists "$target_dir" "weather plugin checkout"
+      rm -rf "$target_dir"
+    fi
+  fi
+
+  if [ ! -d "$target_dir/.git" ]; then
+    info "Cloning Weather plugin into $target_dir..."
+    backup_path_if_exists "$target_dir" "weather plugin checkout"
+    rm -rf "$target_dir"
+    if ! git clone --depth 1 --branch "$WEATHER_PLUGIN_REPO_BRANCH" "$WEATHER_PLUGIN_REPO_URL" "$target_dir" >/dev/null 2>&1; then
+      error "Failed to clone Weather plugin from $WEATHER_PLUGIN_REPO_URL"
+      return 1
+    fi
+  fi
+
+  success "Weather plugin is installed at $target_dir"
+  return 0
+}
+
+register_weather_plugin_in_settings() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  local install_path="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-weather"
+  [ -f "$settings_file" ] || return 0
+  python3 - "$settings_file" "$install_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+install_path = str(Path(sys.argv[2]).expanduser())
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+marketplace = payload.setdefault("marketplace", {})
+if not isinstance(marketplace, dict):
+    marketplace = {}
+    payload["marketplace"] = marketplace
+installed = marketplace.setdefault("installed_plugins", [])
+if not isinstance(installed, list):
+    installed = []
+    marketplace["installed_plugins"] = installed
+plugin_id = "weather_widget"
+record = {
+    "id": plugin_id,
+    "name": "Weather Widget",
+    "repo": "https://github.com/gab-luz/hanauta-plugin-weather",
+    "branch": "main",
+    "install_path": install_path,
+}
+installed = [row for row in installed if not (isinstance(row, dict) and str(row.get("id", "")) == plugin_id)]
+installed.append(record)
+marketplace["installed_plugins"] = installed
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+}
+
+offer_weather_plugin_install() {
+  if ! need_cmd git; then
+    warn "git is not available; skipping Weather plugin install prompt."
+    return 0
+  fi
+
+  echo
+  echo -e "${MAGENTA}Weather widget plugin${NC}"
+  echo -e "Install ${BOLD}gab-luz/hanauta-plugin-weather${NC} for bar weather icon + popup forecast support?"
+  if ! confirm_yes "Install Weather widget plugin now?"; then
+    info "Skipping Weather widget plugin install."
+    return 0
+  fi
+  sync_weather_plugin_repo || return 1
+  register_weather_plugin_in_settings || true
+  return 0
+}
+
+sync_kdeconnect_plugin_repo() {
+  local target_root="$HOME/.config/i3/hanauta/plugins"
+  local target_dir="$target_root/hanauta-plugin-kdeconnect"
+  local origin_url=""
+
+  mkdir -p "$target_root"
+
+  if [ -d "$target_dir/.git" ]; then
+    origin_url="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
+    if [ "$origin_url" = "$KDECONNECT_PLUGIN_REPO_URL" ]; then
+      info "Updating KDE Connect plugin at $target_dir..."
+      git -C "$target_dir" fetch --depth 1 origin "$KDECONNECT_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" checkout -q "$KDECONNECT_PLUGIN_REPO_BRANCH" >/dev/null 2>&1 || true
+      git -C "$target_dir" pull --ff-only >/dev/null 2>&1 || true
+    else
+      if [ "$INSTALL_UPDATE_MODE" = true ]; then
+        warn "Existing KDE Connect plugin checkout has a different origin. Updater mode keeps it unchanged."
+        return 0
+      fi
+      warn "Replacing KDE Connect plugin checkout with expected upstream."
+      backup_path_if_exists "$target_dir" "kdeconnect plugin checkout"
+      rm -rf "$target_dir"
+    fi
+  fi
+
+  if [ ! -d "$target_dir/.git" ]; then
+    info "Cloning KDE Connect plugin into $target_dir..."
+    backup_path_if_exists "$target_dir" "kdeconnect plugin checkout"
+    rm -rf "$target_dir"
+    if ! git clone --depth 1 --branch "$KDECONNECT_PLUGIN_REPO_BRANCH" "$KDECONNECT_PLUGIN_REPO_URL" "$target_dir" >/dev/null 2>&1; then
+      error "Failed to clone KDE Connect plugin from $KDECONNECT_PLUGIN_REPO_URL"
+      return 1
+    fi
+  fi
+
+  success "KDE Connect plugin is installed at $target_dir"
+  return 0
+}
+
+register_kdeconnect_plugin_in_settings() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  local install_path="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-kdeconnect"
+  [ -f "$settings_file" ] || return 0
+  python3 - "$settings_file" "$install_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+install_path = str(Path(sys.argv[2]).expanduser())
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+marketplace = payload.setdefault("marketplace", {})
+if not isinstance(marketplace, dict):
+    marketplace = {}
+    payload["marketplace"] = marketplace
+installed = marketplace.setdefault("installed_plugins", [])
+if not isinstance(installed, list):
+    installed = []
+    marketplace["installed_plugins"] = installed
+plugin_id = "kdeconnect"
+record = {
+    "id": plugin_id,
+    "name": "KDE Connect",
+    "repo": "https://github.com/gab-luz/hanauta-plugin-kdeconnect",
+    "branch": "main",
+    "install_path": install_path,
+}
+installed = [row for row in installed if not (isinstance(row, dict) and str(row.get("id", "")) == plugin_id)]
+installed.append(record)
+marketplace["installed_plugins"] = installed
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+}
+
+offer_kdeconnect_plugin_install_if_system_available() {
+  local alert_script="$HOME/.config/i3/hanauta/src/pyqt/shared/fullscreen_alert.py"
+
+  if ! need_cmd kdeconnect-cli; then
+    info "kdeconnect-cli not found; skipping KDE Connect plugin prompt."
+    return 0
+  fi
+  if ! need_cmd git; then
+    warn "git is not available; skipping KDE Connect plugin install prompt."
+    return 0
+  fi
+
+  if [ -f "$alert_script" ]; then
+    python3 "$alert_script" \
+      --title "KDE Connect detected" \
+      --body "KDE Connect is installed on your system. Install the Hanauta KDE Connect plugin for full integration?" \
+      --severity important \
+      --mode confirm >/dev/null 2>&1 &
+  fi
+
+  echo
+  echo -e "${MAGENTA}KDE Connect integration${NC}"
+  echo -e "KDE Connect is installed. Install ${BOLD}gab-luz/hanauta-plugin-kdeconnect${NC} now?"
+  if ! confirm_yes "Install KDE Connect plugin now?"; then
+    info "Skipping KDE Connect plugin install."
+    return 0
+  fi
+  sync_kdeconnect_plugin_repo || return 1
+  register_kdeconnect_plugin_in_settings || true
+  return 0
 }
 
 install_wifi_plugin_if_available() {
@@ -3298,6 +3547,8 @@ main() {
   ensure_dock_defaults
   ensure_hanauta_settings
   install_wifi_plugin_if_available
+  offer_weather_plugin_install
+  offer_kdeconnect_plugin_install_if_system_available
   configure_wireguard_support_prompt
   disable_conflicting_notification_autostarts
   install_sweet_cursor_theme
@@ -3318,6 +3569,10 @@ main() {
   fi
 
   offer_wireguard_systemd_setup
+
+  if [ "$INSTALL_UPDATE_MODE" = true ]; then
+    reload_hanauta_runtime_after_update
+  fi
 
   print_summary
   post_notes

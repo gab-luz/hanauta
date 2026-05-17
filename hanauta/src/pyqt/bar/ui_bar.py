@@ -375,6 +375,7 @@ CALENDAR_POPUP: Path | None = resolve_plugin_script("calendar_popup.py", ["calen
 GAME_MODE_POPUP: Path | None = resolve_plugin_script(
     "game_mode_popup.py", ["game-mode", "gamemode"]
 )
+VPN_ROOT_AGENT_PROMPT = APP_DIR / "pyqt" / "shared" / "vpn_root_agent_prompt.py"
 SETTINGS_PAGE = APP_DIR / "pyqt" / "settings-page" / "settings.py"
 ACTION_NOTIFICATION_SCRIPT = APP_DIR / "pyqt" / "shared" / "action_notification.py"
 LAUNCHER_APP = APP_DIR / "pyqt" / "launcher" / "launcher.py"
@@ -602,6 +603,51 @@ def wifi_interface_available() -> bool:
         return False
     except Exception:
         return False
+
+
+def vpn_root_agent_running() -> bool:
+    run_dir = Path("/run/hanauta-wireguard-agent")
+    if run_dir.exists():
+        try:
+            for pid_file in run_dir.glob("*.pid"):
+                raw_pid = pid_file.read_text(encoding="utf-8").strip()
+                if not raw_pid.isdigit():
+                    continue
+                pid = int(raw_pid)
+                if pid <= 1:
+                    continue
+                try:
+                    os.kill(pid, 0)
+                    return True
+                except OSError:
+                    continue
+        except Exception:
+            pass
+    if shutil.which("pgrep"):
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "hanauta-wireguard-agent"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if result.returncode == 0:
+                return True
+        except Exception:
+            pass
+    if shutil.which("systemctl"):
+        status = run_cmd(
+            ["systemctl", "is-active", "hanauta-wireguard-agent.service"], timeout=2.0
+        ).strip()
+        if status == "active":
+            return True
+    if shutil.which("rc-service"):
+        status = run_cmd(
+            ["rc-service", "hanauta-wireguard-agent", "status"], timeout=2.0
+        ).strip()
+        if "started" in status.lower():
+            return True
+    return False
 
 
 def action_notifications_supported() -> bool:
@@ -7132,6 +7178,26 @@ class CyberBar(QWidget):
 
     def _toggle_vpn_popup(self) -> None:
         vpn_script = getattr(self, "_vpn_control_script", VPN_CONTROL)
+        if not vpn_root_agent_running() and VPN_ROOT_AGENT_PROMPT.exists():
+            prompt_env = self._widget_launch_env()
+            prompt_cmd = entry_command(VPN_ROOT_AGENT_PROMPT)
+            prompt_ok = False
+            if prompt_cmd:
+                try:
+                    prompt_ok = run_bg_detached(prompt_cmd)
+                    if prompt_ok:
+                        self._vpn_root_agent_prompt_process = None
+                except Exception:
+                    prompt_ok = False
+            if not prompt_ok:
+                trigger_fullscreen_alert(
+                    "WireGuard Agent Missing",
+                    "Hanauta WireGuard root agent is not running. Install the VPN root agent from the VPN plugin to continue.",
+                    "disturbing",
+                )
+            QTimer.singleShot(900, self._poll_system)
+            self.vpn_icon.setChecked(False)
+            return
         if vpn_script is None or not vpn_script.exists():
             if VPN_SCRIPT.exists():
                 run_script_bg("vpn.sh", "--toggle-wg")
