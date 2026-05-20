@@ -1239,10 +1239,25 @@ class SettingsWindow(QWidget):
                 self.display_status.setText("No displays detected through xrandr.")
             return
 
+        def _combo_text_or_fallback(combo: object, fallback: str) -> str:
+            if combo is None:
+                return fallback
+            try:
+                return str(combo.currentText()).strip()
+            except RuntimeError:
+                return fallback
+
+        def _switch_checked_or_fallback(widget: object, fallback: bool) -> bool:
+            if widget is None:
+                return fallback
+            try:
+                return bool(widget.isChecked())
+            except RuntimeError:
+                return fallback
+
         primary_name = ""
         primary_combo = getattr(self, "primary_display_combo", None)
-        if primary_combo is not None:
-            primary_name = str(primary_combo.currentText()).strip()
+        primary_name = _combo_text_or_fallback(primary_combo, "")
         if not primary_name:
             primary_name = str(self.display_state[0].get("name", "")).strip()
 
@@ -1265,25 +1280,19 @@ class SettingsWindow(QWidget):
             refresh_combo = controls.get("refresh")
             orientation_combo = controls.get("orientation")
 
-            enabled = (
-                bool(enabled_switch.isChecked())
-                if enabled_switch is not None
-                else bool(display.get("enabled", True))
+            enabled = _switch_checked_or_fallback(
+                enabled_switch, bool(display.get("enabled", True))
             )
-            resolution = (
-                str(resolution_combo.currentText()).strip()
-                if resolution_combo is not None
-                else str(display.get("current_mode", "")).strip()
+            resolution = _combo_text_or_fallback(
+                resolution_combo, str(display.get("current_mode", "")).strip()
             )
-            refresh = (
-                str(refresh_combo.currentText()).strip()
-                if refresh_combo is not None
-                else str(display.get("current_refresh", "")).strip()
+            refresh = _combo_text_or_fallback(
+                refresh_combo, str(display.get("current_refresh", "")).strip()
             )
             orientation = normalize_display_orientation(
-                orientation_combo.currentText()
-                if orientation_combo is not None
-                else display.get("orientation", "normal")
+                _combo_text_or_fallback(
+                    orientation_combo, str(display.get("orientation", "normal"))
+                )
             )
             payload.append(
                 {

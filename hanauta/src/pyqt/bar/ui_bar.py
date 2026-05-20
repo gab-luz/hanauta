@@ -208,12 +208,29 @@ try:
     fetch_forecast = _WEATHER_BACKEND.fetch_forecast
     weather_condition_label = _WEATHER_BACKEND.weather_condition_label
 except ImportError:
-    AnimatedWeatherIcon = _StubWeatherIcon
-    WeatherForecast = _StubWeatherForecast
-    animated_icon_path = lambda *a, **kw: ""
-    configured_city = lambda: ""
-    fetch_forecast = lambda *a, **kw: None
-    weather_condition_label = lambda *a, **kw: ""
+    try:
+        from pyqt.shared.weather import (
+            AnimatedWeatherIcon as _SharedAnimatedWeatherIcon,
+            WeatherForecast as _SharedWeatherForecast,
+            animated_icon_path as _shared_animated_icon_path,
+            configured_city as _shared_configured_city,
+            fetch_forecast as _shared_fetch_forecast,
+            weather_condition_label as _shared_weather_condition_label,
+        )
+
+        AnimatedWeatherIcon = _SharedAnimatedWeatherIcon
+        WeatherForecast = _SharedWeatherForecast
+        animated_icon_path = _shared_animated_icon_path
+        configured_city = _shared_configured_city
+        fetch_forecast = _shared_fetch_forecast
+        weather_condition_label = _shared_weather_condition_label
+    except Exception:
+        AnimatedWeatherIcon = _StubWeatherIcon
+        WeatherForecast = _StubWeatherForecast
+        animated_icon_path = lambda *a, **kw: ""
+        configured_city = lambda: ""
+        fetch_forecast = lambda *a, **kw: None
+        weather_condition_label = lambda *a, **kw: ""
 
 try:
     _UPDATES_BACKEND = _load_plugin_backend(
