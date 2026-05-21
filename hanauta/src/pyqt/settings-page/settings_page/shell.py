@@ -121,10 +121,9 @@ def build_sidebar(window) -> QWidget:
     layout.addLayout(top_row)
 
     nav_section = QFrame()
-    nav_section.setObjectName("sidebarNavSection")
     nav_layout = QVBoxLayout(nav_section)
-    nav_layout.setContentsMargins(6, 8, 6, 8)
-    nav_layout.setSpacing(6)
+    nav_layout.setContentsMargins(0, 0, 0, 0)
+    nav_layout.setSpacing(0)
 
     window.sidebar_section_label = QLabel("Workspace")
     window.sidebar_section_label.setObjectName("sidebarSectionLabel")
