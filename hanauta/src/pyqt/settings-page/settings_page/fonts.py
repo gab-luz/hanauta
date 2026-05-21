@@ -7,7 +7,7 @@ from settings_page.theme_data import HANAUTA_FONT_PROFILE
 
 
 APP_DIR = Path(__file__).resolve().parents[2]
-ROOT = APP_DIR.parents[1]
+ROOT = APP_DIR.parent
 FONTS_DIR = ROOT / "assets" / "fonts"
 
 

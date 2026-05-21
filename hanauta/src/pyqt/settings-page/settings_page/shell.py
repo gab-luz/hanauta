@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor, QFont
 from PyQt6.QtWidgets import (
@@ -18,6 +20,11 @@ from PyQt6.QtWidgets import (
 from pyqt.shared.button_helpers import create_close_button
 from settings_page.material_icons import material_icon
 from settings_page.widgets import NavPillButton
+
+APP_DIR = Path(__file__).resolve().parents[2]
+ASSETS_DIR = APP_DIR.parent / "assets"
+LAUNCHER_ASSETS_DIR = ASSETS_DIR / "launcher"
+NAV_ICONS_DIR = ASSETS_DIR / "nav-icons"
 
 
 def build_header(window) -> QWidget:
@@ -129,25 +136,96 @@ def build_sidebar(window) -> QWidget:
     window.nav_buttons = {}
 
     items = [
-        ("overview", material_icon("grid_view"), "Overview", False),
-        ("appearance", material_icon("palette"), "Looks", True),
-        ("marketplace", material_icon("storefront"), "Marketplace", False),
-        ("display", material_icon("desktop_windows"), "Display", False),
-        ("energy", material_icon("bolt"), "Energy", False),
-        ("audio", material_icon("music_note"), "Audio", False),
-        ("notifications", material_icon("notifications"), "Notifications", False),
-        ("input", material_icon("language"), "Input", False),
-        ("startup", material_icon("restart_alt"), "Startup", False),
-        ("privacy", material_icon("shield"), "Privacy", False),
-        ("networking", material_icon("hub"), "Networking", False),
-        ("storage", material_icon("storage"), "Storage", False),
-        ("region", material_icon("public"), "Region", False),
-        ("bar", material_icon("crop_square"), "Bar", False),
-        ("services", material_icon("widgets"), "Services", False),
+        (
+            "overview",
+            material_icon("grid_view"),
+            "Overview",
+            False,
+            str(NAV_ICONS_DIR / "grid_view.svg"),
+        ),
+        (
+            "appearance",
+            material_icon("palette"),
+            "Looks",
+            True,
+            str(NAV_ICONS_DIR / "palette.svg"),
+        ),
+        (
+            "marketplace",
+            material_icon("storefront"),
+            "Marketplace",
+            False,
+            str(NAV_ICONS_DIR / "storefront.svg"),
+        ),
+        (
+            "display",
+            material_icon("desktop_windows"),
+            "Display",
+            False,
+            str(NAV_ICONS_DIR / "desktop_windows.svg"),
+        ),
+        ("energy", material_icon("bolt"), "Energy", False, str(NAV_ICONS_DIR / "bolt.svg")),
+        (
+            "audio",
+            material_icon("music_note"),
+            "Audio",
+            False,
+            str(NAV_ICONS_DIR / "music_note.svg"),
+        ),
+        (
+            "notifications",
+            material_icon("notifications"),
+            "Notifications",
+            False,
+            str(NAV_ICONS_DIR / "notifications.svg"),
+        ),
+        ("input", material_icon("language"), "Input", False, str(NAV_ICONS_DIR / "language.svg")),
+        (
+            "startup",
+            material_icon("restart_alt"),
+            "Startup",
+            False,
+            str(NAV_ICONS_DIR / "restart_alt.svg"),
+        ),
+        (
+            "privacy",
+            material_icon("shield"),
+            "Privacy",
+            False,
+            str(NAV_ICONS_DIR / "shield.svg"),
+        ),
+        (
+            "networking",
+            material_icon("hub"),
+            "Networking",
+            False,
+            str(NAV_ICONS_DIR / "hub.svg"),
+        ),
+        ("storage", material_icon("storage"), "Storage", False, str(NAV_ICONS_DIR / "storage.svg")),
+        (
+            "region",
+            material_icon("public"),
+            "Region",
+            False,
+            str(NAV_ICONS_DIR / "public.svg"),
+        ),
+        ("bar", material_icon("crop_square"), "Bar", False, str(NAV_ICONS_DIR / "crop_square.svg")),
+        (
+            "services",
+            material_icon("widgets"),
+            "Services",
+            False,
+            str(NAV_ICONS_DIR / "widgets.svg"),
+        ),
     ]
 
-    for key, glyph, label, checked in items:
-        button = NavPillButton(glyph, label, window.icon_font, window.ui_font)
+    tint = getattr(window, "theme_palette", None)
+    tint_color = tint.primary if tint else None
+    for key, glyph, label, checked, icon_svg_path in items:
+        button = NavPillButton(
+            glyph, label, window.icon_font, window.ui_font,
+            icon_svg_path=icon_svg_path, tint_color=tint_color,
+        )
         button.setChecked(checked)
         button.clicked.connect(lambda checked=False, current=key: window._show_page(current))
         window.nav_group.addButton(button)

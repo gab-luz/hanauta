@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import QLabel, QPushButton, QHBoxLayout, QVBoxLayout
+from PyQt6.QtSvg import QSvgRenderer
 
 from settings_page.theme_data import HANAUTA_FONT_PROFILE
 
@@ -14,8 +17,31 @@ class IconLabel(QLabel):
         self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
 
+def _tint_pixmap(source: QPixmap, color: QColor) -> QPixmap:
+    if source.isNull():
+        return QPixmap()
+    src = source.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    out = QImage(src.size(), QImage.Format.Format_ARGB32)
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.fillRect(out.rect(), color)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    painter.drawImage(0, 0, src)
+    painter.end()
+    return QPixmap.fromImage(out)
+
+
 class NavPillButton(QPushButton):
-    def __init__(self, glyph: str, text: str, icon_font: str, text_font: str) -> None:
+    def __init__(
+        self,
+        glyph: str,
+        text: str,
+        icon_font: str,
+        text_font: str,
+        icon_svg_path: str = "",
+        tint_color: str | None = None,
+    ) -> None:
         super().__init__()
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -31,6 +57,13 @@ class NavPillButton(QPushButton):
         self.icon_label.setFont(QFont(icon_font, 17))
         self.icon_label.setProperty("iconRole", True)
         self.icon_label.setFixedWidth(22)
+        if icon_svg_path:
+            svg_path = Path(icon_svg_path).expanduser()
+            if svg_path.exists():
+                icon_pix = self._load_icon_pixmap(svg_path, tint_color)
+                if icon_pix is not None and not icon_pix.isNull():
+                    self.icon_label.setText("")
+                    self.icon_label.setPixmap(icon_pix)
 
         self.text_label = QLabel(text)
         self.text_label.setObjectName("navPillText")
@@ -45,6 +78,32 @@ class NavPillButton(QPushButton):
 
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.text_label, 1, Qt.AlignmentFlag.AlignVCenter)
+
+    @staticmethod
+    def _load_icon_pixmap(path: Path, tint_color: str | None = None) -> QPixmap | None:
+        size = 18
+        if path.suffix.lower() == ".svg":
+            renderer = QSvgRenderer(str(path))
+            if renderer.isValid():
+                pix = QPixmap(size, size)
+                pix.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(pix)
+                renderer.render(painter)
+                painter.end()
+                if tint_color:
+                    pix = _tint_pixmap(pix, QColor(tint_color))
+                return pix
+        pix = QPixmap(str(path))
+        if pix.isNull():
+            return None
+        if tint_color:
+            pix = _tint_pixmap(pix, QColor(tint_color))
+        return pix.scaled(
+            size,
+            size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
 
     def set_compact(self, compact: bool) -> None:
         self._compact = bool(compact)
