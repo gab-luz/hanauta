@@ -558,7 +558,7 @@ class SettingsWindow(QWidget):
 
         shell = QFrame()
         shell.setObjectName("shell")
-        shell.setStyleSheet("#shell { border-radius: 18px; background: rgba(31, 22, 38, 0.94); }")
+        shell.setStyleSheet("#shell { border-radius: 18px; background: rgba(31, 22, 38, 1.0); }")
         outer.addWidget(shell)
 
         shell_layout = QVBoxLayout(shell)

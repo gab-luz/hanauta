@@ -41,25 +41,31 @@ def build_header(window) -> QWidget:
     lead_layout = QHBoxLayout(lead_chip)
     lead_layout.setContentsMargins(12, 8, 12, 8)
     lead_layout.setSpacing(8)
+
     lead_icon = QLabel("♪")
     lead_icon.setProperty("iconRole", True)
     lead_icon.setObjectName("headerLeadIcon")
     lead_icon.setFont(QFont(window.icon_font, 14))
+
     lead_text = QLabel("hanauta")
     lead_text.setObjectName("headerLeadText")
     lead_text.setFont(QFont(window.ui_font, 9, QFont.Weight.DemiBold))
+
     lead_layout.addWidget(lead_icon)
     lead_layout.addWidget(lead_text)
 
     title_wrap = QVBoxLayout()
     title_wrap.setContentsMargins(0, 0, 0, 0)
     title_wrap.setSpacing(1)
+
     title = QLabel("Settings")
     title.setObjectName("headerTitle")
     title.setFont(QFont(window.display_font, 12))
+
     subtitle = QLabel("Wallpaper, accents, and shell behavior")
     subtitle.setObjectName("headerSubtitle")
     subtitle.setFont(QFont(window.ui_font, 8))
+
     title_wrap.addWidget(title)
     title_wrap.addWidget(subtitle)
 
@@ -73,12 +79,17 @@ def build_header(window) -> QWidget:
     close_button.clicked.connect(window.close)
 
     layout.addWidget(
-        lead_chip, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        lead_chip,
+        0,
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
     )
     layout.addLayout(title_wrap, 1)
     layout.addWidget(
-        close_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        close_button,
+        0,
+        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
     )
+
     return header
 
 
@@ -86,13 +97,24 @@ def build_sidebar(window) -> QWidget:
     window.sidebar = QFrame()
     window.sidebar.setObjectName("sidebar")
     window.sidebar.setFixedWidth(244)
+    window.sidebar.setContentsMargins(0, 0, 0, 0)
 
     layout = QVBoxLayout(window.sidebar)
-    layout.setContentsMargins(16, 18, 16, 18)
-    layout.setSpacing(12)
 
-    top_row = QHBoxLayout()
-    top_row.setContentsMargins(0, 0, 0, 0)
+    # Important:
+    # The old margins here were creating visible/transparent spacing around
+    # the Workspace/navigation container. Keep this parent layout clean.
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+
+    top_row_container = QFrame()
+    top_row_container.setObjectName("sidebarTopRowContainer")
+    top_row_container.setContentsMargins(0, 0, 0, 0)
+
+    top_row = QHBoxLayout(top_row_container)
+
+    # Put padding only around the top controls, not around the Workspace area.
+    top_row.setContentsMargins(16, 18, 16, 6)
     top_row.setSpacing(8)
 
     window.sidebar_title = QLabel("Settings")
@@ -118,12 +140,16 @@ def build_sidebar(window) -> QWidget:
     top_row.addWidget(window.sidebar_title, 1)
     top_row.addWidget(window.search_button, 0, Qt.AlignmentFlag.AlignRight)
     top_row.addWidget(window.sidebar_menu_button, 0, Qt.AlignmentFlag.AlignRight)
-    layout.addLayout(top_row)
+
+    layout.addWidget(top_row_container)
 
     nav_section = QFrame()
+    nav_section.setObjectName("sidebarNavSection")
+    nav_section.setContentsMargins(0, 0, 0, 0)
+
     nav_layout = QVBoxLayout(nav_section)
     nav_layout.setContentsMargins(0, 0, 0, 0)
-    nav_layout.setSpacing(0)
+    nav_layout.setSpacing(4)
 
     window.sidebar_section_label = QLabel("Workspace")
     window.sidebar_section_label.setObjectName("sidebarSectionLabel")
@@ -163,7 +189,13 @@ def build_sidebar(window) -> QWidget:
             False,
             str(NAV_ICONS_DIR / "desktop_windows.svg"),
         ),
-        ("energy", material_icon("bolt"), "Energy", False, str(NAV_ICONS_DIR / "bolt.svg")),
+        (
+            "energy",
+            material_icon("bolt"),
+            "Energy",
+            False,
+            str(NAV_ICONS_DIR / "bolt.svg"),
+        ),
         (
             "audio",
             material_icon("music_note"),
@@ -178,7 +210,13 @@ def build_sidebar(window) -> QWidget:
             False,
             str(NAV_ICONS_DIR / "notifications.svg"),
         ),
-        ("input", material_icon("language"), "Input", False, str(NAV_ICONS_DIR / "language.svg")),
+        (
+            "input",
+            material_icon("language"),
+            "Input",
+            False,
+            str(NAV_ICONS_DIR / "language.svg"),
+        ),
         (
             "startup",
             material_icon("restart_alt"),
@@ -200,7 +238,13 @@ def build_sidebar(window) -> QWidget:
             False,
             str(NAV_ICONS_DIR / "hub.svg"),
         ),
-        ("storage", material_icon("storage"), "Storage", False, str(NAV_ICONS_DIR / "storage.svg")),
+        (
+            "storage",
+            material_icon("storage"),
+            "Storage",
+            False,
+            str(NAV_ICONS_DIR / "storage.svg"),
+        ),
         (
             "region",
             material_icon("public"),
@@ -208,7 +252,13 @@ def build_sidebar(window) -> QWidget:
             False,
             str(NAV_ICONS_DIR / "public.svg"),
         ),
-        ("bar", material_icon("crop_square"), "Bar", False, str(NAV_ICONS_DIR / "crop_square.svg")),
+        (
+            "bar",
+            material_icon("crop_square"),
+            "Bar",
+            False,
+            str(NAV_ICONS_DIR / "crop_square.svg"),
+        ),
         (
             "services",
             material_icon("widgets"),
@@ -220,13 +270,20 @@ def build_sidebar(window) -> QWidget:
 
     tint = getattr(window, "theme_palette", None)
     tint_color = tint.primary if tint else None
+
     for key, glyph, label, checked, icon_svg_path in items:
         button = NavPillButton(
-            glyph, label, window.icon_font, window.ui_font,
-            icon_svg_path=icon_svg_path, tint_color=tint_color,
+            glyph,
+            label,
+            window.icon_font,
+            window.ui_font,
+            icon_svg_path=icon_svg_path,
+            tint_color=tint_color,
         )
         button.setChecked(checked)
-        button.clicked.connect(lambda checked=False, current=key: window._show_page(current))
+        button.clicked.connect(
+            lambda checked=False, current=key: window._show_page(current)
+        )
         window.nav_group.addButton(button)
         window.nav_buttons[key] = button
         nav_layout.addWidget(button)
@@ -234,12 +291,55 @@ def build_sidebar(window) -> QWidget:
     nav_scroll = QScrollArea()
     nav_scroll.setObjectName("sidebarNavScroll")
     nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
+    nav_scroll.setLineWidth(0)
+    nav_scroll.setMidLineWidth(0)
     nav_scroll.setWidgetResizable(True)
     nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     nav_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    nav_scroll.setContentsMargins(0, 0, 0, 0)
+
+    # QScrollArea has an internal viewport. If its background or margins are not
+    # reset, it can look like a white/transparent border around the content.
+    nav_scroll.viewport().setObjectName("sidebarNavViewport")
+    nav_scroll.viewport().setContentsMargins(0, 0, 0, 0)
+    nav_scroll.viewport().setAutoFillBackground(False)
+
+    nav_scroll.setStyleSheet(
+        """
+        QScrollArea#sidebarNavScroll {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
+        }
+
+        QScrollArea#sidebarNavScroll QWidget#sidebarNavViewport {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
+        }
+
+        QScrollArea#sidebarNavScroll > QWidget {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
+        }
+
+        QFrame#sidebarNavSection {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
+        }
+        """
+    )
+
     nav_scroll.setWidget(nav_section)
 
     layout.addWidget(nav_scroll, 1)
+
     return window.sidebar
 
 
@@ -282,11 +382,14 @@ def build_lazy_placeholder(window, label: str) -> QWidget:
     layout = QVBoxLayout(placeholder)
     layout.setContentsMargins(16, 16, 16, 16)
     layout.setSpacing(8)
+
     loading = QLabel(f"{label} page is loaded on demand for faster startup.")
     loading.setWordWrap(True)
     loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+
     layout.addWidget(loading)
     layout.addStretch(1)
+
     return placeholder
 
 
@@ -295,15 +398,19 @@ def build_display_placeholder(window) -> QWidget:
     layout = QVBoxLayout(placeholder)
     layout.setContentsMargins(16, 16, 16, 16)
     layout.setSpacing(8)
+
     loading = QLabel("Display controls are temporarily disabled in this build.")
     loading.setWordWrap(True)
     loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+
     hint = QLabel("Other settings pages should work normally.")
     hint.setWordWrap(True)
     hint.setStyleSheet("color: rgba(246,235,247,0.56);")
+
     layout.addWidget(loading)
     layout.addWidget(hint)
     layout.addStretch(1)
+
     return placeholder
 
 
@@ -312,11 +419,14 @@ def build_bar_placeholder(window) -> QWidget:
     layout = QVBoxLayout(placeholder)
     layout.setContentsMargins(16, 16, 16, 16)
     layout.setSpacing(8)
+
     loading = QLabel("Bar page is loaded on demand for faster startup.")
     loading.setWordWrap(True)
     loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+
     layout.addWidget(loading)
     layout.addStretch(1)
+
     return placeholder
 
 
@@ -325,11 +435,14 @@ def build_services_placeholder(window) -> QWidget:
     layout = QVBoxLayout(placeholder)
     layout.setContentsMargins(16, 16, 16, 16)
     layout.setSpacing(8)
+
     loading = QLabel("Services page is loaded on demand for faster startup.")
     loading.setWordWrap(True)
     loading.setStyleSheet("color: rgba(246,235,247,0.72);")
+
     layout.addWidget(loading)
     layout.addStretch(1)
+
     return placeholder
 
 
@@ -337,12 +450,14 @@ def build_search_overlay(window) -> None:
     window.search_container = QFrame(window.page_stack)
     window.search_container.setObjectName("searchOverlay")
     window.search_container.setVisible(False)
+
     search_layout = QVBoxLayout(window.search_container)
     search_layout.setContentsMargins(0, 0, 0, 0)
     search_layout.setSpacing(0)
 
     search_input_container = QFrame()
     search_input_container.setObjectName("searchInputContainer")
+
     input_layout = QHBoxLayout(search_input_container)
     input_layout.setContentsMargins(16, 12, 16, 12)
     input_layout.setSpacing(12)
@@ -375,6 +490,7 @@ def build_search_overlay(window) -> None:
     window.search_results_container.setHorizontalScrollBarPolicy(
         Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     )
+
     window.search_results_layout = QVBoxLayout()
     window.search_results_layout.setContentsMargins(16, 8, 16, 16)
     window.search_results_layout.setSpacing(8)
@@ -383,6 +499,7 @@ def build_search_overlay(window) -> None:
     results_widget = QWidget()
     results_widget.setObjectName("searchResultsContent")
     results_widget.setLayout(window.search_results_layout)
+
     window.search_results_container.setWidget(results_widget)
 
     search_layout.addWidget(window.search_results_container, 1)
