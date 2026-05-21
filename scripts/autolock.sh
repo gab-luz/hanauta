@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-#
-#
-xautolock -time 2 -locker "i3lock --clock --blur=sigma" && echo mem ? /sys/power/state
+set -euo pipefail
+
+# Reuse Hanauta's lock entrypoint so autolock never calls i3lock directly.
+xautolock -time 2 -locker "$HOME/.config/i3/hanauta/scripts/lock" && echo mem ? /sys/power/state

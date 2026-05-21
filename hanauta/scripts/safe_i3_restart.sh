@@ -15,6 +15,13 @@ fi
 pkill -x hanauta-settings 2>/dev/null || true
 pkill -f "$HOME/.config/i3/hanauta/src/pyqt/settings-page/settings.py" 2>/dev/null || true
 
+# Ensure ntfy/service state is refreshed by restarting hanauta-service too.
+pkill -x hanauta-service 2>/dev/null || true
+if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-service" ]; then
+  nohup "$HOME/.config/i3/hanauta/bin/hanauta-service" \
+    >/tmp/hanauta-service.log 2>&1 &
+fi
+
 "$HOME/.config/i3/startup.sh" >/tmp/i3-startup-wrapper.log 2>&1 &
 
 exit 0

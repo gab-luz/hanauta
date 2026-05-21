@@ -1877,6 +1877,26 @@ static gboolean refresh_ntfy(void) {
                     g_ptr_array_set_size(actions, 0);
                 }
             } else {
+                gboolean title_empty = (title == NULL || *title == '\0');
+                gboolean message_empty = (message == NULL || *message == '\0');
+                gboolean topic_only_placeholder = (
+                    !title_empty
+                    && topic != NULL
+                    && *topic != '\0'
+                    && g_strcmp0(title, topic) == 0
+                    && message_empty
+                );
+                if ((title_empty && message_empty) || topic_only_placeholder) {
+                    g_free(event);
+                    g_free(message_id);
+                    g_free(topic);
+                    g_free(title);
+                    g_free(message);
+                    if (actions != NULL) {
+                        g_ptr_array_free(actions, TRUE);
+                    }
+                    continue;
+                }
                 display_title = g_strdup((title != NULL && *title != '\0') ? title : ((topic != NULL && *topic != '\0') ? topic : "ntfy"));
                 display_message = g_strdup(message);
             }

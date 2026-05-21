@@ -475,10 +475,17 @@ class SettingsWindow(QWidget):
         )
         self.ui_font = self.main_font
         self.display_font = self.title_font
-        self.icon_font = detect_font(
-            self.fonts.get("material_icons", ""),
-            self.fonts.get("material_icons_outlined", ""),
-            "Material Icons",
+        # Prefer application-loaded Material families directly for nav/menu glyphs.
+        # `detect_font(...exactMatch...)` can fall through on some systems even after
+        # QFontDatabase.addApplicationFont succeeds, which leaves icon labels as tofu.
+        self.icon_font = (
+            self.fonts.get("material_symbols_rounded")
+            or self.fonts.get("material_icons")
+            or self.fonts.get("material_icons_outlined")
+            or detect_font(
+                "Material Symbols Rounded",
+                "Material Icons",
+            )
         )
 
         self.settings_state = load_settings_state()

@@ -578,15 +578,16 @@ if [[ -n "$lock_image" && -f "$lock_image" ]] && command -v magick >/dev/null 2>
     fi
 fi
 
-locker="$(command -v i3lock || true)"
+locker="$(command -v betterlockscreen || true)"
 if [[ -z "$locker" ]]; then
-    echo "i3lock is required but not installed. Install it and rerun lock." >&2
+    echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
     exit 1
 fi
 
-# Direct i3lock image path avoids betterlockscreen fallback artifacts/extra login box.
 if [[ -n "$lock_image" && -f "$lock_image" ]]; then
-    "$locker" -n -e -t -i "$lock_image" -p default
+    # Keep lock image/theme pipeline, then lock strictly through betterlockscreen.
+    run_quick "$locker" -u "$lock_image" >/dev/null 2>&1 || true
+    "$locker" -l dim
 else
-    "$locker" -n -e -c 000000 -p default
+    "$locker" -l dim
 fi
