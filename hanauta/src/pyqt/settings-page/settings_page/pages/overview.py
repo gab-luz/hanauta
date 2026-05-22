@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QCursor, QFont
+from PyQt6.QtGui import QColor, QCursor, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -15,6 +17,8 @@ from settings_page.material_icons import material_icon
 from settings_page.ui_widgets import ActionCard
 from settings_page.widgets import IconLabel
 from settings_page.pages.metrics import build_metric_card
+
+_ASSETS_DIR = Path(__file__).resolve().parents[4] / "assets"
 
 
 def build_overview_page(window) -> QWidget:
@@ -227,6 +231,10 @@ def build_overview_actions_card(window) -> QWidget:
     grid.setContentsMargins(0, 0, 0, 0)
     grid.setHorizontalSpacing(9)
     grid.setVerticalSpacing(9)
+    is_dark = _safe_setting(window, "appearance", "theme_choice", "dark").lower() == "dark"
+    action_bg = "rgba(32, 24, 41, 0.96)" if is_dark else "rgba(255,255,255,0.90)"
+    action_bg_hover = "rgba(44, 33, 56, 0.98)" if is_dark else "rgba(245,245,245,0.96)"
+    action_border = "rgba(255,255,255,0.14)" if is_dark else "rgba(0,0,0,0.12)"
 
     reload_i3 = ActionCard(
         material_icon("restart_alt"),
@@ -238,6 +246,19 @@ def build_overview_actions_card(window) -> QWidget:
     reload_i3.setObjectName("overviewActionCard")
     reload_i3.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
     reload_i3.setMinimumHeight(78)
+    reload_i3.setStyleSheet(
+        f"""
+        QPushButton {{
+            background-color: {action_bg};
+            border: 1px solid {action_border};
+            border-radius: 17px;
+        }}
+        QPushButton:hover {{
+            background-color: {action_bg_hover};
+            border: 1px solid rgba(216,180,254,0.30);
+        }}
+        """
+    )
 
     def _do_reload_i3() -> None:
         ok = window._reload_i3_keybindings()
@@ -259,6 +280,19 @@ def build_overview_actions_card(window) -> QWidget:
     bar_icons.setObjectName("overviewActionCard")
     bar_icons.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
     bar_icons.setMinimumHeight(78)
+    bar_icons.setStyleSheet(
+        f"""
+        QPushButton {{
+            background-color: {action_bg};
+            border: 1px solid {action_border};
+            border-radius: 17px;
+        }}
+        QPushButton:hover {{
+            background-color: {action_bg_hover};
+            border: 1px solid rgba(216,180,254,0.30);
+        }}
+        """
+    )
     bar_icons.clicked.connect(window._open_bar_icon_config)
 
     plugin_dir = ActionCard(
@@ -271,6 +305,19 @@ def build_overview_actions_card(window) -> QWidget:
     plugin_dir.setObjectName("overviewActionCard")
     plugin_dir.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
     plugin_dir.setMinimumHeight(78)
+    plugin_dir.setStyleSheet(
+        f"""
+        QPushButton {{
+            background-color: {action_bg};
+            border: 1px solid {action_border};
+            border-radius: 17px;
+        }}
+        QPushButton:hover {{
+            background-color: {action_bg_hover};
+            border: 1px solid rgba(216,180,254,0.30);
+        }}
+        """
+    )
     plugin_dir.clicked.connect(window._marketplace_open_install_dir)
 
     grid.addWidget(reload_i3, 0, 0)
@@ -286,11 +333,25 @@ def build_overview_actions_card(window) -> QWidget:
     status_layout.setContentsMargins(10, 8, 10, 8)
     status_layout.setSpacing(8)
 
-    status_icon = QLabel(material_icon("verified"))
+    status_icon = QLabel("")
     status_icon.setObjectName("overviewStatusIcon")
-    status_icon.setFont(QFont(window.icon_font, 15))
     status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
     status_icon.setFixedSize(22, 22)
+    check_svg = _ASSETS_DIR / "check.svg"
+    pix = QPixmap(str(check_svg))
+    if not pix.isNull():
+        status_icon.setPixmap(
+            pix.scaled(
+                16,
+                16,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+    else:
+        status_icon.setText(material_icon("check"))
+        status_icon.setStyleSheet("color: #7EE081;")
+        status_icon.setFont(QFont(window.icon_font, 15))
 
     if not hasattr(window, "overview_status"):
         window.overview_status = QLabel("")
@@ -301,6 +362,9 @@ def build_overview_actions_card(window) -> QWidget:
         window.overview_status.text() or "Ready. Choose an action above when needed."
     )
     window.overview_status.setWordWrap(True)
+    is_dark = _safe_setting(window, "appearance", "theme_choice", "dark").lower() == "dark"
+    status_text = "#F5F1F8" if is_dark else "#1D1B20"
+    window.overview_status.setStyleSheet(f"color: {status_text};")
 
     status_layout.addWidget(status_icon)
     status_layout.addWidget(window.overview_status, 1)
@@ -591,13 +655,13 @@ def _apply_overview_style(window) -> None:
 
     QPushButton#overviewActionCard {{
         border-radius: 17px;
-        border: 1px solid rgba(255,255,255,0.065);
-        background: rgba(255,255,255,0.038);
+        border: 1px solid rgba(255,255,255,0.10);
+        background-color: rgba(255,255,255,0.09);
     }}
 
     QPushButton#overviewActionCard:hover {{
         border: 1px solid rgba(216,180,254,0.28);
-        background: rgba(255,255,255,0.065);
+        background-color: rgba(255,255,255,0.14);
     }}
 
     QPushButton#overviewActionCard QFrame#actionIconWrap {{

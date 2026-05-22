@@ -6815,9 +6815,18 @@ class SettingsWindow(QWidget):
             )
 
     def _marketplace_open_install_dir(self) -> None:
+        install_dir_text = ""
+        input_widget = getattr(self, "marketplace_install_dir_input", None)
+        if input_widget is not None:
+            install_dir_text = str(input_widget.text()).strip()
+        if not install_dir_text:
+            marketplace = self.settings_state.get("marketplace", {})
+            if isinstance(marketplace, dict):
+                install_dir_text = str(
+                    marketplace.get("install_dir", str(ROOT / "hanauta" / "plugins"))
+                ).strip()
         install_dir = Path(
-            self.marketplace_install_dir_input.text().strip()
-            or str(ROOT / "hanauta" / "plugins")
+            install_dir_text or str(ROOT / "hanauta" / "plugins")
         ).expanduser()
         install_dir.mkdir(parents=True, exist_ok=True)
         run_bg(["xdg-open", str(install_dir)])
