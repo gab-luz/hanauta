@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -585,6 +586,7 @@ class MarketplacePage(QFrame):
         card.setObjectName("mpPluginCard")
         card.setMinimumHeight(96)
         card.setMaximumHeight(120)
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(card)
         layout.setContentsMargins(14, 12, 14, 12)
@@ -632,6 +634,8 @@ class MarketplacePage(QFrame):
         desc.setObjectName("mpPluginDescription")
         desc.setFont(self._ui_font(8))
         desc.setWordWrap(False)
+        desc.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        desc.setMinimumWidth(0)
 
         chips_row = QHBoxLayout()
         chips_row.setContentsMargins(0, 0, 0, 0)
@@ -647,6 +651,8 @@ class MarketplacePage(QFrame):
         meta = QLabel(f"{branch} · API {plugin.get('api_target_version', 1)}")
         meta.setObjectName("mpPluginMeta")
         meta.setFont(self._ui_font(7))
+        meta.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        meta.setMinimumWidth(0)
         chips_row.addWidget(meta)
         chips_row.addStretch(1)
 
@@ -710,10 +716,11 @@ class MarketplacePage(QFrame):
         return card
 
     def _chip(self, text: str) -> QWidget:
-        chip = QLabel(_shorten(str(text), 18))
+        chip = QLabel(_shorten(str(text), 14))
         chip.setObjectName("mpChip")
         chip.setFont(self._ui_font(7, QFont.Weight.DemiBold))
         chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        chip.setMaximumWidth(96)
         return chip
 
     def _installed_row(self, row: dict[str, Any]) -> QWidget:
@@ -1409,7 +1416,7 @@ def _marketplace_qss(window) -> str:
 
     QLabel#mpChip {{
         border-radius: 8px;
-        padding: 2px 7px;
+        padding: 1px 5px;
         color: rgba(246,235,247,0.72);
         background: rgba(255,255,255,0.065);
         border: 1px solid rgba(255,255,255,0.065);
