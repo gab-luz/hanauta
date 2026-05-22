@@ -215,7 +215,6 @@ from settings_page.pages.overview import build_overview_page
 from settings_page.pages.storage import build_storage_page
 from settings_page.pages.display import build_display_page
 from settings_page.pages.appearance import build_appearance_page, build_wallpaper_colors_card
-from settings_page.pages.marketplace import build_marketplace_page, build_marketplace_card
 from settings_page.pages.services import build_services_page, build_services_card
 from settings_page.pages.audio import build_audio_page, build_audio_card
 from settings_page.pages.metrics import build_metric_card
@@ -423,6 +422,8 @@ from settings_page.startup import (
 from settings_page.services import load_service_cache_json, run_bg, run_text
 
 from settings_page.marketplace import (
+    build_marketplace_page,
+    build_marketplace_card,
     marketplace_api_refresh_catalog_cache,
     marketplace_api_installed_plugins,
     marketplace_api_update_plugin,

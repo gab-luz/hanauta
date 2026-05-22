@@ -7,7 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QColor, QCursor, QDesktopServices, QFont
+from PyQt6.QtGui import (
+    QColor,
+    QCursor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QImage,
+    QPainter,
+    QPixmap,
+)
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -52,8 +62,77 @@ def _marketplace_normalize_catalog_api(catalog: list[dict]) -> list[dict]:
     return catalog
 
 
+_MP_ASSETS_DIR = Path(__file__).resolve().parents[2].parent / "assets"
+_MP_NAV_ICONS_DIR = _MP_ASSETS_DIR / "nav-icons"
+_MP_ICON_CACHE_DIR = _MP_ASSETS_DIR / "plugin-icons"
+
+
+def _tint_pixmap(source: QPixmap, color: QColor) -> QPixmap:
+    if source.isNull():
+        return QPixmap()
+    src = source.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    out = QImage(src.size(), QImage.Format.Format_ARGB32)
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.fillRect(out.rect(), color)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    painter.drawImage(0, 0, src)
+    painter.end()
+    return QPixmap.fromImage(out)
+
+
+def _tinted_svg_pixmap(path: Path, color: QColor, size: int = 18) -> QPixmap | None:
+    if not path.exists():
+        return None
+    renderer = QSvgRenderer(str(path))
+    if not renderer.isValid():
+        return None
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    renderer.render(painter)
+    painter.end()
+    return _tint_pixmap(pix, color)
+
+
+def _plugin_icon_path(plugin: dict[str, Any]) -> str | None:
+    raw = plugin.get("icon") or plugin.get("icon_url") or ""
+    return str(raw).strip() or None
+
+
+def _download_plugin_icon(url: str, plugin_id: str) -> Path | None:
+    _MP_ICON_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(url.split("?")[0]).suffix or ".png"
+    cache_path = _MP_ICON_CACHE_DIR / f"{plugin_id}{ext}"
+    if cache_path.exists():
+        return cache_path
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Hanauta/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = resp.read()
+        cache_path.write_bytes(data)
+        return cache_path
+    except Exception:
+        return None
+
+
 def build_marketplace_page(window) -> QWidget:
     return MarketplacePage(window)
+
+
+def build_marketplace_card(window) -> QWidget:
+    card = QFrame()
+    card.setObjectName("contentCard")
+    layout = QVBoxLayout(card)
+    layout.setContentsMargins(16, 14, 16, 16)
+    layout.setSpacing(12)
+    title = QLabel("Marketplace")
+    title.setFont(QFont(window.display_font, 13))
+    title.setStyleSheet("color: rgba(246,235,247,0.72);")
+    layout.addWidget(title)
+    return card
 
 
 class MarketplacePage(QFrame):
@@ -69,6 +148,11 @@ class MarketplacePage(QFrame):
         self.installed: list[dict[str, Any]] = marketplace_api_installed_plugins(
             self.settings
         )
+        if not self.installed:
+            self.installed = self._installed_from_settings()
+
+        self.selected_catalog_ids: set[str] = set()
+        self.selected_installed_ids: set[str] = set()
 
         self.setObjectName("marketplacePage")
         self.setContentsMargins(0, 0, 0, 0)
@@ -161,8 +245,8 @@ class MarketplacePage(QFrame):
         stats.setContentsMargins(0, 0, 0, 0)
         stats.setSpacing(8)
 
-        self.catalog_stat = self._stat_pill("0", "catalog")
-        self.installed_stat = self._stat_pill("0", "installed")
+        self.catalog_stat = self._stat_pill("0", "Catalog")
+        self.installed_stat = self._stat_pill("0", "Installed")
         stats.addWidget(self.catalog_stat)
         stats.addWidget(self.installed_stat)
 
@@ -170,28 +254,68 @@ class MarketplacePage(QFrame):
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(8)
 
-        refresh_btn = self._tool_button(
-            material_icon("refresh"),
-            "Refresh",
-            variant="primary",
-        )
-        refresh_btn.clicked.connect(self._refresh_catalog)
+        tint = getattr(self.window, "theme_palette", None)
+        tint_c = QColor(tint.primary) if tint else QColor("#7CB4FF")
 
-        update_btn = self._tool_button(
-            material_icon("update"),
-            "Update all",
-            variant="ghost",
-        )
-        update_btn.clicked.connect(self._update_all)
+        refresh_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "refresh.svg", tint_c, 16)
+        refresh_icon = QPushButton()
+        refresh_icon.setObjectName("mpToolButton")
+        refresh_icon.setProperty("variant", "primary")
+        refresh_icon.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_icon.setFixedSize(32, 32)
+        if refresh_pix:
+            refresh_icon.setIcon(QIcon(refresh_pix))
+            refresh_icon.setIconSize(refresh_pix.size())
+        refresh_icon.setToolTip("Refresh catalog")
+        refresh_icon.clicked.connect(self._refresh_catalog)
 
-        actions.addWidget(refresh_btn)
-        actions.addWidget(update_btn)
+        update_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "update.svg", tint_c, 16)
+        update_icon = QPushButton()
+        update_icon.setObjectName("mpToolButton")
+        update_icon.setProperty("variant", "ghost")
+        update_icon.setCursor(Qt.CursorShape.PointingHandCursor)
+        update_icon.setFixedSize(32, 32)
+        if update_pix:
+            update_icon.setIcon(QIcon(update_pix))
+            update_icon.setIconSize(update_pix.size())
+        update_icon.setToolTip("Update all plugins")
+        update_icon.clicked.connect(self._update_all)
+
+        actions.addWidget(refresh_icon)
+        actions.addWidget(update_icon)
+
+        install_selected_btn = QPushButton("Install selected")
+        install_selected_btn.setObjectName("mpToolButton")
+        install_selected_btn.setProperty("variant", "ghost")
+        install_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        install_selected_btn.setMinimumHeight(32)
+        install_selected_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        install_selected_btn.clicked.connect(self._install_selected_catalog)
+
+        disable_selected_btn = QPushButton("Disable selected")
+        disable_selected_btn.setObjectName("mpToolButton")
+        disable_selected_btn.setProperty("variant", "ghost")
+        disable_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        disable_selected_btn.setMinimumHeight(32)
+        disable_selected_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        disable_selected_btn.clicked.connect(self._disable_selected_installed)
+
+        remove_selected_btn = QPushButton("Remove selected")
+        remove_selected_btn.setObjectName("mpToolButton")
+        remove_selected_btn.setProperty("variant", "ghost")
+        remove_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_selected_btn.setMinimumHeight(32)
+        remove_selected_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        remove_selected_btn.clicked.connect(self._remove_selected_installed)
 
         right_col = QVBoxLayout()
         right_col.setContentsMargins(0, 0, 0, 0)
         right_col.setSpacing(8)
         right_col.addLayout(stats)
         right_col.addLayout(actions)
+        right_col.addWidget(install_selected_btn)
+        right_col.addWidget(disable_selected_btn)
+        right_col.addWidget(remove_selected_btn)
 
         layout.addWidget(icon)
         layout.addLayout(text_col, 1)
@@ -264,7 +388,7 @@ class MarketplacePage(QFrame):
 
         self.cards_layout = QVBoxLayout(content)
         self.cards_layout.setContentsMargins(0, 0, 0, 0)
-        self.cards_layout.setSpacing(8)
+        self.cards_layout.setSpacing(10)
 
         self.cards_scroll.setWidget(content)
         layout.addWidget(self.cards_scroll)
@@ -315,10 +439,11 @@ class MarketplacePage(QFrame):
     def _stat_pill(self, value: str, label: str) -> QWidget:
         pill = QFrame()
         pill.setObjectName("mpStatPill")
+        pill.setMinimumHeight(54)
 
         layout = QVBoxLayout(pill)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(0)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(1)
 
         value_label = QLabel(value)
         value_label.setObjectName("mpStatValue")
@@ -328,7 +453,7 @@ class MarketplacePage(QFrame):
         caption = QLabel(label)
         caption.setObjectName("mpStatCaption")
         caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        caption.setFont(self._ui_font(7, QFont.Weight.DemiBold))
+        caption.setFont(self._ui_font(8, QFont.Weight.DemiBold))
 
         layout.addWidget(value_label)
         layout.addWidget(caption)
@@ -444,18 +569,28 @@ class MarketplacePage(QFrame):
 
         card = QFrame()
         card.setObjectName("mpPluginCard")
-        card.setMinimumHeight(76)
-        card.setMaximumHeight(92)
+        card.setMinimumHeight(96)
+        card.setMaximumHeight(120)
 
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(12)
 
-        icon_box = QLabel(material_icon("extension"))
+        icon_box = QLabel()
         icon_box.setObjectName("mpPluginIcon")
         icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_box.setFont(self._icon_font(20))
-        icon_box.setFixedSize(42, 42)
+        icon_box.setFixedSize(48, 48)
+        icon_path = _plugin_icon_path(plugin)
+        if icon_path:
+            cached = _download_plugin_icon(icon_path, plugin_id)
+            if cached:
+                pix = QPixmap(str(cached))
+                if not pix.isNull():
+                    scaled = pix.scaled(42, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    icon_box.setPixmap(scaled)
+        if not icon_box.pixmap() or icon_box.pixmap().isNull():
+            icon_box.setText(material_icon("extension"))
+            icon_box.setFont(self._icon_font(20))
 
         content = QVBoxLayout()
         content.setContentsMargins(0, 0, 0, 0)
@@ -509,6 +644,18 @@ class MarketplacePage(QFrame):
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(6)
 
+        select_btn = QPushButton("✓")
+        select_btn.setCheckable(True)
+        select_btn.setObjectName("mpIconAction")
+        select_btn.setToolTip("Select plugin")
+        select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        select_btn.setFixedSize(30, 30)
+        select_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        select_btn.setChecked(plugin_id in self.selected_catalog_ids)
+        select_btn.clicked.connect(
+            lambda checked=False, pid=plugin_id: self._toggle_catalog_selection(pid, checked)
+        )
+
         repo_btn = QPushButton(material_icon("open_in_new"))
         repo_btn.setObjectName("mpIconAction")
         repo_btn.setToolTip("Open repository")
@@ -538,6 +685,7 @@ class MarketplacePage(QFrame):
                 lambda checked=False, item=plugin: self._install_plugin(item)
             )
 
+        actions.addWidget(select_btn)
         actions.addWidget(repo_btn)
         actions.addWidget(main_btn)
 
@@ -561,20 +709,21 @@ class MarketplacePage(QFrame):
 
         card = QFrame()
         card.setObjectName("mpInstalledRow")
+        card.setMinimumHeight(54)
 
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(9, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
         icon = QLabel(material_icon("check"))
         icon.setObjectName("mpInstalledRowIcon")
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon.setFont(self._icon_font(13))
-        icon.setFixedSize(24, 24)
+        icon.setFixedSize(28, 28)
 
         text = QVBoxLayout()
         text.setContentsMargins(0, 0, 0, 0)
-        text.setSpacing(0)
+        text.setSpacing(1)
 
         title = QLabel(_shorten(name, 22))
         title.setObjectName("mpInstalledRowTitle")
@@ -587,16 +736,34 @@ class MarketplacePage(QFrame):
         text.addWidget(title)
         text.addWidget(subtitle)
 
-        update = QPushButton(material_icon("update"))
+        palette = getattr(self.window, "theme_palette", None)
+        tint_c = QColor(palette.primary) if palette else QColor("#7CB4FF")
+        update_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "update.svg", tint_c, 14)
+        select_btn = QPushButton("✓")
+        select_btn.setCheckable(True)
+        select_btn.setObjectName("mpTinyButton")
+        select_btn.setToolTip("Select plugin")
+        select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        select_btn.setFixedSize(28, 28)
+        select_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        select_btn.setChecked(plugin_id in self.selected_installed_ids)
+        select_btn.clicked.connect(
+            lambda checked=False, pid=plugin_id: self._toggle_installed_selection(pid, checked)
+        )
+
+        update = QPushButton()
         update.setObjectName("mpTinyButton")
         update.setToolTip("Update plugin")
         update.setCursor(Qt.CursorShape.PointingHandCursor)
-        update.setFixedSize(26, 26)
-        update.setFont(self._icon_font(13))
+        update.setFixedSize(28, 28)
+        if update_pix:
+            update.setIcon(QIcon(update_pix))
+            update.setIconSize(update_pix.size())
         update.clicked.connect(lambda checked=False, pid=plugin_id: self._update_plugin(pid))
 
         layout.addWidget(icon)
         layout.addLayout(text, 1)
+        layout.addWidget(select_btn)
         layout.addWidget(update)
 
         return card
@@ -666,14 +833,26 @@ class MarketplacePage(QFrame):
 
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            old_catalog = list(self.catalog)
+            old_installed = list(self.installed)
             catalog, errors = marketplace_api_refresh_catalog_cache(self.settings)
-            self.catalog = catalog
-            self.installed = marketplace_api_installed_plugins(self.settings)
+            if catalog:
+                self.catalog = catalog
+            elif old_catalog:
+                self.catalog = old_catalog
+
+            refreshed_installed = marketplace_api_installed_plugins(self.settings)
+            if refreshed_installed:
+                self.installed = refreshed_installed
+            else:
+                self.installed = self._installed_from_settings() or old_installed
+
+            self._prune_selection_ids()
 
             if errors:
                 self._set_status(f"Catalog refreshed with {len(errors)} source error(s).")
             else:
-                self._set_status(f"Catalog refreshed: {len(catalog)} plugin(s).")
+                self._set_status(f"Catalog refreshed: {len(self.catalog)} plugin(s).")
 
         except Exception as exc:
             self._set_status(f"Refresh failed: {exc}")
@@ -682,6 +861,123 @@ class MarketplacePage(QFrame):
             QApplication.restoreOverrideCursor()
 
         self._render_all()
+
+    def _installed_from_settings(self) -> list[dict[str, Any]]:
+        marketplace = self.settings.get("marketplace", {})
+        if not isinstance(marketplace, dict):
+            return []
+        rows = marketplace.get("installed_plugins", [])
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict)]
+
+    def _catalog_index(self) -> dict[str, dict[str, Any]]:
+        index: dict[str, dict[str, Any]] = {}
+        for row in self.catalog:
+            plugin_id = str(row.get("id", "")).strip()
+            if plugin_id:
+                index[plugin_id] = row
+        return index
+
+    def _prune_selection_ids(self) -> None:
+        catalog_ids = {str(row.get("id", "")).strip() for row in self.catalog if str(row.get("id", "")).strip()}
+        installed_ids = {str(row.get("id", "")).strip() for row in self.installed if str(row.get("id", "")).strip()}
+        self.selected_catalog_ids.intersection_update(catalog_ids)
+        self.selected_installed_ids.intersection_update(installed_ids)
+
+    def _toggle_catalog_selection(self, plugin_id: str, checked: bool) -> None:
+        plugin_id = str(plugin_id).strip()
+        if not plugin_id:
+            return
+        if checked:
+            self.selected_catalog_ids.add(plugin_id)
+        else:
+            self.selected_catalog_ids.discard(plugin_id)
+
+    def _toggle_installed_selection(self, plugin_id: str, checked: bool) -> None:
+        plugin_id = str(plugin_id).strip()
+        if not plugin_id:
+            return
+        if checked:
+            self.selected_installed_ids.add(plugin_id)
+        else:
+            self.selected_installed_ids.discard(plugin_id)
+
+    def _install_selected_catalog(self) -> None:
+        if not self.selected_catalog_ids:
+            self._set_status("No catalog plugins selected.")
+            return
+        index = self._catalog_index()
+        installed_now = 0
+        for plugin_id in list(self.selected_catalog_ids):
+            plugin = index.get(plugin_id)
+            if not plugin:
+                continue
+            before = set(self._installed_ids())
+            self._install_plugin(plugin)
+            after = set(self._installed_ids())
+            if plugin_id in after and plugin_id not in before:
+                installed_now += 1
+        self._prune_selection_ids()
+        self._render_all()
+        self._set_status(f"Installed {installed_now} selected plugin(s).")
+
+    def _disable_selected_installed(self) -> None:
+        if not self.selected_installed_ids:
+            self._set_status("No installed plugins selected.")
+            return
+        marketplace = self.settings.setdefault("marketplace", {})
+        if not isinstance(marketplace, dict):
+            self._set_status("Marketplace settings are unavailable.")
+            return
+        rows = marketplace.get("installed_plugins", [])
+        if not isinstance(rows, list):
+            self._set_status("No installed plugin state to update.")
+            return
+        changed = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if plugin_id in self.selected_installed_ids:
+                row["enabled"] = False
+                changed += 1
+        save_settings_state(self.settings)
+        self.installed = marketplace_api_installed_plugins(self.settings) or self._installed_from_settings()
+        self._prune_selection_ids()
+        self._render_all()
+        self._set_status(f"Disabled {changed} selected plugin(s).")
+
+    def _remove_selected_installed(self) -> None:
+        if not self.selected_installed_ids:
+            self._set_status("No installed plugins selected.")
+            return
+        marketplace = self.settings.setdefault("marketplace", {})
+        if not isinstance(marketplace, dict):
+            self._set_status("Marketplace settings are unavailable.")
+            return
+        rows = marketplace.get("installed_plugins", [])
+        if not isinstance(rows, list):
+            self._set_status("No installed plugin state to update.")
+            return
+        selected = set(self.selected_installed_ids)
+        kept_rows: list[dict[str, Any]] = []
+        removed_count = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if plugin_id in selected:
+                removed_count += 1
+                continue
+            kept_rows.append(row)
+        marketplace["installed_plugins"] = kept_rows
+        save_settings_state(self.settings)
+        self.selected_installed_ids.clear()
+        self.installed = marketplace_api_installed_plugins(self.settings) or self._installed_from_settings()
+        self._prune_selection_ids()
+        self._render_all()
+        self._set_status(f"Removed {removed_count} selected plugin(s).")
 
     def _install_plugin(self, plugin: dict[str, Any]) -> None:
         plugin_id = str(plugin.get("id", "")).strip()
