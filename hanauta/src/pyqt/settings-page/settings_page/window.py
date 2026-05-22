@@ -544,7 +544,9 @@ class SettingsWindow(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.resize(1180, 720)
+        self.resize(1060, 620)
+        self.setMinimumSize(980, 560)
+        self.setMaximumHeight(680)
         self.setWindowOpacity(0.0)
 
         shadow = QGraphicsDropShadowEffect(self)
@@ -15285,6 +15287,7 @@ class SettingsWindow(QWidget):
         self._window_animation.addAnimation(opacity)
         self._window_animation.addAnimation(geometry)
         self._window_animation.start()
+        QTimer.singleShot(240, self._apply_i3_window_rules)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         super().paintEvent(event)

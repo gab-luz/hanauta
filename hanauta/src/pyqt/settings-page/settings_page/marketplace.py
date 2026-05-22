@@ -172,7 +172,6 @@ class MarketplacePage(QFrame):
         body.setSpacing(12)
 
         body.addWidget(self._build_catalog_panel(), 1)
-        body.addWidget(self._build_installed_panel(), 0)
 
         root.addLayout(body, 1)
 
@@ -498,7 +497,6 @@ class MarketplacePage(QFrame):
     def _render_all(self) -> None:
         self._render_stats()
         self._render_cards()
-        self._render_installed()
 
     def _render_stats(self) -> None:
         self.catalog_stat.value_label.setText(str(len(self.catalog)))  # type: ignore[attr-defined]
