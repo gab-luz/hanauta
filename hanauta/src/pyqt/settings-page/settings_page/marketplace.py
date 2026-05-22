@@ -163,6 +163,7 @@ class MarketplacePage(QFrame):
         root.setSpacing(12)
 
         root.addWidget(self._build_hero())
+        root.addWidget(self._build_maintenance_tools())
         root.addWidget(self._build_toolbar())
         root.addWidget(self._build_batch_actions())
 
@@ -251,51 +252,55 @@ class MarketplacePage(QFrame):
         stats.addWidget(self.catalog_stat)
         stats.addWidget(self.installed_stat)
 
-        actions = QHBoxLayout()
-        actions.setContentsMargins(0, 0, 0, 0)
-        actions.setSpacing(8)
-
-        tint = getattr(self.window, "theme_palette", None)
-        tint_c = QColor(tint.primary) if tint else QColor("#7CB4FF")
-
-        refresh_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "refresh.svg", tint_c, 16)
-        refresh_icon = QPushButton()
-        refresh_icon.setObjectName("mpToolButton")
-        refresh_icon.setProperty("variant", "primary")
-        refresh_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        refresh_icon.setFixedSize(32, 32)
-        if refresh_pix:
-            refresh_icon.setIcon(QIcon(refresh_pix))
-            refresh_icon.setIconSize(refresh_pix.size())
-        refresh_icon.setToolTip("Refresh catalog")
-        refresh_icon.clicked.connect(self._refresh_catalog)
-
-        update_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "update.svg", tint_c, 16)
-        update_icon = QPushButton()
-        update_icon.setObjectName("mpToolButton")
-        update_icon.setProperty("variant", "ghost")
-        update_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        update_icon.setFixedSize(32, 32)
-        if update_pix:
-            update_icon.setIcon(QIcon(update_pix))
-            update_icon.setIconSize(update_pix.size())
-        update_icon.setToolTip("Update all plugins")
-        update_icon.clicked.connect(self._update_all)
-
-        actions.addWidget(refresh_icon)
-        actions.addWidget(update_icon)
-
         right_col = QVBoxLayout()
         right_col.setContentsMargins(0, 0, 0, 0)
-        right_col.setSpacing(8)
+        right_col.setSpacing(4)
         right_col.addLayout(stats)
-        right_col.addLayout(actions)
 
         layout.addWidget(icon)
         layout.addLayout(text_col, 1)
         layout.addLayout(right_col)
 
         return hero
+
+    def _build_maintenance_tools(self) -> QWidget:
+        row = QFrame()
+        row.setObjectName("mpToolbar")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
+
+        tint = getattr(self.window, "theme_palette", None)
+        tint_c = QColor(tint.primary) if tint else QColor("#7CB4FF")
+
+        refresh_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "refresh.svg", tint_c, 16)
+        refresh_btn = QPushButton("Refresh catalog")
+        refresh_btn.setObjectName("mpToolButton")
+        refresh_btn.setProperty("variant", "primary")
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_btn.setMinimumHeight(32)
+        refresh_btn.setFont(self._ui_font(9, QFont.Weight.DemiBold))
+        if refresh_pix:
+            refresh_btn.setIcon(QIcon(refresh_pix))
+            refresh_btn.setIconSize(refresh_pix.size())
+        refresh_btn.clicked.connect(self._refresh_catalog)
+
+        update_pix = _tinted_svg_pixmap(_MP_NAV_ICONS_DIR / "update.svg", tint_c, 16)
+        update_btn = QPushButton("Update all plugins")
+        update_btn.setObjectName("mpToolButton")
+        update_btn.setProperty("variant", "ghost")
+        update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        update_btn.setMinimumHeight(32)
+        update_btn.setFont(self._ui_font(9, QFont.Weight.DemiBold))
+        if update_pix:
+            update_btn.setIcon(QIcon(update_pix))
+            update_btn.setIconSize(update_pix.size())
+        update_btn.clicked.connect(self._update_all)
+
+        layout.addWidget(refresh_btn)
+        layout.addWidget(update_btn)
+        layout.addStretch(1)
+        return row
 
     def _build_batch_actions(self) -> QWidget:
         row = QFrame()
