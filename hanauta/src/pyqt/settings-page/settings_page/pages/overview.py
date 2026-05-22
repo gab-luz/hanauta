@@ -180,12 +180,15 @@ def build_system_overview_card(window) -> QWidget:
     grid.setVerticalSpacing(9)
 
     window.system_overview_labels = {}
+    is_dark = _safe_setting(window, "appearance", "theme_choice", "dark").lower() == "dark"
+    metric_value_color = "#F5F1F8" if is_dark else "#1D1B20"
 
     keys = ("Host", "Kernel", "Session", "Python", "Uptime", "Screen")
 
     for index, key in enumerate(keys):
         label = QLabel("...")
         label.setObjectName("overviewMetricValue")
+        label.setStyleSheet(f"color: {metric_value_color};")
 
         label_font = QFont(window.ui_font, 10, QFont.Weight.DemiBold)
         label_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
@@ -313,6 +316,9 @@ def _section_header(
     title: str,
     subtitle: str,
 ) -> QWidget:
+    is_dark = _safe_setting(window, "appearance", "theme_choice", "dark").lower() == "dark"
+    section_text = "#F5F1F8" if is_dark else "#1D1B20"
+    section_muted = "#CDC3D3" if is_dark else "#514A57"
     shell = QWidget()
 
     layout = QHBoxLayout(shell)
@@ -324,6 +330,7 @@ def _section_header(
     icon.setFont(QFont(window.icon_font, 16))
     icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
     icon.setFixedSize(30, 30)
+    icon.setStyleSheet(f"color: {section_text};")
 
     text_col = QVBoxLayout()
     text_col.setContentsMargins(0, 0, 0, 0)
@@ -335,6 +342,7 @@ def _section_header(
     title_font = QFont(window.display_font, 12, QFont.Weight.DemiBold)
     title_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     title_label.setFont(title_font)
+    title_label.setStyleSheet(f"color: {section_text};")
 
     subtitle_label = QLabel(subtitle)
     subtitle_label.setObjectName("overviewSectionSubtitle")
@@ -343,6 +351,7 @@ def _section_header(
     subtitle_font = QFont(window.ui_font, 8)
     subtitle_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     subtitle_label.setFont(subtitle_font)
+    subtitle_label.setStyleSheet(f"color: {section_muted};")
 
     text_col.addWidget(title_label)
     text_col.addWidget(subtitle_label)
@@ -580,15 +589,37 @@ def _apply_overview_style(window) -> None:
         color: {text};
     }}
 
-    QFrame#overviewActionCard {{
+    QPushButton#overviewActionCard {{
         border-radius: 17px;
         border: 1px solid rgba(255,255,255,0.065);
         background: rgba(255,255,255,0.038);
     }}
 
-    QFrame#overviewActionCard:hover {{
+    QPushButton#overviewActionCard:hover {{
         border: 1px solid rgba(216,180,254,0.28);
         background: rgba(255,255,255,0.065);
+    }}
+
+    QPushButton#overviewActionCard QFrame#actionIconWrap {{
+        border-radius: 10px;
+        background: rgba(216,180,254,0.12);
+        border: 1px solid rgba(216,180,254,0.16);
+    }}
+
+    QPushButton#overviewActionCard QLabel[iconRole="true"] {{
+        color: {text};
+    }}
+
+    QPushButton#overviewActionCard QLabel#actionCardTitle {{
+        color: {text};
+    }}
+
+    QPushButton#overviewActionCard QLabel#actionCardDetail {{
+        color: {text_muted};
+    }}
+
+    QFrame#overviewMetricCard QLabel[mutedText="true"] {{
+        color: {text_muted};
     }}
 
     QFrame#overviewStatusBox {{
