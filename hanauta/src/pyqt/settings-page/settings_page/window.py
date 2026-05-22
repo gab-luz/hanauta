@@ -15050,17 +15050,19 @@ class SettingsWindow(QWidget):
 
     def _build_picom_card(self) -> QWidget:
         card = QFrame()
-        card.setObjectName("contentCard")
+        card.setObjectName("displayPanelCard")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 14, 16, 16)
         layout.setSpacing(10)
 
         title = QLabel("Picom")
         title.setFont(QFont(self.display_font, 13))
+        title.setObjectName("picomTitle")
         subtitle = QLabel(
             "Compositor controls for shadows, opacity, corner radius, and related rendering behavior."
         )
         subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setObjectName("picomSubtitle")
         subtitle.setProperty("mutedText", True)
         subtitle.setWordWrap(True)
         layout.addWidget(title)
@@ -15068,6 +15070,15 @@ class SettingsWindow(QWidget):
 
         self.picom_backend_combo = QComboBox()
         self.picom_backend_combo.setObjectName("settingsCombo")
+        _original_picom_backend_wheel_event = self.picom_backend_combo.wheelEvent
+
+        def _guarded_picom_backend_wheel_event(event) -> None:
+            if self.picom_backend_combo.view().isVisible():
+                _original_picom_backend_wheel_event(event)
+                return
+            event.ignore()
+
+        self.picom_backend_combo.wheelEvent = _guarded_picom_backend_wheel_event  # type: ignore[method-assign]
         for option in ("glx", "xrender"):
             self.picom_backend_combo.addItem(option)
 
@@ -15094,20 +15105,20 @@ class SettingsWindow(QWidget):
         self.picom_corner_radius_slider.setRange(0, 64)
 
         for row in (
-            SettingsRow(material_icon("developer_board"), "Backend", "Picom renderer backend.", self.icon_font, self.ui_font, self.picom_backend_combo),
-            SettingsRow(material_icon("sync"), "VSync", "Reduce tearing when possible.", self.icon_font, self.ui_font, self.picom_vsync_switch),
-            SettingsRow(material_icon("tune"), "Use Damage", "Track damaged regions for more efficient redraws.", self.icon_font, self.ui_font, self.picom_damage_switch),
-            SettingsRow(material_icon("gradient"), "Shadows", "Enable window shadows.", self.icon_font, self.ui_font, self.picom_shadow_switch),
-            SettingsRow(material_icon("blur_on"), "Shadow Radius", "Blur radius for shadows.", self.icon_font, self.ui_font, self.picom_shadow_radius_slider),
-            SettingsRow(material_icon("opacity"), "Shadow Opacity", "Opacity for window shadows.", self.icon_font, self.ui_font, self.picom_shadow_opacity_slider),
-            SettingsRow(material_icon("swap_horiz"), "Shadow Offset X", "Horizontal offset for shadows.", self.icon_font, self.ui_font, self.picom_shadow_offset_x_slider),
-            SettingsRow(material_icon("swap_vert"), "Shadow Offset Y", "Vertical offset for shadows.", self.icon_font, self.ui_font, self.picom_shadow_offset_y_slider),
-            SettingsRow(material_icon("animation"), "Fading", "Enable fade transitions.", self.icon_font, self.ui_font, self.picom_fading_switch),
-            SettingsRow(material_icon("filter_center_focus"), "Active Opacity", "Opacity for focused windows.", self.icon_font, self.ui_font, self.picom_active_opacity_slider),
-            SettingsRow(material_icon("filter_alt"), "Inactive Opacity", "Opacity for unfocused windows.", self.icon_font, self.ui_font, self.picom_inactive_opacity_slider),
-            SettingsRow(material_icon("rounded_corner"), "Corner Radius", "Rounded corner radius in pixels.", self.icon_font, self.ui_font, self.picom_corner_radius_slider),
-            SettingsRow(material_icon("crop_din"), "Transparent Clipping", "Clip transparent regions more aggressively.", self.icon_font, self.ui_font, self.picom_clip_switch),
-            SettingsRow(material_icon("radio_button_checked"), "Detect Rounded Corners", "Honor rounded-corner hints from apps.", self.icon_font, self.ui_font, self.picom_rounded_switch),
+            SettingsRow(material_icon("developer_board"), "Backend", "Picom renderer backend.", self.icon_font, self.ui_font, self.picom_backend_combo, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_backend.svg")),
+            SettingsRow(material_icon("sync"), "VSync", "Reduce tearing when possible.", self.icon_font, self.ui_font, self.picom_vsync_switch, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_vsync.svg")),
+            SettingsRow(material_icon("tune"), "Use Damage", "Track damaged regions for more efficient redraws.", self.icon_font, self.ui_font, self.picom_damage_switch, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_damage.svg")),
+            SettingsRow(material_icon("gradient"), "Shadows", "Enable window shadows.", self.icon_font, self.ui_font, self.picom_shadow_switch, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_shadows.svg")),
+            SettingsRow(material_icon("blur_on"), "Shadow Radius", "Blur radius for shadows.", self.icon_font, self.ui_font, self.picom_shadow_radius_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_blur.svg")),
+            SettingsRow(material_icon("opacity"), "Shadow Opacity", "Opacity for window shadows.", self.icon_font, self.ui_font, self.picom_shadow_opacity_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_opacity.svg")),
+            SettingsRow(material_icon("swap_horiz"), "Shadow Offset X", "Horizontal offset for shadows.", self.icon_font, self.ui_font, self.picom_shadow_offset_x_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_offset_x.svg")),
+            SettingsRow(material_icon("swap_vert"), "Shadow Offset Y", "Vertical offset for shadows.", self.icon_font, self.ui_font, self.picom_shadow_offset_y_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_offset_y.svg")),
+            SettingsRow(material_icon("animation"), "Fading", "Enable fade transitions.", self.icon_font, self.ui_font, self.picom_fading_switch, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_fading.svg")),
+            SettingsRow(material_icon("filter_center_focus"), "Active Opacity", "Opacity for focused windows.", self.icon_font, self.ui_font, self.picom_active_opacity_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_focus.svg")),
+            SettingsRow(material_icon("filter_alt"), "Inactive Opacity", "Opacity for unfocused windows.", self.icon_font, self.ui_font, self.picom_inactive_opacity_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_inactive.svg")),
+            SettingsRow(material_icon("rounded_corner"), "Corner Radius", "Rounded corner radius in pixels.", self.icon_font, self.ui_font, self.picom_corner_radius_slider, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_radius.svg")),
+            SettingsRow(material_icon("crop_din"), "Transparent Clipping", "Clip transparent regions more aggressively.", self.icon_font, self.ui_font, self.picom_clip_switch, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_clip.svg")),
+            SettingsRow(material_icon("radio_button_checked"), "Detect Rounded Corners", "Honor rounded-corner hints from apps.", self.icon_font, self.ui_font, self.picom_rounded_switch, icon_svg_path=str(ASSETS_DIR / "nav-icons" / "picom_rounded.svg")),
         ):
             layout.addWidget(row)
 
@@ -15133,6 +15144,7 @@ class SettingsWindow(QWidget):
         layout.addLayout(actions)
 
         self.picom_status = QLabel("")
+        self.picom_status.setObjectName("picomStatus")
         self.picom_status.setProperty("mutedText", True)
         self.picom_status.setWordWrap(True)
         layout.addWidget(self.picom_status)

@@ -68,9 +68,23 @@ MATERIAL_ICONS = {
     "visibility_off": "\ue8f5",
     "add": "\ue145",
     "delete": "\ue872",
+    "check": "\ue5ca",
+    "done": "\ue876",
+    "visibility": "\ue8f4",
+    "dashboard": "\ue871",
+    "stars": "\ue8d0",
+    "compare_arrows": "\ue915",
+    "power_settings_new": "\ue8ac",
+    "aspect_ratio": "\ue85b",
+    "speed": "\ue9e4",
+    "screen_rotation": "\ue1c1",
+    "wallpaper": "\ue1bc",
+    "info": "\ue88e",
+    # Aliases/fallbacks for names used by Display page
+    "monitor": "\uefe8",
+    "desktop_access_disabled": "\uefe8",
 }
 
 
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
-
