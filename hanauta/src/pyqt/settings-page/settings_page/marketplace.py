@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import time
@@ -66,6 +67,9 @@ def _marketplace_normalize_catalog_api(catalog: list[dict]) -> list[dict]:
 _MP_ASSETS_DIR = Path(__file__).resolve().parents[2].parent / "assets"
 _MP_NAV_ICONS_DIR = _MP_ASSETS_DIR / "nav-icons"
 _MP_ICON_CACHE_DIR = _MP_ASSETS_DIR / "plugin-icons"
+_MP_GIT_STATUS_CACHE_PATH = (
+    Path.home() / ".local" / "state" / "hanauta" / "service" / "marketplace_git_status.json"
+)
 
 
 def _tint_pixmap(source: QPixmap, color: QColor) -> QPixmap:
@@ -155,6 +159,8 @@ class MarketplacePage(QFrame):
         self.selected_catalog_ids: set[str] = set()
         self.selected_installed_ids: set[str] = set()
         self._refresh_in_progress = False
+        self._git_status_cache: dict[str, dict[str, str]] = {}
+        self._git_status_snapshot: dict[str, dict[str, Any]] = {}
 
         self.setObjectName("marketplacePage")
         self.setContentsMargins(0, 0, 0, 0)
@@ -179,9 +185,11 @@ class MarketplacePage(QFrame):
         root.addLayout(body, 1)
 
         self._render_all()
+        self._load_git_status_snapshot()
         QTimer.singleShot(0, self._refresh_catalog)
 
     def on_page_activated(self) -> None:
+        self._load_git_status_snapshot()
         QTimer.singleShot(0, self._refresh_catalog)
 
     def _ui_font(self, size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
@@ -513,6 +521,11 @@ class MarketplacePage(QFrame):
 
     def _set_filter(self, mode: str) -> None:
         self.filter_mode = mode
+        if mode == "installed":
+            self.installed = (
+                marketplace_api_installed_plugins(self.settings)
+                or self._installed_from_settings()
+            )
         self._render_cards()
 
     def _render_all(self) -> None:
@@ -657,6 +670,16 @@ class MarketplacePage(QFrame):
         desc.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         desc.setMinimumWidth(0)
 
+        update_info = None
+        if installed:
+            update_info = self._git_update_status(plugin_id, branch)
+            update_label = QLabel(update_info.get("summary", "Installed"))
+            update_label.setObjectName("mpPluginUpdateInfo")
+            update_label.setFont(self._ui_font(7))
+            update_label.setWordWrap(False)
+            update_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            update_label.setMinimumWidth(0)
+
         chips_row = QHBoxLayout()
         chips_row.setContentsMargins(0, 0, 0, 0)
         chips_row.setSpacing(5)
@@ -678,6 +701,8 @@ class MarketplacePage(QFrame):
 
         content.addLayout(title_row)
         content.addWidget(desc)
+        if installed and update_info is not None:
+            content.addWidget(update_label)
         content.addLayout(chips_row)
 
         actions = QHBoxLayout()
@@ -707,7 +732,12 @@ class MarketplacePage(QFrame):
         if installed:
             main_btn = QPushButton("Update")
             main_btn.setObjectName("mpCompactAction")
-            main_btn.setProperty("variant", "ghost")
+            main_btn.setProperty(
+                "variant",
+                update_info.get("button_variant", "update_ok")
+                if isinstance(update_info, dict)
+                else "update_ok",
+            )
             main_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             main_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
             main_btn.setFixedHeight(30)
@@ -891,6 +921,8 @@ class MarketplacePage(QFrame):
             else:
                 self.installed = self._installed_from_settings() or old_installed
 
+            self._load_git_status_snapshot()
+            self._git_status_cache.clear()
             self._prune_selection_ids()
 
             if errors:
@@ -1129,8 +1161,14 @@ class MarketplacePage(QFrame):
 
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            previous_installed = list(self.installed)
             ok, detail = marketplace_api_update_plugin(self.settings, plugin_id)
-            self.installed = marketplace_api_installed_plugins(self.settings)
+            refreshed_installed = marketplace_api_installed_plugins(self.settings)
+            if refreshed_installed:
+                self.installed = refreshed_installed
+            else:
+                self.installed = self._installed_from_settings() or previous_installed
+            self._git_status_cache.pop(plugin_id, None)
             self._set_status(detail if detail else ("Updated." if ok else "Update failed."))
 
         except Exception as exc:
@@ -1150,12 +1188,20 @@ class MarketplacePage(QFrame):
 
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            previous_installed = list(self.installed)
             results = marketplace_api_update_all_plugins(self.settings)
             ok_count = sum(1 for _, ok, _ in results if ok)
             fail_count = len(results) - ok_count
-            self.installed = marketplace_api_installed_plugins(self.settings)
+            refreshed_installed = marketplace_api_installed_plugins(self.settings)
+            if refreshed_installed:
+                self.installed = refreshed_installed
+            else:
+                self.installed = self._installed_from_settings() or previous_installed
+            self._git_status_cache.clear()
 
-            if fail_count:
+            if not results:
+                self._set_status("All installed plugins are already up to date.")
+            elif fail_count:
                 self._set_status(f"Updated {ok_count}; {fail_count} failed.")
             else:
                 self._set_status(f"Updated {ok_count} plugin(s).")
@@ -1173,6 +1219,79 @@ class MarketplacePage(QFrame):
         if label is None:
             return
         label.setText(str(text).strip() or "Ready.")
+
+    def _load_git_status_snapshot(self) -> None:
+        snapshot: dict[str, dict[str, Any]] = {}
+        try:
+            payload = json.loads(_MP_GIT_STATUS_CACHE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            self._git_status_snapshot = snapshot
+            return
+        rows = payload.get("plugins", []) if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            self._git_status_snapshot = snapshot
+            return
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if not plugin_id:
+                continue
+            snapshot[plugin_id] = row
+        self._git_status_snapshot = snapshot
+
+    def _installed_entry(self, plugin_id: str) -> dict[str, Any] | None:
+        for row in self.installed:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("id", "")).strip() == plugin_id:
+                return row
+        return None
+
+    def _git_update_status(self, plugin_id: str, branch: str) -> dict[str, str]:
+        cached = self._git_status_cache.get(plugin_id)
+        if cached is not None:
+            return cached
+
+        fallback = {
+            "summary": "Installed (git info unavailable)",
+            "button_variant": "update_warn",
+        }
+        row = self._git_status_snapshot.get(plugin_id)
+        if not isinstance(row, dict):
+            self._git_status_cache[plugin_id] = fallback
+            return fallback
+
+        try:
+            ahead = int(row.get("ahead", 0))
+        except Exception:
+            ahead = 0
+        try:
+            behind = int(row.get("behind", 0))
+        except Exception:
+            behind = 0
+
+        local_date_text = str(row.get("local_date", "")).strip() or "unknown"
+        remote_date_text = str(row.get("remote_date", "")).strip() or "unknown"
+
+        if behind > 0:
+            info = {
+                "summary": f"Update available: behind {behind} commit(s) · local {local_date_text} · remote {remote_date_text}",
+                "button_variant": "update_available",
+            }
+        elif ahead > 0:
+            info = {
+                "summary": f"Local ahead by {ahead} commit(s) · local {local_date_text}",
+                "button_variant": "update_warn",
+            }
+        else:
+            info = {
+                "summary": f"Up to date · local {local_date_text} · remote {remote_date_text}",
+                "button_variant": "update_ok",
+            }
+
+        self._git_status_cache[plugin_id] = info
+        return info
 
 
 def _settings_from_window(window) -> dict[str, Any]:
@@ -1436,6 +1555,10 @@ def _marketplace_qss(window) -> str:
         color: rgba(246,235,247,0.58);
     }}
 
+    QLabel#mpPluginUpdateInfo {{
+        color: rgba(246,235,247,0.50);
+    }}
+
     QLabel#mpPluginMeta {{
         color: rgba(246,235,247,0.38);
         padding-left: 4px;
@@ -1485,6 +1608,24 @@ def _marketplace_qss(window) -> str:
         color: #1b1023;
         border: 1px solid rgba(255,255,255,0.18);
         background: {primary};
+    }}
+
+    QPushButton#mpCompactAction[variant="update_available"] {{
+        color: #1f1306;
+        border: 1px solid rgba(255, 180, 80, 0.55);
+        background: rgba(255, 180, 80, 0.82);
+    }}
+
+    QPushButton#mpCompactAction[variant="update_ok"] {{
+        color: #092113;
+        border: 1px solid rgba(102, 214, 154, 0.45);
+        background: rgba(102, 214, 154, 0.78);
+    }}
+
+    QPushButton#mpCompactAction[variant="update_warn"] {{
+        color: #f6ebf7;
+        border: 1px solid rgba(255,255,255,0.18);
+        background: rgba(255,255,255,0.12);
     }}
 
     QFrame#mpInstalledPanel {{

@@ -17,6 +17,7 @@ typedef struct {
     gchar *crypto_path;
     gchar *wifi_path;
     gchar *home_assistant_path;
+    gchar *marketplace_git_status_path;
     gchar *status_path;
     gchar *games_cache_script;
     gint64 games_cache_next_run;
@@ -24,6 +25,7 @@ typedef struct {
     gchar *wifi_plugin_offer_marker_path;
     gint64 disk_space_next_check;
     gint64 disk_space_last_alert_at;
+    gint64 marketplace_git_status_next_run;
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
     guint refresh_source;
@@ -1250,6 +1252,190 @@ cleanup:
     return ok;
 }
 
+static gboolean refresh_marketplace_git_status(void) {
+    const gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+    gchar *settings = NULL;
+    gchar *marketplace_obj = NULL;
+    gchar *installed_json = NULL;
+    const gchar *cursor = NULL;
+    GString *json = NULL;
+    gboolean wrote_any = FALSE;
+
+    if (g_service.marketplace_git_status_next_run > 0 && now < g_service.marketplace_git_status_next_run) {
+        return FALSE;
+    }
+    g_service.marketplace_git_status_next_run = now + 120;
+
+    settings = load_file_text(g_service.settings_path);
+    marketplace_obj = extract_object_block(settings, "marketplace");
+    if (marketplace_obj == NULL) {
+        goto cleanup;
+    }
+    installed_json = extract_array_block(marketplace_obj, "installed_plugins");
+    if (installed_json == NULL) {
+        goto cleanup;
+    }
+
+    json = g_string_new("{\"updated_at_epoch\":");
+    g_string_append_printf(json, "%" G_GINT64_FORMAT, now);
+    g_string_append(json, ",\"plugins\":[");
+
+    cursor = installed_json;
+    while (cursor != NULL && *cursor != '\0') {
+        const gchar *start = NULL;
+        const gchar *end = NULL;
+        gint depth = 0;
+        gboolean in_string = FALSE;
+        gboolean escaped = FALSE;
+        gchar *entry_json = NULL;
+        gchar *plugin_id = NULL;
+        gchar *install_path = NULL;
+        gchar *branch = NULL;
+        gchar *local_date = NULL;
+        gchar *remote_date = NULL;
+        gchar *id_q = NULL;
+        gchar *local_q = NULL;
+        gchar *remote_q = NULL;
+        gchar *counts = NULL;
+        gint ahead = 0;
+        gint behind = 0;
+        gchar *origin_ref = NULL;
+        const gchar *argv_fetch[8] = {0};
+
+        start = strchr(cursor, '{');
+        if (start == NULL) {
+            break;
+        }
+        for (end = start; *end != '\0'; ++end) {
+            gchar ch = *end;
+            if (escaped) {
+                escaped = FALSE;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = TRUE;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = !in_string;
+                continue;
+            }
+            if (in_string) {
+                continue;
+            }
+            if (ch == '{') {
+                depth += 1;
+            } else if (ch == '}') {
+                depth -= 1;
+                if (depth == 0) {
+                    break;
+                }
+            }
+        }
+        if (end == NULL || *end == '\0') {
+            break;
+        }
+        entry_json = g_strndup(start, (gsize)(end - start + 1));
+        cursor = end + 1;
+
+        plugin_id = object_string(entry_json, "id", "");
+        install_path = object_string(entry_json, "install_path", "");
+        branch = object_string(entry_json, "branch", "main");
+        if (plugin_id == NULL || *plugin_id == '\0' || install_path == NULL || *install_path == '\0') {
+            g_free(entry_json);
+            g_free(plugin_id);
+            g_free(install_path);
+            g_free(branch);
+            continue;
+        }
+        if (!g_file_test(install_path, G_FILE_TEST_IS_DIR)) {
+            g_free(entry_json);
+            g_free(plugin_id);
+            g_free(install_path);
+            g_free(branch);
+            continue;
+        }
+
+        argv_fetch[0] = "git";
+        argv_fetch[1] = "-C";
+        argv_fetch[2] = install_path;
+        argv_fetch[3] = "fetch";
+        argv_fetch[4] = "--quiet";
+        argv_fetch[5] = "origin";
+        argv_fetch[6] = branch;
+        run_capture(NULL, argv_fetch);
+
+        origin_ref = g_strdup_printf("origin/%s", branch);
+
+        {
+            gchar *range = g_strdup_printf("HEAD...%s", origin_ref);
+            const gchar *argv_counts_full[8] = {
+                "git", "-C", install_path, "rev-list",
+                "--left-right", "--count", range, NULL
+            };
+            counts = run_capture(NULL, argv_counts_full);
+            g_free(range);
+        }
+
+        const gchar *argv_local[9] = {
+            "git", "-C", install_path, "log", "-1", "--date=short", "--format=%cd", "HEAD", NULL
+        };
+        local_date = run_capture(NULL, argv_local);
+
+        const gchar *argv_remote[9] = {
+            "git", "-C", install_path, "log", "-1", "--date=short", "--format=%cd", origin_ref, NULL
+        };
+        remote_date = run_capture(NULL, argv_remote);
+
+        if (counts != NULL && *counts != '\0') {
+            gint parsed_ahead = 0;
+            gint parsed_behind = 0;
+            if (sscanf(counts, "%d %d", &parsed_ahead, &parsed_behind) == 2) {
+                ahead = parsed_ahead;
+                behind = parsed_behind;
+            }
+        }
+
+        id_q = escape_json_string(plugin_id);
+        local_q = escape_json_string(local_date != NULL ? g_strstrip(local_date) : "");
+        remote_q = escape_json_string(remote_date != NULL ? g_strstrip(remote_date) : "");
+        g_string_append_printf(
+            json,
+            "%s{\"id\":%s,\"ahead\":%d,\"behind\":%d,\"local_date\":%s,\"remote_date\":%s}",
+            wrote_any ? "," : "",
+            id_q,
+            ahead,
+            behind,
+            local_q,
+            remote_q
+        );
+        wrote_any = TRUE;
+
+        g_free(entry_json);
+        g_free(plugin_id);
+        g_free(install_path);
+        g_free(branch);
+        g_free(local_date);
+        g_free(remote_date);
+        g_free(id_q);
+        g_free(local_q);
+        g_free(remote_q);
+        g_free(counts);
+        g_free(origin_ref);
+    }
+    g_string_append(json, "]}\n");
+    g_file_set_contents(g_service.marketplace_git_status_path, json->str, -1, NULL);
+
+cleanup:
+    g_free(settings);
+    g_free(marketplace_obj);
+    g_free(installed_json);
+    if (json != NULL) {
+        g_string_free(json, TRUE);
+    }
+    return wrote_any;
+}
+
 static gchar *json_escape_plain(const gchar *text) {
     GString *buffer = g_string_new("");
     const gchar *cursor = text != NULL ? text : "";
@@ -2140,9 +2326,10 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean ntfy_ok = refresh_ntfy();
     gboolean games_ok = refresh_games_cache();
     gboolean disk_ok = refresh_disk_space();
+    gboolean marketplace_ok = refresh_marketplace_git_status();
     gboolean wifi_offer_ok = maybe_offer_wifi_plugin_install();
     refresh_plugin_background_tasks();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || disk_ok || wifi_offer_ok;
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || disk_ok || marketplace_ok || wifi_offer_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -2318,6 +2505,7 @@ int main(int argc, char **argv) {
     g_service.crypto_path = g_build_filename(g_service.state_dir, "crypto.json", NULL);
     g_service.wifi_path = g_build_filename(g_service.state_dir, "wifi.json", NULL);
     g_service.home_assistant_path = g_build_filename(g_service.state_dir, "home_assistant.json", NULL);
+    g_service.marketplace_git_status_path = g_build_filename(g_service.state_dir, "marketplace_git_status.json", NULL);
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
     g_service.games_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_recent_games.py", NULL);
     g_service.games_cache_next_run = 0;
@@ -2325,6 +2513,7 @@ int main(int argc, char **argv) {
     g_service.wifi_plugin_offer_marker_path = g_build_filename(g_service.state_dir, "wifi_plugin_offer_shown.state", NULL);
     g_service.disk_space_next_check = 0;
     g_service.disk_space_last_alert_at = 0;
+    g_service.marketplace_git_status_next_run = 0;
     g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
     g_service.ntfy_seen_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     g_service.plugin_task_next_run = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
@@ -2362,6 +2551,7 @@ int main(int argc, char **argv) {
     g_free(g_service.crypto_path);
     g_free(g_service.wifi_path);
     g_free(g_service.home_assistant_path);
+    g_free(g_service.marketplace_git_status_path);
     g_free(g_service.status_path);
     g_free(g_service.games_cache_script);
     g_free(g_service.fullscreen_alert_script);
