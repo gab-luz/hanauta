@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import (
     QColor,
     QCursor,
@@ -154,6 +154,7 @@ class MarketplacePage(QFrame):
 
         self.selected_catalog_ids: set[str] = set()
         self.selected_installed_ids: set[str] = set()
+        self._refresh_in_progress = False
 
         self.setObjectName("marketplacePage")
         self.setContentsMargins(0, 0, 0, 0)
@@ -167,6 +168,7 @@ class MarketplacePage(QFrame):
         root.addWidget(self._build_maintenance_tools())
         root.addWidget(self._build_toolbar())
         root.addWidget(self._build_batch_actions())
+        root.addWidget(self._build_status_strip())
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -177,6 +179,10 @@ class MarketplacePage(QFrame):
         root.addLayout(body, 1)
 
         self._render_all()
+        QTimer.singleShot(0, self._refresh_catalog)
+
+    def on_page_activated(self) -> None:
+        QTimer.singleShot(0, self._refresh_catalog)
 
     def _ui_font(self, size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
         return QFont(getattr(self.window, "ui_font", ""), size, weight)
@@ -383,6 +389,20 @@ class MarketplacePage(QFrame):
                 btn.setChecked(True)
 
         return toolbar
+
+    def _build_status_strip(self) -> QWidget:
+        strip = QFrame()
+        strip.setObjectName("mpToolbar")
+        layout = QHBoxLayout(strip)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
+
+        self.status_label = QLabel("Ready.")
+        self.status_label.setObjectName("mpStatus")
+        self.status_label.setWordWrap(True)
+        self.status_label.setFont(self._ui_font(8))
+        layout.addWidget(self.status_label, 1)
+        return strip
 
     def _build_catalog_panel(self) -> QWidget:
         panel = QFrame()
@@ -850,6 +870,9 @@ class MarketplacePage(QFrame):
         QDesktopServices.openUrl(QUrl(repo_url))
 
     def _refresh_catalog(self) -> None:
+        if self._refresh_in_progress:
+            return
+        self._refresh_in_progress = True
         self._set_status("Refreshing catalog...")
 
         try:
@@ -880,6 +903,7 @@ class MarketplacePage(QFrame):
 
         finally:
             QApplication.restoreOverrideCursor()
+            self._refresh_in_progress = False
 
         self._render_all()
 
@@ -1145,7 +1169,10 @@ class MarketplacePage(QFrame):
         self._render_all()
 
     def _set_status(self, text: str) -> None:
-        self.status_label.setText(str(text).strip() or "Ready.")
+        label = getattr(self, "status_label", None)
+        if label is None:
+            return
+        label.setText(str(text).strip() or "Ready.")
 
 
 def _settings_from_window(window) -> dict[str, Any]:

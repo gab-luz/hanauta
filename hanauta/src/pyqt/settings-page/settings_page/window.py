@@ -1367,6 +1367,11 @@ class SettingsWindow(QWidget):
         self.current_page = resolved
         index = int(indices.get(resolved, 0))
         self.page_stack.setCurrentIndex(index)
+        if resolved == "marketplace":
+            page_widget = self.page_stack.widget(index)
+            on_page_activated = getattr(page_widget, "on_page_activated", None)
+            if callable(on_page_activated):
+                on_page_activated()
         for button_key, button in getattr(self, "nav_buttons", {}).items():
             button.setChecked(button_key == resolved)
         if resolved == "services" and self.initial_service_section:
