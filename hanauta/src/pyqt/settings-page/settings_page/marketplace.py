@@ -164,6 +164,7 @@ class MarketplacePage(QFrame):
 
         root.addWidget(self._build_hero())
         root.addWidget(self._build_toolbar())
+        root.addWidget(self._build_batch_actions())
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -284,12 +285,31 @@ class MarketplacePage(QFrame):
         actions.addWidget(refresh_icon)
         actions.addWidget(update_icon)
 
+        right_col = QVBoxLayout()
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setSpacing(8)
+        right_col.addLayout(stats)
+        right_col.addLayout(actions)
+
+        layout.addWidget(icon)
+        layout.addLayout(text_col, 1)
+        layout.addLayout(right_col)
+
+        return hero
+
+    def _build_batch_actions(self) -> QWidget:
+        row = QFrame()
+        row.setObjectName("mpToolbar")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
+
         install_selected_btn = QPushButton("Install selected")
         install_selected_btn.setObjectName("mpToolButton")
         install_selected_btn.setProperty("variant", "ghost")
         install_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         install_selected_btn.setMinimumHeight(32)
-        install_selected_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        install_selected_btn.setFont(self._ui_font(9, QFont.Weight.DemiBold))
         install_selected_btn.clicked.connect(self._install_selected_catalog)
 
         disable_selected_btn = QPushButton("Disable selected")
@@ -297,7 +317,7 @@ class MarketplacePage(QFrame):
         disable_selected_btn.setProperty("variant", "ghost")
         disable_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         disable_selected_btn.setMinimumHeight(32)
-        disable_selected_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        disable_selected_btn.setFont(self._ui_font(9, QFont.Weight.DemiBold))
         disable_selected_btn.clicked.connect(self._disable_selected_installed)
 
         remove_selected_btn = QPushButton("Remove selected")
@@ -305,23 +325,14 @@ class MarketplacePage(QFrame):
         remove_selected_btn.setProperty("variant", "ghost")
         remove_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         remove_selected_btn.setMinimumHeight(32)
-        remove_selected_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+        remove_selected_btn.setFont(self._ui_font(9, QFont.Weight.DemiBold))
         remove_selected_btn.clicked.connect(self._remove_selected_installed)
 
-        right_col = QVBoxLayout()
-        right_col.setContentsMargins(0, 0, 0, 0)
-        right_col.setSpacing(8)
-        right_col.addLayout(stats)
-        right_col.addLayout(actions)
-        right_col.addWidget(install_selected_btn)
-        right_col.addWidget(disable_selected_btn)
-        right_col.addWidget(remove_selected_btn)
-
-        layout.addWidget(icon)
-        layout.addLayout(text_col, 1)
-        layout.addLayout(right_col)
-
-        return hero
+        layout.addWidget(install_selected_btn)
+        layout.addWidget(disable_selected_btn)
+        layout.addWidget(remove_selected_btn)
+        layout.addStretch(1)
+        return row
 
     def _build_toolbar(self) -> QWidget:
         toolbar = QFrame()
