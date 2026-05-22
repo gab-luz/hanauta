@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QCursor, QFont, QIcon
+from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -43,6 +43,30 @@ def _lock_combo_wheel(combo: QComboBox) -> None:
     combo.wheelEvent = _guarded_wheel_event  # type: ignore[method-assign]
 
 
+def _is_dark_theme(window) -> bool:
+    appearance = getattr(window, "settings_state", {}).get("appearance", {})
+    mode = str(getattr(window, "theme_mode", "") or appearance.get("mode", "")).lower()
+    if mode in {"dark", "night"}:
+        return True
+    if mode in {"light", "day"}:
+        return False
+    return True
+
+
+def _tint_pixmap(source: QPixmap, color: QColor) -> QPixmap:
+    if source.isNull():
+        return QPixmap()
+    src = source.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    out = QImage(src.size(), QImage.Format.Format_ARGB32)
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.fillRect(out.rect(), color)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    painter.drawImage(0, 0, src)
+    painter.end()
+    return QPixmap.fromImage(out)
+
+
 def build_display_card(window) -> QWidget:
     card = QFrame()
     card.setObjectName("displayRootCard")
@@ -68,14 +92,22 @@ def build_display_card(window) -> QWidget:
     hero_layout.setContentsMargins(16, 14, 16, 14)
     hero_layout.setSpacing(14)
 
-    hero_icon = IconLabel(
-        material_icon("monitor"),
-        window.icon_font,
-        24,
-        "#201126",
-    )
+    hero_icon = QLabel("")
     hero_icon.setObjectName("displayHeroIcon")
     hero_icon.setFixedSize(56, 56)
+    hero_pix = QPixmap(str(DISPLAY_ASSETS_DIR / "nav-icons" / "display_monitor.svg"))
+    if not hero_pix.isNull():
+        icon_color = QColor("#ffffff" if _is_dark_theme(window) else "#201126")
+        hero_pix = _tint_pixmap(hero_pix, icon_color)
+        hero_icon.setPixmap(
+            hero_pix.scaled(
+                28,
+                28,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        hero_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     hero_text = QVBoxLayout()
     hero_text.setContentsMargins(0, 0, 0, 0)
@@ -117,6 +149,7 @@ def build_display_card(window) -> QWidget:
             material_icon("desktop_windows"),
             str(connected_count),
             "connected",
+            DISPLAY_ASSETS_DIR / "nav-icons" / "display_monitor.svg",
         )
     )
     hero_side.addWidget(
@@ -806,6 +839,7 @@ def _display_metric_pill(
     icon_text: str,
     value: str,
     label: str,
+    icon_path: Path | None = None,
 ) -> QWidget:
     pill = QFrame()
     pill.setObjectName("displayMetricPill")
@@ -820,6 +854,20 @@ def _display_metric_pill(
     icon.setFont(QFont(window.icon_font, 14))
     icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
     icon.setFixedSize(24, 24)
+    if icon_path is not None and icon_path.exists():
+        pix = QPixmap(str(icon_path))
+        if not pix.isNull():
+            icon_color = QColor("#ffffff" if _is_dark_theme(window) else "#201126")
+            pix = _tint_pixmap(pix, icon_color)
+            icon.setText("")
+            icon.setPixmap(
+                pix.scaled(
+                    14,
+                    14,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
 
     text = QVBoxLayout()
     text.setContentsMargins(0, 0, 0, 0)
@@ -855,7 +903,12 @@ def _display_action_button(
     button.setFont(QFont(window.ui_font, 9, QFont.Weight.DemiBold))
     button.setMinimumHeight(32)
     if icon_path is not None and icon_path.exists():
-        button.setIcon(QIcon(str(icon_path)))
+        pix = QPixmap(str(icon_path))
+        if not pix.isNull():
+            icon_color = QColor("#f6ebf7" if _is_dark_theme(window) else "#201126")
+            button.setIcon(QIcon(_tint_pixmap(pix, icon_color)))
+        else:
+            button.setIcon(QIcon(str(icon_path)))
     return button
 
 
@@ -917,6 +970,9 @@ def _theme_color(window, attr: str, fallback: str) -> str:
 def _apply_display_style(window) -> None:
     primary = _theme_color(window, "primary", "#d8b4fe")
     outline = _theme_color(window, "outline", "rgba(255,255,255,0.11)")
+    dark_theme = _is_dark_theme(window)
+    action_text = "rgba(246,235,247,0.90)" if dark_theme else "rgba(32,17,38,0.90)"
+    action_text_hover = "rgba(255,255,255,0.98)" if dark_theme else "rgba(32,17,38,0.98)"
 
     qss = f"""
     QFrame#displayRootCard {{
@@ -992,24 +1048,14 @@ def _apply_display_style(window) -> None:
     QPushButton#displayActionButton {{
         border-radius: 12px;
         border: 1px solid rgba(255,255,255,0.085);
-        color: rgba(246,235,247,0.78);
+        color: {action_text};
         background: rgba(255,255,255,0.050);
         padding: 0 12px;
     }}
 
     QPushButton#displayActionButton:hover {{
-        color: rgba(255,255,255,0.96);
+        color: {action_text_hover};
         background: rgba(255,255,255,0.085);
-    }}
-
-    QPushButton#displayActionButton[variant="primary"] {{
-        color: #201126;
-        border: 1px solid rgba(255,255,255,0.16);
-        background: {primary};
-    }}
-
-    QPushButton#displayActionButton[variant="primary"]:hover {{
-        background: rgba(236,215,255,1);
     }}
 
     QFrame#displayPreviewCard,
