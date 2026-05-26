@@ -581,6 +581,22 @@ if [[ -n "$lock_image" && -f "$lock_image" ]] && command -v magick >/dev/null 2>
     fi
 fi
 
+# Last-resort fallback: ensure we always have an image to feed betterlockscreen -u.
+if [[ -z "$lock_image" || ! -f "$lock_image" ]]; then
+    if command -v maim >/dev/null 2>&1; then
+        tmp_raw="$(mktemp --suffix=.png)"
+        if run_quick maim "$tmp_raw" >/dev/null 2>&1; then
+            lock_image="$tmp_raw"
+        fi
+    fi
+fi
+if [[ -z "$lock_image" || ! -f "$lock_image" ]] && command -v magick >/dev/null 2>&1; then
+    tmp_raw="$(mktemp --suffix=.png)"
+    if run_quick magick -size 1920x1080 "xc:#101417" "$tmp_raw" >/dev/null 2>&1; then
+        lock_image="$tmp_raw"
+    fi
+fi
+
 locker="$(command -v betterlockscreen || true)"
 if [[ -z "$locker" ]]; then
     echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
@@ -592,7 +608,8 @@ fi
 # behind betterlockscreen (with our compatibility shim when needed).
 lock_path_prefix="${ROOT_DIR}/bin"
 alt_lock_path_prefix="$(cd -- "${ROOT_DIR}/.." && pwd)/bin"
-lock_path="${lock_path_prefix}:${alt_lock_path_prefix}:${PATH}"
+# Prefer system/user bins first so we use real i3lock-color binaries when present.
+lock_path="/usr/local/bin:/usr/bin:${HOME}/.local/bin:${lock_path_prefix}:${alt_lock_path_prefix}:${PATH}"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/betterlockscreen/current"
 if [[ -n "$lock_image" && -f "$lock_image" ]]; then
     # Generate betterlockscreen cache without the short run_quick timeout, otherwise
