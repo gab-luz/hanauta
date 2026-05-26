@@ -39,6 +39,8 @@ theme_panel_fill="#101417aa"
 overlay_width=860
 overlay_height=300
 overlay_bottom_margin=84
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 run_quick() {
     # Keep pre-lock probes from stalling the lock path (notably mpc when MPD is down).
@@ -143,7 +145,8 @@ verifcolor=8ce9b0ff
 wrongtext="Wrong password"
 wrongcolor=ffb4abff
 modifcolor=97ccf9ff
-bgcolor=101417ff
+# Failsafe mode can fall back to plain i3lock, which requires rrggbb (no alpha).
+bgcolor=101417
 EOF
     cp -f "$theme_file" "$active_theme_file"
     printf '%s\n' "$theme_file" > "$active_theme_marker"
@@ -584,10 +587,24 @@ if [[ -z "$locker" ]]; then
     exit 1
 fi
 
+# IMPORTANT: Always lock through betterlockscreen in this project.
+# Do not switch this path to direct/pure i3lock execution; keep i3lock usage
+# behind betterlockscreen (with our compatibility shim when needed).
+lock_path_prefix="${ROOT_DIR}/bin"
+alt_lock_path_prefix="$(cd -- "${ROOT_DIR}/.." && pwd)/bin"
+lock_path="${lock_path_prefix}:${alt_lock_path_prefix}:${PATH}"
+cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/betterlockscreen/current"
 if [[ -n "$lock_image" && -f "$lock_image" ]]; then
-    # Keep lock image/theme pipeline, then lock strictly through betterlockscreen.
-    run_quick "$locker" -u "$lock_image" >/dev/null 2>&1 || true
-    "$locker" -l dim
+    # Generate betterlockscreen cache without the short run_quick timeout, otherwise
+    # current/lock_dim.png may not be ready in time on slower systems.
+    env PATH="${lock_path}" "$locker" -u "$lock_image" >/dev/null 2>&1 || true
+    if [[ -f "${cache_root}/lock_dim.png" ]]; then
+        exec env PATH="${lock_path}" "$locker" -l dim
+    fi
+    if [[ -f "${cache_root}/lock_blur.png" ]]; then
+        exec env PATH="${lock_path}" "$locker" -l blur
+    fi
+    exec env PATH="${lock_path}" "$locker" -l
 else
-    "$locker" -l dim
+    exec env PATH="${lock_path}" "$locker" -l dim
 fi

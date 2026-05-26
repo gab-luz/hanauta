@@ -2115,6 +2115,10 @@ class CyberDock(QWidget):
         self._transparency_preview: int | None = None
         self._last_system_scheme: str | None = None
         self._last_system_scheme_sync_at: float = 0.0
+        self._startup_reposition_attempt = 0
+        self._startup_reposition_timer = QTimer(self)
+        self._startup_reposition_timer.setSingleShot(True)
+        self._startup_reposition_timer.timeout.connect(self._startup_reposition_tick)
 
         self._build_window()
         self._build_ui()
@@ -2126,6 +2130,7 @@ class CyberDock(QWidget):
         self._update_clock()
         self._update_volume()
         self._animate_in()
+        self._startup_reposition_timer.start(350)
 
     def _build_window(self) -> None:
         self.setWindowTitle("CyberDock")
@@ -2682,6 +2687,17 @@ class CyberDock(QWidget):
 
     def _apply_i3_window_rules(self) -> None:
         self._sync_i3_geometry(self._hidden_geometry() if self._hidden else self._shown_geometry())
+
+    def _startup_reposition_tick(self) -> None:
+        self._startup_reposition_attempt += 1
+        self._update_position(animated=False)
+        self._apply_i3_window_rules()
+
+        primary_output_name, fallback_output_name = _active_output_names()
+        outputs_ready = bool(primary_output_name or fallback_output_name)
+        should_retry = self._startup_reposition_attempt < (4 if outputs_ready else 10)
+        if should_retry:
+            self._startup_reposition_timer.start(450)
 
 
 def main() -> int:

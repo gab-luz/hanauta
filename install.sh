@@ -18,6 +18,7 @@ INSTALL_QUICKSHELL_ONLY=false
 INSTALL_WIREGUARD_SYSTEMD_ONLY=false
 INSTALL_SDDM_ONLY=false
 INSTALL_I3_VOLUME_ONLY=false
+INSTALL_I3LOCK_COLOR_ONLY=false
 INSTALL_PRINTER_PLUGIN_ONLY=false
 INSTALL_HANAUTA_SERVICE_ONLY=false
 INSTALL_CUSTOM_THEMES=false
@@ -244,6 +245,7 @@ Options:
   --quickshell                  Install only Quickshell runtime dependencies
   --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
   --i3-volume                   Install only i3-volume + volnoti integration
+  --i3lock-color                Install only i3lock-color into ~/.local/bin
   --printer-plugin              Install/update only the Hanauta printer plugin from git
   --hanauta-service            Install/update Hanauta root service unit only
   --sddm                        Install and configure SilentSDDM only
@@ -353,6 +355,9 @@ parse_args() {
         ;;
       --i3-volume)
         INSTALL_I3_VOLUME_ONLY=true
+        ;;
+      --i3lock-color)
+        INSTALL_I3LOCK_COLOR_ONLY=true
         ;;
       --printer-plugin)
         INSTALL_PRINTER_PLUGIN_ONLY=true
@@ -1586,6 +1591,7 @@ install_packages_debian() {
     pulseaudio-utils pamixer
     network-manager wireless-tools
     i3lock
+    i3lock-color
     xfce4-power-manager lxqt-policykit
     libnotify-bin
     kitty
@@ -1635,6 +1641,7 @@ install_packages_arch() {
     pulseaudio pamixer
     networkmanager wireless_tools
     i3lock
+    i3lock-color
     xfce4-power-manager lxqt-policykit
     libnotify
     kitty
@@ -1959,27 +1966,255 @@ make_exec() {
 install_local_binaries() {
   local root="$HOME/.config/i3"
   local src_dir="$root/bin"
+  local hanauta_bin_dir="$root/hanauta/bin"
   local target_dir="$HOME/.local/bin"
-  local -a linked=()
+  local -a installed=()
 
   mkdir -p "$target_dir"
-  if [ ! -d "$src_dir" ]; then
-    warn "No bundled binaries found in $src_dir"
+  if [ ! -d "$src_dir" ] && [ ! -d "$hanauta_bin_dir" ]; then
+    warn "No bundled binaries found in $src_dir or $hanauta_bin_dir"
     return 0
   fi
 
+  install_one_binary() {
+    local src="$1"
+    local dst_name="$2"
+    local dst="$target_dir/$dst_name"
+    [ -x "$src" ] || return 1
+    cp -f "$src" "$dst"
+    chmod 0755 "$dst"
+    installed+=("$dst_name")
+    return 0
+  }
+
   for name in matugen hellwal i3lock-color hanauta-notifyctl hanauta-notify-send hanauta-clock; do
     if [ -x "$src_dir/$name" ]; then
-      ln -sfn "$src_dir/$name" "$target_dir/$name"
-      linked+=("$name")
+      install_one_binary "$src_dir/$name" "$name" || true
     fi
   done
 
-  if [ ${#linked[@]} -gt 0 ]; then
-    success "Bundled binaries linked into $target_dir: ${linked[*]}"
-  else
-    warn "No bundled public binaries were linked"
+  # i3lock-color fallback: publish Hanauta bundled i3lock build under i3lock-color.
+  if [ -x "$hanauta_bin_dir/i3lock" ]; then
+    install_one_binary "$hanauta_bin_dir/i3lock" "i3lock-color" || true
   fi
+
+  for name in hanauta-notifyctl hanauta-notifyd hanauta-service hanauta-wallcache; do
+    if [ -x "$hanauta_bin_dir/$name" ]; then
+      install_one_binary "$hanauta_bin_dir/$name" "$name" || true
+    fi
+  done
+
+  if [ ${#installed[@]} -gt 0 ]; then
+    success "Bundled binaries copied into $target_dir: ${installed[*]}"
+  else
+    warn "No bundled public binaries were copied"
+  fi
+}
+
+install_i3lock_color_user_bin() {
+  local target_dir="$HOME/.local/bin"
+  local target="$target_dir/i3lock-color"
+  local src_primary="$SCRIPT_DIR/bin/i3lock-color"
+  local src_fallback="$SCRIPT_DIR/hanauta/bin/i3lock"
+  local download_url="https://github.com/Raymo111/i3lock-color/releases/download/2.13.c.5/i3lock"
+  local tmp_download=""
+  local src=""
+  local src_file_type=""
+  local ldd_output=""
+  local build_dir=""
+  local source_url="https://github.com/Raymo111/i3lock-color.git"
+  local source_tag="2.13.c.5"
+
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    target_dir="/usr/bin"
+    target="$target_dir/i3lock-color"
+  fi
+
+  ensure_i3lock_color_build_deps() {
+    if detect_debian_like; then
+      info "Installing i3lock-color build/runtime dependencies (Debian/Ubuntu)..."
+      sudo apt-get update -qq
+      install_apt_group "i3lock-color deps" \
+        git make autoconf automake pkg-config \
+        libev-dev libcairo2-dev libxcb-composite0-dev libxcb-image0-dev \
+        libxcb-randr0-dev libxcb-util-dev libxcb-xinerama0-dev libxcb-xkb-dev \
+        libxcb-xrm-dev \
+        libxkbcommon-x11-dev libjpeg-dev libpam0g-dev
+      return 0
+    fi
+    if detect_arch; then
+      info "Installing i3lock-color build/runtime dependencies (Arch)..."
+      install_pacman_group "i3lock-color deps" \
+        git make autoconf automake pkgconf \
+        libev cairo libxcb xcb-util xcb-util-image xcb-util-xrm \
+        libxkbcommon libxkbcommon-x11 libjpeg-turbo pam
+      return 0
+    fi
+    warn "Unknown distro: cannot auto-install i3lock-color build dependencies."
+    return 1
+  }
+
+  build_i3lock_color_from_source() {
+    local out_bin="$1"
+    local tmp_root=""
+    local repo_dir=""
+    local built_bin=""
+
+    if ! need_cmd git || ! need_cmd make; then
+      return 1
+    fi
+    if ! need_cmd autoreconf || ! need_cmd pkg-config; then
+      return 1
+    fi
+
+    tmp_root="$(mktemp -d)"
+    repo_dir="$tmp_root/i3lock-color"
+    if ! git clone --depth 1 --branch "$source_tag" "$source_url" "$repo_dir" >/dev/null 2>&1; then
+      rm -rf "$tmp_root"
+      return 1
+    fi
+    if ! (cd "$repo_dir" && autoreconf -fi && ./configure --prefix="$tmp_root/prefix") >/dev/null 2>&1; then
+      rm -rf "$tmp_root"
+      return 1
+    fi
+    # Upstream makefile may fail on a trailing meta-target even after producing
+    # a valid i3lock binary. Build best-effort, then verify artifact existence.
+    (cd "$repo_dir" && make -j"$(nproc)" || true) >/dev/null 2>&1
+
+    if [ -x "$repo_dir/i3lock" ]; then
+      built_bin="$repo_dir/i3lock"
+    elif [ -x "$repo_dir/build/i3lock" ]; then
+      built_bin="$repo_dir/build/i3lock"
+    elif [ -x "$repo_dir/x86_64-pc-linux-gnu/i3lock" ]; then
+      built_bin="$repo_dir/x86_64-pc-linux-gnu/i3lock"
+    else
+      built_bin="$(find "$repo_dir" -maxdepth 4 -type f -name i3lock -perm -111 2>/dev/null | head -n 1 || true)"
+    fi
+
+    if [ -z "$built_bin" ] || [ ! -x "$built_bin" ]; then
+      rm -rf "$tmp_root"
+      return 1
+    fi
+
+    cp -f "$built_bin" "$out_bin"
+    chmod 0755 "$out_bin"
+    rm -rf "$tmp_root"
+    return 0
+  }
+
+  if [ -x "$src_primary" ]; then
+    src="$src_primary"
+  elif [ -x "$src_fallback" ]; then
+    src="$src_fallback"
+  fi
+
+  # Refuse wrapper scripts here: we want a real i3lock-color ELF binary.
+  if [ -n "$src" ]; then
+    src_file_type="$(file -b "$src" 2>/dev/null || true)"
+    if [[ "$src_file_type" != *ELF* ]]; then
+      warn "Bundled i3lock-color at $src is not an ELF binary ($src_file_type)."
+      src=""
+    fi
+  fi
+
+  if [ -z "$src" ]; then
+    if ! need_cmd curl; then
+      error "No usable bundled i3lock-color ELF binary found, and curl is unavailable for download fallback."
+      return 1
+    fi
+    tmp_download="$(mktemp)"
+    info "Downloading i3lock-color release binary as fallback..."
+    if ! curl -fL --retry 3 --retry-delay 1 -o "$tmp_download" "$download_url"; then
+      rm -f "$tmp_download"
+      error "Failed to download i3lock-color release binary from $download_url"
+      return 1
+    fi
+    src_file_type="$(file -b "$tmp_download" 2>/dev/null || true)"
+    if [[ "$src_file_type" != *ELF* ]]; then
+      rm -f "$tmp_download"
+      error "Downloaded i3lock-color fallback is not an ELF binary ($src_file_type)."
+      return 1
+    fi
+    src="$tmp_download"
+  fi
+
+  # Fail-safe dynamic dependency check: do not install a binary that cannot run.
+  if need_cmd ldd; then
+    ldd_output="$(ldd "$src" 2>&1 || true)"
+    if printf '%s' "$ldd_output" | rg -q "not found"; then
+      warn "Prebuilt i3lock-color binary has missing shared library dependencies; trying source build fallback."
+      ensure_i3lock_color_build_deps || true
+      build_dir="$(mktemp -d)"
+      if build_i3lock_color_from_source "$build_dir/i3lock-color"; then
+        src="$build_dir/i3lock-color"
+        ldd_output="$(ldd "$src" 2>&1 || true)"
+        if printf '%s' "$ldd_output" | rg -q "not found"; then
+          [ -n "$tmp_download" ] && rm -f "$tmp_download"
+          rm -rf "$build_dir"
+          error "Source-built i3lock-color still has missing dependencies:"
+          printf '%s\n' "$ldd_output" >&2
+          return 1
+        fi
+      else
+        [ -n "$tmp_download" ] && rm -f "$tmp_download"
+        rm -rf "$build_dir"
+        error "Could not build i3lock-color from source automatically."
+        error "Tried auto-installing dependencies and source build, but it still failed."
+        return 1
+      fi
+    fi
+  fi
+
+  mkdir -p "$target_dir"
+  cp -f "$src" "$target"
+  chmod 0755 "$target"
+  [ -n "$tmp_download" ] && rm -f "$tmp_download"
+  [ -n "$build_dir" ] && rm -rf "$build_dir"
+  success "Installed i3lock-color to $target"
+}
+
+validate_lockscreen_runtime() {
+  local i3lock_color_bin=""
+  local i3lock_bin=""
+  local test_path=""
+
+  i3lock_color_bin="$(command -v i3lock-color 2>/dev/null || true)"
+  if [ -z "$i3lock_color_bin" ] && [ -x "/usr/bin/i3lock-color" ]; then
+    i3lock_color_bin="/usr/bin/i3lock-color"
+  fi
+  if [ -z "$i3lock_color_bin" ] && [ -x "/usr/local/bin/i3lock-color" ]; then
+    i3lock_color_bin="/usr/local/bin/i3lock-color"
+  fi
+  i3lock_bin="$(command -v i3lock 2>/dev/null || true)"
+
+  if [ -z "$i3lock_color_bin" ]; then
+    error "i3lock-color is not available in PATH."
+    error "Run ./install.sh --i3lock-color or install a system package providing i3lock-color."
+    return 1
+  fi
+
+  if [ -z "$i3lock_bin" ] && [ ! -x "/usr/bin/i3lock" ]; then
+    info "Plain i3lock backend is not required when i3lock-color is a real binary."
+  fi
+
+  test_path="$(dirname "$i3lock_color_bin"):$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+  if ! env PATH="$test_path" "$i3lock_color_bin" --version >/dev/null 2>&1; then
+    error "i3lock-color failed a runtime check (--version)."
+    error "Likely cause: incompatible prebuilt binary or missing shared libs."
+    error "Re-run ./install.sh --i3lock-color after installing build/runtime deps."
+    return 1
+  fi
+
+  if need_cmd betterlockscreen; then
+    local bl_out=""
+    bl_out="$(env PATH="$test_path" betterlockscreen -h 2>&1 || true)"
+    if ! printf '%s' "$bl_out" | rg -q "Usage: betterlockscreen"; then
+      warn "betterlockscreen help probe did not return expected output."
+      warn "You can still test runtime directly with: ./hanauta/scripts/lock"
+    fi
+  fi
+
+  success "Lockscreen runtime validation passed"
 }
 
 install_volnoti_build_deps_debian() {
@@ -3332,6 +3567,7 @@ main() {
        [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
        [ "$INSTALL_VSCODE_ONLY" = true ] || \
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_I3LOCK_COLOR_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
@@ -3339,6 +3575,24 @@ main() {
        [ "$INSTALL_SDDM_ONLY" = true ] || \
        [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; }; then
     error "--i3-volume must be used by itself."
+    return 1
+  fi
+
+  if [ "$INSTALL_I3LOCK_COLOR_ONLY" = true ] && \
+     { [ "$INSTALL_GTK_THEME_ONLY" = true ] || \
+       [ "$INSTALL_CURSOR_ONLY" = true ] || \
+       [ "$INSTALL_RUBIK_FONT_ONLY" = true ] || \
+       [ "$INSTALL_VSCODE_ONLY" = true ] || \
+       [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
+       [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
+       [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
+       [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
+       [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
+       [ "$INSTALL_SDDM_ONLY" = true ] || \
+       [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ] || \
+       [ "$INSTALL_HANAUTA_SERVICE_ONLY" = true ]; }; then
+    error "--i3lock-color must be used by itself."
     return 1
   fi
 
@@ -3378,6 +3632,14 @@ main() {
   if [ "$INSTALL_PRINTER_PLUGIN_ONLY" = true ]; then
     print_banner
     install_printer_plugin_only
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_I3LOCK_COLOR_ONLY" = true ]; then
+    print_banner
+    install_i3lock_color_user_bin
+    validate_lockscreen_runtime
     info "Done!"
     return 0
   fi
@@ -3554,6 +3816,7 @@ main() {
   install_sweet_cursor_theme
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     ensure_betterlockscreen_available
+    validate_lockscreen_runtime
   fi
   if [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = false ] && [ "$INSTALL_QUICKSHELL_ONLY" = false ]; then
     install_i3_volume
