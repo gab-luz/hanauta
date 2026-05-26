@@ -9,6 +9,7 @@ verify=9ece6a
 layout=bb9af7
 dim_text=a9b1d6
 settings_file="${HANAUTA_SETTINGS_FILE:-$HOME/.local/state/hanauta/notification-center/settings.json}"
+lock_osd_enabled=1
 lock_blur=0
 pause_media_on_lock=1
 use_slow_fade=1
@@ -41,6 +42,10 @@ overlay_height=300
 overlay_bottom_margin=84
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+LOCK_MODE="lock"
+if [[ "${1:-}" == "--prepare-cache" ]]; then
+    LOCK_MODE="prepare-cache"
+fi
 
 run_quick() {
     # Keep pre-lock probes from stalling the lock path (notably mpc when MPD is down).
@@ -72,6 +77,7 @@ load_lock_settings() {
             greeter_text) greeter_text="$value" ;;
             verifying_text) verifying_text="$value" ;;
             wrong_text) wrong_text="$value" ;;
+            lock_osd_enabled) lock_osd_enabled="$value" ;;
         esac
     done < <(
         python3 - "$settings_file" <<'PY'
@@ -85,6 +91,7 @@ try:
 except Exception:
     payload = {}
 lock = payload.get("lockscreen", {})
+notifications = payload.get("notifications", {})
 defaults = {
     "blur_screenshot": False,
     "pause_media_on_lock": True,
@@ -115,8 +122,18 @@ for key, default in defaults.items():
     else:
         out = str(value).replace("\n", " ")
     print(f"{key}={out}")
+print(f"lock_osd_enabled={'1' if bool(notifications.get('lock_osd_enabled', True)) else '0'}")
 PY
     )
+}
+
+show_lock_osd() {
+    [[ "${lock_osd_enabled:-1}" == "1" ]] || return 0
+    [[ -n "${DISPLAY:-}" ]] || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    local osd_script="${ROOT_DIR}/src/pyqt/shared/lock_osd.py"
+    [[ -f "$osd_script" ]] || return 0
+    python3 "$osd_script" --title "Locking..." --body "Please wait..." --duration-ms 1450 >/dev/null 2>&1 &
 }
 
 ensure_theme_creator_theme() {
@@ -506,6 +523,9 @@ PY
 load_lock_settings
 ensure_theme_creator_theme
 load_active_theme
+if [[ "$LOCK_MODE" != "prepare-cache" ]]; then
+    show_lock_osd
+fi
 
 if [[ "$refresh_rate" =~ ^[0-9]+$ ]]; then
     refresh_rate=$(( refresh_rate < 0 ? 0 : (refresh_rate > 30 ? 30 : refresh_rate) ))
@@ -523,10 +543,10 @@ else
     ring_width=6
 fi
 
-if [[ "$use_slow_fade" == "1" ]]; then
+if [[ "$use_slow_fade" == "1" && "$LOCK_MODE" != "prepare-cache" ]]; then
     slowfade start
 fi
-if [[ "$pause_media_on_lock" == "1" ]] && command -v mpc >/dev/null 2>&1 && run_quick mpc status >/dev/null 2>&1; then
+if [[ "$LOCK_MODE" != "prepare-cache" && "$pause_media_on_lock" == "1" ]] && command -v mpc >/dev/null 2>&1 && run_quick mpc status >/dev/null 2>&1; then
     run_quick mpc pause >/dev/null 2>&1 || true
 fi
 
@@ -597,31 +617,39 @@ if [[ -z "$lock_image" || ! -f "$lock_image" ]] && command -v magick >/dev/null 
     fi
 fi
 
-locker="$(command -v betterlockscreen || true)"
-if [[ -z "$locker" ]]; then
-    echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
-    exit 1
-fi
-
-# IMPORTANT: Always lock through betterlockscreen in this project.
-# Do not switch this path to direct/pure i3lock execution; keep i3lock usage
-# behind betterlockscreen (with our compatibility shim when needed).
 lock_path_prefix="${ROOT_DIR}/bin"
 alt_lock_path_prefix="$(cd -- "${ROOT_DIR}/.." && pwd)/bin"
 # Prefer system/user bins first so we use real i3lock-color binaries when present.
 lock_path="/usr/local/bin:/usr/bin:${HOME}/.local/bin:${lock_path_prefix}:${alt_lock_path_prefix}:${PATH}"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/betterlockscreen/current"
-if [[ -n "$lock_image" && -f "$lock_image" ]]; then
-    # Generate betterlockscreen cache without the short run_quick timeout, otherwise
-    # current/lock_dim.png may not be ready in time on slower systems.
-    env PATH="${lock_path}" "$locker" -u "$lock_image" >/dev/null 2>&1 || true
+locker="$(env PATH="${lock_path}" command -v betterlockscreen || true)"
+if [[ -z "$locker" ]]; then
+    echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
+    exit 1
+fi
+
+if [[ "$LOCK_MODE" == "prepare-cache" ]]; then
+    if [[ -n "$lock_image" && -f "$lock_image" ]]; then
+        env PATH="${lock_path}" "$locker" -u "$lock_image" >/dev/null 2>&1 || true
+    fi
+    exit 0
+fi
+
+# Fast path: lock immediately when cache exists and refresh it asynchronously.
+if [[ -f "${cache_root}/lock_dim.png" || -f "${cache_root}/lock_blur.png" ]]; then
+    (
+        env PATH="${lock_path}" "$0" --prepare-cache >/tmp/hanauta-lock-precache.log 2>&1 || true
+    ) &
+    disown || true
     if [[ -f "${cache_root}/lock_dim.png" ]]; then
         exec env PATH="${lock_path}" "$locker" -l dim
     fi
-    if [[ -f "${cache_root}/lock_blur.png" ]]; then
-        exec env PATH="${lock_path}" "$locker" -l blur
-    fi
-    exec env PATH="${lock_path}" "$locker" -l
-else
-    exec env PATH="${lock_path}" "$locker" -l dim
+    exec env PATH="${lock_path}" "$locker" -l blur
 fi
+
+# First-run fallback when cache is missing.
+(
+    env PATH="${lock_path}" "$0" --prepare-cache >/tmp/hanauta-lock-precache.log 2>&1 || true
+) &
+disown || true
+exec env PATH="${lock_path}" "$locker" -l

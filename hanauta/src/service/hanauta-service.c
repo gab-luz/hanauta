@@ -2477,6 +2477,85 @@ static gboolean write_waveform_json_for_wav(const gchar *wav_path, gint bars_cou
     return TRUE;
 }
 
+static int run_fast_lock_mode(void) {
+    const gchar *home = g_get_home_dir();
+    const gchar *base_path = g_getenv("PATH");
+    gchar *repo_bin = g_build_filename(home, ".config", "i3", "hanauta", "bin", NULL);
+    gchar *local_bin = g_build_filename(home, ".local", "bin", NULL);
+    gchar *lock_script = g_build_filename(home, ".config", "i3", "hanauta", "scripts", "lock", NULL);
+    gchar *path_env = g_strdup_printf(
+        "/usr/local/bin:/usr/bin:%s:%s:%s",
+        local_bin != NULL ? local_bin : "",
+        repo_bin != NULL ? repo_bin : "",
+        base_path != NULL ? base_path : ""
+    );
+    gchar *betterlockscreen = NULL;
+    gchar *cache_dim = g_build_filename(home, ".cache", "betterlockscreen", "current", "lock_dim.png", NULL);
+    gchar *cache_blur = g_build_filename(home, ".cache", "betterlockscreen", "current", "lock_blur.png", NULL);
+    gchar *envp[2] = {NULL, NULL};
+    gboolean has_dim = g_file_test(cache_dim, G_FILE_TEST_EXISTS);
+    gboolean has_blur = g_file_test(cache_blur, G_FILE_TEST_EXISTS);
+    gchar *argv_dim[] = {(gchar *)"betterlockscreen", (gchar *)"-l", (gchar *)"dim", NULL};
+    gchar *argv_blur[] = {(gchar *)"betterlockscreen", (gchar *)"-l", (gchar *)"blur", NULL};
+    gchar *argv_plain[] = {(gchar *)"betterlockscreen", (gchar *)"-l", NULL};
+    gchar *precache_argv[] = {lock_script, (gchar *)"--prepare-cache", NULL};
+    GError *error = NULL;
+    gint status = 1;
+
+    envp[0] = g_strdup_printf("PATH=%s", path_env);
+    betterlockscreen = g_find_program_in_path("betterlockscreen");
+    if (betterlockscreen == NULL) {
+        g_printerr("betterlockscreen is required but not installed.\n");
+        status = 2;
+        goto done;
+    }
+
+    g_spawn_async(
+        NULL,
+        precache_argv,
+        envp,
+        G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL
+    );
+
+    if (has_dim) {
+        if (g_spawn_sync(NULL, argv_dim, envp, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL, &status, &error)) {
+            goto done;
+        }
+    } else if (has_blur) {
+        if (g_spawn_sync(NULL, argv_blur, envp, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL, &status, &error)) {
+            goto done;
+        }
+    } else {
+        if (g_spawn_sync(NULL, argv_plain, envp, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL, &status, &error)) {
+            goto done;
+        }
+    }
+
+    if (error != NULL) {
+        g_printerr("fast lock failed: %s\n", error->message);
+        g_clear_error(&error);
+    }
+    status = 3;
+
+done:
+    g_free(envp[0]);
+    g_free(cache_dim);
+    g_free(cache_blur);
+    g_free(betterlockscreen);
+    g_free(path_env);
+    g_free(repo_bin);
+    g_free(local_bin);
+    g_free(lock_script);
+    if (error != NULL) {
+        g_clear_error(&error);
+    }
+    return status;
+}
+
 int main(int argc, char **argv) {
     GMainLoop *loop = NULL;
     GFile *settings_file = NULL;
@@ -2497,6 +2576,9 @@ int main(int argc, char **argv) {
             return 2;
         }
         return 0;
+    }
+    if (argc >= 2 && g_strcmp0(argv[1], "--lock-fast") == 0) {
+        return run_fast_lock_mode();
     }
 
     g_service.settings_path = g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-center", "settings.json", NULL);
