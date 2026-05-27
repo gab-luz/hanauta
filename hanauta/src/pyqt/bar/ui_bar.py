@@ -3526,6 +3526,7 @@ class CyberBar(QWidget):
         self.battery_icon.setVisible(has_battery)
         self.battery_value.setVisible(has_battery)
         self._set_vpn_button_icon(False)
+        self._sync_vpn_button_visibility()
         self._set_christian_button_icon()
         self._sync_health_pill_visibility()
         self._sync_christian_button_visibility()
@@ -4764,6 +4765,7 @@ class CyberBar(QWidget):
             )
         self._update_media_equalizer_color()
         self._set_vpn_button_icon(bool(self.vpn_icon.property("active")))
+        self._sync_vpn_button_visibility()
         self._set_christian_button_icon()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
@@ -5310,6 +5312,7 @@ class CyberBar(QWidget):
         self._system_state_worker.finished.connect(self._finish_system_state_worker)
         self._system_state_worker.start()
         poll_health_reminders()
+        self._sync_vpn_button_visibility()
         self._sync_christian_button_visibility()
         self._sync_reminders_button_visibility()
         self._sync_pomodoro_button_visibility()
@@ -7512,6 +7515,15 @@ class CyberBar(QWidget):
             vpn_script,
             sync_active_property=False,
         )
+
+    def _sync_vpn_button_visibility(self) -> None:
+        services = load_service_settings()
+        service = services.get("vpn_control", {})
+        if not isinstance(service, dict):
+            service = {}
+        enabled = bool(service.get("enabled", True))
+        show_in_bar = bool(service.get("show_in_bar", True))
+        self.vpn_icon.setVisible(enabled and show_in_bar)
 
     def _sync_weather_button(self) -> None:
         active = self._singleton_active(self._weather_popup_process, WEATHER_POPUP)
