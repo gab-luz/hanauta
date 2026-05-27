@@ -20,6 +20,10 @@ def _ensure_src_on_path() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     _ensure_src_on_path()
+    from pyqt.shared.app_logging import init_app_logging
+    import logging
+    init_app_logging("settings")
+    logging.info("settings main starting")
     from settings_page.cli import main as cli_main
 
     return cli_main(argv)
@@ -27,4 +31,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

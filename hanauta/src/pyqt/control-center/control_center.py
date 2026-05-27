@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import logging
 from pathlib import Path
 
 
@@ -14,9 +15,12 @@ CONTROL_CENTER_BINARY = ROOT / "bin" / "hanauta-control-center"
 NOTIFICATION_CENTER = APP_DIR / "pyqt" / "notification-center" / "notification_center.py"
 
 from pyqt.shared.runtime import entry_command
+from pyqt.shared.app_logging import init_app_logging
 
 
 def main() -> int:
+    init_app_logging("control_center")
+    logging.info("control-center main starting")
     args = sys.argv[1:]
     if CONTROL_CENTER_BINARY.exists():
         completed = subprocess.run([str(CONTROL_CENTER_BINARY), *args], check=False)

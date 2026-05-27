@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import logging
 import getpass
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, pyqtProperty, QTimer, QUrl
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtQml import QQmlApplicationEngine
+from pyqt.shared.app_logging import init_app_logging
 
 
 def _which(cmd: str) -> str | None:
@@ -194,6 +196,8 @@ class Backend(QObject):
 
 
 def main() -> int:
+    init_app_logging("powermenu")
+    logging.info("powermenu main starting")
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Hanauta Power Menu")
     app.setDesktopFileName("HanautaPowerMenu")
@@ -214,6 +218,7 @@ def main() -> int:
         print("ERROR: failed to load QML (no root objects).", file=sys.stderr)
         return 3
 
+    logging.info("powermenu shown; entering event loop")
     return app.exec()
 
 

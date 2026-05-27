@@ -10,6 +10,7 @@ import argparse
 import errno
 import fnmatch
 import json
+import logging
 import os
 import re
 import shlex
@@ -57,6 +58,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pyqt.shared.runtime import current_executable_path, entry_command, fonts_root, is_frozen, project_root, python_executable, scripts_root, source_root
+from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
 
 ROOT = project_root()
@@ -2701,6 +2703,8 @@ class CyberDock(QWidget):
 
 
 def main() -> int:
+    init_app_logging("dock")
+    logging.info("dock main starting")
     parser = argparse.ArgumentParser(description="CyberDock")
     parser.add_argument("command", nargs="?", choices=["run", "activate", "new", "activate-wm"], default="run")
     parser.add_argument("target", nargs="?")
@@ -2724,6 +2728,7 @@ def main() -> int:
     app.setPalette(palette)
     dock = CyberDock()
     dock.show()
+    logging.info("dock shown; entering event loop")
     exit_code = app.exec()
     runtime_lock.unlock()
     return exit_code

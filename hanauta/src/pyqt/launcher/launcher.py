@@ -10,6 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
+import logging
 import json
 import os
 import tempfile
@@ -34,6 +35,7 @@ from PyQt6.QtWidgets import (
 
 
 from pyqt.shared.runtime import fonts_root, project_root, source_root
+from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 APP_DIR = source_root()
@@ -1157,11 +1159,14 @@ class LauncherWindow(QWidget):
 
 
 def main() -> int:
+    init_app_logging("launcher")
+    logging.info("launcher main starting")
     app = QApplication(sys.argv)
     window = LauncherWindow()
     window.show()
     window.raise_()
     window.activateWindow()
+    logging.info("launcher shown; entering event loop")
     return app.exec()
 
 

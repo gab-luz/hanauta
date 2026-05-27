@@ -7,6 +7,7 @@ PyQt6 notification center rebuilt from idea.html.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -61,6 +62,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.calendar_card import apply_calendar_theme, build_calendar_card
@@ -5098,10 +5100,13 @@ class NotificationCenter(QWidget):
 
 
 def main() -> int:
+    init_app_logging("notification_center")
+    logging.info("notification-center main starting")
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Control Center")
     window = NotificationCenter()
     window.show()
+    logging.info("notification-center shown; entering event loop")
     return app.exec()
 
 
