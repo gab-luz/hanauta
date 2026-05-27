@@ -2492,7 +2492,7 @@ static int run_fast_lock_mode(void) {
     gchar *betterlockscreen = NULL;
     gchar *cache_dim = g_build_filename(home, ".cache", "betterlockscreen", "current", "lock_dim.png", NULL);
     gchar *cache_blur = g_build_filename(home, ".cache", "betterlockscreen", "current", "lock_blur.png", NULL);
-    gchar *envp[2] = {NULL, NULL};
+    gchar **envp = NULL;
     gboolean has_dim = g_file_test(cache_dim, G_FILE_TEST_EXISTS);
     gboolean has_blur = g_file_test(cache_blur, G_FILE_TEST_EXISTS);
     gchar *argv_dim[] = {(gchar *)"betterlockscreen", (gchar *)"-l", (gchar *)"dim", NULL};
@@ -2502,7 +2502,8 @@ static int run_fast_lock_mode(void) {
     GError *error = NULL;
     gint status = 1;
 
-    envp[0] = g_strdup_printf("PATH=%s", path_env);
+    envp = g_get_environ();
+    envp = g_environ_setenv(envp, "PATH", path_env, TRUE);
     betterlockscreen = g_find_program_in_path("betterlockscreen");
     if (betterlockscreen == NULL) {
         g_printerr("betterlockscreen is required but not installed.\n");
@@ -2542,7 +2543,9 @@ static int run_fast_lock_mode(void) {
     status = 3;
 
 done:
-    g_free(envp[0]);
+    if (envp != NULL) {
+        g_strfreev(envp);
+    }
     g_free(cache_dim);
     g_free(cache_blur);
     g_free(betterlockscreen);

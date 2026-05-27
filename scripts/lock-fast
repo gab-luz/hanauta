@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+LOG_FILE="${XDG_RUNTIME_DIR:-/tmp}/hanauta-lock-fast.log"
+{
+  echo "[$(date '+%F %T')] lock-fast start"
+  echo "DISPLAY=${DISPLAY:-<empty>} XAUTHORITY=${XAUTHORITY:-<empty>}"
+} >>"$LOG_FILE" 2>&1
+
 if [[ -x "$HOME/.config/i3/hanauta/bin/hanauta-service" ]]; then
-  if "$HOME/.config/i3/hanauta/bin/hanauta-service" --lock-fast; then
+  echo "trying hanauta-service --lock-fast" >>"$LOG_FILE" 2>&1
+  if "$HOME/.config/i3/hanauta/bin/hanauta-service" --lock-fast >>"$LOG_FILE" 2>&1; then
+    echo "hanauta-service path success" >>"$LOG_FILE" 2>&1
     exit 0
   fi
+  echo "hanauta-service path failed, falling back to scripts/lock" >>"$LOG_FILE" 2>&1
 fi
 
+echo "running scripts/lock fallback" >>"$LOG_FILE" 2>&1
 exec "$HOME/.config/i3/hanauta/scripts/lock"
