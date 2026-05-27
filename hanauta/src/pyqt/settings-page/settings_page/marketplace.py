@@ -22,10 +22,12 @@ from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -161,6 +163,7 @@ class MarketplacePage(QFrame):
         self._refresh_in_progress = False
         self._git_status_cache: dict[str, dict[str, str]] = {}
         self._git_status_snapshot: dict[str, dict[str, Any]] = {}
+        self._recently_updated_ids: set[str] = set()
 
         self.setObjectName("marketplacePage")
         self.setContentsMargins(0, 0, 0, 0)
@@ -730,20 +733,28 @@ class MarketplacePage(QFrame):
         repo_btn.clicked.connect(lambda checked=False, url=repo: self._open_repo(url))
 
         if installed:
-            main_btn = QPushButton("Update")
-            main_btn.setObjectName("mpCompactAction")
-            main_btn.setProperty(
-                "variant",
-                update_info.get("button_variant", "update_ok")
-                if isinstance(update_info, dict)
-                else "update_ok",
-            )
-            main_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            main_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
-            main_btn.setFixedHeight(30)
-            main_btn.clicked.connect(
-                lambda checked=False, pid=plugin_id: self._update_plugin(pid)
-            )
+            if plugin_id in self._recently_updated_ids:
+                main_btn = QLabel("Updated")
+                main_btn.setObjectName("mpUpdatedBadge")
+                main_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                main_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+                main_btn.setFixedHeight(30)
+                main_btn.setMinimumWidth(66)
+            else:
+                main_btn = QPushButton("Update")
+                main_btn.setObjectName("mpCompactAction")
+                main_btn.setProperty(
+                    "variant",
+                    update_info.get("button_variant", "update_ok")
+                    if isinstance(update_info, dict)
+                    else "update_ok",
+                )
+                main_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                main_btn.setFont(self._ui_font(8, QFont.Weight.DemiBold))
+                main_btn.setFixedHeight(30)
+                main_btn.clicked.connect(
+                    lambda checked=False, pid=plugin_id: self._update_plugin(pid)
+                )
         else:
             main_btn = QPushButton("Install")
             main_btn.setObjectName("mpCompactAction")
@@ -907,6 +918,12 @@ class MarketplacePage(QFrame):
 
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            marketplace = self.settings.setdefault("marketplace", {})
+            if isinstance(marketplace, dict):
+                # Always drop persisted catalog cache first so refresh is forced
+                # to repopulate from current sources instead of stale entries.
+                marketplace["catalog_cache"] = []
+                save_settings_state(self.settings)
             old_catalog = list(self.catalog)
             old_installed = list(self.installed)
             catalog, errors = marketplace_api_refresh_catalog_cache(self.settings)
@@ -923,6 +940,7 @@ class MarketplacePage(QFrame):
 
             self._load_git_status_snapshot()
             self._git_status_cache.clear()
+            self._recently_updated_ids.clear()
             self._prune_selection_ids()
 
             if errors:
@@ -1061,6 +1079,11 @@ class MarketplacePage(QFrame):
         repo = str(plugin.get("repo", "")).strip()
         branch = str(plugin.get("branch", "main")).strip() or "main"
 
+        if self._is_kdeconnect_plugin(plugin_id, repo):
+            if not self._confirm_kdeconnect_privacy_install():
+                self._set_status("KDE Connect install cancelled.")
+                return
+
         if not plugin_id:
             self._set_status("Install failed: plugin has no id.")
             return
@@ -1138,6 +1161,9 @@ class MarketplacePage(QFrame):
             ]
             installed_rows.append(entry)
 
+            if self._is_kdeconnect_plugin(plugin_id, repo):
+                self._apply_kdeconnect_privacy_defaults(install_path)
+
             save_settings_state(self.settings)
 
             self.installed = marketplace_api_installed_plugins(self.settings)
@@ -1151,6 +1177,76 @@ class MarketplacePage(QFrame):
 
         self._render_all()
 
+    def _is_kdeconnect_plugin(self, plugin_id: str, repo: str) -> bool:
+        lowered_id = str(plugin_id or "").strip().lower()
+        lowered_repo = str(repo or "").strip().lower()
+        return "kdeconnect" in lowered_id or "kdeconnect" in lowered_repo
+
+    def _confirm_kdeconnect_privacy_install(self) -> bool:
+        dialog = QDialog(self.window)
+        dialog.setWindowTitle("KDE Connect Privacy Defaults")
+        dialog.setModal(True)
+        dialog.setWindowState(Qt.WindowState.WindowFullScreen)
+
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(48, 40, 48, 40)
+        root.setSpacing(20)
+
+        title = QLabel("Install KDE Connect Plugin?")
+        title.setFont(self._display_font(24, QFont.Weight.DemiBold))
+        root.addWidget(title)
+
+        body = QLabel(
+            "For privacy by default, Hanauta will disable KDE Connect clipboard sync, "
+            "MPRIS integration, and media controls right after install.\n\n"
+            "You can re-enable these later in plugin settings if you want."
+        )
+        body.setWordWrap(True)
+        body.setFont(self._ui_font(11))
+        root.addWidget(body)
+        root.addStretch(1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(12)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setMinimumHeight(44)
+        proceed_btn = QPushButton("Install With Privacy Defaults")
+        proceed_btn.setMinimumHeight(44)
+        proceed_btn.setObjectName("mpPrimaryAction")
+        cancel_btn.clicked.connect(dialog.reject)
+        proceed_btn.clicked.connect(dialog.accept)
+        actions.addStretch(1)
+        actions.addWidget(cancel_btn)
+        actions.addWidget(proceed_btn)
+        root.addLayout(actions)
+
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
+    def _apply_kdeconnect_privacy_defaults(self, install_path: Path) -> None:
+        privacy_payload = {
+            "clipboard_sync_enabled": False,
+            "mpris_enabled": False,
+            "media_control_enabled": False,
+        }
+
+        plugin_settings = self.settings.setdefault("kdeconnect", {})
+        if not isinstance(plugin_settings, dict):
+            plugin_settings = {}
+            self.settings["kdeconnect"] = plugin_settings
+        plugin_settings.update(privacy_payload)
+
+        config_dir = install_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "defaults.json"
+        try:
+            config_path.write_text(json.dumps(privacy_payload, indent=2), encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "KDE Connect Defaults",
+                f"Installed plugin, but could not write defaults.json:\n{exc}",
+            )
+
     def _update_plugin(self, plugin_id: str) -> None:
         plugin_id = str(plugin_id).strip()
         if not plugin_id:
@@ -1158,6 +1254,11 @@ class MarketplacePage(QFrame):
             return
 
         self._set_status(f"Updating {plugin_id}...")
+        print(f"[marketplace-ui] Update requested for {plugin_id}", flush=True)
+        self._notify_update_status(
+            f"Updating plugin: {plugin_id}",
+            "Hanauta Marketplace started plugin update.",
+        )
 
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -1169,10 +1270,31 @@ class MarketplacePage(QFrame):
             else:
                 self.installed = self._installed_from_settings() or previous_installed
             self._git_status_cache.pop(plugin_id, None)
+            if ok:
+                self._recently_updated_ids.add(plugin_id)
+            else:
+                self._recently_updated_ids.discard(plugin_id)
             self._set_status(detail if detail else ("Updated." if ok else "Update failed."))
+            print(f"[marketplace-ui] Update result for {plugin_id}: ok={ok} detail={detail}", flush=True)
+            if ok:
+                self._notify_update_status(
+                    f"Plugin updated: {plugin_id}",
+                    detail if detail else "Plugin update completed successfully.",
+                )
+            else:
+                self._notify_update_status(
+                    f"Plugin update failed: {plugin_id}",
+                    detail if detail else "Update failed.",
+                )
 
         except Exception as exc:
             self._set_status(f"{plugin_id}: update failed: {exc}")
+            self._recently_updated_ids.discard(plugin_id)
+            print(f"[marketplace-ui] Update exception for {plugin_id}: {exc}", flush=True)
+            self._notify_update_status(
+                f"Plugin update failed: {plugin_id}",
+                str(exc),
+            )
 
         finally:
             QApplication.restoreOverrideCursor()
@@ -1219,6 +1341,19 @@ class MarketplacePage(QFrame):
         if label is None:
             return
         label.setText(str(text).strip() or "Ready.")
+
+    def _notify_update_status(self, summary: str, body: str) -> None:
+        if shutil.which("notify-send") is None:
+            return
+        try:
+            subprocess.Popen(
+                ["notify-send", "Hanauta Marketplace", str(summary), str(body)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
 
     def _load_git_status_snapshot(self) -> None:
         snapshot: dict[str, dict[str, Any]] = {}
@@ -1577,6 +1712,14 @@ def _marketplace_qss(window) -> str:
         padding: 2px 7px;
         color: #1b1023;
         background: {primary};
+    }}
+
+    QLabel#mpUpdatedBadge {{
+        border-radius: 10px;
+        padding: 0 10px;
+        color: #092113;
+        border: 1px solid rgba(102, 214, 154, 0.45);
+        background: rgba(102, 214, 154, 0.78);
     }}
 
     QPushButton#mpIconAction {{
