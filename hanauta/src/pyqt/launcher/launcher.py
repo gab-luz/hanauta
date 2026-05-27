@@ -43,7 +43,6 @@ SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-cen
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "launcher"
 CACHE_FILE = STATE_DIR / "apps_cache.json"
 LAUNCHER_ICON_DIR = ROOT / "hanauta" / "src" / "assets" / "launcher"
-MAIL_ICON_PATH = ROOT / "hanauta" / "src" / "assets" / "icons" / "hanauta-mail.png"
 
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
@@ -297,8 +296,6 @@ class DesktopApp:
             categories = {str(item).strip() for item in categories_raw if str(item).strip()} if isinstance(categories_raw, list) else set()
             desktop_id = str(payload.get("desktop_id", "")).strip()
             icon_name = str(payload.get("icon_name", "")).strip()
-            if desktop_id == "hanauta-mail.desktop" and (not icon_name or icon_name == "internet-mail"):
-                icon_name = str(MAIL_ICON_PATH)
             return cls(
                 name=str(payload.get("name", "")).strip(),
                 comment=str(payload.get("comment", "")).strip(),
@@ -346,8 +343,6 @@ def parse_desktop_file(path: Path) -> DesktopApp | None:
     categories = {item for item in data.get("Categories", "").split(";") if item}
     comment = data.get("Comment", "").strip()
     icon_name = data.get("Icon", "").strip()
-    if path.name == "hanauta-mail.desktop":
-        icon_name = str(MAIL_ICON_PATH)
     return DesktopApp(
         name=name,
         comment=comment,

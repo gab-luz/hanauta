@@ -3,7 +3,6 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from settings_page.wallpaper_sources import sync_wallpaper_source_preset as sync_wallpaper_source_preset_impl
 from settings_page.wallpaper_presets import WALLPAPER_SOURCE_PRESETS
-from settings_page.xdg_mail import current_favorite_mail_handler, current_mailto_handler
 from settings_page.plugin_backends import gamemode_summary
 
 
@@ -35,7 +34,7 @@ class MailIntegrationProbeWorker(QThread):
     finished_probe = pyqtSignal(str, str)
 
     def run(self) -> None:
-        self.finished_probe.emit(current_favorite_mail_handler(), current_mailto_handler())
+        self.finished_probe.emit("", "")
 
 
 class GameModeSummaryWorker(QThread):

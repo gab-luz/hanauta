@@ -133,7 +133,6 @@ PICOM_RULES_DIR = ROOT / "hanauta" / "config" / "picom"
 I3_CONFIG_FILE = ROOT / "config"
 HOST_PLUGIN_API_VERSION = 1
 BUILTIN_SERVICE_KEYS = {
-    "mail",
     "kdeconnect",
     "weather",
     "desktop_clock_widget",
@@ -170,11 +169,6 @@ from settings_page.system_probes import (
     list_wireguard_interfaces,
     startup_exec_lines,
 )
-from settings_page.xdg_mail import (
-    current_favorite_mail_handler,
-    current_mailto_handler,
-    hanauta_mail_desktop_installed,
-)
 from settings_page.picom_rules import (
     build_default_picom_config as build_default_picom_config_impl,
     ensure_picom_rule_files as ensure_picom_rule_files_impl,
@@ -189,10 +183,8 @@ from settings_page.workers import (
     WALLPAPER_SOURCE_CACHE_DIR,
     COMMUNITY_WALLPAPER_DIR,
     WallpaperSourceSyncWorker,
-    MailIntegrationProbeWorker,
     GameModeSummaryWorker,
 )
-from settings_page.xdg_mail import current_favorite_mail_handler, current_mailto_handler
 from settings_page.plugin_backends import (
     gamemode_summary,
     WeatherCity,
@@ -244,7 +236,6 @@ from settings_page.theme_gtk import (
     ensure_theme_installed,
 )
 from settings_page.settings_defaults import load_settings_state
-from settings_page.mail_store import MailAccountStore, load_mail_storage_config
 
 
 def wallpaper_candidates(folder: Path) -> list[Path]:
@@ -494,9 +485,6 @@ class SettingsWindow(QWidget):
         self._plugin_builders_loaded = False
         self._plugin_dir_scan_in_progress = False
         self._plugin_dirs_to_scan: list[Path] = []
-        self.mail_account_store = MailAccountStore(
-            Path(load_mail_storage_config()["db_path"]).expanduser()
-        )
         self.notification_rules_state = load_notification_rules_state()
         self._weather_city_map: dict[str, WeatherCity] = {}
         self._selected_weather_city: WeatherCity | None = configured_city()
@@ -517,7 +505,6 @@ class SettingsWindow(QWidget):
         self.initial_service_section = initial_service_section
         self._window_animation: QParallelAnimationGroup | None = None
         self._wallpaper_sync_worker: WallpaperSourceSyncWorker | None = None
-        self._mail_integration_probe_worker: MailIntegrationProbeWorker | None = None
         self._gamemode_summary_worker: GameModeSummaryWorker | None = None
         self._system_theme_install_declined: set[str] = set()
         self._theme_refresh_restart_pending = False

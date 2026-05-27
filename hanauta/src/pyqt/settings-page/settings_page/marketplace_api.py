@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from settings_page.settings_store import save_settings_state
 
@@ -62,9 +63,8 @@ def _catalog_sources(marketplace: dict[str, Any]) -> list[dict[str, str]]:
                     or "plugins.json",
                 }
             )
-    if rows:
-        return rows
-    return [
+    if not rows:
+        rows = [
         {
             "repo_url": str(
                 marketplace.get(
@@ -82,11 +82,51 @@ def _catalog_sources(marketplace: dict[str, Any]) -> list[dict[str, str]]:
         }
     ]
 
+    # Dev/local fallback catalogs so refresh picks local registry changes
+    # before they are pushed upstream.
+    local_registry_roots = [
+        Path("/mnt/outros/DEV/hanauta-plugins"),
+        Path.home() / "dev" / "hanauta-plugins",
+    ]
+    for root in local_registry_roots:
+        manifest = root / "plugins.json"
+        if not manifest.exists():
+            continue
+        rows.append(
+            {
+                "repo_url": str(root),
+                "branch": "main",
+                "manifest_path": "plugins.json",
+            }
+        )
+
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        key = (
+            str(row.get("repo_url", "")).strip(),
+            str(row.get("branch", "main")).strip() or "main",
+            str(row.get("manifest_path", "plugins.json")).strip().lstrip("/")
+            or "plugins.json",
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            {"repo_url": key[0], "branch": key[1], "manifest_path": key[2]}
+        )
+    return deduped
+
 
 def _manifest_raw_url(source: dict[str, str]) -> str:
     repo_url = source.get("repo_url", "")
     branch = source.get("branch", "main")
     manifest_path = source.get("manifest_path", "plugins.json")
+    repo_path = Path(repo_url).expanduser()
+    if repo_path.exists():
+        if repo_path.is_dir():
+            return str(repo_path / manifest_path)
+        return str(repo_path)
     if repo_url.startswith("https://github.com/"):
         slug = repo_url.removeprefix("https://github.com/").strip().strip("/")
         return f"https://raw.githubusercontent.com/{slug}/{branch}/{manifest_path}"
@@ -97,6 +137,18 @@ def _manifest_raw_url(source: dict[str, str]) -> str:
 
 
 def _fetch_manifest(url: str) -> dict[str, Any]:
+    parsed = urlparse(url)
+    if parsed.scheme in {"", "file"}:
+        path = (
+            Path(parsed.path).expanduser()
+            if parsed.scheme == "file"
+            else Path(url).expanduser()
+        )
+        data = path.read_text(encoding="utf-8")
+        payload = json.loads(data)
+        if not isinstance(payload, dict):
+            raise ValueError("manifest payload is not an object")
+        return payload
     req = urllib.request.Request(
         url, headers={"User-Agent": "Hanauta-Marketplace/1.0"}
     )

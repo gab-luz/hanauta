@@ -7,6 +7,7 @@ CyberBar - compact PyQt6 top bar aligned with the bar idea mock.
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import importlib
 import importlib.util
 import logging
@@ -21,6 +22,8 @@ import sqlite3
 import ssl
 import subprocess
 import sys
+import threading
+import traceback
 from datetime import datetime
 from email import message_from_bytes
 from email.header import decode_header
@@ -103,6 +106,59 @@ from pyqt.shared.plugin_bridge import (
 )
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
+
+LOG_DIR = Path.home() / ".local" / "state" / "hanauta" / "logs"
+UI_BAR_LOG_FILE = LOG_DIR / "ui_bar.log"
+UI_BAR_FAULT_LOG_FILE = LOG_DIR / "ui_bar_fault.log"
+
+
+def _setup_bar_logging() -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
+    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    has_file_handler = False
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", "") == str(UI_BAR_LOG_FILE):
+            has_file_handler = True
+            break
+    if not has_file_handler:
+        file_handler = logging.FileHandler(UI_BAR_LOG_FILE, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    logging.info("ui_bar logging initialized")
+
+    try:
+        fault_stream = open(UI_BAR_FAULT_LOG_FILE, "a", encoding="utf-8")
+        faulthandler.enable(fault_stream, all_threads=True)
+        logging.info("faulthandler enabled")
+    except Exception:
+        logging.exception("failed to enable faulthandler")
+
+
+def _install_exception_hooks() -> None:
+    def _log_excepthook(exc_type, exc_value, exc_tb) -> None:
+        logging.critical(
+            "unhandled exception in ui_bar:\n%s",
+            "".join(traceback.format_exception(exc_type, exc_value, exc_tb)),
+        )
+
+    def _log_thread_excepthook(args: threading.ExceptHookArgs) -> None:
+        logging.critical(
+            "unhandled thread exception in ui_bar (%s):\n%s",
+            getattr(args, "thread", None),
+            "".join(
+                traceback.format_exception(
+                    args.exc_type, args.exc_value, args.exc_traceback
+                )
+            ),
+        )
+
+    sys.excepthook = _log_excepthook
+    threading.excepthook = _log_thread_excepthook
+
 
 def _load_plugin_backend(module_name: str, candidates: list[Path]) -> Any:
     for candidate in candidates:
@@ -7672,6 +7728,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="CyberBar - Modern PyQt6 Top Bar")
     ap.add_argument("--ui", default="", help="Unused compatibility argument")
     ap.parse_args()
+    _setup_bar_logging()
+    _install_exception_hooks()
+    logging.info("ui_bar main starting")
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -7684,6 +7743,7 @@ def main() -> int:
 
     bar = CyberBar()
     bar.show()
+    logging.info("ui_bar shown; entering Qt event loop")
     return app.exec()
 
 

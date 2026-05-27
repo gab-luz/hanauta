@@ -70,7 +70,6 @@ def build_services_card(window) -> QWidget:
     window._services_build_layout = layout
     window._services_build_finished = False
     window._services_core_queue = [
-        ("mail", window._build_mail_service_section),
         ("kdeconnect", window._build_kdeconnect_service_section),
         ("disk_space", window._build_disk_space_service_section),
         ("weather", window._build_weather_section),
