@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -x "$HOME/.config/i3/hanauta/bin/hanauta-service" ]]; then
+  if "$HOME/.config/i3/hanauta/bin/hanauta-service" --lock-fast; then
+    exit 0
+  fi
+fi
+
+exec "$HOME/.config/i3/hanauta/scripts/lock"

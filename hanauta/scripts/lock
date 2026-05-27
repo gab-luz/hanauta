@@ -622,7 +622,10 @@ alt_lock_path_prefix="$(cd -- "${ROOT_DIR}/.." && pwd)/bin"
 # Prefer system/user bins first so we use real i3lock-color binaries when present.
 lock_path="/usr/local/bin:/usr/bin:${HOME}/.local/bin:${lock_path_prefix}:${alt_lock_path_prefix}:${PATH}"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/betterlockscreen/current"
-locker="$(env PATH="${lock_path}" command -v betterlockscreen || true)"
+locker=""
+if PATH="${lock_path}" command -v betterlockscreen >/dev/null 2>&1; then
+    locker="$(PATH="${lock_path}" command -v betterlockscreen)"
+fi
 if [[ -z "$locker" ]]; then
     echo "betterlockscreen is required but not installed. Install it and rerun lock." >&2
     exit 1
