@@ -410,7 +410,16 @@ from settings_page.startup import (
     restore_saved_displays,
 )
 
-from settings_page.services import load_service_cache_json, run_bg, run_text
+from settings_page.services import (
+    load_service_cache_json,
+    resolve_desktop_clock_widget,
+    resolve_email_client_app,
+    resolve_qcal_wrapper,
+    resolve_study_tracker_app,
+    resolve_virtualization_daemon,
+    run_bg,
+    run_text,
+)
 
 from settings_page.marketplace import (
     build_marketplace_page,
@@ -11648,6 +11657,89 @@ class SettingsWindow(QWidget):
     def _service_enabled(self, key: str) -> bool:
         return bool(self.settings_state["services"].get(key, {}).get("enabled", True))
 
+    def _stop_entrypoint_process(self, script_path: Path | None) -> None:
+        if script_path is None:
+            return
+        try:
+            patterns = entry_patterns(script_path)
+        except Exception:
+            patterns = []
+        for pattern in patterns:
+            if not pattern:
+                continue
+            subprocess.run(
+                ["pkill", "-f", pattern], capture_output=True, text=True, check=False
+            )
+
+    def _service_runtime_entrypoints(self, key: str) -> list[Path]:
+        candidates: list[Path] = []
+
+        plugin_targets: dict[str, list[tuple[str, list[str]]]] = {
+            "vpn_control": [("vpn_control.py", ["vpn-control", "vpn"])],
+            "christian_widget": [("christian_widget.py", ["christian-widget"])],
+            "reminders_widget": [("reminders_widget.py", ["reminders"])],
+            "pomodoro_widget": [("pomodoro_widget.py", ["pomodoro"])],
+            "rss_widget": [("rss_widget.py", ["rss"])],
+            "obs_widget": [("obs_widget.py", ["obs"])],
+            "crypto_widget": [("crypto_widget.py", ["crypto"])],
+            "game_mode": [("game_mode_popup.py", ["game-mode"])],
+            "study_tracker_widget": [("study_tracker.py", ["study-tracker"])],
+        }
+
+        for script_name, aliases in plugin_targets.get(key, []):
+            resolved = resolve_plugin_script(script_name, aliases, required=False)
+            if resolved is not None and resolved.exists():
+                candidates.append(resolved)
+
+        if key == "calendar_widget":
+            qcal = resolve_qcal_wrapper()
+            if qcal is not None and qcal.exists():
+                candidates.append(qcal)
+        if key == "desktop_clock_widget":
+            desktop_clock = resolve_desktop_clock_widget()
+            if desktop_clock is not None and desktop_clock.exists():
+                candidates.append(desktop_clock)
+            if DESKTOP_CLOCK_BINARY.exists():
+                candidates.append(DESKTOP_CLOCK_BINARY)
+        if key == "virtualization":
+            daemon = resolve_virtualization_daemon()
+            if daemon is not None and daemon.exists():
+                candidates.append(daemon)
+        if key == "mail":
+            mail_client = resolve_email_client_app()
+            if mail_client is not None and mail_client.exists():
+                candidates.append(mail_client)
+
+        unique: list[Path] = []
+        seen: set[str] = set()
+        for path in candidates:
+            token = str(path.resolve())
+            if token in seen:
+                continue
+            seen.add(token)
+            unique.append(path)
+        return unique
+
+    def _stop_service_runtime(self, key: str) -> None:
+        for entrypoint in self._service_runtime_entrypoints(key):
+            self._stop_entrypoint_process(entrypoint)
+
+        if key == "virtualization":
+            self._stop_virtualization_daemon()
+        if key == "vpn_control":
+            # Best-effort stop for WireGuard helper services if present.
+            for cmd in (
+                ["systemctl", "--user", "stop", "hanauta-wireguard-agent.service"],
+                ["systemctl", "--user", "stop", "hanauta-wireguard-autoconnect.service"],
+                ["systemctl", "stop", "hanauta-wireguard-agent.service"],
+                ["systemctl", "stop", "hanauta-wireguard-autoconnect.service"],
+            ):
+                subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    def _start_service_runtime(self, key: str) -> None:
+        if key == "virtualization":
+            self._start_virtualization_daemon()
+
     def _set_service_enabled(self, key: str, enabled: bool) -> None:
         service = self.settings_state["services"].setdefault(key, {})
         service["enabled"] = bool(enabled)
@@ -11682,6 +11774,7 @@ class SettingsWindow(QWidget):
                 "study_tracker_widget",
             }:
                 service["show_in_bar"] = False
+            self._stop_service_runtime(key)
         save_settings_state(self.settings_state)
         section = getattr(self, "service_sections", {}).get(key)
         if section is not None:
@@ -11819,11 +11912,8 @@ class SettingsWindow(QWidget):
             if switch is not None:
                 switch.setChecked(bool(service.get("show_in_bar", False)))
                 switch._apply_state()
-        if key == "virtualization":
-            if enabled:
-                self._start_virtualization_daemon()
-            else:
-                self._stop_virtualization_daemon()
+        if enabled:
+            self._start_service_runtime(key)
         if hasattr(self, "_refresh_service_widget_order"):
             self._refresh_service_widget_order()
 
