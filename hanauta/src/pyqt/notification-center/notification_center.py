@@ -35,15 +35,15 @@ from PyQt6.QtWidgets import (
     QScrollArea, QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from notif_center.poller import (
+    BackgroundPoller, PollResult, get_cached_pixmap, get_static_val, store_pixmap,
+)
 from notif_center.game_carousel import (
     GameCarouselCard, any_game_running_fast, load_cached_game_slides,
     load_cached_games_payload, load_lutris_game_slides, load_steam_game_slides,
 )
 from notif_center.ha import fetch_home_assistant_json, post_home_assistant_json, normalize_ha_url
-from notif_center.media import (
-    duration_ms_from_media_url, is_browser_player,
-    poll_media_metadata, poll_media_progress, trigger_media_action,
-)
+
 from notif_center.paths import (
     ASSETS_DIR, BIN_DIR, CALENDAR_EVENTS_CACHE, DESKTOP_CLOCK_BINARY,
     FALLBACK_COVER, FONTS_DIR, GAMES_CACHE_PATH, HOME_ASSISTANT_ICON,
@@ -302,6 +302,7 @@ class NotificationCenter(QWidget):
         self._media_last_sync = monotonic()
         self._media_estimated_progress = False
         self._media_url = ""
+        self._media_last_anchor_time = 0.0
         self._media_duration_cache: dict[str, int] = {}
         self._media_duration_pending: set[str] = set()
         self._calendar_events: list[dict] = []
@@ -331,6 +332,10 @@ class NotificationCenter(QWidget):
         self._ha_last_error = ""
         self._avatar_source: Path | None = None
         self._avatar_mtime_ns = -1
+        self._poll_result: PollResult | None = None
+        self._notif_mtime_ns = 0
+        self._notif_widgets: list[QWidget] = []
+        self._system_overview_done = False
         self.system_overview_labels: dict[str, QLabel] = {}
         self.settings_nav_buttons: dict[str, SidebarItemButton] = {}
         self.appearance_buttons: dict[str, QPushButton] = {}
@@ -2235,13 +2240,8 @@ class NotificationCenter(QWidget):
         self.media_content.setGeometry(media_rect)
 
     def _start_polls(self) -> None:
-        # Defer expensive subprocess polling until after the first paint so the
-        # window appears instantly.
-        QTimer.singleShot(0, self._poll_all)
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._poll_all)
-        self.timer.start(3500)
+        self._poller = BackgroundPoller()
+        self._poller.pollComplete.connect(self._on_poll_complete)
 
         self.ha_timer = QTimer(self)
         self.ha_timer.timeout.connect(self._refresh_home_assistant_entities)
@@ -2262,6 +2262,8 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(150, self._request_calendar_refresh)
 
         QTimer.singleShot(80, self._animate_in)
+
+        self._poller.start()
 
     def _reload_theme_if_needed(self) -> None:
         current_mtime = palette_mtime()
@@ -2287,16 +2289,18 @@ class NotificationCenter(QWidget):
         self._panel_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._panel_animation.start()
 
-    def _poll_all(self) -> None:
+    def _on_poll_complete(self, result: PollResult) -> None:
+        self._poll_result = result
         self._poll_header()
         self._poll_quick_settings()
         self._poll_sliders()
         self._poll_media_metadata()
-        self._poll_media_progress()
+        if not self._system_overview_done:
+            self._system_overview_done = True
+            self._refresh_system_overview()
         self._poll_phone()
         self._render_calendar_events()
         self._poll_notification_history()
-        self._refresh_system_overview()
         self._render_home_assistant_tiles()
 
     def _apply_calendar_events(self, events: list) -> None:
@@ -2455,14 +2459,14 @@ class NotificationCenter(QWidget):
 
     def _poll_header(self) -> None:
         self.user_label.setText(os.environ.get("USER", "User"))
-        uptime = run_cmd(["uptime", "-p"]).removeprefix(
-            "up "
-        ).strip() or datetime.now().strftime("%H:%M")
+        r = self._poll_result
+        uptime = r.uptime if r else datetime.now().strftime("%H:%M")
         self.uptime_label.setText(f"up {uptime}")
         self._refresh_profile_avatar()
 
     def _poll_phone(self) -> None:
-        raw = run_script("phone_info.sh")
+        r = self._poll_result
+        raw = r.phone_raw if r else ""
         try:
             payload = json.loads(raw) if raw else {}
         except Exception:
@@ -2491,8 +2495,8 @@ class NotificationCenter(QWidget):
         if not self.system_overview_labels:
             return
         metrics = {
-            "Host": run_cmd(["hostname"]) or "Unknown",
-            "Kernel": run_cmd(["uname", "-r"]) or "Unknown",
+            "Host": get_static_val("hostname", ["hostname"]) or "Unknown",
+            "Kernel": get_static_val("kernel", ["uname", "-r"]) or "Unknown",
             "Session": os.environ.get("XDG_SESSION_DESKTOP", "i3"),
             "Python": sys.version.split()[0],
             "Uptime": self.uptime_label.text(),
@@ -2801,6 +2805,14 @@ class NotificationCenter(QWidget):
         self.events_layout.addStretch(1)
 
     def _poll_notification_history(self) -> None:
+        try:
+            mtime = NOTIFICATION_HISTORY_FILE.stat().st_mtime_ns
+        except OSError:
+            mtime = 0
+        if mtime == self._notif_mtime_ns and self._notif_mtime_ns != 0:
+            return
+        self._notif_mtime_ns = mtime
+
         self._notification_history = load_notification_history(3)
         self._clear_layout_widgets(self.notifications_layout)
         if hasattr(self, "clear_notifications_btn"):
@@ -2854,75 +2866,69 @@ class NotificationCenter(QWidget):
         self.notifications_layout.addStretch(1)
 
     def _poll_quick_settings(self) -> None:
-        wifi_on = run_script("network.sh", "status") == "Connected"
-        wifi_ssid = run_script("network.sh", "ssid") or "Disconnected"
-        self.quick_buttons["wifi"].set_state(wifi_on, "wifi", wifi_ssid)
-
-        bt_on = run_script("bluetooth", "state") == "on"
+        r = self._poll_result
+        if r is None:
+            return
+        self.quick_buttons["wifi"].set_state(
+            r.wifi_on, "wifi", r.wifi_ssid
+        )
         self.quick_buttons["bluetooth"].set_state(
-            bt_on, "bluetooth", "Connected" if bt_on else "Off"
+            r.bt_on, "bluetooth", "Connected" if r.bt_on else "Off"
         )
-
-        dnd_on = parse_bool_text(run_cmd(notification_control_command("is-paused")))
         self.quick_buttons["dnd"].set_state(
-            dnd_on, "do_not_disturb_on", "On" if dnd_on else "Off"
+            r.dnd_on, "do_not_disturb_on", "On" if r.dnd_on else "Off"
         )
-
-        airplane_on = run_script("network.sh", "radio-status") == "off"
         self.quick_buttons["airplane"].set_state(
-            airplane_on, "airplanemode_active", "On" if airplane_on else "Off"
+            r.airplane_on, "airplanemode_active", "On" if r.airplane_on else "Off"
         )
-
-        night_on = run_script("redshift", "state") == "on"
         self.quick_buttons["night"].set_state(
-            night_on, "nightlight", "On" if night_on else "Off"
+            r.night_on, "nightlight", "On" if r.night_on else "Off"
         )
-
-        caffeine_on = run_script("caffeine.sh", "status") == "on"
         self.quick_buttons["caffeine"].set_state(
-            caffeine_on, "coffee", "On" if caffeine_on else "Off"
+            r.caffeine_on, "coffee", "On" if r.caffeine_on else "Off"
         )
 
     def _poll_sliders(self) -> None:
+        r = self._poll_result
+        if r is None:
+            return
         self._syncing_sliders = True
-        try:
-            self.brightness_slider["slider"].setValue(
-                int(run_script("brightness.sh", "br") or "67")
-            )
-        except Exception:
-            self.brightness_slider["slider"].setValue(67)
-        try:
-            self.volume_slider["slider"].setValue(
-                int(run_script("volume.sh", "vol") or "82")
-            )
-        except Exception:
-            self.volume_slider["slider"].setValue(82)
+        self.brightness_slider["slider"].setValue(r.brightness)
+        self.volume_slider["slider"].setValue(r.volume)
         self._syncing_sliders = False
 
-    def _poll_media_metadata(self) -> None:
+    def _poll_media_metadata(self, force_refresh: bool = False) -> None:
         if not hasattr(self, "media_title"):
             return
-        title = run_script("mpris.sh", "title") or "No music"
-        artist = run_script("mpris.sh", "artist") or "No artist"
-        status = run_script("mpris.sh", "status") or "Stopped"
-        player = run_script("mpris.sh", "player")
-        art = run_script("mpris.sh", "coverloc")
-        media_url = ""
-        if player:
-            media_url = run_cmd(
-                [
-                    "playerctl",
-                    f"--player={player}",
-                    "metadata",
-                    "--format",
-                    "{{xesam:url}}",
-                ]
-            )
-
-        self._media_player = player
-        self._media_status = status
-        self._media_last_sync = monotonic()
-        self._media_url = media_url
+        if force_refresh:
+            title = run_script("mpris.sh", "title") or "No music"
+            artist = run_script("mpris.sh", "artist") or "No artist"
+            status = run_script("mpris.sh", "status") or "Stopped"
+            player = run_script("mpris.sh", "player")
+            art = run_script("mpris.sh", "coverloc")
+            media_url = ""
+            if player:
+                media_url = run_cmd([
+                    "playerctl", f"--player={player}", "metadata",
+                    "--format", "{{xesam:url}}",
+                ])
+            self._media_player = player
+            self._media_status = status
+            self._media_last_sync = monotonic()
+            self._media_url = media_url
+        else:
+            r = self._poll_result
+            if r is None:
+                return
+            title = r.media_title or "No music"
+            artist = r.media_artist or "No artist"
+            status = r.media_status or "Stopped"
+            player = r.media_player
+            art = r.media_art
+            media_url = r.media_url
+            self._media_player = player
+            self._media_status = status
+            self._media_url = media_url
         self.media_title.setText(title)
         self.media_artist.setText(artist)
         self.media_title.setVisible(True)
@@ -3015,16 +3021,24 @@ class NotificationCenter(QWidget):
         self._schedule_media_refresh()
 
     def _schedule_media_refresh(self) -> None:
-        self._poll_media_metadata()
+        self._poll_media_metadata(force_refresh=True)
         self._poll_media_progress()
         for delay in (150, 450, 900):
-            QTimer.singleShot(delay, self._poll_media_metadata)
+            QTimer.singleShot(delay, lambda: self._poll_media_metadata(force_refresh=True))
             QTimer.singleShot(delay, self._poll_media_progress)
 
     def _poll_media_progress(self) -> None:
         if not hasattr(self, "elapsed"):
             return
-        player = self._media_player or run_script("mpris.sh", "player")
+        r = self._poll_result
+        if r is None:
+            self._media_position_ms = 0
+            self._media_duration_ms = 0
+            self._media_estimated_progress = False
+            self._render_media_progress()
+            return
+
+        player = self._media_player or ""
         if not player:
             self._media_position_ms = 0
             self._media_duration_ms = 0
@@ -3033,27 +3047,8 @@ class NotificationCenter(QWidget):
             return
 
         now = monotonic()
-        elapsed_since_sync = max(0.0, now - self._media_last_sync)
-        self._media_last_sync = now
 
-        status_raw = (
-            run_cmd(["playerctl", f"--player={player}", "status"]) or self._media_status
-        )
-        position_raw = run_cmd(["playerctl", f"--player={player}", "position"])
-        length_raw = run_cmd(
-            [
-                "playerctl",
-                f"--player={player}",
-                "metadata",
-                "--format",
-                "{{mpris:length}}",
-            ]
-        )
-
-        try:
-            self._media_duration_ms = int(int(length_raw) / 1000)
-        except Exception:
-            self._media_duration_ms = 0
+        self._media_duration_ms = r.media_duration_ms
 
         if self._is_browser_player(player):
             url_duration_ms = self._media_duration_cache.get(self._media_url)
@@ -3062,36 +3057,34 @@ class NotificationCenter(QWidget):
             else:
                 self._request_media_url_duration(self._media_url)
 
-        parsed_position_ms: int | None = None
-        try:
-            parsed_position_ms = int(float(position_raw) * 1000)
-        except Exception:
-            parsed_position_ms = None
+        if r.timestamp > self._media_last_anchor_time:
+            self._media_last_anchor_time = r.timestamp
+            if r.media_position_ms > 0:
+                if (
+                    self._media_duration_ms > 0
+                    and self._is_browser_player(player)
+                    and r.media_position_ms >= self._media_duration_ms - 1000
+                    and r.media_status in {"Playing", "Paused"}
+                ):
+                    self._media_estimated_progress = True
+                else:
+                    self._media_position_ms = max(0, r.media_position_ms)
+                    self._media_estimated_progress = False
 
-        if (
-            parsed_position_ms is not None
-            and self._media_duration_ms > 0
-            and self._is_browser_player(player)
-            and parsed_position_ms >= self._media_duration_ms - 1000
-            and status_raw in {"Playing", "Paused"}
-        ):
-            self._media_estimated_progress = True
-            parsed_position_ms = None
-        elif parsed_position_ms is not None:
-            self._media_estimated_progress = False
+        elapsed_since_anchor = max(0.0, now - self._media_last_anchor_time)
 
-        if parsed_position_ms is not None:
-            self._media_position_ms = max(0, parsed_position_ms)
-        elif status_raw == "Playing" and self._media_duration_ms > 0:
+        if r.media_status == "Playing" and self._media_duration_ms > 0:
             self._media_position_ms = min(
                 self._media_duration_ms,
-                max(0, self._media_position_ms + int(elapsed_since_sync * 1000)),
+                max(0, self._media_position_ms + int(elapsed_since_anchor * 1000)),
             )
+            self._media_last_anchor_time = now
+        elif r.media_status in {"Paused", "Stopped"}:
+            self._media_position_ms = max(0, self._media_position_ms)
         else:
             self._media_position_ms = max(0, self._media_position_ms)
 
-        self._media_status = status_raw
-
+        self._media_status = r.media_status
         self._render_media_progress()
 
     def _render_media_progress(self) -> None:
@@ -3129,6 +3122,11 @@ class NotificationCenter(QWidget):
     def _set_cover_art(self, cover_path: Path) -> None:
         if not hasattr(self, "cover"):
             return
+        cache_key = f"cover:{cover_path}:{self.cover.width()}x{self.cover.height()}"
+        cached = get_cached_pixmap(cache_key)
+        if cached is not None and isinstance(cached, QPixmap) and not cached.isNull():
+            self.cover.setPixmap(cached)
+            return
         pixmap = QPixmap(str(cover_path))
         if pixmap.isNull():
             self.cover.setPixmap(QPixmap())
@@ -3154,6 +3152,7 @@ class NotificationCenter(QWidget):
         painter.drawPixmap(0, 0, cropped)
         painter.end()
         self.cover.setPixmap(rounded)
+        store_pixmap(cache_key, rounded)
 
     def _update_media_palette_from_cover(self, cover_path: Path) -> None:
         if not hasattr(self, "media_base"):
@@ -3724,6 +3723,12 @@ class NotificationCenter(QWidget):
             self.close()
         else:
             super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if hasattr(self, "_poller"):
+            self._poller.stop()
+            self._poller.wait(2000)
+        super().closeEvent(event)
 
 
 def main() -> int:
