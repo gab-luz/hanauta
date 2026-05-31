@@ -532,7 +532,7 @@ class NotificationCenter(QWidget):
         return card
 
     def _build_game_carousel_card(self) -> QFrame:
-        self.game_carousel = GameCarouselCard(self.ui_font, self.material_font)
+        self.game_carousel = GameCarouselCard(self.ui_font, self.material_font, self.theme_palette.panel_bg)
         self.game_carousel.add_slide(
             "Loading library…",
             ["Fetching recent playtime"],
@@ -612,10 +612,12 @@ class NotificationCenter(QWidget):
         if signature and signature == getattr(self, "_games_cache_signature", ""):
             return
         self._games_cache_signature = signature
+        import shutil
+
         carousel.clear_slides()
         safe_slides = slides if isinstance(slides, list) else []
         self._game_slides_data = [item for item in safe_slides if isinstance(item, dict)][:4]
-        for slide in self._game_slides_data:
+        for index, slide in enumerate(self._game_slides_data):
             accent = (
                 self.theme_palette.primary
                 if slide.get("accent") == "primary"
@@ -635,6 +637,14 @@ class NotificationCenter(QWidget):
                 accent,
                 cover_path,
             )
+            if cover_path and cover_path.is_file():
+                try:
+                    shutil.copy2(cover_path, "/tmp/cover.png")
+                    palette = self._extract_cover_palette(None)
+                    if palette:
+                        carousel.set_slide_palette(index, *palette)
+                except Exception:
+                    pass
         self._refresh_game_play_state()
 
     def _current_game_slide(self) -> dict:

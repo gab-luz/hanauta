@@ -158,10 +158,12 @@ def load_steam_game_slides(limit: int = 2) -> list[dict]:
 
 
 class GameCarouselCard(QFrame):
-    def __init__(self, ui_font: str, material_font: str) -> None:
+    def __init__(self, ui_font: str, material_font: str, panel_bg: str = "rgba(31, 22, 38, 0.94)") -> None:
         super().__init__()
         self.ui_font = ui_font
         self.material_font = material_font
+        self._panel_bg = panel_bg
+        self._slide_palettes: list[tuple[str, str, str, str] | None] = []
         self.setObjectName("gameCarouselCard")
         self._slides: list[QFrame] = []
         self._dots: list[QLabel] = []
@@ -169,6 +171,10 @@ class GameCarouselCard(QFrame):
         self._auto_timer.setInterval(5000)
         self._auto_timer.timeout.connect(self.next_slide)
         self._auto_timer.start()
+
+        self.game_base = QFrame(self)
+        self.game_base.setObjectName("gameBase")
+        self.game_base.lower()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -204,6 +210,7 @@ class GameCarouselCard(QFrame):
 
         self.stack = QStackedWidget()
         self.stack.setObjectName("gameStack")
+        self.stack.currentChanged.connect(self._on_slide_changed)
         layout.addWidget(self.stack)
 
         footer = QHBoxLayout()
@@ -346,6 +353,7 @@ class GameCarouselCard(QFrame):
             except Exception:
                 pass
         self._dots = []
+        self._slide_palettes = []
         try:
             self.caption.setText("0/0")
         except Exception:
@@ -376,6 +384,46 @@ class GameCarouselCard(QFrame):
             return
         self.stack.setCurrentIndex((self.stack.currentIndex() - 1) % self.stack.count())
         self._refresh_state()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.game_base.setGeometry(self.rect())
+
+    def set_slide_palette(
+        self, index: int, start: str, end: str, border: str, accent: str
+    ) -> None:
+        while len(self._slide_palettes) <= index:
+            self._slide_palettes.append(None)
+        self._slide_palettes[index] = (start, end, border, accent)
+        if index == self.stack.currentIndex():
+            self._apply_current_palette()
+
+    def _on_slide_changed(self, index: int) -> None:
+        self._apply_current_palette()
+        self._refresh_state()
+
+    def _apply_current_palette(self) -> None:
+        index = self.stack.currentIndex()
+        if index < 0 or index >= len(self._slide_palettes):
+            return
+        palette = self._slide_palettes[index]
+        if palette is None:
+            self.game_base.setStyleSheet(
+                f"background: {self._panel_bg}; border-radius: 20px;"
+            )
+            return
+        start, end, _border, _accent = palette
+        self.game_base.setStyleSheet(
+            f"""
+            background: qradialgradient(
+                cx: 0.36, cy: 0.26, radius: 0.95, fx: 0.36, fy: 0.26,
+                stop: 0 {start},
+                stop: 0.38 {end},
+                stop: 1 {self._panel_bg}
+            );
+            border-radius: 20px;
+            """
+        )
 
     def _restart_autoplay(self) -> None:
         if self.stack.count() < 2:
