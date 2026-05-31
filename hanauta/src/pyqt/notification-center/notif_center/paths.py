@@ -32,6 +32,7 @@ POWERMENU_SCRIPT = _APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
 HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
+PLATFORM_ICONS_DIR = ASSETS_DIR / "platform-icons"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 
 LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"

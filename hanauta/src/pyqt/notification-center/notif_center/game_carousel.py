@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWi
 from notif_center.paths import (
     FALLBACK_COVER, GAMES_CACHE_PATH, LUTRIS_COVERART_DIRS, LUTRIS_DB, LUTRIS_ICON, SCRIPTS_DIR, STEAM_ICON,
 )
-from notif_center.utils import format_playtime_hours, material_icon, render_svg_pixmap, run_cmd
+from notif_center.utils import format_playtime_hours, material_icon, platform_icon_svg_path, render_svg_pixmap, run_cmd
 
 
 def load_cached_game_slides(limit: int = 4) -> list[dict]:
@@ -307,9 +307,25 @@ class GameCarouselCard(QFrame):
         chip_row.setSpacing(6)
         stat_values = stats or ["No telemetry yet"]
         for idx, text in enumerate(stat_values):
-            stat = QLabel(text)
-            stat.setObjectName("gameStatChip" if idx == 0 else "gameStatLabel")
-            chip_row.addWidget(stat)
+            if idx == 1:
+                svg_path = platform_icon_svg_path(text)
+                icon_pix = render_svg_pixmap(svg_path, 12)
+                chip = QFrame()
+                chip.setObjectName("gameStatLabel")
+                chip_layout = QHBoxLayout(chip)
+                chip_layout.setContentsMargins(6, 2, 8, 2)
+                chip_layout.setSpacing(4)
+                icon_lbl = QLabel()
+                icon_lbl.setFixedSize(14, 14)
+                if icon_pix and not icon_pix.isNull():
+                    icon_lbl.setPixmap(icon_pix)
+                text_lbl = QLabel(text)
+                chip_layout.addWidget(icon_lbl)
+                chip_layout.addWidget(text_lbl)
+            else:
+                chip = QLabel(text)
+                chip.setObjectName("gameStatChip")
+            chip_row.addWidget(chip)
         chip_row.addStretch(1)
         title_wrap.addLayout(chip_row)
         top.addLayout(title_wrap, 1)
