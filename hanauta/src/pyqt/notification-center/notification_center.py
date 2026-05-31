@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import signal
 import sys
 import tempfile
 import threading
@@ -23,39 +24,50 @@ from urllib import error, parse, request
 
 from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
-    QColor,
-    QCursor,
-    QFont,
-    QFontDatabase,
-    QIcon,
-    QPalette,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPixmap,
-    QTextCharFormat,
+    QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette,
+    QPainter, QPainterPath, QPen, QPixmap, QTextCharFormat,
 )
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
-    QApplication,
-    QButtonGroup,
-    QDialog,
-    QFrame,
-    QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QSlider,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QButtonGroup, QDialog, QFrame,
+    QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QGridLayout,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QScrollArea, QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from notif_center.game_carousel import (
+    GameCarouselCard, any_game_running_fast, load_cached_game_slides,
+    load_cached_games_payload, load_lutris_game_slides, load_steam_game_slides,
+)
+from notif_center.ha import fetch_home_assistant_json, post_home_assistant_json, normalize_ha_url
+from notif_center.media import (
+    duration_ms_from_media_url, is_browser_player,
+    poll_media_metadata, poll_media_progress, trigger_media_action,
+)
+from notif_center.paths import (
+    ASSETS_DIR, BIN_DIR, CALENDAR_EVENTS_CACHE, DESKTOP_CLOCK_BINARY,
+    FALLBACK_COVER, FONTS_DIR, GAMES_CACHE_PATH, HOME_ASSISTANT_ICON,
+    KDECONNECT_ICON, LUTRIS_COVERART_DIRS, LUTRIS_DB, LUTRIS_ICON,
+    NOTIFICATION_HISTORY_FILE, POWERMENU_SCRIPT, preferred_icon_path,
+    PROFILE_PHOTO_CANDIDATES, ROOT, SCRIPTS_DIR, SERVICE_STATE_DIR,
+    SETTINGS_FILE, SETTINGS_PAGE_SCRIPT, STATE_DIR, STEAM_ICON,
+)
+from notif_center.settings_io import (
+    DEFAULT_SERVICE_SETTINGS, load_notification_settings,
+    merged_service_settings, save_notification_settings,
+)
+from notif_center.utils import (
+    accent_palette, apply_antialias_font, desktop_clock_command,
+    detect_font, format_millis, format_playtime_hours, load_app_fonts,
+    material_icon, notification_control_command, parse_bool_text,
+    render_svg_pixmap, render_theme_icon_pixmap, run_bg,
+    run_bg_singleton, run_cmd, run_script, run_script_bg,
+    terminate_background_matches, tinted_svg_pixmap,
+)
+from notif_center.widgets import (
+    ActionTile, ClickableLabel, CompactIconAction, ElidedLabel,
+    QuickSettingButton, ServiceLauncherCard, SidebarItemButton,
+)
 
 APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
@@ -67,57 +79,24 @@ from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.calendar_card import apply_calendar_theme, build_calendar_card
 
-ROOT = APP_DIR.parents[1]
-SCRIPTS_DIR = ROOT / "hanauta" / "scripts"
-FONTS_DIR = ROOT / "assets" / "fonts"
-FALLBACK_COVER = ROOT / "assets" / "fallback.webp"
-ASSETS_DIR = APP_DIR / "assets"
-BIN_DIR = ROOT / "bin"
-HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
-KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
-STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
-LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
-SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
-GAMES_CACHE_PATH = SERVICE_STATE_DIR / "games.json"
-def _preferred_icon_path(asset_name: str, system_path: str) -> str:
-    local_icon = ASSETS_DIR / asset_name
-    if local_icon.exists():
-        return str(local_icon)
-    return system_path
-
-
-WIFI_NOTIFICATION_ICON = _preferred_icon_path(
+# Notification icon paths
+WIFI_NOTIFICATION_ICON = preferred_icon_path(
     "network-wireless-connected-100.svg",
     "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg",
 )
-BLUETOOTH_NOTIFICATION_ICON = _preferred_icon_path(
+BLUETOOTH_NOTIFICATION_ICON = preferred_icon_path(
     "bluetooth-active.svg",
     "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg",
 )
-AIRPLANE_NOTIFICATION_ICON = _preferred_icon_path(
+AIRPLANE_NOTIFICATION_ICON = preferred_icon_path(
     "airplane-mode-on.svg",
     "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg",
 )
-CAFFEINE_NOTIFICATION_ICON = _preferred_icon_path("caffeine.svg", "coffee")
-NIGHT_LIGHT_NOTIFICATION_ICON = _preferred_icon_path("night-light.svg", "nightlight")
-CALENDAR_NOTIFICATION_ICON = _preferred_icon_path(
-    "calendar_today.svg", "x-office-calendar"
-)
-WEATHER_HISTORY_ICON = (
-    ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
-)
-STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
-SETTINGS_FILE = STATE_DIR / "settings.json"
-SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
-CALENDAR_EVENTS_CACHE = SERVICE_STATE_DIR / "calendar_events.json"
-NOTIFICATION_HISTORY_FILE = (
-    Path.home()
-    / ".local"
-    / "state"
-    / "hanauta"
-    / "notification-daemon"
-    / "history.json"
-)
+CAFFEINE_NOTIFICATION_ICON = preferred_icon_path("caffeine.svg", "coffee")
+NIGHT_LIGHT_NOTIFICATION_ICON = preferred_icon_path("night-light.svg", "nightlight")
+CALENDAR_NOTIFICATION_ICON = preferred_icon_path("calendar_today.svg", "x-office-calendar")
+WEATHER_HISTORY_ICON = ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
+
 def _resolve_qcal_wrapper_script() -> Path | None:
     resolved = resolve_plugin_script("qcal-wrapper.py", ["calendar"])
     if resolved is not None and resolved.exists():
@@ -131,34 +110,16 @@ def _resolve_qcal_wrapper_script() -> Path | None:
             return candidate
     return None
 
-
 QCAL_WRAPPER = _resolve_qcal_wrapper_script() or Path()
-LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
-LUTRIS_COVERART_DIRS = [
-    Path.home() / ".local" / "share" / "lutris" / "coverart",
-    Path.home() / ".cache" / "lutris" / "coverart",
-]
-SETTINGS_PAGE_SCRIPT = APP_DIR / "pyqt" / "settings-page" / "settings.py"
-VPN_CONTROL_SCRIPT = (
-    resolve_plugin_script("vpn_control.py", ["vpn-control", "vpn"]) or Path()
-)
-CHRISTIAN_WIDGET_SCRIPT = (
-    resolve_plugin_script("christian_widget.py", ["religion-christian", "christian"])
-    or Path()
-)
-REMINDERS_WIDGET_SCRIPT = (
-    resolve_plugin_script("reminders_widget.py", ["reminders"]) or Path()
-)
-POMODORO_WIDGET_SCRIPT = (
-    resolve_plugin_script("pomodoro_widget.py", ["pomodoro"]) or Path()
-)
+
+VPN_CONTROL_SCRIPT = resolve_plugin_script("vpn_control.py", ["vpn-control", "vpn"]) or Path()
+CHRISTIAN_WIDGET_SCRIPT = resolve_plugin_script("christian_widget.py", ["religion-christian", "christian"]) or Path()
+REMINDERS_WIDGET_SCRIPT = resolve_plugin_script("reminders_widget.py", ["reminders"]) or Path()
+POMODORO_WIDGET_SCRIPT = resolve_plugin_script("pomodoro_widget.py", ["pomodoro"]) or Path()
 RSS_WIDGET_SCRIPT = resolve_plugin_script("rss_widget.py", ["rss"]) or Path()
 OBS_WIDGET_SCRIPT: Path | None = resolve_plugin_script("obs_widget.py", ["obs"])
-CRYPTO_WIDGET_SCRIPT: Path | None = resolve_plugin_script(
-    "crypto_widget.py", ["crypto"]
-)
+CRYPTO_WIDGET_SCRIPT: Path | None = resolve_plugin_script("crypto_widget.py", ["crypto"])
 VPS_WIDGET_SCRIPT: Path | None = resolve_plugin_script("vps_widget.py", ["vps"])
-
 
 def _resolve_desktop_clock_widget_script() -> Path | None:
     resolved = resolve_plugin_script("desktop_clock_widget.py", ["desktop-clock", "clock"])
@@ -173,566 +134,68 @@ def _resolve_desktop_clock_widget_script() -> Path | None:
             return candidate
     return None
 
-
 DESKTOP_CLOCK_WIDGET_SCRIPT: Path | None = _resolve_desktop_clock_widget_script()
-DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
-GAME_MODE_POPUP_SCRIPT: Path | None = resolve_plugin_script(
-    "game_mode_popup.py", ["game-mode", "gamemode"]
-)
-POWERMENU_SCRIPT = APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
-PROFILE_PHOTO_CANDIDATES = [Path.home() / ".face.png", Path.home() / ".face.jpg"]
+GAME_MODE_POPUP_SCRIPT: Path | None = resolve_plugin_script("game_mode_popup.py", ["game-mode", "gamemode"])
 
-MATERIAL_ICONS = {
-    "airplanemode_active": "\ue195",
-    "arrow_back": "\ue5c4",
-    "bluetooth": "\ue1a7",
-    "brightness_medium": "\ue1ae",
-    "camera_alt": "\ue3b0",
-    "calendar_today": "\ue935",
-    "check_circle": "\ue86c",
-    "chevron_left": "\ue5cb",
-    "chevron_right": "\ue5cc",
-    "content_paste": "\ue14f",
-    "close": "\ue5cd",
-    "coffee": "\uefef",
-    "delete_sweep": "\ue16c",
-    "do_not_disturb_on": "\ue644",
-    "home": "\ue88a",
-    "hub": "\uee20",
-    "invert_colors": "\ue891",
-    "lightbulb": "\ue0f0",
-    "nightlight": "\uf03d",
-    "pause": "\ue034",
-    "person": "\ue7fd",
-    "phone_android": "\ue324",
-    "play_arrow": "\ue037",
-    "power_settings_new": "\ue8ac",
-    "smartphone": "\ue32c",
-    "save": "\ue161",
-    "settings": "\ue8b8",
-    "skip_next": "\ue044",
-    "skip_previous": "\ue045",
-    "thermostat": "\ue1ff",
-    "tune": "\ue429",
-    "volume_up": "\ue050",
-    "wifi": "\ue63e",
-    "lock": "\ue897",
-    "auto_awesome": "\ue65f",
-    "timer": "\ue425",
-    "public": "\ue80b",
-    "videocam": "\ue04b",
-    "show_chart": "\ue6e1",
-    "storage": "\ue1db",
-    "watch": "\ue334",
-    "sports_esports": "\uea28",
-}
+def resolve_rss_widget_script(settings_state: dict | None = None) -> Path:
+    if RSS_WIDGET_SCRIPT.exists():
+        return RSS_WIDGET_SCRIPT
+    state = settings_state if isinstance(settings_state, dict) else {}
+    marketplace = state.get("marketplace", {}) if isinstance(state, dict) else {}
+    installed = marketplace.get("installed_plugins", []) if isinstance(marketplace, dict) else []
+    if isinstance(installed, list):
+        for row in installed:
+            if not isinstance(row, dict):
+                continue
+            plugin_id = str(row.get("id", "")).strip()
+            if plugin_id != "rss_widget":
+                continue
+            install_path = str(row.get("install_path", "")).strip()
+            if not install_path:
+                continue
+            candidate = Path(install_path).expanduser() / "rss_widget.py"
+            if candidate.exists():
+                return candidate
+    return RSS_WIDGET_SCRIPT
 
-DEFAULT_SERVICE_SETTINGS = {
-    "kdeconnect": {
-        "enabled": True,
-        "show_in_notification_center": True,
-        "low_battery_fullscreen_notification": False,
-        "low_battery_threshold": 20,
-    },
-    "home_assistant": {
-        "enabled": True,
-        "show_in_notification_center": True,
-        "show_in_bar": False,
-    },
-    "vpn_control": {
-        "enabled": True,
-        "show_in_notification_center": False,
-    },
-    "christian_widget": {
-        "enabled": False,
-        "show_in_notification_center": False,
-        "show_in_bar": False,
-        "next_devotion_notifications": False,
-        "hourly_verse_notifications": False,
-    },
-    "calendar_widget": {
-        "enabled": True,
-        "show_in_notification_center": False,
-    },
-    "reminders_widget": {
-        "enabled": False,
-        "show_in_notification_center": False,
-    },
-    "pomodoro_widget": {
-        "enabled": True,
-        "show_in_notification_center": True,
-    },
-    "rss_widget": {
-        "enabled": False,
-        "show_in_notification_center": False,
-    },
-    "obs_widget": {
-        "enabled": True,
-        "show_in_notification_center": True,
-    },
-    "crypto_widget": {
-        "enabled": True,
-        "show_in_notification_center": True,
-    },
-    "vps_widget": {
-        "enabled": False,
-        "show_in_notification_center": True,
-    },
-    "desktop_clock_widget": {
-        "enabled": False,
-        "show_in_notification_center": True,
-    },
-    "game_mode": {
-        "enabled": False,
-        "show_in_notification_center": True,
-        "show_in_bar": False,
-    },
-}
-
-
-def run_cmd(cmd: list[str], timeout: float = 2.0) -> str:
+def load_calendar_events(limit: int = 30) -> list[dict]:
+    try:
+        if CALENDAR_EVENTS_CACHE.exists():
+            payload = json.loads(CALENDAR_EVENTS_CACHE.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                events = payload.get("events", [])
+                if isinstance(events, list) and events:
+                    return [item for item in events if isinstance(item, dict)][:limit]
+                err = str(payload.get("error", "")).strip()
+                if err:
+                    return [{"title": "Calendar sync error", "location": "Open Settings \u2192 Services \u2192 Calendar", "start": err, "source": "calendar"}][:limit]
+    except Exception:
+        pass
+    if not QCAL_WRAPPER.exists():
+        return []
     try:
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+            [python_executable(), str(QCAL_WRAPPER), "list", "--days", "14", "--limit", str(max(1, int(limit)))],
+            capture_output=True, text=True, timeout=20.0, check=False,
         )
-        return result.stdout.strip()
-    except Exception:
-        return ""
-
-
-def run_script(script_name: str, *args: str) -> str:
-    path = SCRIPTS_DIR / script_name
-    if not path.exists():
-        return ""
-    return run_cmd([str(path), *args])
-
-
-def run_script_bg(script_name: str, *args: str) -> None:
-    path = SCRIPTS_DIR / script_name
-    if not path.exists():
-        return
-    try:
-        subprocess.Popen(
-            [str(path), *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-    except Exception:
-        pass
-
-
-def run_bg(cmd: list[str]) -> None:
-    try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
-
-def apply_antialias_font(widget: QWidget) -> None:
-    font = widget.font()
-    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-    widget.setFont(font)
-    for child in widget.findChildren(QWidget):
-        child_font = child.font()
-        child_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-        child.setFont(child_font)
-
-
-def terminate_background_matches(pattern: str) -> None:
-    try:
-        subprocess.run(
-            ["pkill", "-f", pattern],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except Exception:
-        pass
-
-
-def run_bg_singleton(script_path: Path, *args: str) -> None:
-    command = entry_command(script_path, *args)
-    if not command:
-        return
-    for pattern in entry_patterns(script_path):
-        terminate_background_matches(pattern)
-    try:
-        subprocess.Popen(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception:
-        pass
-
-
-def desktop_clock_command() -> list[str]:
-    if DESKTOP_CLOCK_WIDGET_SCRIPT is not None and DESKTOP_CLOCK_WIDGET_SCRIPT.exists():
-        return entry_command(DESKTOP_CLOCK_WIDGET_SCRIPT)
-    if DESKTOP_CLOCK_BINARY.exists():
-        return [str(DESKTOP_CLOCK_BINARY)]
-    return []
-
-
-def notification_control_command(*args: str) -> list[str]:
-    local = BIN_DIR / "hanauta-notifyctl"
-    if local.exists():
-        return [str(local), *args]
-    return ["hanauta-notifyctl", *args]
-
-
-def detect_font(*families: str) -> str:
-    for family in families:
-        if family and QFont(family).exactMatch():
-            return family
-    return "Sans Serif"
-
-
-def material_icon(name: str) -> str:
-    return MATERIAL_ICONS.get(name, "?")
-
-
-def load_app_fonts() -> dict[str, str]:
-    loaded: dict[str, str] = {}
-    font_map = {
-        "ui_sans": FONTS_DIR / "Rubik-VariableFont_wght.ttf",
-        "material_icons": FONTS_DIR / "MaterialIcons-Regular.ttf",
-        "material_icons_outlined": FONTS_DIR / "MaterialIconsOutlined-Regular.otf",
-        "material_symbols_outlined": FONTS_DIR / "MaterialSymbolsOutlined.ttf",
-        "material_symbols_rounded": FONTS_DIR / "MaterialSymbolsRounded.ttf",
-    }
-    for key, path in font_map.items():
-        if not path.exists():
-            continue
-        font_id = QFontDatabase.addApplicationFont(str(path))
-        if font_id < 0:
-            continue
-        families = QFontDatabase.applicationFontFamilies(font_id)
-        if families:
-            loaded[key] = families[0]
-    return loaded
-
-
-def format_millis(ms: int) -> str:
-    ms = max(0, ms)
-    total_seconds = ms // 1000
-    minutes, seconds = divmod(total_seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
-
-
-def parse_bool_text(value: str) -> bool:
-    return value.strip().lower() == "true"
-
-
-def merged_service_settings(payload: object) -> dict[str, dict[str, bool]]:
-    services = payload if isinstance(payload, dict) else {}
-    merged: dict[str, dict[str, bool]] = {}
-    for key, defaults in DEFAULT_SERVICE_SETTINGS.items():
-        current = services.get(key, {}) if isinstance(services, dict) else {}
-        if not isinstance(current, dict):
-            current = {}
-        merged[key] = {
-            "enabled": bool(current.get("enabled", defaults["enabled"])),
-            "show_in_notification_center": bool(
-                current.get(
-                    "show_in_notification_center",
-                    defaults["show_in_notification_center"],
-                )
-            ),
-        }
-        if key == "kdeconnect":
-            merged[key]["low_battery_fullscreen_notification"] = bool(
-                current.get(
-                    "low_battery_fullscreen_notification",
-                    defaults.get("low_battery_fullscreen_notification", False),
-                )
-            )
-            try:
-                merged[key]["low_battery_threshold"] = max(
-                    1,
-                    min(
-                        100,
-                        int(
-                            current.get(
-                                "low_battery_threshold",
-                                defaults.get("low_battery_threshold", 20),
-                            )
-                        ),
-                    ),
-                )
-            except Exception:
-                merged[key]["low_battery_threshold"] = int(
-                    defaults.get("low_battery_threshold", 20)
-                )
-        elif key == "christian_widget":
-            merged[key]["show_in_bar"] = bool(
-                current.get("show_in_bar", defaults.get("show_in_bar", False))
-            )
-            merged[key]["next_devotion_notifications"] = bool(
-                current.get(
-                    "next_devotion_notifications",
-                    defaults.get("next_devotion_notifications", False),
-                )
-            )
-            merged[key]["hourly_verse_notifications"] = bool(
-                current.get(
-                    "hourly_verse_notifications",
-                    defaults.get("hourly_verse_notifications", False),
-                )
-            )
-        elif key == "home_assistant":
-            merged[key]["show_in_bar"] = bool(
-                current.get("show_in_bar", defaults.get("show_in_bar", False))
-            )
-    return merged
-
-
-def load_notification_settings() -> dict:
-    default = {
-        "appearance": {"accent": "orchid"},
-        "home_assistant": {"url": "", "token": "", "pinned_entities": []},
-        "services": merged_service_settings({}),
-        "display": {"layout_mode": "extend", "primary": "", "outputs": []},
-        "autolock": {"enabled": True, "timeout_minutes": 2},
-        "weather": {
-            "enabled": False,
-            "name": "",
-            "admin1": "",
-            "country": "",
-            "latitude": 0.0,
-            "longitude": 0.0,
-            "timezone": "auto",
-        },
-        "ntfy": {
-            "enabled": False,
-            "show_in_bar": False,
-            "server_url": "https://ntfy.sh",
-            "topic": "",
-            "token": "",
-            "username": "",
-            "password": "",
-            "auth_mode": "token",
-            "topics": [],
-            "all_topics": False,
-            "hide_notification_content": False,
-        },
-    }
-    try:
-        raw = SETTINGS_FILE.read_text(encoding="utf-8")
-        payload = json.loads(raw)
-    except Exception:
-        return default
-    if not isinstance(payload, dict):
-        payload = {}
-    appearance = dict(payload.get("appearance", {}))
-    appearance.setdefault("accent", "orchid")
-    home_assistant = dict(payload.get("home_assistant", {}))
-    home_assistant.setdefault("url", "")
-    home_assistant.setdefault("token", "")
-    pinned = [
-        item
-        for item in home_assistant.get("pinned_entities", [])
-        if isinstance(item, str)
-    ][:5]
-    home_assistant["pinned_entities"] = pinned
-    services = merged_service_settings(payload.get("services", {}))
-    display = dict(payload.get("display", {}))
-    display.setdefault("layout_mode", "extend")
-    display.setdefault("primary", "")
-    outputs = display.get("outputs", [])
-    display["outputs"] = outputs if isinstance(outputs, list) else []
-    autolock = dict(payload.get("autolock", {}))
-    autolock["enabled"] = bool(autolock.get("enabled", True))
-    try:
-        autolock["timeout_minutes"] = max(
-            1, min(60, int(autolock.get("timeout_minutes", 2)))
-        )
-    except Exception:
-        autolock["timeout_minutes"] = 2
-    weather = dict(payload.get("weather", {}))
-    weather.setdefault("enabled", False)
-    weather.setdefault("name", "")
-    weather.setdefault("admin1", "")
-    weather.setdefault("country", "")
-    weather.setdefault("latitude", 0.0)
-    weather.setdefault("longitude", 0.0)
-    weather.setdefault("timezone", "auto")
-    ntfy = dict(payload.get("ntfy", {}))
-    ntfy.setdefault("enabled", False)
-    ntfy.setdefault("show_in_bar", False)
-    ntfy.setdefault("server_url", "https://ntfy.sh")
-    ntfy.setdefault("topic", "")
-    ntfy.setdefault("token", "")
-    ntfy.setdefault("username", "")
-    ntfy.setdefault("password", "")
-    ntfy.setdefault("auth_mode", "token")
-    ntfy.setdefault("topics", [])
-    ntfy.setdefault("all_topics", False)
-    ntfy["hide_notification_content"] = bool(
-        ntfy.get("hide_notification_content", False)
-    )
-    topics = [
-        str(item).strip()
-        for item in ntfy.get("topics", [])
-        if isinstance(item, str) and str(item).strip()
-    ]
-    ntfy["topics"] = topics
-    payload["appearance"] = appearance
-    payload["home_assistant"] = home_assistant
-    payload["services"] = services
-    payload["display"] = display
-    payload["autolock"] = autolock
-    payload["weather"] = weather
-    payload["ntfy"] = ntfy
-    return payload
-
-
-def save_notification_settings(settings: dict) -> None:
-    _atomic_write_json(SETTINGS_FILE, settings)
-
-
-def _atomic_write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=str(path.parent),
-            prefix=f"{path.stem}-",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(json.dumps(payload, indent=2))
-            handle.flush()
-            os.fsync(handle.fileno())
-            temp_path = Path(handle.name)
-        os.replace(str(temp_path), str(path))
-    finally:
-        if temp_path is not None and temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-
-
-def tinted_svg_pixmap(path: Path, color: QColor, size: int = 18) -> QPixmap:
-    if not path.exists():
-        return QPixmap()
-    renderer = QSvgRenderer(str(path))
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), color)
-    painter.end()
-    return pixmap
-
-
-def render_svg_pixmap(path: Path, size: int = 18) -> QPixmap:
-    if not path.exists():
-        return QPixmap()
-    renderer = QSvgRenderer(str(path))
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.end()
-    return pixmap
-
-
-def render_theme_icon_pixmap(names: list[str], size: int = 18) -> QPixmap:
-    for name in names:
-        if not name:
-            continue
-        icon = QIcon.fromTheme(name)
-        if icon.isNull():
-            continue
-        pixmap = icon.pixmap(size, size)
-        if not pixmap.isNull():
-            return pixmap
-    return QPixmap()
-
-
-def accent_palette(name: str) -> dict[str, str]:
-    palettes = {
-        "orchid": {
-            "accent": "#D0BCFF",
-            "on_accent": "#381E72",
-            "soft": "rgba(208,188,255,0.18)",
-        },
-        "mint": {
-            "accent": "#8FE3CF",
-            "on_accent": "#11352D",
-            "soft": "rgba(143,227,207,0.18)",
-        },
-        "sunset": {
-            "accent": "#FFB59E",
-            "on_accent": "#4D2418",
-            "soft": "rgba(255,181,158,0.18)",
-        },
-    }
-    return palettes.get(name, palettes["orchid"])
-
-
-def normalize_ha_url(url: str) -> str:
-    return url.strip().rstrip("/")
-
-
-def fetch_home_assistant_json(
-    base_url: str, token: str, path: str
-) -> tuple[object | None, str]:
-    if not base_url or not token:
-        return None, "Home Assistant URL and token are required."
-    try:
-        req = request.Request(
-            f"{normalize_ha_url(base_url)}{path}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-        )
-        with request.urlopen(req, timeout=3.5) as response:
-            return json.loads(response.read().decode("utf-8")), ""
-    except error.HTTPError as exc:
-        return None, f"Home Assistant returned HTTP {exc.code}."
-    except Exception:
-        return None, "Unable to reach Home Assistant."
-
-
-def post_home_assistant_json(
-    base_url: str, token: str, path: str, payload: dict
-) -> tuple[object | None, str]:
-    if not base_url or not token:
-        return None, "Home Assistant URL and token are required."
-    data = json.dumps(payload).encode("utf-8")
-    try:
-        req = request.Request(
-            f"{normalize_ha_url(base_url)}{path}",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with request.urlopen(req, timeout=3.5) as response:
-            body = response.read().decode("utf-8")
-            return (json.loads(body) if body else None), ""
-    except error.HTTPError as exc:
-        return None, f"Home Assistant returned HTTP {exc.code}."
-    except Exception:
-        return None, "Unable to reach Home Assistant."
-
+        payload = json.loads(result.stdout or "{}")
+    except Exception as exc:
+        return [{"title": "Calendar sync error", "location": "Open Settings \u2192 Services \u2192 Calendar", "start": str(exc).strip() or "Unable to fetch events.", "source": "calendar"}][:limit]
+    if isinstance(payload, dict):
+        events = payload.get("events", [])
+        if isinstance(events, list) and events:
+            return [item for item in events if isinstance(item, dict)][:limit]
+        err = str(payload.get("error", "")).strip()
+        if err:
+            return [{"title": "Calendar sync error", "location": "Open Settings \u2192 Services \u2192 Calendar", "start": err, "source": "calendar"}][:limit]
+    events = payload.get("events", []) if isinstance(payload, dict) else []
+    if not isinstance(events, list):
+        return []
+    return [item for item in events if isinstance(item, dict)][:limit]
 
 def load_notification_history(limit: int = 3) -> list[dict]:
     def _decode_octal_runs(raw_text: str) -> str:
         pattern = re.compile(r"(?:\\[0-7]{3})+")
-
         def _replace(match: re.Match[str]) -> str:
             run = match.group(0)
             octets = re.findall(r"\\([0-7]{3})", run)
@@ -741,7 +204,6 @@ def load_notification_history(limit: int = 3) -> list[dict]:
                 return data.decode("utf-8")
             except UnicodeDecodeError:
                 return data.decode("latin-1", errors="replace")
-
         return pattern.sub(_replace, raw_text)
 
     def _load_payload() -> object:
@@ -773,884 +235,29 @@ def load_notification_history(limit: int = 3) -> list[dict]:
         history = [item for item in payload if isinstance(item, dict)]
     elif isinstance(payload, dict):
         if payload.get("summary") or payload.get("body"):
-            history.append(
-                {
-                    "id": payload.get("id", 0),
-                    "app_name": str(payload.get("app_name", "")),
-                    "summary": str(payload.get("summary", "")),
-                    "body": str(payload.get("body", "")),
-                    "icon": str(payload.get("icon", "")),
-                    "desktop_entry": str(payload.get("desktop_entry", "")),
-                    "timestamp": payload.get("timestamp", 0),
-                }
-            )
+            history.append({
+                "id": payload.get("id", 0), "app_name": str(payload.get("app_name", "")),
+                "summary": str(payload.get("summary", "")), "body": str(payload.get("body", "")),
+                "icon": str(payload.get("icon", "")), "desktop_entry": str(payload.get("desktop_entry", "")),
+                "timestamp": payload.get("timestamp", 0),
+            })
         raw = payload.get("data", [])
         if isinstance(raw, list) and raw and isinstance(raw[0], list):
             for item in raw[0]:
                 if not isinstance(item, dict):
                     continue
-                history.append(
-                    {
-                        "id": _value(item.get("id", 0)),
-                        "app_name": str(
-                            _value(item.get("app_name", item.get("appname", ""))) or ""
-                        ),
-                        "summary": str(_value(item.get("summary", "")) or ""),
-                        "body": str(_value(item.get("body", "")) or ""),
-                        "icon": str(
-                            _value(item.get("app_icon", item.get("icon", ""))) or ""
-                        ),
-                        "desktop_entry": str(
-                            _value(item.get("desktop_entry", "")) or ""
-                        ),
-                        "timestamp": _value(item.get("timestamp", 0)),
-                    }
-                )
+                history.append({
+                    "id": _value(item.get("id", 0)),
+                    "app_name": str(_value(item.get("app_name", item.get("appname", ""))) or ""),
+                    "summary": str(_value(item.get("summary", "")) or ""),
+                    "body": str(_value(item.get("body", "")) or ""),
+                    "icon": str(_value(item.get("app_icon", item.get("icon", ""))) or ""),
+                    "desktop_entry": str(_value(item.get("desktop_entry", "")) or ""),
+                    "timestamp": _value(item.get("timestamp", 0)),
+                })
     history = [item for item in history if item.get("summary") or item.get("body")]
     history.reverse()
     return history[:limit]
-
-
-def resolve_rss_widget_script(settings_state: dict | None = None) -> Path:
-    if RSS_WIDGET_SCRIPT.exists():
-        return RSS_WIDGET_SCRIPT
-    state = settings_state if isinstance(settings_state, dict) else {}
-    marketplace = state.get("marketplace", {}) if isinstance(state, dict) else {}
-    installed = (
-        marketplace.get("installed_plugins", [])
-        if isinstance(marketplace, dict)
-        else []
-    )
-    if isinstance(installed, list):
-        for row in installed:
-            if not isinstance(row, dict):
-                continue
-            plugin_id = str(row.get("id", "")).strip()
-            if plugin_id != "rss_widget":
-                continue
-            install_path = str(row.get("install_path", "")).strip()
-            if not install_path:
-                continue
-            candidate = Path(install_path).expanduser() / "rss_widget.py"
-            if candidate.exists():
-                return candidate
-    return RSS_WIDGET_SCRIPT
-
-
-def load_calendar_events(limit: int = 30) -> list[dict]:
-    try:
-        if CALENDAR_EVENTS_CACHE.exists():
-            payload = json.loads(CALENDAR_EVENTS_CACHE.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                events = payload.get("events", [])
-                if isinstance(events, list) and events:
-                    return [item for item in events if isinstance(item, dict)][:limit]
-                err = str(payload.get("error", "")).strip()
-                if err:
-                    return [
-                        {
-                            "title": "Calendar sync error",
-                            "location": "Open Settings → Services → Calendar",
-                            "start": err,
-                            "source": "calendar",
-                        }
-                    ][:limit]
-    except Exception:
-        pass
-    if not QCAL_WRAPPER.exists():
-        return []
-    try:
-        result = subprocess.run(
-            [
-                python_executable(),
-                str(QCAL_WRAPPER),
-                "list",
-                "--days",
-                "14",
-                "--limit",
-                str(max(1, int(limit))),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20.0,
-            check=False,
-        )
-        payload = json.loads(result.stdout or "{}")
-    except Exception as exc:
-        return [
-            {
-                "title": "Calendar sync error",
-                "location": "Open Settings → Services → Calendar",
-                "start": str(exc).strip() or "Unable to fetch events.",
-                "source": "calendar",
-            }
-        ][:limit]
-    if isinstance(payload, dict):
-        events = payload.get("events", [])
-        if isinstance(events, list) and events:
-            return [item for item in events if isinstance(item, dict)][:limit]
-        err = str(payload.get("error", "")).strip()
-        if err:
-            return [
-                {
-                    "title": "Calendar sync error",
-                    "location": "Open Settings → Services → Calendar",
-                    "start": err,
-                    "source": "calendar",
-                }
-            ][:limit]
-    events = payload.get("events", []) if isinstance(payload, dict) else []
-    if not isinstance(events, list):
-        return []
-    return [item for item in events if isinstance(item, dict)][:limit]
-
-
-def format_playtime_hours(hours: float) -> str:
-    if hours <= 0:
-        return "0m total"
-    whole_hours = int(hours)
-    minutes = int(round((hours - whole_hours) * 60))
-    if whole_hours <= 0:
-        return f"{minutes}m total"
-    if minutes <= 0:
-        return f"{whole_hours}h total"
-    return f"{whole_hours}h {minutes}m total"
-
-
-def load_lutris_game_slides(limit: int = 2) -> list[dict]:
-    if not LUTRIS_DB.exists():
-        return []
-    try:
-        connection = sqlite3.connect(LUTRIS_DB)
-        cursor = connection.cursor()
-        rows = list(
-            cursor.execute(
-                """
-                SELECT name, slug, playtime, lastplayed, runner, platform
-                FROM games
-                WHERE installed = 1
-                ORDER BY lastplayed DESC, playtime DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
-        )
-    except Exception:
-        rows = []
-    finally:
-        try:
-            connection.close()
-        except Exception:
-            pass
-    slides: list[dict] = []
-    for name, slug, playtime, lastplayed, runner, platform in rows:
-        hours = float(playtime or 0.0)
-        platform_label = f"Lutris • {runner or platform or 'Library'}"
-        cover_path = ""
-        if slug:
-            for root in LUTRIS_COVERART_DIRS:
-                for ext in ("jpg", "png", "jpeg", "webp"):
-                    candidate = root / f"{slug}.{ext}"
-                    if candidate.is_file():
-                        cover_path = str(candidate)
-                        break
-                if cover_path:
-                    break
-        slides.append(
-            {
-                "title": str(name or "Lutris game"),
-                "stats": [
-                    format_playtime_hours(hours),
-                    str(platform or runner or "Installed"),
-                ],
-                "logo": LUTRIS_ICON,
-                "platform": platform_label,
-                "accent": "primary",
-                "source": "lutris",
-                "lutris_slug": str(slug) if slug else "",
-                "playtime_hours": hours,
-                "cover": cover_path,
-            }
-        )
-    return slides
-
-
-def _candidate_steam_roots() -> list[Path]:
-    roots = [
-        Path.home() / ".steam",
-        Path.home() / ".local" / "share" / "Steam",
-        Path.home()
-        / ".var"
-        / "app"
-        / "com.valvesoftware.Steam"
-        / ".local"
-        / "share"
-        / "Steam",
-        Path.home() / "snap" / "steam" / "common" / ".local" / "share" / "Steam",
-    ]
-    unique: list[Path] = []
-    for root in roots:
-        if root not in unique:
-            unique.append(root)
-    return unique
-
-
-def _steam_localconfig_paths() -> list[Path]:
-    results: list[Path] = []
-    for root in _candidate_steam_roots():
-        if not root.exists():
-            continue
-        results.extend(root.glob("userdata/*/config/localconfig.vdf"))
-    return results
-
-
-def load_steam_game_slides(limit: int = 2) -> list[dict]:
-    app_pattern = re.compile(
-        r'"(\d+)"\s*\{[^{}]*?"name"\s*"([^"]+)"[^{}]*?"Playtime"\s*"(\d+)"', re.DOTALL
-    )
-    slides: list[dict] = []
-    for config_path in _steam_localconfig_paths():
-        try:
-            raw = config_path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        for appid, name, minutes_text in app_pattern.findall(raw):
-            minutes = int(minutes_text or "0")
-            if minutes <= 0:
-                continue
-            hours = minutes / 60.0
-            slides.append(
-                {
-                    "title": name,
-                    "stats": [
-                        format_playtime_hours(hours),
-                        f"App {appid}",
-                    ],
-                    "logo": STEAM_ICON,
-                    "platform": "Steam library",
-                    "accent": "secondary",
-                    "source": "steam",
-                    "playtime_hours": hours,
-                    "cover": "",
-                }
-            )
-        if slides:
-            break
-    slides.sort(key=lambda item: float(item.get("playtime_hours", 0.0)), reverse=True)
-    return slides[:limit]
-
-
-def load_cached_game_slides(limit: int = 4) -> list[dict]:
-    if limit <= 0:
-        return []
-    try:
-        raw = GAMES_CACHE_PATH.read_text(encoding="utf-8", errors="ignore")
-        payload = json.loads(raw or "{}")
-    except Exception:
-        return []
-    if not isinstance(payload, dict):
-        return []
-    slides = payload.get("slides", [])
-    if not isinstance(slides, list):
-        return []
-    return [item for item in slides if isinstance(item, dict)][:limit]
-
-
-def load_cached_games_payload() -> dict:
-    try:
-        raw = GAMES_CACHE_PATH.read_text(encoding="utf-8", errors="ignore")
-        payload = json.loads(raw or "{}")
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def any_game_running_fast() -> bool:
-    needles = (
-        "lutris-wrapper",
-        "lutris-wrapper.sh",
-        "steam_app_",
-        "pressure-vessel",
-        "gamescope",
-    )
-    try:
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdigit():
-                continue
-            cmdline_path = entry / "cmdline"
-            try:
-                raw = cmdline_path.read_bytes()
-            except Exception:
-                continue
-            if not raw:
-                continue
-            text = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").lower()
-            if any(needle in text for needle in needles):
-                return True
-    except Exception:
-        return False
-    return False
-
-
-class QuickSettingButton(QFrame):
-    def __init__(self, material_font: str, title: str, icon: str, callback):
-        super().__init__()
-        self.material_font = material_font
-        self.title = title
-        self.callback = callback
-        self.theme = None
-        self.accent = "#D0BCFF"
-        self.on_accent = "#381E72"
-        self.active = False
-        self._icon_text = icon
-        self._subtitle = "Off"
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setObjectName("quickTile")
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
-
-        self.icon_label = QLabel(material_icon(icon))
-        self.icon_label.setFont(QFont(self.material_font, 18))
-        self.icon_label.setObjectName("quickTileIcon")
-
-        text_wrap = QVBoxLayout()
-        text_wrap.setContentsMargins(0, 0, 0, 0)
-        text_wrap.setSpacing(2)
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("quickTileTitle")
-        self.subtitle_label = QLabel("Off")
-        self.subtitle_label.setObjectName("quickTileSubtitle")
-        self.icon_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        self.title_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        self.subtitle_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        text_wrap.addWidget(self.title_label)
-        text_wrap.addWidget(self.subtitle_label)
-
-        layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addLayout(text_wrap, 1)
-        self._render()
-
-    def apply_theme(self, theme, accent: str, on_accent: str) -> None:
-        self.theme = theme
-        self.accent = accent
-        self.on_accent = on_accent
-        self._render()
-
-    def set_state(self, active: bool, icon: str, subtitle: str) -> None:
-        self.active = active
-        self._icon_text = icon
-        self._subtitle = subtitle
-        self._render()
-
-    def _render(self) -> None:
-        theme = self.theme
-        if theme is not None:
-            icon_color = self.on_accent if self.active else theme.icon
-            title_color = self.on_accent if self.active else theme.text
-            sub_color = rgba(self.on_accent, 0.78) if self.active else theme.text_muted
-            bg = self.accent if self.active else theme.app_running_bg
-            hover = theme.accent_soft if self.active else theme.hover_bg
-        else:
-            icon_color = "#381E72" if self.active else "rgba(255,255,255,0.82)"
-            title_color = "#381E72" if self.active else "#ffffff"
-            sub_color = (
-                "rgba(56,30,114,0.78)" if self.active else "rgba(255,255,255,0.54)"
-            )
-            bg = "#D0BCFF" if self.active else "rgba(255,255,255,0.05)"
-            hover = "#ddcbff" if self.active else "rgba(255,255,255,0.10)"
-        self.setStyleSheet(
-            f"""
-            QFrame#quickTile {{
-                background: {bg};
-                border: none;
-                border-radius: 18px;
-            }}
-            QFrame#quickTile:hover {{
-                background: {hover};
-            }}
-            """
-        )
-        self.icon_label.setText(material_icon(self._icon_text))
-        self.icon_label.setStyleSheet(f"color: {icon_color};")
-        self.title_label.setText(self.title)
-        self.title_label.setStyleSheet(f"color: {title_color}; font-weight: 600;")
-        self.subtitle_label.setText(self._subtitle)
-        self.subtitle_label.setStyleSheet(f"color: {sub_color}; font-size: 10px;")
-
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.callback()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-
-class SidebarItemButton(QPushButton):
-    def __init__(self, material_font: str, key: str, title: str, icon: str) -> None:
-        super().__init__()
-        self.key = key
-        self.setCheckable(True)
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setObjectName("sidebarItem")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
-        self.icon_label = QLabel(material_icon(icon))
-        self.icon_label.setObjectName("sidebarItemIcon")
-        self.icon_label.setFont(QFont(material_font, 18))
-        self.text_label = QLabel(title)
-        self.text_label.setObjectName("sidebarItemText")
-        layout.addWidget(self.icon_label)
-        layout.addWidget(self.text_label, 1)
-        self.apply_state(False, "#D0BCFF", "#381E72")
-
-    def apply_state(
-        self, active: bool, accent: str, on_accent: str, theme=None
-    ) -> None:
-        self.setChecked(active)
-        if active:
-            self.setStyleSheet(
-                f"""
-                QPushButton#sidebarItem {{
-                    background: {accent};
-                    border: none;
-                    border-radius: 16px;
-                }}
-                QLabel#sidebarItemIcon, QLabel#sidebarItemText {{
-                    color: {on_accent};
-                    font-weight: 600;
-                }}
-                """
-            )
-        else:
-            inactive_bg = (
-                theme.app_running_bg if theme is not None else "rgba(255,255,255,0.04)"
-            )
-            hover_bg = theme.hover_bg if theme is not None else "rgba(255,255,255,0.08)"
-            icon_color = theme.icon if theme is not None else "rgba(255,255,255,0.80)"
-            text_color = theme.text if theme is not None else "rgba(255,255,255,0.90)"
-            self.setStyleSheet(
-                f"""
-                QPushButton#sidebarItem {{
-                    background: {inactive_bg};
-                    border: none;
-                    border-radius: 16px;
-                }}
-                QPushButton#sidebarItem:hover {{
-                    background: {hover_bg};
-                }}
-                QLabel#sidebarItemIcon {{
-                    color: {icon_color};
-                }}
-                QLabel#sidebarItemText {{
-                    color: {text_color};
-                    font-weight: 500;
-                }}
-                """
-            )
-
-
-class ActionTile(QFrame):
-    def __init__(self, material_font: str, title: str, icon: str, callback) -> None:
-        super().__init__()
-        self.callback = callback
-        self.setObjectName("actionTile")
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
-        self.icon_label = QLabel(material_icon(icon))
-        self.icon_label.setObjectName("actionTileIcon")
-        self.icon_label.setFont(QFont(material_font, 18))
-        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("actionTileTitle")
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.subtitle_label = QLabel("")
-        self.subtitle_label.setObjectName("actionTileSubtitle")
-        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.subtitle_label.setWordWrap(True)
-        self.icon_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        self.title_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        self.subtitle_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        layout.addWidget(self.icon_label)
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.subtitle_label)
-
-    def set_content(self, icon: str, title: str, subtitle: str) -> None:
-        self.icon_label.setText(material_icon(icon))
-        self.title_label.setText(title)
-        self.subtitle_label.setText(subtitle)
-
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.callback()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-
-class CompactIconAction(QPushButton):
-    def __init__(self, material_font: str, icon: str) -> None:
-        super().__init__(material_icon(icon))
-        self.setObjectName("compactIconAction")
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setFont(QFont(material_font, 17))
-        self.setFixedSize(34, 34)
-        self.setProperty("active", False)
-
-    def set_icon(self, icon: str) -> None:
-        self.setText(material_icon(icon))
-
-    def set_active(self, active: bool) -> None:
-        self.setProperty("active", active)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-
-class ServiceLauncherCard(QFrame):
-    def __init__(
-        self,
-        material_font: str,
-        title: str,
-        detail: str,
-        icon: str,
-        action_label: str,
-        callback,
-    ) -> None:
-        super().__init__()
-        self.callback = callback
-        self.setObjectName("infoCard")
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
-
-        icon_label = QLabel(material_icon(icon))
-        icon_label.setObjectName("sectionIcon")
-        icon_label.setFixedWidth(20)
-        icon_label.setFont(QFont(material_font, 18))
-
-        text = QVBoxLayout()
-        text.setContentsMargins(0, 0, 0, 0)
-        text.setSpacing(2)
-        title_label = QLabel(title)
-        title_label.setObjectName("metricValue")
-        subtitle_label = QLabel(detail)
-        subtitle_label.setObjectName("statusHint")
-        subtitle_label.setWordWrap(True)
-        icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        subtitle_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
-        text.addWidget(title_label)
-        text.addWidget(subtitle_label)
-
-        action = QPushButton(action_label)
-        action.setObjectName("softButton")
-        action.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        action.clicked.connect(callback)
-
-        layout.addWidget(icon_label)
-        layout.addLayout(text, 1)
-        layout.addWidget(action)
-
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.callback()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-
-class ElidedLabel(QLabel):
-    def __init__(self, text: str = "") -> None:
-        super().__init__(text)
-        self._full_text = text
-
-    def setText(self, text: str) -> None:  # type: ignore[override]
-        self._full_text = text
-        self._apply_elision()
-
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
-        super().resizeEvent(event)
-        self._apply_elision()
-
-    def _apply_elision(self) -> None:
-        metrics = self.fontMetrics()
-        available = max(0, self.width() - 2)
-        if available < 10:
-            available = 100
-        elided = metrics.elidedText(
-            self._full_text, Qt.TextElideMode.ElideRight, available
-        )
-        super().setText(elided)
-
-
-class ClickableLabel(QLabel):
-    def __init__(self, callback) -> None:
-        super().__init__()
-        self._callback = callback
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._callback()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-
-class GameCarouselCard(QFrame):
-    def __init__(self, ui_font: str, material_font: str) -> None:
-        super().__init__()
-        self.ui_font = ui_font
-        self.material_font = material_font
-        self.setObjectName("gameCarouselCard")
-        self._slides: list[QFrame] = []
-        self._dots: list[QLabel] = []
-        self._auto_timer = QTimer(self)
-        self._auto_timer.setInterval(5000)
-        self._auto_timer.timeout.connect(self.next_slide)
-        self._auto_timer.start()
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
-        self.kicker = QLabel("Recently games played")
-        self.kicker.setObjectName("gameKicker")
-        header.addWidget(self.kicker, 1)
-
-        self.play_button = QPushButton("PLAY")
-        self.play_button.setObjectName("playButton")
-        self.play_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        header.addWidget(self.play_button)
-
-        self.prev_button = QPushButton(material_icon("chevron_left"))
-        self.prev_button.setObjectName("compactIconAction")
-        self.prev_button.setFont(QFont(self.material_font, 17))
-        self.prev_button.setFixedSize(30, 30)
-        self.prev_button.clicked.connect(self.previous_slide)
-        self.next_button = QPushButton(material_icon("chevron_right"))
-        self.next_button.setObjectName("compactIconAction")
-        self.next_button.setFont(QFont(self.material_font, 17))
-        self.next_button.setFixedSize(30, 30)
-        self.next_button.clicked.connect(self.next_slide)
-        self.prev_button.clicked.connect(self._restart_autoplay)
-        self.next_button.clicked.connect(self._restart_autoplay)
-        header.addWidget(self.prev_button)
-        header.addWidget(self.next_button)
-        layout.addLayout(header)
-
-        self.stack = QStackedWidget()
-        self.stack.setObjectName("gameStack")
-        layout.addWidget(self.stack)
-
-        footer = QHBoxLayout()
-        footer.setContentsMargins(0, 0, 0, 0)
-        footer.setSpacing(4)
-        self.caption = QLabel("")
-        self.caption.setObjectName("gameCaption")
-        footer.addWidget(self.caption, 1)
-        self.dots_wrap = QHBoxLayout()
-        self.dots_wrap.setContentsMargins(0, 0, 0, 0)
-        self.dots_wrap.setSpacing(4)
-        footer.addLayout(self.dots_wrap)
-        layout.addLayout(footer)
-
-    def _cover_pixmap(self, path: Path, width: int = 74, height: int = 92) -> QPixmap:
-        fallback = QPixmap(width, height)
-        fallback.fill(Qt.GlobalColor.transparent)
-        candidate = path if path is not None and path.is_file() else FALLBACK_COVER
-        if not candidate.exists():
-            # Always show a visible placeholder instead of a fully transparent cover.
-            placeholder = QPixmap(width, height)
-            placeholder.fill(QColor(255, 255, 255, 18))
-            painter = QPainter(placeholder)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(QColor(255, 255, 255, 38))
-            pen.setWidth(1)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(0, 0, width - 1, height - 1, 18, 18)
-            painter.end()
-            return placeholder
-        pixmap = QPixmap(str(candidate))
-        if pixmap.isNull():
-            placeholder = QPixmap(width, height)
-            placeholder.fill(QColor(255, 255, 255, 18))
-            painter = QPainter(placeholder)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(QColor(255, 255, 255, 38))
-            pen.setWidth(1)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(0, 0, width - 1, height - 1, 18, 18)
-            painter.end()
-            return placeholder
-        scaled = pixmap.scaled(
-            width,
-            height,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        x = max(0, (scaled.width() - width) // 2)
-        y = max(0, (scaled.height() - height) // 2)
-        cropped = scaled.copy(x, y, width, height)
-        rounded = QPixmap(width, height)
-        rounded.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(rounded)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        clip = QPainterPath()
-        clip.addRoundedRect(0.0, 0.0, float(width), float(height), 18.0, 18.0)
-        painter.setClipPath(clip)
-        painter.drawPixmap(0, 0, cropped)
-        painter.end()
-        return rounded
-
-    def add_slide(
-        self,
-        title: str,
-        stats: list[str],
-        logo_path: Path,
-        platform: str,
-        accent: str,
-        cover_path: Path | None = None,
-    ) -> None:
-        slide = QFrame()
-        slide.setObjectName("gameSlideInner")
-        slide.setProperty("accentColor", accent)
-        slide_layout = QVBoxLayout(slide)
-        slide_layout.setContentsMargins(0, 0, 0, 0)
-        slide_layout.setSpacing(8)
-
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(10)
-        cover = QLabel()
-        cover.setObjectName("gameCover")
-        cover.setFixedSize(74, 92)
-        cover.setPixmap(self._cover_pixmap(cover_path or Path()))
-        top.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
-
-        title_wrap = QVBoxLayout()
-        title_wrap.setContentsMargins(0, 0, 0, 0)
-        title_wrap.setSpacing(4)
-        title_label = QLabel(title)
-        title_label.setObjectName("gameSlideTitle")
-        platform_label = QLabel(platform)
-        platform_label.setObjectName("gameSlidePlatform")
-        title_wrap.addWidget(title_label)
-        title_wrap.addWidget(platform_label)
-        chip_row = QHBoxLayout()
-        chip_row.setContentsMargins(0, 0, 0, 0)
-        chip_row.setSpacing(6)
-        stat_values = stats or ["No telemetry yet"]
-        for idx, text in enumerate(stat_values):
-            stat = QLabel(text)
-            stat.setObjectName("gameStatChip" if idx == 0 else "gameStatLabel")
-            chip_row.addWidget(stat)
-        chip_row.addStretch(1)
-        title_wrap.addLayout(chip_row)
-        top.addLayout(title_wrap, 1)
-        slide_layout.addLayout(top)
-        slide_layout.addStretch(1)
-
-        bottom = QHBoxLayout()
-        bottom.setContentsMargins(0, 0, 0, 0)
-        bottom.setSpacing(6)
-        hint = QLabel("Last played across your launchers")
-        hint.setObjectName("gameSlideHint")
-        bottom.addWidget(hint, 1, Qt.AlignmentFlag.AlignBottom)
-        logo = QLabel()
-        logo.setObjectName("gamePlatformLogo")
-        logo.setPixmap(render_svg_pixmap(logo_path, 22))
-        bottom.addWidget(
-            logo, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom
-        )
-        slide_layout.addLayout(bottom)
-
-        self.stack.addWidget(slide)
-        self._slides.append(slide)
-        dot = QLabel("•")
-        dot.setObjectName("carouselDot")
-        self._dots.append(dot)
-        self.dots_wrap.addWidget(dot)
-        self._refresh_state()
-
-    def clear_slides(self) -> None:
-        # Removes all slide widgets and dots so we can repopulate asynchronously.
-        for widget in list(getattr(self, "_slides", [])):
-            try:
-                self.stack.removeWidget(widget)
-            except Exception:
-                pass
-            try:
-                widget.deleteLater()
-            except Exception:
-                pass
-        self._slides = []
-        for dot in list(getattr(self, "_dots", [])):
-            try:
-                dot.deleteLater()
-            except Exception:
-                pass
-        self._dots = []
-        try:
-            self.caption.setText("0/0")
-        except Exception:
-            pass
-        self.prev_button.setEnabled(False)
-        self.next_button.setEnabled(False)
-
-    def _refresh_state(self) -> None:
-        index = self.stack.currentIndex()
-        if index < 0:
-            return
-        for offset, dot in enumerate(self._dots):
-            dot.setProperty("active", offset == index)
-            dot.style().unpolish(dot)
-            dot.style().polish(dot)
-        self.caption.setText(f"{index + 1}/{max(1, self.stack.count())}")
-        self.prev_button.setEnabled(self.stack.count() > 1)
-        self.next_button.setEnabled(self.stack.count() > 1)
-
-    def next_slide(self) -> None:
-        if self.stack.count() < 2:
-            return
-        self.stack.setCurrentIndex((self.stack.currentIndex() + 1) % self.stack.count())
-        self._refresh_state()
-
-    def previous_slide(self) -> None:
-        if self.stack.count() < 2:
-            return
-        self.stack.setCurrentIndex((self.stack.currentIndex() - 1) % self.stack.count())
-        self._refresh_state()
-
-    def _restart_autoplay(self) -> None:
-        if self.stack.count() < 2:
-            return
-        self._auto_timer.start()
-
 
 class NotificationCenter(QWidget):
     calendarEventsReady = pyqtSignal(list)
@@ -5104,6 +3711,12 @@ def main() -> int:
     logging.info("notification-center main starting")
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Control Center")
+
+    signal.signal(signal.SIGINT, lambda sig, frame: app.quit())
+    timer = QTimer()
+    timer.start(500)
+    timer.timeout.connect(lambda: None)
+
     window = NotificationCenter()
     window.show()
     logging.info("notification-center shown; entering event loop")
