@@ -19,6 +19,7 @@ typedef struct {
     gchar *home_assistant_path;
     gchar *marketplace_git_status_path;
     gchar *status_path;
+    gchar *system_state_path;
     gchar *games_cache_script;
     gint64 games_cache_next_run;
     gchar *fullscreen_alert_script;
@@ -29,6 +30,7 @@ typedef struct {
     GFileMonitor *settings_monitor;
     guint heartbeat_source;
     guint refresh_source;
+    guint state_source;
     gchar *ntfy_topic_key;
     gint64 ntfy_since_time;
     gboolean ntfy_cursor_ready;
@@ -851,6 +853,36 @@ static gboolean maybe_offer_wifi_plugin_install(void) {
     }
 
     g_file_set_contents(g_service.wifi_plugin_offer_marker_path, "shown\n", -1, NULL);
+    return TRUE;
+}
+
+static gboolean refresh_system_state(gpointer user_data) {
+    (void)user_data;
+
+    gchar *collect_script = g_build_filename(
+        g_get_home_dir(), ".config", "i3", "hanauta",
+        "src", "service", "collect_state.py", NULL
+    );
+
+    if (!g_file_test(collect_script, G_FILE_TEST_IS_EXECUTABLE) &&
+        !g_file_test(collect_script, G_FILE_TEST_IS_REGULAR)) {
+        g_free(collect_script);
+        return TRUE;
+    }
+
+    const gchar *argv[] = {"python3", collect_script, NULL};
+    GError *error = NULL;
+    gchar *output = run_capture(&error, argv);
+
+    if (output == NULL) {
+        g_clear_error(&error);
+        g_free(collect_script);
+        return TRUE;
+    }
+
+    g_file_set_contents(g_service.system_state_path, output, -1, NULL);
+    g_free(output);
+    g_free(collect_script);
     return TRUE;
 }
 
@@ -2592,6 +2624,7 @@ int main(int argc, char **argv) {
     g_service.home_assistant_path = g_build_filename(g_service.state_dir, "home_assistant.json", NULL);
     g_service.marketplace_git_status_path = g_build_filename(g_service.state_dir, "marketplace_git_status.json", NULL);
     g_service.status_path = g_build_filename(g_service.state_dir, "status.json", NULL);
+    g_service.system_state_path = g_build_filename(g_service.state_dir, "system_state.json", NULL);
     g_service.games_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_recent_games.py", NULL);
     g_service.games_cache_next_run = 0;
     g_service.fullscreen_alert_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "pyqt", "shared", "fullscreen_alert.py", NULL);
@@ -2615,8 +2648,10 @@ int main(int argc, char **argv) {
     }
 
     refresh_all(NULL);
+    refresh_system_state(NULL);
     g_service.heartbeat_source = g_timeout_add_seconds(60, write_heartbeat, NULL);
     g_service.refresh_source = g_timeout_add_seconds(5, refresh_all, NULL);
+    g_service.state_source = g_timeout_add_seconds(2, refresh_system_state, NULL);
 
     loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
@@ -2626,6 +2661,9 @@ int main(int argc, char **argv) {
     }
     if (g_service.heartbeat_source != 0) {
         g_source_remove(g_service.heartbeat_source);
+    }
+    if (g_service.state_source != 0) {
+        g_source_remove(g_service.state_source);
     }
     g_clear_object(&g_service.settings_monitor);
     g_clear_object(&settings_file);
@@ -2638,6 +2676,7 @@ int main(int argc, char **argv) {
     g_free(g_service.home_assistant_path);
     g_free(g_service.marketplace_git_status_path);
     g_free(g_service.status_path);
+    g_free(g_service.system_state_path);
     g_free(g_service.games_cache_script);
     g_free(g_service.fullscreen_alert_script);
     g_free(g_service.wifi_plugin_offer_marker_path);
