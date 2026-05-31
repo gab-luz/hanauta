@@ -2061,6 +2061,26 @@ class NotificationCenter(QWidget):
             #eventsScroll QScrollBar::handle:vertical, #notificationsScroll QScrollBar::handle:vertical {{
                 background: transparent;
             }}
+            #eventsScroll QScrollBar:horizontal, #notificationsScroll QScrollBar:horizontal {{
+                height: 4px;
+                background: transparent;
+            }}
+            #eventsScroll QScrollBar::handle:horizontal, #notificationsScroll QScrollBar::handle:horizontal {{
+                background: {rgba(theme.primary, 0.5)};
+                border-radius: 2px;
+                min-width: 20px;
+            }}
+            #eventsScroll QScrollBar::handle:horizontal:hover, #notificationsScroll QScrollBar::handle:horizontal:hover {{
+                background: {theme.primary};
+            }}
+            #eventsScroll QScrollBar::add-line:horizontal, #notificationsScroll QScrollBar::add-line:horizontal,
+            #eventsScroll QScrollBar::sub-line:horizontal, #notificationsScroll QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            #eventsScroll QScrollBar::add-page:horizontal, #notificationsScroll QScrollBar::add-page:horizontal,
+            #eventsScroll QScrollBar::sub-page:horizontal, #notificationsScroll QScrollBar::sub-page:horizontal {{
+                background: transparent;
+            }}
             #mediaCard {{
                 background: {rgba(theme.surface_container_high, 0.82)};
                 border: 1px solid {rgba(theme.outline, 0.16)};

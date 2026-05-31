@@ -1590,6 +1590,7 @@ install_packages_debian() {
     playerctl brightnessctl
     pulseaudio-utils pamixer
     network-manager wireless-tools
+    redshift
     i3lock
     i3lock-color
     xfce4-power-manager lxqt-policykit
@@ -1640,6 +1641,7 @@ install_packages_arch() {
     playerctl brightnessctl
     pulseaudio pamixer
     networkmanager wireless_tools
+    redshift
     i3lock
     i3lock-color
     xfce4-power-manager lxqt-policykit
