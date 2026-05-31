@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restore-displays", action="store_true")
     parser.add_argument("--restore-wallpaper", action="store_true")
     parser.add_argument("--restore-vpn", action="store_true")
+    parser.add_argument("--restore-all", action="store_true")
     parser.add_argument("--marketplace-refresh-catalog", action="store_true")
     parser.add_argument("--marketplace-update-all", action="store_true")
     parser.add_argument("--marketplace-update-plugin", default="")
@@ -59,6 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     args, _ = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
     if args.ensure_settings:
         ensure_settings_state()
+        return 0
+    if args.restore_all:
+        restore_saved_displays()
+        restore_saved_wallpaper()
+        restore_saved_vpn()
         return 0
     if args.restore_displays:
         restore_saved_displays()
