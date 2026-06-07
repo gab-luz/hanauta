@@ -86,5 +86,15 @@ hanauta/plugins/
 
 # Vendored repositories
 vendor/i3-volume/.git/
-# Local Pi runtime state
+# Local runtime state / machine-specific dirs
 .atl/
+.pi/
+.agents/
+.build/
+.dist/
+.cache/
+.coverage/
+.htmlcov/
+.tox/
+.eggs/
+*.egg-info/
