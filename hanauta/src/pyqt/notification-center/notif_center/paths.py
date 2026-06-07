@@ -50,6 +50,18 @@ def preferred_icon_path(asset_name: str, system_path: str) -> str:
 
 CAFFEINE_NOTIFICATION_ICON = preferred_icon_path("caffeine.svg", "coffee")
 NIGHT_LIGHT_NOTIFICATION_ICON = preferred_icon_path("night-light.svg", "nightlight")
+WIFI_NOTIFICATION_ICON = preferred_icon_path(
+    "network-wireless-connected-100.svg",
+    "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg",
+)
+BLUETOOTH_NOTIFICATION_ICON = preferred_icon_path(
+    "bluetooth-active.svg",
+    "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg",
+)
+AIRPLANE_NOTIFICATION_ICON = preferred_icon_path(
+    "airplane-mode-on.svg",
+    "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg",
+)
 CALENDAR_NOTIFICATION_ICON = preferred_icon_path("calendar_today.svg", "x-office-calendar")
 WEATHER_HISTORY_ICON = ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
 HISTORY_ICON = ASSETS_DIR / "history.svg"
