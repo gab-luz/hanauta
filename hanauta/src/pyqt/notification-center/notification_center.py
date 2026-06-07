@@ -674,10 +674,10 @@ class NotificationCenter(QWidget):
         can_launch = bool(slug)
         any_playing = bool(getattr(self, "_games_any_playing", False))
         if not can_launch:
-            carousel.play_button.setText("PLAY")
+            carousel.play_button.setText(t("btn.play"))
             carousel.play_button.setEnabled(False)
             return
-        carousel.play_button.setText("PLAYING" if any_playing else "PLAY")
+        carousel.play_button.setText(t("btn.playing") if any_playing else t("btn.play"))
         carousel.play_button.setEnabled(not any_playing)
 
     def _sync_games_cache_state(self) -> None:
@@ -875,7 +875,7 @@ class NotificationCenter(QWidget):
         text_wrap.setSpacing(2)
         self.user_label = QLabel(t("overview.header.user"))
         self.user_label.setObjectName("userLabel")
-        self.uptime_label = QLabel("up 0 mins")
+        self.uptime_label = QLabel(f"{t('overview.header.uptime_prefix')} 0 mins")
         self.uptime_label.setObjectName("uptimeLabel")
         self.uptime_label.setFont(QFont(self.mono_font, 9))
         text_wrap.addWidget(self.user_label)
@@ -2492,7 +2492,7 @@ class NotificationCenter(QWidget):
         self.user_label.setText(os.environ.get("USER", t("overview.header.user")))
         r = self._poll_result
         uptime = r.uptime if r else datetime.now().strftime("%H:%M")
-        self.uptime_label.setText(f"up {uptime}")
+        self.uptime_label.setText(uptime if uptime else f"{t('overview.header.uptime_prefix')} 0 mins")
         self._refresh_profile_avatar()
 
     def _poll_phone(self) -> None:

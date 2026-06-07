@@ -166,7 +166,7 @@ def poll_all() -> PollResult:
     r.phone_raw = json.dumps(phone_data) if isinstance(phone_data, dict) and phone_data else _run_script("phone_info.sh")
 
     uptime_raw = run_cmd(["uptime", "-p"])
-    r.uptime = uptime_raw.removeprefix("up ").strip()
+    r.uptime = uptime_raw.strip()
 
     return r
 

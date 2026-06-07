@@ -188,7 +188,7 @@ class GameCarouselCard(QFrame):
         self.kicker.setObjectName("gameKicker")
         header.addWidget(self.kicker, 1)
 
-        self.play_button = QPushButton("PLAY")
+        self.play_button = QPushButton(t("btn.play"))
         self.play_button.setObjectName("playButton")
         self.play_button.setCursor(Qt.CursorShape.PointingHandCursor)
         header.addWidget(self.play_button)
