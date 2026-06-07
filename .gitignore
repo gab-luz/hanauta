@@ -86,3 +86,5 @@ hanauta/plugins/
 
 # Vendored repositories
 vendor/i3-volume/.git/
+# Local Pi runtime state
+.atl/
