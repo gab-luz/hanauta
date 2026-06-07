@@ -174,6 +174,10 @@ class QuickActionsPanel(QFrame):
         self._syncing_sliders = False
 
     def _toggle_wifi(self) -> None:
+        button = self.quick_buttons.get("wifi")
+        if button is not None:
+            new_state = not button.active
+            button.set_state(new_state, "wifi", t("status.connected") if new_state else t("status.disconnected"))
         run_script_bg("network.sh", "toggle")
         self._delayed_notify(
             "wifi", t("quick.wifi"),
@@ -182,6 +186,10 @@ class QuickActionsPanel(QFrame):
         )
 
     def _toggle_bluetooth(self) -> None:
+        button = self.quick_buttons.get("bluetooth")
+        if button is not None:
+            new_state = not button.active
+            button.set_state(new_state, "bluetooth", t("status.connected") if new_state else t("status.disconnected"))
         run_script_bg("bluetooth", "toggle")
         self._delayed_notify(
             "bluetooth", t("quick.bluetooth"),
@@ -190,6 +198,10 @@ class QuickActionsPanel(QFrame):
         )
 
     def _toggle_airplane(self) -> None:
+        button = self.quick_buttons.get("airplane")
+        if button is not None:
+            new_state = not button.active
+            button.set_state(new_state, "airplanemode_active", t("status.on") if new_state else t("status.off"))
         run_script_bg("network.sh", "toggle-radio")
         self._delayed_notify(
             "airplane", t("notify.airplane_mode"),
@@ -210,6 +222,10 @@ class QuickActionsPanel(QFrame):
         )
 
     def _toggle_caffeine(self) -> None:
+        button = self.quick_buttons.get("caffeine")
+        if button is not None:
+            new_state = not button.active
+            button.set_state(new_state, "coffee", t("status.on") if new_state else t("status.off"))
         caffeine_script = SCRIPTS_DIR / "caffeine.sh"
         if caffeine_script.exists():
             run_bg(["env", "HANAUTA_QUIET=1", str(caffeine_script), "toggle"])
