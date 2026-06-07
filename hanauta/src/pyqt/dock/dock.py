@@ -2652,6 +2652,28 @@ class CyberDock(QWidget):
             )
         except Exception:
             pass
+        self._set_bottom_strut()
+
+    def _set_bottom_strut(self) -> None:
+        try:
+            wid = int(self.winId())
+            if wid == 0:
+                return
+            geo = self._shown_geometry()
+            height = geo.height()
+            screen = self._target_screen()
+            screen_width = screen.geometry().width() if screen else 1920
+            strut = f"0, 0, 0, {height + 16}, 0, 0, 0, 0, 0, 0, 0, {screen_width}"
+            subprocess.run(
+                ["xprop", "-id", str(wid), "-f", "_NET_WM_STRUT_PARTIAL", "32c",
+                 "-set", "_NET_WM_STRUT_PARTIAL", strut],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=3,
+                check=False,
+            )
+        except Exception:
+            pass
 
     def _animate_in(self) -> None:
         self.setWindowOpacity(0.0)
@@ -2683,6 +2705,7 @@ class CyberDock(QWidget):
 
     def show(self) -> None:
         super().show()
+        self._set_bottom_strut()
         QTimer.singleShot(0, lambda: self._update_position(animated=False))
         QTimer.singleShot(120, self._apply_i3_window_rules)
         QTimer.singleShot(240, lambda: self._update_position(animated=False))

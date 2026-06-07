@@ -95,6 +95,7 @@ for_window [class=GLava] resize set 1920 1080
 
 # CyberDock window rules
 for_window [class="CyberDock"] floating enable, border pixel 0, sticky enable
+for_window [class="CyberDock"] exec --no-startup-id xdotool getactivewindow set_window_strut bottom 0 0 0 74
 
 # CyberBar window rules
 for_window [class="CyberBar"] floating enable, border pixel 0, sticky enable
