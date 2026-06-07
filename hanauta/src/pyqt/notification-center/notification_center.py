@@ -16,6 +16,7 @@ import signal
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -334,6 +335,7 @@ class NotificationCenter(QWidget):
         self._avatar_mtime_ns = -1
         self._poll_result: PollResult | None = None
         self._notif_mtime_ns = 0
+        self._in_full_history_view = False
         self._notif_widgets: list[QWidget] = []
         self._system_overview_done = False
         self.system_overview_labels: dict[str, QLabel] = {}
@@ -822,6 +824,16 @@ class NotificationCenter(QWidget):
         self.clear_notifications_btn.clicked.connect(self._clear_all_notifications)
         header.addWidget(title_label)
         header.addStretch(1)
+        self.view_all_notifications_btn = QPushButton(material_icon("history"))
+        self.view_all_notifications_btn.setObjectName("compactIconAction")
+        self.view_all_notifications_btn.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.view_all_notifications_btn.setFont(QFont(self.material_font, 16))
+        self.view_all_notifications_btn.setFixedSize(28, 28)
+        self.view_all_notifications_btn.setToolTip("View all notifications from last 24 hours")
+        self.view_all_notifications_btn.clicked.connect(self._enter_full_history_view)
+        header.addWidget(self.view_all_notifications_btn)
         header.addWidget(self.clear_notifications_btn)
         layout.addLayout(header)
         (
@@ -2569,6 +2581,31 @@ class NotificationCenter(QWidget):
         self._write_notification_history([])
         self._poll_notification_history()
 
+    @staticmethod
+    def _format_relative_time(timestamp: float) -> str:
+        now = time.time()
+        delta = now - timestamp
+        if delta < 0:
+            return "just now"
+        if delta < 60:
+            return "just now"
+        minutes = int(delta // 60)
+        if minutes == 1:
+            return "1 minute ago"
+        if minutes < 60:
+            return f"{minutes} minutes ago"
+        hours = int(delta // 3600)
+        if hours == 1:
+            return "1 hour ago"
+        if hours < 24:
+            return f"{hours} hours ago"
+        days = int(delta // 86400)
+        if days == 1:
+            return "yesterday"
+        if days < 7:
+            return f"{days} days ago"
+        return datetime.fromtimestamp(timestamp).strftime("%d %b")
+
     def _list_item_card(
         self,
         title: str,
@@ -2690,15 +2727,32 @@ class NotificationCenter(QWidget):
         theme_name_candidates = {
             "kde connect": ["kdeconnect", "org.kde.kdeconnect", "kde-connect"],
             "kdeconnect": ["kdeconnect", "org.kde.kdeconnect", "kde-connect"],
-            "discord": ["discord", "Discord"],
-            "spotify": ["spotify", "Spotify"],
+            "discord": ["discord", "Discord", "com.discordapp.Discord"],
+            "spotify": ["spotify", "Spotify", "com.spotify.Client"],
             "steam": ["steam", "Steam"],
-            "lutris": ["lutris", "Lutris"],
+            "lutris": ["lutris", "Lutris", "net.lutris.Lutris"],
             "telegram": ["telegram", "Telegram", "org.telegram.desktop"],
-            "firefox": ["firefox", "Firefox"],
+            "firefox": ["firefox", "Firefox", "firefox-esr"],
             "chromium": ["chromium", "Chromium"],
             "google chrome": ["google-chrome", "Google-chrome", "chrome"],
             "ferdium": ["ferdium", "Ferdium"],
+            "thunderbird": ["thunderbird", "Thunderbird", "org.mozilla.Thunderbird"],
+            "obs": ["obs", "com.obsproject.Studio"],
+            "obsidian": ["obsidian", "md.obsidian.Obsidian"],
+            "vlc": ["vlc", "VLC", "org.videolan.VLC"],
+            "rhythmbox": ["rhythmbox", "org.gnome.Rhythmbox3"],
+            "gimp": ["gimp", "GIMP", "org.gimp.GIMP"],
+            "blueman": ["blueman", "bluetooth", "preferences-system-bluetooth"],
+            "networkmanager": ["networkmanager", "nm-applet", "preferences-system-network"],
+            "pavucontrol": ["pavucontrol", "multimedia-volume-control"],
+            "copyq": ["copyq", "com.github.hluk.copyq"],
+            "kitty": ["kitty", "org.kitty.Kitty"],
+            "alacritty": ["alacritty", "Alacritty"],
+            "code": ["code", "visual-studio-code", "com.visualstudio.code"],
+            "slack": ["slack", "Slack", "com.slack.Slack"],
+            "whatsapp": ["whatsapp", "WhatsApp", "io.whatsapp.WhatsApp"],
+            "signal": ["signal", "Signal", "org.signal.Signal"],
+            "element": ["element", "Element", "im.riot.Riot"],
         }
         candidates = []
         if icon_name:
@@ -2775,12 +2829,37 @@ class NotificationCenter(QWidget):
                 except Exception:
                     pass
         self._clear_layout_widgets(self.events_layout)
+
         calendar_icon_pixmap = QPixmap()
         calendar_icon_path = Path(CALENDAR_NOTIFICATION_ICON).expanduser()
         if calendar_icon_path.exists():
             calendar_icon_pixmap = tinted_svg_pixmap(
                 calendar_icon_path, QColor(self.theme_palette.primary), 18
             )
+
+        calendar_configured = self._is_calendar_configured()
+
+        if not calendar_configured:
+            settings_btn = QPushButton("Add calendar")
+            settings_btn.setObjectName("tonalButton")
+            settings_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            settings_btn.setFont(QFont(self.ui_font, 10))
+            settings_btn.clicked.connect(
+                lambda: self._launch_settings_page("services", "calendar_widget")
+            )
+            self.events_layout.addWidget(
+                self._list_item_card(
+                    "No calendar account set up",
+                    "Open Settings to connect a CalDAV calendar and see your events here.",
+                    "Calendar is not configured",
+                    "calendar_today",
+                    calendar_icon_pixmap,
+                    settings_btn,
+                )
+            )
+            self.events_layout.addStretch(1)
+            return
+
         if not self._calendar_events:
             self.events_layout.addWidget(
                 self._list_item_card(
@@ -2793,6 +2872,30 @@ class NotificationCenter(QWidget):
             )
             self.events_layout.addStretch(1)
             return
+
+        first_title = str(self._calendar_events[0].get("title", "")).strip()
+        if first_title == "Calendar sync error":
+            err = str(self._calendar_events[0].get("start", "")).strip()
+            settings_btn = QPushButton("Open Settings")
+            settings_btn.setObjectName("tonalButton")
+            settings_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            settings_btn.setFont(QFont(self.ui_font, 10))
+            settings_btn.clicked.connect(
+                lambda: self._launch_settings_page("services", "calendar_widget")
+            )
+            self.events_layout.addWidget(
+                self._list_item_card(
+                    "Calendar sync failed",
+                    err or "Check your CalDAV credentials and server status.",
+                    "Calendar sync error",
+                    "calendar_today",
+                    calendar_icon_pixmap,
+                    settings_btn,
+                )
+            )
+            self.events_layout.addStretch(1)
+            return
+
         for event in self._calendar_events:
             title = str(event.get("title", "Untitled event"))
             start_text = str(event.get("start", ""))
@@ -2814,30 +2917,89 @@ class NotificationCenter(QWidget):
             )
         self.events_layout.addStretch(1)
 
+    def _is_calendar_configured(self) -> bool:
+        try:
+            settings = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            cal = settings.get("calendar", {}) if isinstance(settings, dict) else {}
+            url = str(cal.get("caldav_url", "")).strip()
+            username = str(cal.get("caldav_username", "")).strip()
+            return bool(url and username)
+        except Exception:
+            return False
+
+    def _enter_full_history_view(self) -> None:
+        self._in_full_history_view = True
+        self._poll_notification_history()
+
+    def _exit_full_history_view(self) -> None:
+        self._in_full_history_view = False
+        self._poll_notification_history()
+
     def _poll_notification_history(self) -> None:
         try:
             mtime = NOTIFICATION_HISTORY_FILE.stat().st_mtime_ns
         except OSError:
             mtime = 0
-        if mtime == self._notif_mtime_ns and self._notif_mtime_ns != 0:
+        if not self._in_full_history_view and mtime == self._notif_mtime_ns and self._notif_mtime_ns != 0:
             return
         self._notif_mtime_ns = mtime
 
-        self._notification_history = load_notification_history(3)
+        if self._in_full_history_view:
+            self._notification_history = load_notification_history(500)
+            now = time.time()
+            cutoff = now - 86400
+            self._notification_history = [
+                item for item in self._notification_history
+                if float(item.get("timestamp", 0) or 0) >= cutoff
+            ]
+        else:
+            self._notification_history = load_notification_history(3)
+
         self._clear_layout_widgets(self.notifications_layout)
+
         if hasattr(self, "clear_notifications_btn"):
             self.clear_notifications_btn.setEnabled(bool(self._notification_history))
-        if not self._notification_history:
-            self.notifications_layout.addWidget(
-                self._list_item_card(
-                    "No recent notifications",
-                    "Your notification history will appear here once the daemon records alerts.",
-                    "History is currently empty",
-                    "notifications",
-                )
+
+        if self._in_full_history_view:
+            back_btn = QPushButton(f"{material_icon('arrow_back')}  Back to recent")
+            back_btn.setObjectName("textButton")
+            back_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            back_btn.setFont(QFont(self.ui_font, 11))
+            back_btn.clicked.connect(self._exit_full_history_view)
+            self.notifications_layout.addWidget(back_btn)
+            title_row = QHBoxLayout()
+            title_row.setContentsMargins(4, 2, 4, 2)
+            count_label = QLabel(
+                f"Last 24 hours — {len(self._notification_history)} notification{'s' if len(self._notification_history) != 1 else ''}"
             )
+            count_label.setObjectName("sectionSubtitle")
+            count_label.setFont(QFont(self.ui_font, 10))
+            title_row.addWidget(count_label)
+            title_row.addStretch(1)
+            self.notifications_layout.addLayout(title_row)
+
+        if not self._notification_history:
+            if self._in_full_history_view:
+                self.notifications_layout.addWidget(
+                    self._list_item_card(
+                        "No notifications in the last 24 hours",
+                        "Recent alerts will appear here once the daemon records them.",
+                        "Full history is empty for this period",
+                        "notifications",
+                    )
+                )
+            else:
+                self.notifications_layout.addWidget(
+                    self._list_item_card(
+                        "No recent notifications",
+                        "Your notification history will appear here once the daemon records alerts.",
+                        "History is currently empty",
+                        "notifications",
+                    )
+                )
             self.notifications_layout.addStretch(1)
             return
+
         for item in self._notification_history:
             title = str(item.get("summary", "Notification")).strip() or "Notification"
             body = str(item.get("body", "")).replace("\n", " ").strip() or str(
@@ -2846,6 +3008,15 @@ class NotificationCenter(QWidget):
             app_name = str(item.get("app_name", "System")).strip() or "System"
             desktop_entry = str(item.get("desktop_entry", "")).strip()
             icon_name = str(item.get("icon", "")).strip()
+            raw_ts = item.get("timestamp", 0)
+            try:
+                ts = float(raw_ts or 0)
+            except (ValueError, TypeError):
+                ts = 0
+            if ts > 0:
+                meta = f"{app_name} · {self._format_relative_time(ts)}"
+            else:
+                meta = app_name
             dismiss_btn = QPushButton(material_icon("close"))
             dismiss_btn.setObjectName("notificationCloseButton")
             dismiss_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -2861,7 +3032,7 @@ class NotificationCenter(QWidget):
                 self._list_item_card(
                     title,
                     body,
-                    app_name,
+                    meta,
                     "notifications",
                     self._notification_icon_pixmap(
                         app_name,
