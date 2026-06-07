@@ -875,7 +875,7 @@ class NotificationCenter(QWidget):
         text_wrap.setSpacing(2)
         self.user_label = QLabel(t("overview.header.user"))
         self.user_label.setObjectName("userLabel")
-        self.uptime_label = QLabel(f"{t('overview.header.uptime_prefix')} 0 mins")
+        self.uptime_label = QLabel(t("uptime.less_than_minute"))
         self.uptime_label.setObjectName("uptimeLabel")
         self.uptime_label.setFont(QFont(self.mono_font, 9))
         text_wrap.addWidget(self.user_label)
@@ -2491,8 +2491,7 @@ class NotificationCenter(QWidget):
     def _poll_header(self) -> None:
         self.user_label.setText(os.environ.get("USER", t("overview.header.user")))
         r = self._poll_result
-        uptime = r.uptime if r else datetime.now().strftime("%H:%M")
-        self.uptime_label.setText(uptime if uptime else f"{t('overview.header.uptime_prefix')} 0 mins")
+        self.uptime_label.setText(self._format_uptime(r.uptime_seconds if r else 0))
         self._refresh_profile_avatar()
 
     def _poll_phone(self) -> None:
@@ -2614,6 +2613,22 @@ class NotificationCenter(QWidget):
         if days < 7:
             return t("time.n_days_ago", n=str(days))
         return datetime.fromtimestamp(timestamp).strftime("%d %b")
+
+    @staticmethod
+    def _format_uptime(seconds: int) -> str:
+        if seconds < 60:
+            return t("uptime.less_than_minute")
+        total_minutes = seconds // 60
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        parts = []
+        if hours > 0:
+            parts.append(t("uptime.hour", h=str(hours)))
+        if minutes > 0:
+            parts.append(t("uptime.minute", m=str(minutes)))
+        if not parts:
+            return t("uptime.less_than_minute")
+        return " ".join(parts)
 
     def _list_item_card(
         self,

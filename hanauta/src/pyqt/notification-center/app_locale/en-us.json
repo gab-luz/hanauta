@@ -40,7 +40,7 @@
   "btn.play_confirm": "Play",
   "dialog.play_confirm_title": "Confirm",
   "dialog.play_confirm_question": "Play game?",
-  "dialog.play_confirm_subtitle": "This will start \u201c{title}\u201d in Lutris.",
+  "dialog.play_confirm_subtitle": "This will start “{title}” in Lutris.",
   "dialog.play_confirm_fallback": "this game",
   "phone.disconnected": "Disconnected",
   "phone.offline": "Offline",
@@ -165,5 +165,8 @@
   "notify.night.disabled": "Night light disabled",
   "notify.caffeine.enabled": "Caffeine enabled",
   "notify.caffeine.disabled": "Caffeine disabled",
-  "notify.airplane_mode": "Airplane Mode"
+  "notify.airplane_mode": "Airplane Mode",
+  "uptime.hour": "{h}h",
+  "uptime.minute": "{m}m",
+  "uptime.less_than_minute": "< 1m"
 }

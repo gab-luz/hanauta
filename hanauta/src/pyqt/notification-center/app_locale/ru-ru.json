@@ -40,7 +40,7 @@
   "btn.play_confirm": "Играть",
   "dialog.play_confirm_title": "Подтверждение",
   "dialog.play_confirm_question": "Запустить игру?",
-  "dialog.play_confirm_subtitle": "Это запустит \u201c{title}\u201d в Lutris.",
+  "dialog.play_confirm_subtitle": "Это запустит “{title}” в Lutris.",
   "dialog.play_confirm_fallback": "эта игра",
   "phone.disconnected": "Отключено",
   "phone.offline": "Офлайн",
@@ -165,5 +165,8 @@
   "notify.night.disabled": "Ночной свет отключён",
   "notify.caffeine.enabled": "Кофеин включён",
   "notify.caffeine.disabled": "Кофеин отключён",
-  "notify.airplane_mode": "Авиарежим"
+  "notify.airplane_mode": "Авиарежим",
+  "uptime.hour": "{h}ч",
+  "uptime.minute": "{m}мин",
+  "uptime.less_than_minute": "< 1мин"
 }

@@ -43,7 +43,7 @@ class PollResult:
     media_position_ms: int = 0
     media_duration_ms: int = 0
     phone_raw: str = ""
-    uptime: str = ""
+    uptime_seconds: int = 0
 
 
 def _read_daemon_wifi() -> dict:
@@ -165,8 +165,10 @@ def poll_all() -> PollResult:
     phone_data = sys_state.get("phone", {}) if sys_state else {}
     r.phone_raw = json.dumps(phone_data) if isinstance(phone_data, dict) and phone_data else _run_script("phone_info.sh")
 
-    uptime_raw = run_cmd(["uptime", "-p"])
-    r.uptime = uptime_raw.strip()
+    try:
+        r.uptime_seconds = int(float(Path("/proc/uptime").read_text().split()[0]))
+    except Exception:
+        r.uptime_seconds = 0
 
     return r
 
