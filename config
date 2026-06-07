@@ -106,6 +106,9 @@ for_window [class="CyberBar"] resize set 1920 40
 for_window [title="CyberBar"] resize set 1920 40
 for_window [class="CyberBar"] exec --no-startup-id xdotool getactivewindow set_window_strut top 40 0 0 0
 
+# Hanauta Settings window rules
+for_window [title="Hanauta Settings"] floating enable, border pixel 0
+
 # Hotkeys overlay window rules
 for_window [class="HanautaHotkeys"] floating enable, border pixel 0, sticky enable
 for_window [title="Hanauta Hotkeys"] floating enable, border pixel 0, sticky enable
