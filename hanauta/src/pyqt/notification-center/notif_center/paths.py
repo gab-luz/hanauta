@@ -47,3 +47,10 @@ DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 def preferred_icon_path(asset_name: str, system_path: str) -> str:
     local_icon = ASSETS_DIR / asset_name
     return str(local_icon) if local_icon.exists() else system_path
+
+CAFFEINE_NOTIFICATION_ICON = preferred_icon_path("caffeine.svg", "coffee")
+NIGHT_LIGHT_NOTIFICATION_ICON = preferred_icon_path("night-light.svg", "nightlight")
+CALENDAR_NOTIFICATION_ICON = preferred_icon_path("calendar_today.svg", "x-office-calendar")
+WEATHER_HISTORY_ICON = ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
+HISTORY_ICON = ASSETS_DIR / "history.svg"
+ARROW_BACK_ICON = ASSETS_DIR / "arrow_back.svg"

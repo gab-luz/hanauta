@@ -46,13 +46,15 @@ from notif_center.game_carousel import (
 from notif_center.ha import fetch_home_assistant_json, post_home_assistant_json, normalize_ha_url
 
 from notif_center.paths import (
-    ASSETS_DIR, BIN_DIR, CALENDAR_EVENTS_CACHE, DESKTOP_CLOCK_BINARY,
-    FALLBACK_COVER, FONTS_DIR, GAMES_CACHE_PATH, HOME_ASSISTANT_ICON,
-    KDECONNECT_ICON, LUTRIS_COVERART_DIRS, LUTRIS_DB, LUTRIS_ICON,
-    SETTINGS_FILE, SETTINGS_PAGE_SCRIPT, STATE_DIR, STEAM_ICON,
-    CAFFEINE_NOTIFICATION_ICON, NIGHT_LIGHT_NOTIFICATION_ICON,
-    WEATHER_HISTORY_ICON, CALENDAR_NOTIFICATION_ICON,
-    NOTIFICATION_HISTORY_FILE,
+    ASSETS_DIR, ARROW_BACK_ICON, BIN_DIR, CALENDAR_EVENTS_CACHE,
+    CALENDAR_NOTIFICATION_ICON, CAFFEINE_NOTIFICATION_ICON,
+    DESKTOP_CLOCK_BINARY, FALLBACK_COVER, FONTS_DIR, GAMES_CACHE_PATH,
+    HISTORY_ICON, HOME_ASSISTANT_ICON, KDECONNECT_ICON,
+    LUTRIS_COVERART_DIRS, LUTRIS_DB, LUTRIS_ICON,
+    NIGHT_LIGHT_NOTIFICATION_ICON, NOTIFICATION_HISTORY_FILE,
+    POWERMENU_SCRIPT, preferred_icon_path, PROFILE_PHOTO_CANDIDATES,
+    ROOT, SCRIPTS_DIR, SERVICE_STATE_DIR, SETTINGS_FILE,
+    SETTINGS_PAGE_SCRIPT, STATE_DIR, STEAM_ICON, WEATHER_HISTORY_ICON,
 )
 from app_locale import t
 from notif_center.settings_io import (
@@ -95,11 +97,6 @@ AIRPLANE_NOTIFICATION_ICON = preferred_icon_path(
     "airplane-mode-on.svg",
     "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg",
 )
-CAFFEINE_NOTIFICATION_ICON = preferred_icon_path("caffeine.svg", "coffee")
-NIGHT_LIGHT_NOTIFICATION_ICON = preferred_icon_path("night-light.svg", "nightlight")
-CALENDAR_NOTIFICATION_ICON = preferred_icon_path("calendar_today.svg", "x-office-calendar")
-WEATHER_HISTORY_ICON = ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
-HISTORY_ICON = ASSETS_DIR / "history.svg"
 
 def _resolve_qcal_wrapper_script() -> Path | None:
     resolved = resolve_plugin_script("qcal-wrapper.py", ["calendar"])
@@ -2981,9 +2978,8 @@ class NotificationCenter(QWidget):
 
         if self._in_full_history_view:
             back_pixmap = QPixmap()
-            back_svg = ASSETS_DIR / "arrow_back.svg"
-            if back_svg.exists():
-                back_pixmap = tinted_svg_pixmap(back_svg, QColor(self.theme_palette.icon), 16)
+            if ARROW_BACK_ICON.exists():
+                back_pixmap = tinted_svg_pixmap(ARROW_BACK_ICON, QColor(self.theme_palette.icon), 16)
             if not back_pixmap.isNull():
                 back_btn = QPushButton(f"  {t('notif.history.back')}")
                 back_btn.setIcon(QIcon(back_pixmap))
