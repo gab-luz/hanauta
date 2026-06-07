@@ -5,22 +5,8 @@ import signal
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication
-
 from settings_page.settings_defaults import ensure_settings_state, load_settings_state
-from settings_page.startup import (
-    restore_saved_displays,
-    restore_saved_wallpaper,
-    restore_saved_vpn,
-)
-from settings_page.marketplace import (
-    marketplace_api_refresh_catalog_cache,
-    marketplace_api_installed_plugins,
-    marketplace_api_update_plugin,
-    marketplace_api_update_all_plugins,
-)
-from settings_page.window import SettingsWindow
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
@@ -62,17 +48,25 @@ def main(argv: list[str] | None = None) -> int:
         ensure_settings_state()
         return 0
     if args.restore_all:
+        from settings_page.startup import (
+            restore_saved_displays,
+            restore_saved_wallpaper,
+            restore_saved_vpn,
+        )
         restore_saved_displays()
         restore_saved_wallpaper()
         restore_saved_vpn()
         return 0
     if args.restore_displays:
+        from settings_page.startup import restore_saved_displays
         restore_saved_displays()
         return 0
     if args.restore_wallpaper:
+        from settings_page.startup import restore_saved_wallpaper
         restore_saved_wallpaper()
         return 0
     if args.restore_vpn:
+        from settings_page.startup import restore_saved_vpn
         restore_saved_vpn()
         return 0
     if (
@@ -82,6 +76,12 @@ def main(argv: list[str] | None = None) -> int:
         or args.marketplace_list_installed
         or args.marketplace_list_catalog
     ):
+        from settings_page.marketplace import (
+            marketplace_api_refresh_catalog_cache,
+            marketplace_api_installed_plugins,
+            marketplace_api_update_plugin,
+            marketplace_api_update_all_plugins,
+        )
         settings = load_settings_state()
         if args.marketplace_refresh_catalog:
             catalog, errors = marketplace_api_refresh_catalog_cache(settings)
@@ -127,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"updated plugins: {len(results)} (failures: {failures})")
             return 1 if failures > 0 else 0
         return 0
+    from settings_page.window import SettingsWindow
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtWidgets import QApplication
     app = QApplication(sys.argv)
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())
     sigint_timer = QTimer()

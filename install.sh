@@ -1600,6 +1600,7 @@ install_packages_debian() {
     cava
     python3 python3-pip python3-venv
     python3-pyqt6.qtwebengine
+    python3-pyqt6.qtsvg
     build-essential pkg-config
     libcups2-dev
     libglib2.0-dev libgtk-3-dev
@@ -1651,6 +1652,7 @@ install_packages_arch() {
     cava
     python python-pip
     python-pyqt6-webengine
+    python-pyqt6-svg
     gcc pkgconf glib2
     cups
     qt6-base
