@@ -2802,6 +2802,12 @@ offer_weather_plugin_install() {
     return 0
   fi
 
+  local target_dir="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-weather"
+  if [ -d "$target_dir/.git" ]; then
+    info "Weather widget plugin already installed at $target_dir; skipping prompt."
+    return 0
+  fi
+
   echo
   echo -e "${MAGENTA}Weather widget plugin${NC}"
   echo -e "Install ${BOLD}gab-luz/hanauta-plugin-weather${NC} for bar weather icon + popup forecast support?"
@@ -2895,6 +2901,7 @@ PY
 
 offer_kdeconnect_plugin_install_if_system_available() {
   local alert_script="$HOME/.config/i3/hanauta/src/pyqt/shared/fullscreen_alert.py"
+  local target_dir="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-kdeconnect"
 
   if ! need_cmd kdeconnect-cli; then
     info "kdeconnect-cli not found; skipping KDE Connect plugin prompt."
@@ -2902,6 +2909,11 @@ offer_kdeconnect_plugin_install_if_system_available() {
   fi
   if ! need_cmd git; then
     warn "git is not available; skipping KDE Connect plugin install prompt."
+    return 0
+  fi
+
+  if [ -d "$target_dir/.git" ]; then
+    info "KDE Connect plugin already installed at $target_dir; skipping prompt."
     return 0
   fi
 
@@ -2926,6 +2938,8 @@ offer_kdeconnect_plugin_install_if_system_available() {
 }
 
 install_wifi_plugin_if_available() {
+  local target_dir="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-wifi-control"
+
   if ! wifi_card_available; then
     info "No Wi-Fi hardware detected; skipping Wi-Fi popup plugin auto-install."
     return 0
@@ -2934,6 +2948,12 @@ install_wifi_plugin_if_available() {
     warn "git is not available; skipping Wi-Fi popup plugin auto-install."
     return 0
   fi
+
+  if [ -d "$target_dir/.git" ]; then
+    info "Wi-Fi Control plugin already installed at $target_dir; skipping."
+    return 0
+  fi
+
   sync_wifi_plugin_repo || return 1
   register_wifi_plugin_in_settings || true
   return 0
@@ -3049,8 +3069,15 @@ ensure_hanauta_settings() {
 
 configure_wireguard_support_prompt() {
   local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  local target_dir="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-vpn-control"
+
   if [ ! -f "$settings_file" ]; then
     warn "Hanauta settings file not found; skipping WireGuard support prompt."
+    return 0
+  fi
+
+  if [ -d "$target_dir/.git" ]; then
+    info "VPN Control plugin already installed at $target_dir; skipping WireGuard prompt."
     return 0
   fi
 
