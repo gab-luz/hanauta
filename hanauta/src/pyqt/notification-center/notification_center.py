@@ -721,7 +721,7 @@ class NotificationCenter(QWidget):
         shell_layout.setContentsMargins(16, 16, 16, 16)
         shell_layout.setSpacing(10)
 
-        title_label = QLabel("Play game?")
+        title_label = QLabel(t("dialog.play_confirm_question"))
         title_label.setObjectName("confirmTitle")
         subtitle = QLabel(f"This will start “{title}” in Lutris.")
         subtitle.setObjectName("confirmSubtitle")
@@ -732,10 +732,10 @@ class NotificationCenter(QWidget):
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
         buttons.addStretch(1)
-        cancel = QPushButton("Cancel")
+        cancel = QPushButton(t("btn.cancel"))
         cancel.setObjectName("softButton")
         cancel.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        play = QPushButton("Play")
+        play = QPushButton(t("btn.play_confirm"))
         play.setObjectName("confirmPlayButton")
         play.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         buttons.addWidget(cancel)
@@ -1162,7 +1162,7 @@ class NotificationCenter(QWidget):
             self.ha_action_tiles.append(tile)
             tile_row.addWidget(tile)
 
-        self.ha_status_label = QLabel("No entities pinned yet.")
+        self.ha_status_label = QLabel(t("ha.no_entities"))
         self.ha_status_label.setObjectName("statusHint")
         self.ha_status_label.hide()
         layout.addWidget(icon)
@@ -1413,7 +1413,7 @@ class NotificationCenter(QWidget):
         buttons.addWidget(self.ha_refresh_btn)
         layout.addLayout(buttons)
 
-        self.ha_settings_status = QLabel("Pin up to five entities.")
+        self.ha_settings_status = QLabel(t("settings.ha.hint_pin"))
         self.ha_settings_status.setObjectName("statusHint")
         layout.addWidget(self.ha_settings_status)
 
@@ -3571,7 +3571,7 @@ class NotificationCenter(QWidget):
                 self.ha_status_label.setText(error_text or "No entities available.")
             if self.ha_settings_status is not None:
                 self.ha_settings_status.setText(
-                    error_text or "Unable to fetch entities."
+                    error_text or t("settings.ha.failed")
                 )
             self._ha_entities = []
             self._ha_entity_map = {}
@@ -3604,7 +3604,7 @@ class NotificationCenter(QWidget):
                 widget.deleteLater()
         pinned = set(self.settings_state["home_assistant"].get("pinned_entities", []))
         if not self._ha_entities:
-            empty = QLabel("No Home Assistant entities to display.")
+            empty = QLabel(t("settings.ha.empty"))
             empty.setObjectName("statusHint")
             self.ha_entity_layout.addWidget(empty)
             self.ha_entity_layout.addStretch(1)
@@ -3629,7 +3629,7 @@ class NotificationCenter(QWidget):
             text.addWidget(title)
             text.addWidget(subtitle)
             layout.addLayout(text, 1)
-            pin_button = self._soft_button("Unpin" if entity_id in pinned else "Pin")
+            pin_button = self._soft_button(t("settings.ha.btn_unpin") if entity_id in pinned else t("settings.ha.btn_pin"))
             pin_button.clicked.connect(
                 lambda checked=False, current=entity_id: self._toggle_pin_entity(
                     current

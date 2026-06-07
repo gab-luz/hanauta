@@ -13,6 +13,7 @@ from notif_center.paths import (
     FALLBACK_COVER, GAMES_CACHE_PATH, LUTRIS_COVERART_DIRS, LUTRIS_DB, LUTRIS_ICON, SCRIPTS_DIR, STEAM_ICON,
 )
 from notif_center.utils import format_playtime_hours, material_icon, platform_icon_svg_path, render_svg_pixmap, run_cmd
+from app_locale import t
 
 
 def load_cached_game_slides(limit: int = 4) -> list[dict]:
@@ -89,7 +90,7 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
     slides: list[dict] = []
     for name, slug, playtime, lastplayed, runner, platform in rows:
         hours = float(playtime or 0.0)
-        platform_label = f"Lutris \u2022 {runner or platform or 'Library'}"
+        platform_label = f"Lutris \u2022 {runner or platform or t('carousel.platform_lutris_label')}"
         cover_path = ""
         if slug:
             for root in LUTRIS_COVERART_DIRS:
@@ -183,7 +184,7 @@ class GameCarouselCard(QFrame):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(6)
-        self.kicker = QLabel("Recently games played")
+        self.kicker = QLabel(t("carousel.recently_played"))
         self.kicker.setObjectName("gameKicker")
         header.addWidget(self.kicker, 1)
 
@@ -305,7 +306,7 @@ class GameCarouselCard(QFrame):
         chip_row = QHBoxLayout()
         chip_row.setContentsMargins(0, 0, 0, 0)
         chip_row.setSpacing(6)
-        stat_values = stats or ["No telemetry yet"]
+        stat_values = stats or [t("carousel.no_telemetry")]
         for idx, text in enumerate(stat_values):
             if idx == 1:
                 svg_path = platform_icon_svg_path(text)
@@ -335,7 +336,7 @@ class GameCarouselCard(QFrame):
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.setSpacing(6)
-        hint = QLabel("Last played across your launchers")
+        hint = QLabel(t("carousel.hint"))
         hint.setObjectName("gameSlideHint")
         bottom.addWidget(hint, 1, Qt.AlignmentFlag.AlignBottom)
         logo = QLabel()
