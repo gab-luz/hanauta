@@ -37,8 +37,8 @@ theme_greeter_color="a9b1d6ff"
 theme_layout_color="bb9af7ff"
 theme_weather_color="8ce9b0ff"
 theme_panel_fill="#101417aa"
-overlay_width=860
-overlay_height=300
+overlay_width=700
+overlay_height=180
 overlay_bottom_margin=84
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -340,12 +340,67 @@ pick_random_anime_wallpaper() {
     printf '%s\n' ""
 }
 
+MOTIVATIONAL_DIR="${SCRIPT_DIR}/lockscreen/locale"
+
+get_motivational_message() {
+    local lang=""
+    local locale_file=""
+    local text=""
+
+    command -v python3 >/dev/null 2>&1 || {
+        printf '%s\n' ""
+        return 0
+    }
+
+    lang="$(
+        python3 -c "
+import os
+lc = (os.environ.get('LC_ALL') or os.environ.get('LANG') or os.environ.get('LC_MESSAGES') or 'en').lower()
+if lc.startswith('pt'): print('pt-br')
+elif lc.startswith('ru'): print('ru-ru')
+elif lc.startswith('es'): print('es-la')
+else: print('en-us')
+"
+    )"
+
+    locale_file="${MOTIVATIONAL_DIR}/${lang}.json"
+    [[ -f "$locale_file" ]] || {
+        locale_file="${MOTIVATIONAL_DIR}/en-us.json"
+        [[ -f "$locale_file" ]] || {
+            printf '%s\n' ""
+            return 0
+        }
+    }
+
+    text="$(
+        python3 - "$locale_file" <<'PY'
+import json, datetime, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    messages = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("")
+    raise SystemExit(0)
+if not isinstance(messages, list) or not messages:
+    print("")
+    raise SystemExit(0)
+idx = datetime.date.today().timetuple().tm_yday % len(messages)
+print(messages[idx].strip())
+PY
+    )"
+
+    printf '%s\n' "${text}"
+}
+
 render_hanauta_lock_image() {
     local src="$1"
     local out="$2"
     local day_text=""
     local date_text=""
     local weather_text=""
+    local motto_text=""
     local screen_w=1920
     local screen_h=1080
 
@@ -355,6 +410,7 @@ render_hanauta_lock_image() {
     day_text="$(date '+%A')"
     date_text="$(date '+%d %B %Y')"
     weather_text="$(get_weather_overlay_text)"
+    motto_text="$(get_motivational_message)"
     local monitor_size
     monitor_size="$(get_primary_monitor_size)"
     if [[ "$monitor_size" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
@@ -362,18 +418,55 @@ render_hanauta_lock_image() {
         screen_h="${BASH_REMATCH[2]}"
     fi
 
-    magick "$src" \
-        -auto-orient \
-        -resize "${screen_w}x${screen_h}^" \
-        -gravity center \
-        -extent "${screen_w}x${screen_h}" \
-        \( -size "${overlay_width}x${overlay_height}" xc:none -fill "$theme_panel_fill" -draw "roundrectangle 0,0 $((overlay_width - 1)),$((overlay_height - 1)) 34,34" \) \
-        -gravity south -geometry "+0+${overlay_bottom_margin}" -composite \
-        -font "$theme_font" -fill '#97ccf9' -pointsize 36 -gravity south -annotate +0+150 "$day_text" \
-        -font "$theme_font" -fill "#${theme_greeter_color:0:6}" -pointsize 26 -gravity south -annotate +0+110 "$date_text" \
-        -font "$theme_font" -fill "#${theme_weather_color:0:6}" -pointsize 20 -gravity south -annotate +0+82 "$weather_text" \
-        -font "$theme_font" -fill "#${theme_layout_color:0:6}" -pointsize 18 -gravity south -annotate +0+60 "hanauta" \
+    local magick_cmd=(
+        magick "$src"
+        -auto-orient
+        -resize "${screen_w}x${screen_h}^"
+        -gravity center
+        -extent "${screen_w}x${screen_h}"
+        \( -size "${overlay_width}x${overlay_height}" xc:none
+           -fill "$theme_panel_fill"
+           -draw "roundrectangle 0,0 $((overlay_width - 1)),$((overlay_height - 1)) 28,28" \)
+        -gravity south
+        -geometry "+0+${overlay_bottom_margin}"
+        -composite
+        -font "$theme_font"
+        -fill '#97ccf9'
+        -pointsize 36
+        -gravity south
+        -annotate +0+"$((overlay_bottom_margin + 140))" "$day_text"
+        -font "$theme_font"
+        -fill "#${theme_greeter_color:0:6}"
+        -pointsize 26
+        -gravity south
+        -annotate +0+"$((overlay_bottom_margin + 106))" "$date_text"
+        -font "$theme_font"
+        -fill "#${theme_weather_color:0:6}"
+        -pointsize 20
+        -gravity south
+        -annotate +0+"$((overlay_bottom_margin + 78))" "$weather_text"
+    )
+
+    if [[ -n "$motto_text" ]]; then
+        magick_cmd+=(
+            -font "$theme_font"
+            -fill "#${theme_greeter_color:0:6}"
+            -pointsize 16
+            -gravity south
+            -annotate +0+"$((overlay_bottom_margin + 50))" "$motto_text"
+        )
+    fi
+
+    magick_cmd+=(
+        -font "$theme_font"
+        -fill "#${theme_layout_color:0:6}"
+        -pointsize 15
+        -gravity south
+        -annotate +0+"$((overlay_bottom_margin + 22))" "hanauta"
         "$out"
+    )
+
+    "${magick_cmd[@]}"
 }
 
 get_weather_overlay_text() {
