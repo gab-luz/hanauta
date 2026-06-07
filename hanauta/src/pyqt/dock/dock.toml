@@ -49,5 +49,5 @@ window_name = [
   "Hanauta Notification 8",
   "Hanauta Notification 198",
   "WireGuard",
-  "ui_bar.py"
+  "hanauta-bar.py"
 ]

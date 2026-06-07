@@ -14,7 +14,7 @@ set -x
 pkill -x hanauta-bar 2>/dev/null || true
 pkill -x hanauta-game-mode-popup 2>/dev/null || true
 pkill -x hanauta-ai-popup 2>/dev/null || true
-pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" 2>/dev/null || true
+pkill -f "$HOME/.config/i3/hanauta/src/pyqt/bar/hanauta-bar.py" 2>/dev/null || true
 
 PYTHON_BIN="$HOME/.config/i3/.venv/bin/python"
 if [ ! -x "$PYTHON_BIN" ]; then
@@ -27,9 +27,8 @@ if [ -z "$PYTHON_BIN" ] || [ ! -x "$PYTHON_BIN" ]; then
 fi
 
 nohup "$PYTHON_BIN" \
-  "$HOME/.config/i3/hanauta/src/pyqt/bar/ui_bar.py" \
-  --ui "$HOME/.config/i3/hanauta/src/pyqt/bar/bar.ui" \
-  >/tmp/hanauta-ui-bar.log 2>&1 </dev/null &
+  "$HOME/.config/i3/hanauta/src/pyqt/bar/hanauta-bar.py" \
+  >/tmp/hanauta-bar.log 2>&1 </dev/null &
 child_pid="$!"
 printf 'spawned_pid=%s\n' "$child_pid" >>"$LAUNCH_LOG"
 sleep 0.4

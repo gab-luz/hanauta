@@ -3,12 +3,14 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/statvfs.h>
+#include <unistd.h>
 
 typedef struct {
     gchar *settings_path;
@@ -26,6 +28,8 @@ typedef struct {
     gint64 launcher_apps_cache_next_run;
     gchar *fullscreen_alert_script;
     gchar *wifi_plugin_offer_marker_path;
+    gchar *bar_script_path;
+    GPid bar_pid;
     gint64 disk_space_next_check;
     gint64 disk_space_last_alert_at;
     gint64 marketplace_git_status_next_run;
@@ -2386,6 +2390,98 @@ static void refresh_plugin_background_tasks(void) {
     g_ptr_array_free(plugin_dirs, TRUE);
 }
 
+static void bar_exited(GPid pid, gint status, gpointer user_data) {
+    (void)status;
+    (void)user_data;
+    if (g_service.bar_pid == pid) {
+        g_spawn_close_pid(pid);
+        g_service.bar_pid = 0;
+    }
+}
+
+static gboolean ensure_bar_running(gpointer user_data) {
+    (void)user_data;
+    const gchar *home = g_get_home_dir();
+    gchar *python_bin = NULL;
+
+    /* Only launch the bar from user context, never from the root service. */
+    if (geteuid() == 0) {
+        return G_SOURCE_CONTINUE;
+    }
+
+    if (g_service.bar_script_path == NULL || *g_service.bar_script_path == '\0') {
+        return G_SOURCE_CONTINUE;
+    }
+
+    /* Check if tracked PID is still alive via kill(pid, 0). */
+    if (g_service.bar_pid != 0) {
+        if (kill((pid_t)g_service.bar_pid, 0) == 0) {
+            return G_SOURCE_CONTINUE;
+        }
+        g_spawn_close_pid(g_service.bar_pid);
+        g_service.bar_pid = 0;
+    }
+
+    /* Look for an existing bar process before launching a new one. */
+    {
+        gchar *pgrep_argv[] = {
+            (gchar *)"pgrep",
+            (gchar *)"-f",
+            g_service.bar_script_path,
+            NULL
+        };
+        GError *error = NULL;
+        gchar *pgrep_out = run_capture(&error, (const gchar * const *)pgrep_argv);
+        if (pgrep_out != NULL && *pgrep_out != '\0') {
+            g_free(pgrep_out);
+            return G_SOURCE_CONTINUE;
+        }
+        g_free(pgrep_out);
+        g_clear_error(&error);
+    }
+
+    /* Resolve python binary. */
+    {
+        gchar *venv_python = g_build_filename(home, ".config", "i3", ".venv", "bin", "python", NULL);
+        if (g_file_test(venv_python, G_FILE_TEST_IS_EXECUTABLE)) {
+            python_bin = venv_python;
+        } else {
+            python_bin = g_find_program_in_path("python3");
+            g_free(venv_python);
+        }
+        if (python_bin == NULL) {
+            return G_SOURCE_CONTINUE;
+        }
+    }
+
+    {
+        const gchar *bar_argv[] = {python_bin, g_service.bar_script_path, NULL};
+        GPid spawned_pid = 0;
+        GError *error = NULL;
+
+        if (g_spawn_async(
+            NULL,
+            (gchar **)bar_argv,
+            NULL,
+            G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+            NULL,
+            NULL,
+            &spawned_pid,
+            &error
+        )) {
+            g_service.bar_pid = spawned_pid;
+            g_child_watch_add(spawned_pid, bar_exited, NULL);
+        } else {
+            if (error != NULL) {
+                g_clear_error(&error);
+            }
+        }
+    }
+
+    g_free(python_bin);
+    return G_SOURCE_CONTINUE;
+}
+
 static gboolean refresh_all(gpointer user_data) {
     (void)user_data;
     gboolean wifi_ok = refresh_wifi();
@@ -2671,6 +2767,8 @@ int main(int argc, char **argv) {
     g_service.wifi_plugin_offer_marker_path = g_build_filename(g_service.state_dir, "wifi_plugin_offer_shown.state", NULL);
     g_service.disk_space_next_check = 0;
     g_service.disk_space_last_alert_at = 0;
+    g_service.bar_script_path = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "pyqt", "bar", "hanauta-bar.py", NULL);
+    g_service.bar_pid = 0;
     g_service.marketplace_git_status_next_run = 0;
     g_service.ntfy_all_topics_cache = g_ptr_array_new_with_free_func(g_free);
     g_service.ntfy_seen_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
@@ -2689,9 +2787,11 @@ int main(int argc, char **argv) {
 
     refresh_all(NULL);
     refresh_system_state(NULL);
+    ensure_bar_running(NULL);
     g_service.heartbeat_source = g_timeout_add_seconds(60, write_heartbeat, NULL);
     g_service.refresh_source = g_timeout_add_seconds(5, refresh_all, NULL);
     g_service.state_source = g_timeout_add_seconds(2, refresh_system_state, NULL);
+    g_timeout_add_seconds(3, ensure_bar_running, NULL);
 
     loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
@@ -2721,6 +2821,10 @@ int main(int argc, char **argv) {
     g_free(g_service.launcher_apps_cache_script);
     g_free(g_service.fullscreen_alert_script);
     g_free(g_service.wifi_plugin_offer_marker_path);
+    g_free(g_service.bar_script_path);
+    if (g_service.bar_pid != 0) {
+        g_spawn_close_pid(g_service.bar_pid);
+    }
     g_free(g_service.ntfy_topic_key);
     if (g_service.ntfy_all_topics_cache != NULL) {
         g_ptr_array_free(g_service.ntfy_all_topics_cache, TRUE);

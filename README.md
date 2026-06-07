@@ -95,7 +95,7 @@ Hyprland's clock successfully ported:
 ## 🏗️ Architecture
 
 ### Core Components
-- **Bar**: `hanauta/src/pyqt/bar/ui_bar.py`
+- **Bar**: `hanauta/src/pyqt/bar/hanauta-bar.py`
 - **Notification Center**: `hanauta/src/pyqt/notification-center/notification_center.py`
 - **Notification Daemon**: `hanauta/src/pyqt/notification-daemon/notification_daemon.py`
 - **Settings App**: `hanauta/src/pyqt/settings-page/settings.py`
@@ -116,7 +116,7 @@ Wallpaper → Matugen → Palette JSON → PyQt UI + VS Code
 
 ## Systray Support
 
-Hanauta's active systray lives in the PyQt bar at `hanauta/src/pyqt/bar/ui_bar.py`.
+Hanauta's active systray lives in the PyQt bar at `hanauta/src/pyqt/bar/hanauta-bar.py`.
 
 - It uses the StatusNotifierItem / StatusNotifierWatcher DBus model
 - It does not use Eww systray widgets
@@ -135,8 +135,8 @@ The current implementation is based on what works reliably in this environment:
 After systray code changes, restart the bar fully so tray apps can re-register cleanly:
 
 ```bash
-pkill -f 'hanauta/src/pyqt/bar/ui_bar.py|hanauta-bar'
-python hanauta/src/pyqt/bar/ui_bar.py
+pkill -f 'hanauta/src/pyqt/bar/hanauta-bar.py|hanauta-bar'
+python hanauta/src/pyqt/bar/hanauta-bar.py
 ```
 
 ## Why PyQt6 Stayed

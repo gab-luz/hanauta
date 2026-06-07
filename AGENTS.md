@@ -4,10 +4,10 @@
 
 - The active desktop UI is PyQt6, not Eww.
 - Primary UI entry points:
-  - `hanauta/src/pyqt/bar/ui_bar.py`
+  - `hanauta/src/pyqt/bar/hanauta-bar.py`
   - `hanauta/src/pyqt/notification-center/notification_center.py`
 - The active top-level shell currently uses Python source for:
-  - `hanauta/src/pyqt/bar/ui_bar.py`
+  - `hanauta/src/pyqt/bar/hanauta-bar.py`
   - `hanauta/src/pyqt/dock/dock.py`
 - Many secondary PyQt widgets/popups are still launched from Nuitka binaries under `hanauta/bin`.
 - Do not assume the active shell is fully Nuitka-compiled.
@@ -61,7 +61,7 @@
 - The media visualizer uses `cava` raw output, configured by `hanauta/src/pyqt/bar/cava_bar.conf`.
 - The current stable visualizer path is:
   - `cava` stays in ASCII raw mode in `hanauta/src/pyqt/bar/cava_bar.conf`.
-  - `ui_bar.py` reads `cava` from a dedicated `CavaWorker(QThread)`, not from `QProcess` on the GUI thread.
+  - `hanauta-bar.py` reads `cava` from a dedicated `CavaWorker(QThread)`, not from `QProcess` on the GUI thread.
   - The worker emits parsed frame parts to the bar, and the bar only updates equalizer target levels.
   - A separate Qt timer renders interpolation for the visible bar heights.
   - Each equalizer bar is paint-based and constant-size, so the bar does not churn layout geometry every frame.
@@ -81,7 +81,7 @@
 
 ## Systray Notes
 
-- The active tray implementation is the native PyQt StatusNotifier tray inside `hanauta/src/pyqt/bar/ui_bar.py`.
+- The active tray implementation is the native PyQt StatusNotifier tray inside `hanauta/src/pyqt/bar/hanauta-bar.py`.
 - The bar should use StatusNotifierItem / StatusNotifierWatcher DBus support, not Eww systray widgets and not `stalonetray`.
 - If no watcher is present on the session bus, the bar starts `hanauta/src/pyqt/bar/status_notifier_watcher.py` as the fallback watcher service.
 - Many tray apps register with a DBus object path only. The fallback watcher must normalize those registrations to `sender + path`, otherwise the bar cannot build a valid tray item interface.
@@ -121,12 +121,12 @@
 - Do not add Eww daemon startup back into `config` or `startup.sh`.
 - If bar visibility across workspaces regresses, check both:
   - i3 `for_window` rules
-  - Qt dock/sticky window setup in `ui_bar.py`
+  - Qt dock/sticky window setup in `hanauta-bar.py`
 
 ## Verification
 
 - After PyQt code changes, run:
-  - `python3 -m py_compile hanauta/src/pyqt/bar/ui_bar.py`
+  - `python3 -m py_compile hanauta/src/pyqt/bar/hanauta-bar.py`
   - `python3 -m py_compile hanauta/src/pyqt/notification-center/notification_center.py`
   - `python3 -m py_compile hanauta/src/pyqt/bar/status_notifier_watcher.py`
   - `python3 -m py_compile hanauta/src/pyqt/settings-page/settings.py`

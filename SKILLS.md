@@ -39,7 +39,7 @@
 ## Verification Routine
 
 - Always run:
-  - `python3 -m py_compile hanauta/src/pyqt/bar/ui_bar.py`
+  - `python3 -m py_compile hanauta/src/pyqt/bar/hanauta-bar.py`
   - `python3 -m py_compile hanauta/src/pyqt/notification-center/notification_center.py`
   - `python3 -m py_compile hanauta/src/pyqt/bar/status_notifier_watcher.py`
   - `python3 -m py_compile hanauta/src/pyqt/settings-page/settings.py`

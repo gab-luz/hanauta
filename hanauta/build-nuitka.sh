@@ -19,7 +19,7 @@ mkdir -p "$NUITKA_DIR"
 entries=(
   "hanauta/src/pyqt/shared/action_notification.py:hanauta-action-notification"
   "hanauta/src/pyqt/ai-popup/ai_popup.py:hanauta-ai-popup"
-  "hanauta/src/pyqt/bar/ui_bar.py:hanauta-bar"
+  "hanauta/src/pyqt/bar/hanauta-bar.py:hanauta-bar"
   "hanauta/src/pyqt/control-center/control_center.py:hanauta-control-center"
   "hanauta/src/pyqt/dock/dock.py:hanauta-dock"
   "hanauta/src/pyqt/launcher/launcher.py:hanauta-launcher"

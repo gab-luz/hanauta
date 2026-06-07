@@ -14,6 +14,7 @@ import logging
 import html
 import imaplib
 import json
+import locale as _locale
 import math
 import os
 import re
@@ -108,8 +109,8 @@ from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
 
 LOG_DIR = Path.home() / ".local" / "state" / "hanauta" / "logs"
-UI_BAR_LOG_FILE = LOG_DIR / "ui_bar.log"
-UI_BAR_FAULT_LOG_FILE = LOG_DIR / "ui_bar_fault.log"
+UI_BAR_LOG_FILE = LOG_DIR / "hanauta-bar.log"
+UI_BAR_FAULT_LOG_FILE = LOG_DIR / "hanauta-bar_fault.log"
 
 
 def _setup_bar_logging() -> None:
@@ -128,7 +129,7 @@ def _setup_bar_logging() -> None:
         file_handler = logging.FileHandler(UI_BAR_LOG_FILE, encoding="utf-8")
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
-    logging.info("ui_bar logging initialized")
+    logging.info("hanauta-bar logging initialized")
 
     try:
         fault_stream = open(UI_BAR_FAULT_LOG_FILE, "a", encoding="utf-8")
@@ -141,13 +142,13 @@ def _setup_bar_logging() -> None:
 def _install_exception_hooks() -> None:
     def _log_excepthook(exc_type, exc_value, exc_tb) -> None:
         logging.critical(
-            "unhandled exception in ui_bar:\n%s",
+            "unhandled exception in hanauta-bar:\n%s",
             "".join(traceback.format_exception(exc_type, exc_value, exc_tb)),
         )
 
     def _log_thread_excepthook(args: threading.ExceptHookArgs) -> None:
         logging.critical(
-            "unhandled thread exception in ui_bar (%s):\n%s",
+            "unhandled thread exception in hanauta-bar (%s):\n%s",
             getattr(args, "thread", None),
             "".join(
                 traceback.format_exception(
@@ -4787,13 +4788,62 @@ class CyberBar(QWidget):
         self.launcher_note.setStyleSheet(f"color: {note_color};")
         self.launcher_text.setStyleSheet(f"color: {text_color};")
 
+    @staticmethod
+    def _detect_system_locale_code() -> str:
+        try:
+            _locale.setlocale(_locale.LC_TIME, "")
+            loc = _locale.getlocale(_locale.LC_TIME)[0]
+            if loc:
+                return str(loc)
+        except Exception:
+            pass
+        for var in ("LC_ALL", "LC_TIME", "LANG"):
+            val = os.environ.get(var, "")
+            if val:
+                dot = val.find(".")
+                return val if dot < 0 else val[:dot]
+        return ""
+
+    @staticmethod
+    def _date_style_from_locale(locale_str: str) -> str:
+        loc = locale_str.lower().replace("-", "_")
+        if loc.startswith(("ja_", "zh_", "ko_", "mn_")):
+            return "iso"
+        if loc.startswith("en_us"):
+            return "us"
+        return "eu"
+
+    @staticmethod
+    def _is_24h_from_locale(locale_str: str) -> bool:
+        loc = locale_str.lower().replace("-", "_")
+        twelve_hour = ("en_us", "en_ca", "en_ph")
+        return not any(loc.startswith(t) for t in twelve_hour)
+
+    def _resolve_date_style(self) -> str:
+        locale_code = str(self.region_settings.get("locale_code", "")).strip()
+        explicit_style = str(self.region_settings.get("date_style", ""))
+        if explicit_style and explicit_style != "us":
+            return explicit_style
+        if locale_code:
+            return self._date_style_from_locale(locale_code)
+        return self._date_style_from_locale(self._detect_system_locale_code())
+
+    def _resolve_use_24h(self) -> bool:
+        locale_code = str(self.region_settings.get("locale_code", "")).strip()
+        explicit_24h = self.region_settings.get("use_24_hour")
+        if explicit_24h is True:
+            return True
+        if locale_code:
+            return self._is_24h_from_locale(locale_code)
+        return self._is_24h_from_locale(self._detect_system_locale_code())
+
     def _format_time_text(self, moment: datetime) -> str:
-        if bool(self.region_settings.get("use_24_hour", False)):
+        if self._resolve_use_24h():
             return moment.strftime("%H:%M")
         return moment.strftime("%-I:%M %p")
 
     def _format_date_text(self, moment: datetime) -> str:
-        style = str(self.region_settings.get("date_style", "us"))
+        style = self._resolve_date_style()
         if style == "iso":
             return moment.strftime("%a, %Y-%m-%d")
         if style == "eu":
@@ -7742,7 +7792,7 @@ def main() -> int:
     ap.parse_args()
     _setup_bar_logging()
     _install_exception_hooks()
-    logging.info("ui_bar main starting")
+    logging.info("hanauta-bar main starting")
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -7755,7 +7805,7 @@ def main() -> int:
 
     bar = CyberBar()
     bar.show()
-    logging.info("ui_bar shown; entering Qt event loop")
+    logging.info("hanauta-bar shown; entering Qt event loop")
     return app.exec()
 
 

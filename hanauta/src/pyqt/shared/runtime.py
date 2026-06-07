@@ -9,7 +9,7 @@ from pathlib import Path
 ENTRYPOINT_BINARIES = {
     "pyqt/app-study-studio/study_studio.py": "hanauta-study-studio",
     "pyqt/ai-popup/ai_popup.py": "hanauta-ai-popup",
-    "pyqt/bar/ui_bar.py": "hanauta-bar",
+    "pyqt/bar/hanauta-bar.py": "hanauta-bar",
     "pyqt/control-center/control_center.py": "hanauta-control-center",
     "pyqt/dock/dock.py": "hanauta-dock",
     "pyqt/email-client/email_client.py": "hanauta-email-client",
