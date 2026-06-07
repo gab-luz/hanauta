@@ -22,6 +22,8 @@ typedef struct {
     gchar *system_state_path;
     gchar *games_cache_script;
     gint64 games_cache_next_run;
+    gchar *launcher_apps_cache_script;
+    gint64 launcher_apps_cache_next_run;
     gchar *fullscreen_alert_script;
     gchar *wifi_plugin_offer_marker_path;
     gint64 disk_space_next_check;
@@ -553,6 +555,41 @@ static gboolean refresh_games_cache(void) {
     g_clear_error(&error);
 
     g_service.games_cache_next_run = now + (ok ? 20 : 60);
+    return ok;
+}
+
+static gboolean refresh_launcher_apps_cache(void) {
+    gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+    if (g_service.launcher_apps_cache_script == NULL || *g_service.launcher_apps_cache_script == '\0') {
+        return FALSE;
+    }
+    if (g_service.launcher_apps_cache_next_run > 0 && now < g_service.launcher_apps_cache_next_run) {
+        return FALSE;
+    }
+    if (!g_file_test(g_service.launcher_apps_cache_script, G_FILE_TEST_EXISTS)) {
+        g_service.launcher_apps_cache_next_run = now + 120;
+        return FALSE;
+    }
+
+    const gchar *argv[] = {"python3", g_service.launcher_apps_cache_script, NULL};
+    GSubprocessLauncher *launcher = g_subprocess_launcher_new(
+        G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE
+    );
+    g_subprocess_launcher_setenv(launcher, "HANAUTA_SERVICE_STATE_DIR", g_service.state_dir, TRUE);
+
+    GError *error = NULL;
+    GSubprocess *process = g_subprocess_launcher_spawnv(launcher, (const gchar * const *)argv, &error);
+    gboolean ok = FALSE;
+    if (process != NULL) {
+        if (g_subprocess_wait(process, NULL, &error) && g_subprocess_get_successful(process)) {
+            ok = TRUE;
+        }
+    }
+    g_clear_object(&process);
+    g_clear_object(&launcher);
+    g_clear_error(&error);
+
+    g_service.launcher_apps_cache_next_run = now + (ok ? 120 : 60);
     return ok;
 }
 
@@ -2357,11 +2394,12 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean home_assistant_ok = refresh_home_assistant();
     gboolean ntfy_ok = refresh_ntfy();
     gboolean games_ok = refresh_games_cache();
+    gboolean launcher_ok = refresh_launcher_apps_cache();
     gboolean disk_ok = refresh_disk_space();
     gboolean marketplace_ok = refresh_marketplace_git_status();
     gboolean wifi_offer_ok = maybe_offer_wifi_plugin_install();
     refresh_plugin_background_tasks();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || disk_ok || marketplace_ok || wifi_offer_ok;
+    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || home_assistant_ok || ntfy_ok || games_ok || launcher_ok || disk_ok || marketplace_ok || wifi_offer_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -2627,6 +2665,8 @@ int main(int argc, char **argv) {
     g_service.system_state_path = g_build_filename(g_service.state_dir, "system_state.json", NULL);
     g_service.games_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_recent_games.py", NULL);
     g_service.games_cache_next_run = 0;
+    g_service.launcher_apps_cache_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "service", "cache_launcher_apps.py", NULL);
+    g_service.launcher_apps_cache_next_run = 0;
     g_service.fullscreen_alert_script = g_build_filename(g_get_home_dir(), ".config", "i3", "hanauta", "src", "pyqt", "shared", "fullscreen_alert.py", NULL);
     g_service.wifi_plugin_offer_marker_path = g_build_filename(g_service.state_dir, "wifi_plugin_offer_shown.state", NULL);
     g_service.disk_space_next_check = 0;
@@ -2678,6 +2718,7 @@ int main(int argc, char **argv) {
     g_free(g_service.status_path);
     g_free(g_service.system_state_path);
     g_free(g_service.games_cache_script);
+    g_free(g_service.launcher_apps_cache_script);
     g_free(g_service.fullscreen_alert_script);
     g_free(g_service.wifi_plugin_offer_marker_path);
     g_free(g_service.ntfy_topic_key);

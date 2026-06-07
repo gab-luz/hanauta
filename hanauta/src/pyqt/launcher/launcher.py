@@ -13,11 +13,10 @@ import sys
 import logging
 import json
 import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QKeyEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -395,36 +394,6 @@ def load_cached_desktop_apps() -> list[DesktopApp]:
     return apps
 
 
-def save_cached_desktop_apps(apps: list[DesktopApp]) -> None:
-    try:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "apps": [app.to_cache_dict() for app in apps],
-        }
-        temp_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=str(STATE_DIR),
-                prefix="apps_cache-",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                handle.write(
-                    json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
-                )
-                handle.flush()
-                os.fsync(handle.fileno())
-                temp_path = Path(handle.name)
-            os.replace(str(temp_path), str(CACHE_FILE))
-        finally:
-            if temp_path is not None and temp_path.exists():
-                temp_path.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
 def launch_desktop_app(app: DesktopApp) -> bool:
     try:
         result = subprocess.Popen(
@@ -468,15 +437,6 @@ class SearchLineEdit(QLineEdit):
             event.accept()
             return
         super().keyPressEvent(event)
-
-
-class AppIndexWorker(QThread):
-    loaded = pyqtSignal(object)
-
-    def run(self) -> None:
-        apps = scan_desktop_apps()
-        save_cached_desktop_apps(apps)
-        self.loaded.emit(apps)
 
 
 class CategoryButton(QPushButton):
@@ -593,6 +553,19 @@ class AppCard(QFrame):
         self.theme = theme
         self.use_matugen = use_matugen
 
+    def update_for_app(self, app: DesktopApp) -> None:
+        self.app = app
+        self.title_label.setText(app.name)
+        self.subtitle_label.setText(app.comment or app.desktop_id)
+        icon_pixmap = resolve_app_icon_pixmap(app, 28, theme=self.theme, use_matugen=self.use_matugen)
+        if icon_pixmap is not None and not icon_pixmap.isNull():
+            self.icon_wrap.setPixmap(icon_pixmap)
+            self.icon_wrap.setText("")
+        else:
+            self.icon_wrap.setPixmap(QPixmap())
+            self.icon_wrap.setText(material_icon("apps"))
+            self.icon_wrap.setFont(QFont(self.material_font, 20))
+
     def set_selected(self, selected: bool) -> None:
         if self.use_matugen and self.theme is not None:
             if selected:
@@ -708,8 +681,6 @@ class LauncherWindow(QWidget):
         self.filtered_apps: list[DesktopApp] = []
         self.category = "all"
         self.selected_index = 0
-        self._app_index_worker: AppIndexWorker | None = None
-        self._apps_loading = True
         self._ready_to_autoclose = False
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(
@@ -724,7 +695,6 @@ class LauncherWindow(QWidget):
         self._apply_shadow()
         self._place_window()
         self._apply_filter()
-        self._start_app_index_refresh()
         QTimer.singleShot(40, self.search_input.setFocus)
         QTimer.singleShot(180, self._finish_startup_focus)
         self.theme_timer = QTimer(self)
@@ -1034,27 +1004,9 @@ class LauncherWindow(QWidget):
         self._refresh_header_icons()
         for button in self.category_buttons.values():
             button.update_theme(self.theme, self.use_matugen)
-        self._render_results()
-
-    def _start_app_index_refresh(self) -> None:
-        if self._app_index_worker is not None and self._app_index_worker.isRunning():
-            return
-        self._app_index_worker = AppIndexWorker()
-        self._app_index_worker.loaded.connect(self._apply_app_index)
-        self._app_index_worker.finished.connect(self._finish_app_index_worker)
-        self._app_index_worker.start()
-
-    def _apply_app_index(self, payload_obj: object) -> None:
-        apps = [item for item in payload_obj if isinstance(item, DesktopApp)] if isinstance(payload_obj, list) else []
-        self.apps = apps
-        self._apps_loading = False
-        self._apply_filter()
-
-    def _finish_app_index_worker(self) -> None:
-        self._app_index_worker = None
-        self._apps_loading = False
-        if not self.apps:
-            self._render_results()
+        if getattr(self, "_card_pool", None):
+            for card in self._card_pool:
+                card.update_theme(self.theme, self.use_matugen)
 
     def _set_category(self, category: str) -> None:
         self.category = category
@@ -1087,13 +1039,15 @@ class LauncherWindow(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-        if self._apps_loading and not self.apps:
-            empty = QLabel("Loading applications...")
+        if not self.apps:
+            empty = QLabel("No applications cached yet. Run once for the service to build the index.")
             empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
             empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
+            empty.setWordWrap(True)
             self.results_layout.insertWidget(0, empty)
-            self.results_count.setText("Loading app index")
-            self.footer_label.setText("Launcher cache is refreshing in the background")
+            self.results_count.setText("0 applications")
+            self.footer_label.setText("")
+            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
             return
 
         if not self.filtered_apps:
@@ -1101,29 +1055,105 @@ class LauncherWindow(QWidget):
             empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
             empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
             self.results_layout.insertWidget(0, empty)
-            if self._apps_loading:
-                self.results_count.setText("Refreshing app index...")
-                self.footer_label.setText("Results will update when the background refresh finishes")
-            else:
-                self.results_count.setText("0 applications")
-                self.footer_label.setText("Enter launches the selected app")
+            self.results_count.setText("0 applications")
+            self.footer_label.setText("Enter launches the selected app")
+            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
             return
 
-        for index, app in enumerate(self.filtered_apps):
-            card = AppCard(app, self.material_font, self.ui_font, self.theme, self.use_matugen)
-            card.set_selected(index == self.selected_index)
+        card_height = 68 + self.results_layout.spacing()
+        visible_count = max(8, self.scroll_area.viewport().height() // card_height + 2)
+        pool_size = min(len(self.filtered_apps), max(16, visible_count * 2))
+        self._card_pool = []
+        for _ in range(pool_size):
+            card = AppCard(DesktopApp("", "", "", "", set(), "", Path()), self.material_font, self.ui_font, self.theme, self.use_matugen)
             card.clicked.connect(self._launch_app)
+            card.hide()
             self.results_layout.insertWidget(self.results_layout.count() - 1, card)
+            self._card_pool.append(card)
+        self._card_pool_size = pool_size
+        self._card_start = 0
+        self._sync_visible_cards()
 
         self.results_count.setText(f"{len(self.filtered_apps)} applications")
         self.footer_label.setText("Enter launches the selected app • Up/Down changes selection")
         self._scroll_selection_into_view()
 
+        try:
+            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
+        except TypeError:
+            pass
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
+
+    def _sync_visible_cards(self) -> None:
+        total = len(self.filtered_apps)
+        if total == 0 or not getattr(self, "_card_pool", None):
+            return
+        pool = self._card_pool
+        pool_size = len(pool)
+        for i in range(pool_size):
+            app_idx = self._card_start + i
+            card = pool[i]
+            if app_idx < total:
+                app = self.filtered_apps[app_idx]
+                card.update_for_app(app)
+                card.set_selected(app_idx == self.selected_index)
+                card.setVisible(True)
+            else:
+                card.setVisible(False)
+
+    def _on_scroll(self, value: int) -> None:
+        if not getattr(self, "_card_pool", None):
+            return
+        bar = self.scroll_area.verticalScrollBar()
+        max_val = bar.maximum()
+        if max_val <= 0:
+            return
+        ratio = value / max_val
+        card_height = 68 + self.results_layout.spacing()
+        estimated_start = int((value / max(1, card_height)))
+        pool_size = getattr(self, "_card_pool_size", 0)
+        total = len(self.filtered_apps)
+        new_start = max(0, min(total - pool_size, estimated_start - pool_size // 4))
+        if new_start != getattr(self, "_card_start", -1):
+            self._card_start = new_start
+            self._sync_visible_cards()
+
+    def _scroll_selection_into_view(self) -> None:
+        if self.selected_index < 0 or not getattr(self, "_card_pool", None):
+            return
+        total = len(self.filtered_apps)
+        if total == 0:
+            return
+        pool = self._card_pool
+        pool_size = len(pool)
+        if not (self._card_start <= self.selected_index < self._card_start + pool_size):
+            self._card_start = max(0, self.selected_index - pool_size // 2)
+            self._sync_visible_cards()
+        local_idx = self.selected_index - self._card_start
+        if 0 <= local_idx < pool_size and pool[local_idx].isVisible():
+            self.scroll_area.ensureWidgetVisible(pool[local_idx], 0, 32)
+        else:
+            for i, card in enumerate(pool):
+                if card.isVisible() and self._card_start + i == self.selected_index:
+                    self.scroll_area.ensureWidgetVisible(card, 0, 32)
+                    break
+
     def _move_selection(self, delta: int) -> None:
         if not self.filtered_apps:
             return
+        old_idx = self.selected_index
         self.selected_index = (self.selected_index + delta) % len(self.filtered_apps)
-        self._render_results()
+        if not getattr(self, "_card_pool", None):
+            self._render_results()
+            return
+        pool = self._card_pool
+        pool_size = len(pool)
+        for i in range(pool_size):
+            app_idx = self._card_start + i
+            if app_idx >= len(self.filtered_apps):
+                continue
+            pool[i].set_selected(app_idx == self.selected_index)
+        self._scroll_selection_into_view()
 
     def _launch_selected(self) -> None:
         if 0 <= self.selected_index < len(self.filtered_apps):
@@ -1132,17 +1162,6 @@ class LauncherWindow(QWidget):
     def _launch_app(self, app: DesktopApp) -> None:
         if launch_desktop_app(app):
             self.close()
-
-    def _scroll_selection_into_view(self) -> None:
-        if self.selected_index < 0:
-            return
-        item = self.results_layout.itemAt(self.selected_index)
-        if item is None:
-            return
-        widget = item.widget()
-        if widget is None:
-            return
-        self.scroll_area.ensureWidgetVisible(widget, 0, 32)
 
     def focusOutEvent(self, event) -> None:  # type: ignore[override]
         super().focusOutEvent(event)
