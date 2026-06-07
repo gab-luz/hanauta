@@ -5132,55 +5132,62 @@ class SettingsWindow(QWidget):
         widgets = list(getattr(self, "_services_section_widgets", []))
         if not widgets:
             return
-        for widget in widgets:
-            layout.removeWidget(widget)
-        widgets.sort(
-            key=lambda widget: (
-                self._service_label_for_widget(
-                    widget, str(widget.property("service_key") or "")
-                ).lower(),
-                int(widget.property("service_insert_order") or 0),
-            ),
-            reverse=bool(getattr(self, "_services_sort_desc", False)),
-        )
-        widgets.sort(
-            key=lambda widget: self._service_group_for_sort(
-                str(widget.property("service_key") or ""),
-                bool(widget.property("service_is_installed")),
+        container = layout.parentWidget()
+        if container is not None:
+            container.setUpdatesEnabled(False)
+        try:
+            for widget in widgets:
+                layout.removeWidget(widget)
+            widgets.sort(
+                key=lambda widget: (
+                    self._service_label_for_widget(
+                        widget, str(widget.property("service_key") or "")
+                    ).lower(),
+                    int(widget.property("service_insert_order") or 0),
+                ),
+                reverse=bool(getattr(self, "_services_sort_desc", False)),
             )
-        )
-        loading_label = getattr(self, "_services_loading_label", None)
-        base_index = 1
-        if isinstance(loading_label, QLabel):
-            try:
-                loading_index = layout.indexOf(loading_label)
-            except RuntimeError:
-                loading_index = -1
-                self._services_loading_label = None
-            if loading_index >= 0:
-                base_index = loading_index + 1
-        visibility_mode = str(getattr(self, "_services_visibility_mode", "all"))
-        query = str(getattr(self, "_services_filter_query", "")).strip().lower()
-        visible_widgets: list[QWidget] = []
-        for widget in widgets:
-            key = str(widget.property("service_key") or "").strip()
-            label = self._service_label_for_widget(widget, key)
-            enabled = self._service_enabled_for_sort(key)
-            if visibility_mode == "hide_disabled" and not enabled:
-                widget.setVisible(False)
-                continue
-            if visibility_mode == "hide_enabled" and enabled:
-                widget.setVisible(False)
-                continue
-            haystack = f"{key} {label}".lower()
-            if query and query not in haystack:
-                widget.setVisible(False)
-                continue
-            widget.setVisible(True)
-            visible_widgets.append(widget)
-        for index, widget in enumerate(visible_widgets):
-            layout.insertWidget(base_index + index, widget)
-        self._services_section_widgets = widgets
+            widgets.sort(
+                key=lambda widget: self._service_group_for_sort(
+                    str(widget.property("service_key") or ""),
+                    bool(widget.property("service_is_installed")),
+                )
+            )
+            loading_label = getattr(self, "_services_loading_label", None)
+            base_index = 1
+            if isinstance(loading_label, QLabel):
+                try:
+                    loading_index = layout.indexOf(loading_label)
+                except RuntimeError:
+                    loading_index = -1
+                    self._services_loading_label = None
+                if loading_index >= 0:
+                    base_index = loading_index + 1
+            visibility_mode = str(getattr(self, "_services_visibility_mode", "all"))
+            query = str(getattr(self, "_services_filter_query", "")).strip().lower()
+            visible_widgets: list[QWidget] = []
+            for widget in widgets:
+                key = str(widget.property("service_key") or "").strip()
+                label = self._service_label_for_widget(widget, key)
+                enabled = self._service_enabled_for_sort(key)
+                if visibility_mode == "hide_disabled" and not enabled:
+                    widget.setVisible(False)
+                    continue
+                if visibility_mode == "hide_enabled" and enabled:
+                    widget.setVisible(False)
+                    continue
+                haystack = f"{key} {label}".lower()
+                if query and query not in haystack:
+                    widget.setVisible(False)
+                    continue
+                widget.setVisible(True)
+                visible_widgets.append(widget)
+            for index, widget in enumerate(visible_widgets):
+                layout.insertWidget(base_index + index, widget)
+            self._services_section_widgets = widgets
+        finally:
+            if container is not None:
+                container.setUpdatesEnabled(True)
 
     def _insert_service_section_widget(
         self, key: str, widget: QWidget, *, is_installed: bool
@@ -5209,7 +5216,6 @@ class SettingsWindow(QWidget):
         widget.setProperty(
             "service_label", self._service_label_for_widget(widget, str(key).strip())
         )
-        self._refresh_service_widget_order()
 
     def _wrap_service_widget_with_uninstall_action(
         self,
@@ -7175,8 +7181,8 @@ class SettingsWindow(QWidget):
             removable.deleteLater()
         if isinstance(new_widget, ExpandableServiceSection):
             self.service_sections[key] = new_widget
-            if expand_after_replace:
-                new_widget.set_expanded(True)
+            if expand_after_replace and not new_widget._expanded:
+                new_widget.toggle_expanded()
         self._insert_service_section_widget(
             key,
             new_widget,
@@ -7304,28 +7310,35 @@ class SettingsWindow(QWidget):
 
         core_queue = getattr(self, "_services_core_queue", [])
         if core_queue:
-            key, builder = core_queue.pop(0)
-            if self._installed_plugin_for_service_key(key) is not None:
-                QTimer.singleShot(0, self._build_next_services_section)
-                return
+            container = layout.parentWidget()
+            if container is not None:
+                container.setUpdatesEnabled(False)
             try:
-                widget = builder()
-            except Exception:
-                widget = None
-            if isinstance(widget, QWidget):
-                self._insert_service_section_widget(key, widget, is_installed=False)
-            self._services_sections_built = int(
-                getattr(self, "_services_sections_built", 0)
-            ) + 1
-            if str(getattr(self, "initial_service_section", "")).strip() == str(key):
-                QTimer.singleShot(
-                    0,
-                    lambda current_key=str(key): self._focus_service_section(
-                        current_key
-                    ),
-                )
-            delay_ms = 0 if self._services_sections_built <= 2 else 18
-            QTimer.singleShot(delay_ms, self._build_next_services_section)
+                while core_queue:
+                    key, builder = core_queue.pop(0)
+                    if self._installed_plugin_for_service_key(key) is not None:
+                        continue
+                    try:
+                        widget = builder()
+                    except Exception:
+                        widget = None
+                    if isinstance(widget, QWidget):
+                        self._insert_service_section_widget(key, widget, is_installed=False)
+                    self._services_sections_built = int(
+                        getattr(self, "_services_sections_built", 0)
+                    ) + 1
+                    if str(getattr(self, "initial_service_section", "")).strip() == str(key):
+                        QTimer.singleShot(
+                            0,
+                            lambda current_key=str(key): self._focus_service_section(
+                                current_key
+                            ),
+                        )
+            finally:
+                if container is not None:
+                    container.setUpdatesEnabled(True)
+            self._refresh_service_widget_order()
+            QTimer.singleShot(0, self._build_next_services_section)
             return
 
         cached_plugin_queue = getattr(self, "_services_cached_plugin_queue", [])
@@ -7409,6 +7422,7 @@ class SettingsWindow(QWidget):
 
         if not getattr(self, "_services_build_finished", False):
             self._services_build_finished = True
+            self._refresh_service_widget_order()
             if isinstance(getattr(self, "_services_loading_label", None), QLabel):
                 loading_label = self._services_loading_label
                 loading_label.setText("Services ready.")
@@ -7424,9 +7438,9 @@ class SettingsWindow(QWidget):
         section = getattr(self, "service_sections", {}).get(key)
         if section is None:
             return
-        if section.enabled_switch.isChecked():
-            section.set_expanded(True)
-            section.header_button.setFocus()
+        if not section._expanded:
+            section.toggle_expanded()
+        section.header_button.setFocus()
         self.initial_service_section = ""
 
     def _build_mail_service_section(self) -> QWidget:

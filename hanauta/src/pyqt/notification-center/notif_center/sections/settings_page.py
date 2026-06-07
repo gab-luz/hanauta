@@ -217,8 +217,6 @@ class SettingsPageMixin:
         args = ["--page", page]
         if service_section:
             args.extend(["--service-section", service_section])
-        for pattern in entry_patterns(SETTINGS_PAGE_SCRIPT):
-            terminate_background_matches(pattern)
         try:
             subprocess.Popen(
                 [python_executable(), str(SETTINGS_PAGE_SCRIPT), *args],
@@ -227,8 +225,7 @@ class SettingsPageMixin:
                 start_new_session=True,
             )
         except Exception:
-            return
-        self.hide()
+            pass
 
 
     def _set_accent(self, key: str) -> None:

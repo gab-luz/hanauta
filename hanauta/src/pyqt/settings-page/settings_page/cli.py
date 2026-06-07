@@ -129,14 +129,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     from settings_page.window import SettingsWindow
     from PyQt6.QtCore import QTimer
+    from PyQt6.QtNetwork import QLocalServer
     from PyQt6.QtWidgets import QApplication
     app = QApplication(sys.argv)
     signal.signal(signal.SIGINT, lambda signum, frame: app.quit())
     sigint_timer = QTimer()
     sigint_timer.start(200)
     sigint_timer.timeout.connect(lambda: None)
+
+    from settings_page.singleton import SERVER_NAME, InstanceServer, try_send_to_existing
+
+    QLocalServer.removeServer(SERVER_NAME)
+    if try_send_to_existing(args.page, str(args.service_section or "")):
+        return 0
+
     window = SettingsWindow(
         initial_page=args.page, initial_service_section=str(args.service_section or "")
     )
     window.show()
+
+    server = InstanceServer(window)
+    server.listen(SERVER_NAME)
+
     return app.exec()
