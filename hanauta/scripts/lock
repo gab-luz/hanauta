@@ -300,6 +300,13 @@ PY
         fi
     fi
 
+    # Default lockscreen wallpaper bundled with Hanauta.
+    candidate="${ROOT_DIR}/walls/default-lockscreen/hanauta-lockscreen-wallpaper.png"
+    if [[ -f "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
     # Last resort: known bundled wallpaper candidates.
     for candidate in \
         "$HOME/.config/i3/hanauta/walls/ryan-3.png" \
