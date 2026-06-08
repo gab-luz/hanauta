@@ -105,7 +105,7 @@ from pyqt.shared.plugin_bridge import (
     run_with_polkit,
     trigger_fullscreen_alert,
 )
-from pyqt.shared.plugin_runtime import resolve_plugin_script
+from pyqt.shared.plugin_runtime import discover_plugin_dirs, resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
 
 LOG_DIR = Path.home() / ".local" / "state" / "hanauta" / "logs"
@@ -227,11 +227,19 @@ except ImportError:
     save_rss_cache = lambda *a, **kw: None
 
 try:
+    _cap_alert_backend_candidates = [
+        plugin_dir / "cap_alerts_shared.py"
+        for plugin_dir in discover_plugin_dirs(["cap-alerts", "alerts"])
+        if (plugin_dir / "cap_alerts_shared.py").exists()
+    ]
+    if not _cap_alert_backend_candidates:
+        _cap_alert_backend_candidates = [
+            Path.home() / "dev" / "hanauta-plugin-cap-alerts" / "cap_alerts_shared.py",
+            Path("/mnt/outros/DEV/hanauta-plugin-cap-alerts") / "cap_alerts_shared.py",
+        ]
     _CAP_ALERTS_BACKEND = _load_plugin_backend(
         "hanauta_plugin_cap_alerts_backend",
-        [
-            Path.home() / "dev" / "hanauta-plugin-cap-alerts" / "cap_alerts_shared.py",
-        ],
+        _cap_alert_backend_candidates,
     )
     CapAlert = _CAP_ALERTS_BACKEND.CapAlert
     alert_accent_color = _CAP_ALERTS_BACKEND.alert_accent_color

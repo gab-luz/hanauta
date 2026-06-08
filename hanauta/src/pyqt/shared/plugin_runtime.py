@@ -11,7 +11,10 @@ from pyqt.shared.runtime import project_root
 SETTINGS_FILE = (
     Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
 )
-PLUGIN_DEV_ROOT = Path.home() / "dev"
+PLUGIN_DEV_ROOTS = (
+    Path.home() / "dev",
+    Path("/mnt/outros/DEV"),
+)
 PLUGIN_ENTRYPOINT = "hanauta_plugin.py"
 
 
@@ -62,7 +65,7 @@ def plugin_search_roots() -> list[Path]:
         [
             project_root() / "hanauta" / "plugins",
             Path.home() / ".config" / "i3" / "hanauta" / "plugins",
-            PLUGIN_DEV_ROOT,
+            *PLUGIN_DEV_ROOTS,
         ]
     )
     seen: set[str] = set()
