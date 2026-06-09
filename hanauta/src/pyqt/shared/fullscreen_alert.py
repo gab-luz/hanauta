@@ -74,8 +74,9 @@ _ENQUEUE_REMINDER, _ENSURE_DAEMON_RUNNING = _load_reminder_queue_helpers()
 MATERIAL_ICONS = {
     "alarm": "\ue855",
     "check": "\ue5ca",
-    "snooze": "\ue046",
+    "close": "\ue5cd",
     "notifications_active": "\ue7f7",
+    "snooze": "\ue046",
 }
 
 

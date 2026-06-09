@@ -1608,7 +1608,7 @@ class MarketplaceMixin:
         if allow_update:
             mode_text = (
                 "Overwrite: delete and reinstall from scratch.\n"
-                "Update: keep files and run git pull --ff-only."
+                "Update: preserve local changes, fast-forward, and reapply them if possible."
             )
         else:
             mode_text = "Overwrite: replace the existing extension with the ZIP package."
@@ -2643,5 +2643,4 @@ class MarketplaceMixin:
         ).expanduser()
         install_dir.mkdir(parents=True, exist_ok=True)
         run_bg(["xdg-open", str(install_dir)])
-
 

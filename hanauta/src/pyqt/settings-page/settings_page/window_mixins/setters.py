@@ -2547,5 +2547,3 @@ class SettersMixin:
                 if message
                 else ("ntfy test sent." if ok else "ntfy test failed.")
             )
-
-

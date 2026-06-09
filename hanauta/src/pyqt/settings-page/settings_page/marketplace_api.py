@@ -170,6 +170,59 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _git_detail(result: subprocess.CompletedProcess[str], fallback: str) -> str:
+    return (result.stderr or result.stdout or fallback).strip()
+
+
+def _git_has_local_changes(install_path: Path) -> bool:
+    status_result = _git(
+        ["status", "--porcelain=v1", "--untracked-files=all"], install_path
+    )
+    if status_result.returncode != 0:
+        detail = _git_detail(status_result, "git status failed")
+        raise RuntimeError(detail)
+    return bool((status_result.stdout or "").strip())
+
+
+def _git_stash_local_changes(install_path: Path, plugin_id: str) -> bool:
+    try:
+        dirty = _git_has_local_changes(install_path)
+    except RuntimeError as exc:
+        raise RuntimeError(f"{plugin_id}: {exc}") from exc
+    if not dirty:
+        return False
+    stash_result = _git(
+        [
+            "stash",
+            "push",
+            "--include-untracked",
+            "-m",
+            f"marketplace update for {plugin_id}",
+        ],
+        install_path,
+    )
+    if stash_result.returncode != 0:
+        detail = _git_detail(stash_result, "git stash push failed")
+        raise RuntimeError(f"{plugin_id}: {detail}")
+    return True
+
+
+def _git_restore_stash(install_path: Path, plugin_id: str) -> tuple[bool, str]:
+    apply_result = _git(["stash", "apply", "--index", "stash@{0}"], install_path)
+    if apply_result.returncode != 0:
+        detail = _git_detail(apply_result, "git stash apply failed")
+        _log(f"Could not reapply stashed changes for {plugin_id}: {detail}")
+        return False, detail
+
+    drop_result = _git(["stash", "drop", "stash@{0}"], install_path)
+    if drop_result.returncode != 0:
+        detail = _git_detail(drop_result, "git stash drop failed")
+        _log(f"Applied stashed changes for {plugin_id}, but could not drop stash: {detail}")
+        return True, detail
+
+    return True, ""
+
+
 def marketplace_api_installed_plugins(settings: Any) -> list[dict[str, Any]]:
     marketplace = _marketplace_state(settings)
     rows = marketplace.get("installed_plugins", [])
@@ -248,9 +301,19 @@ def marketplace_api_update_plugin(
     branch = str(target.get("branch", "main")).strip() or "main"
     _log(f"Updating plugin {plugin_id} in {install_path} (branch={branch})")
 
+    stashed_local_changes = False
+    try:
+        stashed_local_changes = _git_stash_local_changes(install_path, plugin_id)
+    except RuntimeError as exc:
+        detail = str(exc).strip()
+        _log(f"Update failed for {plugin_id}: {detail}")
+        return False, detail
+
     fetch_result = _git(["fetch", "origin", branch], install_path)
     if fetch_result.returncode != 0:
-        detail = (fetch_result.stderr or fetch_result.stdout or "git fetch failed").strip()
+        detail = _git_detail(fetch_result, "git fetch failed")
+        if stashed_local_changes:
+            _git_restore_stash(install_path, plugin_id)
         _log(f"Update failed for {plugin_id}: {detail}")
         return False, f"{plugin_id}: {detail}"
 
@@ -258,7 +321,9 @@ def marketplace_api_update_plugin(
         ["rev-list", "--left-right", "--count", f"HEAD...origin/{branch}"], install_path
     )
     if behind_result.returncode != 0:
-        detail = (behind_result.stderr or behind_result.stdout or "git rev-list failed").strip()
+        detail = _git_detail(behind_result, "git rev-list failed")
+        if stashed_local_changes:
+            _git_restore_stash(install_path, plugin_id)
         _log(f"Update check failed for {plugin_id}: {detail}")
         return False, f"{plugin_id}: {detail}"
 
@@ -274,21 +339,48 @@ def marketplace_api_update_plugin(
             behind = 0
 
     if behind <= 0:
+        if stashed_local_changes:
+            restored, restore_detail = _git_restore_stash(install_path, plugin_id)
+            if restored and restore_detail:
+                detail = (
+                    f"{plugin_id} is already up to date. "
+                    f"Local changes were restored, but the stash could not be dropped cleanly: {restore_detail}"
+                )
+            else:
+                detail = f"{plugin_id} is already up to date."
+        else:
+            detail = f"{plugin_id} is already up to date."
         target["updated_at_epoch"] = int(time.time())
         save_settings_state(settings)
         _log(f"{plugin_id} already up to date")
-        return True, f"{plugin_id} is already up to date."
+        return True, detail
 
     pull_result = _git(["pull", "--ff-only", "origin", branch], install_path)
     if pull_result.returncode != 0:
-        detail = (pull_result.stderr or pull_result.stdout or "git pull failed").strip()
+        detail = _git_detail(pull_result, "git pull failed")
+        if stashed_local_changes:
+            _git_restore_stash(install_path, plugin_id)
         _log(f"Update failed for {plugin_id}: {detail}")
         return False, f"{plugin_id}: {detail}"
+
+    restore_warning = ""
+    if stashed_local_changes:
+        restored, restore_detail = _git_restore_stash(install_path, plugin_id)
+        if not restored:
+            restore_warning = (
+                " Local changes were preserved in a stash because they could not be "
+                f"reapplied automatically: {restore_detail}"
+            )
+        elif restore_detail:
+            restore_warning = (
+                " Local changes were restored, but the stash could not be dropped "
+                f"cleanly: {restore_detail}"
+            )
 
     target["updated_at_epoch"] = int(time.time())
     save_settings_state(settings)
     _log(f"Updated {plugin_id}: pulled {behind} commit(s)")
-    return True, f"{plugin_id} updated ({behind} commit(s) pulled)."
+    return True, f"{plugin_id} updated ({behind} commit(s) pulled).{restore_warning}"
 
 
 def marketplace_api_update_all_plugins(

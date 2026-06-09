@@ -6023,8 +6023,8 @@ class CyberBar(QWidget):
         service = services.get("cap_alerts", {})
         if not isinstance(service, dict):
             service = {}
-        return bool(service.get("enabled", True)) and bool(
-            service.get("show_in_bar", True)
+        return bool(service.get("enabled", True)) and (
+            bool(service.get("show_in_bar", True)) or test_mode_enabled()
         )
 
     def _poll_cap_alerts(self) -> None:
