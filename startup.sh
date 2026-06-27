@@ -299,6 +299,7 @@ PY
   kill_script_if_running "$WALLPAPER_THUMBNAIL_SCRIPT"
   kill_script_if_running "$HOME_ASSISTANT_PREFETCH_SCRIPT"
   kill_script_if_running "$LOCK_OSD_DAEMON_SCRIPT"
+  pkill -f "$HOME/.config/i3/hanauta/src/service/weather_cache.py" 2>/dev/null || true
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" 2>/dev/null || true
   pkill -x volnoti 2>/dev/null || true
   if command -v volnoti >/dev/null 2>&1; then
@@ -340,6 +341,9 @@ PY
   launch_python_script "$WALLPAPER_THUMBNAIL_SCRIPT" "/tmp/hanauta-wallpaper-thumbnails.log"
   launch_python_script "$HOME_ASSISTANT_PREFETCH_SCRIPT" "/tmp/hanauta-ha-icon-prefetch.log"
   launch_python_script "$LOCK_OSD_DAEMON_SCRIPT" "/tmp/hanauta-lock-osd.log"
+  launch_python_script \
+    "$HOME/.config/i3/hanauta/src/service/weather_cache.py" \
+    "/tmp/hanauta-weather-cache.log"
   if [ -x "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" ]; then
     "$HOME/.config/i3/hanauta/bin/hanauta-wallcache" >/tmp/hanauta-wallcache.log 2>&1 &
   fi

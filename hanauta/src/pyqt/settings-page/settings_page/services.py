@@ -1,23 +1,27 @@
 import subprocess
+import sys
 from pathlib import Path
 
 from pyqt.shared.plugin_runtime import resolve_plugin_script
-
-
-ROOT = Path(__file__).resolve().parents[2].parents[1]
+from pyqt.shared.runtime import source_root
 
 
 def resolve_qcal_wrapper() -> Path | None:
+    print(f"[qcal] resolve_plugin_script looking for qcal-wrapper.py with hints ['calendar']", file=sys.stderr)
     resolved = resolve_plugin_script("qcal-wrapper.py", ["calendar"])
+    print(f"[qcal] resolve_plugin_script returned: {resolved}", file=sys.stderr)
     if resolved is not None and resolved.exists():
+        print(f"[qcal] found via plugin search: {resolved}", file=sys.stderr)
         return resolved
     fallback_candidates = (
-        ROOT / "hanauta" / "src" / "pyqt" / "widget-calendar" / "qcal-wrapper.py",
+        source_root() / "pyqt" / "widget-calendar" / "qcal-wrapper.py",
         Path.home() / "dev" / "hanauta-plugin-calendar" / "qcal-wrapper.py",
     )
     for candidate in fallback_candidates:
+        print(f"[qcal] fallback candidate: {candidate}  exists={candidate.exists()}", file=sys.stderr)
         if candidate.exists():
             return candidate
+    print(f"[qcal] qcal wrapper is missing -- no valid path found", file=sys.stderr)
     return None
 
 
@@ -26,7 +30,7 @@ def resolve_desktop_clock_widget() -> Path | None:
     if resolved is not None and resolved.exists():
         return resolved
     fallback_candidates = (
-        ROOT / "hanauta" / "src" / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py",
+        source_root() / "pyqt" / "widget-desktop-clock" / "desktop_clock_widget.py",
         Path.home() / "dev" / "hanauta-plugin-desktop-clock" / "desktop_clock_widget.py",
     )
     for candidate in fallback_candidates:

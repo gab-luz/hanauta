@@ -1747,14 +1747,17 @@ class SettersMixin:
         qcal_wrapper = resolve_qcal_wrapper()
         if qcal_wrapper is None:
             self.calendar_status.setText("qcal wrapper is missing.")
+            print("[qcal] qcal wrapper is missing -- discovery aborted", file=sys.stderr)
             return
         command = [python_executable(), str(qcal_wrapper), "discover", url, username, password]
+        print(f"[qcal] running: {' '.join(command)}", file=sys.stderr)
         result = subprocess.run(
             command,
             capture_output=True,
             text=True,
             check=False,
         )
+        print(f"[qcal] returncode={result.returncode} stdout={result.stdout[:200] if result.stdout else ''} stderr={result.stderr[:200] if result.stderr else ''}", file=sys.stderr)
         try:
             payload = json.loads(result.stdout or "{}")
         except Exception:
