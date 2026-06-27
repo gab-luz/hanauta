@@ -274,7 +274,7 @@ Options:
   --cursor-theme=NAME           Install only cursor theme by name (supported: sweet-cursors)
   --cursor-theme-system         Also install cursor theme into /usr/share/icons using sudo
   --gtk-theme=NAME              Install only GTK theme by name (supported: adw-gtk3, adw-gtk3-dark)
-  --rubik-font                  Install only bundled Rubik fonts (user + optional system-wide)
+  --rubik-font                  Install only theme fonts (Rubik + JetBrains Mono)
   --blesh                       Customize Bash prompt theme (ble.sh style) only
   --zsh                         Customize Zsh prompt theme only
   --fish                        Customize Fish prompt theme only
@@ -1002,6 +1002,89 @@ install_rubik_fonts() {
   fi
 }
 
+install_theme_fonts() {
+  local install_rubik=false
+  local install_jb=false
+
+  if ! fc-list ":lang=en" 2>/dev/null | grep -qi "rubik" 2>/dev/null; then
+    install_rubik=true
+  fi
+  if ! fc-list 2>/dev/null | grep -qi "jetbrains mono" 2>/dev/null; then
+    install_jb=true
+  fi
+
+  if [ "$install_rubik" = false ] && [ "$install_jb" = false ]; then
+    info "Theme fonts (Rubik, JetBrains Mono) already installed"
+    return 0
+  fi
+
+  if [ "$install_rubik" = true ]; then
+    install_rubik_fonts
+  fi
+
+  if [ "$install_jb" = true ]; then
+    info "JetBrains Mono not found on system; installing..."
+
+    if detect_debian_like; then
+      if apt_has_package fonts-jetbrains-mono; then
+        echo -e "${CYAN}[*]${NC} Updating package lists..."
+        sudo apt-get update -qq 2>/dev/null || true
+        install_apt_group "JetBrains Mono" fonts-jetbrains-mono
+        if fc-list 2>/dev/null | grep -qi "jetbrains mono" 2>/dev/null; then
+          success "JetBrains Mono installed via apt"
+          local jb_installed=true
+        fi
+      fi
+    elif detect_arch; then
+      if pacman_has_package ttf-jetbrains-mono; then
+        install_pacman_group "JetBrains Mono" ttf-jetbrains-mono
+        if fc-list 2>/dev/null | grep -qi "jetbrains mono" 2>/dev/null; then
+          success "JetBrains Mono installed via pacman"
+          local jb_installed=true
+        fi
+      fi
+    fi
+
+    if [ -z "${jb_installed:-}" ]; then
+      info "Downloading JetBrains Mono from GitHub..."
+      local jb_url="https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip"
+      local jb_font_dir="$HOME/.local/share/fonts/JetBrainsMono"
+      local tmp_dir=""
+      tmp_dir="$(mktemp -d)"
+
+      if need_cmd curl && curl -fsSL -o "$tmp_dir/jb.zip" "$jb_url"; then
+        if need_cmd unzip; then
+          mkdir -p "$jb_font_dir"
+          unzip -q -j "$tmp_dir/jb.zip" "fonts/ttf/*.ttf" -d "$jb_font_dir" 2>/dev/null || \
+            unzip -q -j "$tmp_dir/jb.zip" "*.ttf" -d "$jb_font_dir" 2>/dev/null || true
+          rm -rf "$tmp_dir"
+          if ls "$jb_font_dir"/*.ttf >/dev/null 2>&1; then
+            success "JetBrains Mono downloaded and installed to $jb_font_dir"
+          else
+            warn "Failed to extract JetBrains Mono TTF files"
+          fi
+        else
+          warn "unzip not available; cannot extract JetBrains Mono archive"
+        fi
+      else
+        warn "Failed to download JetBrains Mono from GitHub"
+        rm -rf "$tmp_dir"
+      fi
+      rm -rf "$tmp_dir"
+    fi
+
+    if need_cmd fc-cache; then
+      fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || fc-cache -f >/dev/null 2>&1 || true
+    fi
+  fi
+
+  if fc-list 2>/dev/null | grep -qi "jetbrains mono" 2>/dev/null; then
+    success "JetBrains Mono is available"
+  else
+    warn "JetBrains Mono could not be installed. Monospace fallback will be used."
+  fi
+}
+
 install_wireguard_systemd_support_debian() {
   install_apt_group "wireguard systemd support" wireguard-tools
 }
@@ -1655,6 +1738,7 @@ install_packages_debian() {
     copyq clipit plank ukui-window-switch
     kdeconnect qt6-tools-dev-tools     polkitd
     papirus-icon-theme
+    fonts-jetbrains-mono
   )
 
   echo -e "${CYAN}[*]${NC} Updating package lists..."
@@ -1707,6 +1791,7 @@ install_packages_arch() {
     kdeconnect qt6-tools polkit-gnome
     pacman-contrib
     papirus-icon-theme
+    ttf-jetbrains-mono
   )
 
   install_pacman_group "core desktop stack" "${core_pkgs[@]}"
@@ -3527,6 +3612,8 @@ install_hanauta_native_themes() {
     light) themes_arg="hanauta_light" ;;
   esac
 
+  install_theme_fonts
+
   local generator="$SCRIPT_DIR/hanauta/scripts/generate_hanauta_themes.py"
   if [ ! -f "$generator" ]; then
     error "Theme generator not found at $generator"
@@ -3554,9 +3641,36 @@ install_hanauta_native_themes() {
     fi
   fi
 
+  # Apply font settings to settings.ini and gsettings
+  local gtk3_conf="$HOME/.config/gtk-3.0/settings.ini"
+  local gtk4_conf="$HOME/.config/gtk-4.0/settings.ini"
+  local gtk2_conf="$HOME/.gtkrc-2.0"
+  mkdir -p "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"
+
+  for conf in "$gtk3_conf" "$gtk4_conf"; do
+    {
+      echo "[Settings]"
+      echo "gtk-font-name=Rubik 10"
+      echo "gtk-monospace-font-name=JetBrains Mono 10"
+      cat "$conf" 2>/dev/null | grep -vE '^\[|gtk-font-name|gtk-monospace-font-name|^$' || true
+    } > "${conf}.tmp" 2>/dev/null || true
+    mv "${conf}.tmp" "$conf" 2>/dev/null || true
+  done
+
+  {
+    echo 'gtk-font-name="Rubik 10"'
+    echo 'gtk-monospace-font-name="JetBrains Mono 10"'
+  } >> "$gtk2_conf" 2>/dev/null || true
+
+  if need_cmd gsettings; then
+    gsettings set org.gnome.desktop.interface font-name "Rubik 10" >/dev/null 2>&1 || true
+    gsettings set org.gnome.desktop.interface monospace-font-name "JetBrains Mono 10" >/dev/null 2>&1 || true
+  fi
+
   success "Hanauta native themes generated and installed to ~/.themes"
   info "Qt color schemes installed for qt5ct/qt6ct"
   info "Kvantum themes installed to ~/.config/Kvantum/"
+  info "Theme fonts: Rubik (UI) + JetBrains Mono (monospace)"
 }
 
 offer_custom_theme_install() {
@@ -3611,7 +3725,7 @@ print_summary() {
   echo -e "  ${GREEN}✓${NC} Dotfiles"
   echo -e "  ${GREEN}✓${NC} Config links"
   echo -e "  ${GREEN}✓${NC} Bundled binaries"
-  echo -e "  ${GREEN}✓${NC} Rubik fonts"
+  echo -e "  ${GREEN}✓${NC} Theme fonts (Rubik + JetBrains Mono)"
   echo -e "  ${GREEN}✓${NC} Sweet cursor theme"
   echo -e "  ${GREEN}✓${NC} i3-volume + volnoti"
   echo -e "  ${GREEN}✓${NC} Optional custom themes"
@@ -3626,6 +3740,7 @@ post_notes() {
   echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
   echo -e "  • Hanauta-native themes also include ${BOLD}Qt color schemes${NC} (qt5ct/qt6ct) and ${BOLD}Kvantum themes${NC}"
   echo -e "  • Icon theme is set to ${BOLD}Papirus${NC} (Material Design) — install ${BOLD}papirus-icon-theme${NC} via your package manager"
+  echo -e "  • Theme fonts: ${BOLD}Rubik${NC} (UI) + ${BOLD}JetBrains Mono${NC} (monospace) — ${BOLD}fonts-jetbrains-mono${NC} on Debian, ${BOLD}ttf-jetbrains-mono${NC} on Arch, or auto-downloaded if missing"
   echo -e "  • Cursor defaults are set to ${BOLD}${SWEET_CURSOR_THEME_NAME}${NC} (${BOLD}${SWEET_CURSOR_THEME_SIZE}${NC}) to match Caelestia"
   echo -e "  • Volume keys are wired through ${BOLD}i3-volume${NC} with ${BOLD}volnoti${NC} notifications"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
@@ -3817,7 +3932,7 @@ main() {
 
   if [ "$INSTALL_RUBIK_FONT_ONLY" = true ]; then
     print_banner
-    install_rubik_fonts
+    install_theme_fonts
     info "Done!"
     return 0
   fi
@@ -3905,7 +4020,7 @@ main() {
   link_configs
   make_exec
   install_local_binaries
-  install_rubik_fonts
+  install_theme_fonts
 
   install_rich
 
