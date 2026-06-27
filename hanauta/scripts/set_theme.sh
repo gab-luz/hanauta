@@ -59,4 +59,24 @@ write_gtk2_settings() {
 
 write_gtk2_settings
 
+# Apply Qt color scheme via qt5ct/qt6ct if available
+QT_COLORS_DIR="$HOME/.themes/$THEME/qt"
+if [ -d "$QT_COLORS_DIR" ]; then
+  # qt5ct
+  if [ -d "$HOME/.config/qt5ct/colors" ]; then
+    cp "$QT_COLORS_DIR/colors.conf" "$HOME/.config/qt5ct/colors/$THEME.conf" 2>/dev/null || true
+  fi
+  # qt6ct
+  if [ -d "$HOME/.config/qt6ct/colors" ]; then
+    cp "$QT_COLORS_DIR/colors.conf" "$HOME/.config/qt6ct/colors/$THEME.conf" 2>/dev/null || true
+  fi
+  # Kvantum
+  KVANTUM_THEME_DIR="$HOME/.themes/$THEME/Kvantum"
+  if [ -d "$KVANTUM_THEME_DIR" ]; then
+    KV_CONFIG="$HOME/.config/Kvantum/$THEME"
+    mkdir -p "$KV_CONFIG"
+    cp -a "$KVANTUM_THEME_DIR/." "$KV_CONFIG/" 2>/dev/null || true
+  fi
+fi
+
 notify-send "Theme" "Applied theme: $THEME" >/dev/null 2>&1 || true

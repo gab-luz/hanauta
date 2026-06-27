@@ -33,6 +33,9 @@ INSTALL_RUBIK_FONT_ONLY=false
 INSTALL_BLESH_ONLY=false
 INSTALL_ZSH_THEME_ONLY=false
 INSTALL_FISH_THEME_ONLY=false
+INSTALL_HANAUTA_NATIVE_ONLY=false
+HANAUTA_NATIVE_SELECTION=""
+INSTALL_HANAUTA_NATIVE_SYSTEM=false
 GTK_THEME_SELECTION=""
 ADW_GTK_REPO="lassekongo83/adw-gtk3"
 I3_VOLUME_REPO_URL="https://github.com/hastinbe/i3-volume.git"
@@ -217,6 +220,19 @@ normalize_cursor_theme_selection() {
   esac
 }
 
+normalize_hanauta_native_selection() {
+  local raw="${1:-all}"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$raw" in
+    all|dark|light)
+      printf '%s\n' "$raw"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 normalize_gtk_theme_selection() {
   local raw="${1:-}"
   raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
@@ -249,6 +265,9 @@ Options:
   --printer-plugin              Install/update only the Hanauta printer plugin from git
   --hanauta-service            Install/update Hanauta root service unit only
   --sddm                        Install and configure SilentSDDM only
+  --hanauta-native-themes       Install Hanauta-native GTK+Qt themes (Hanauta-Dark, Hanauta-Light)
+  --hanauta-native-themes=NAME  Install specific hanauta native theme(s): dark, light, all
+  --hanauta-native-system       Also install hanauta native themes into /usr/share/themes using sudo
   --custom-themes               Install all vendored custom themes (retrowave + dracula)
   --custom-themes=NAME          Install custom themes by selection: retrowave, dracula, all
   --custom-themes-system        Force custom themes installation into /usr/share/themes too
@@ -367,6 +386,22 @@ parse_args() {
         ;;
       --sddm)
         INSTALL_SDDM_ONLY=true
+        ;;
+      --hanauta-native-themes)
+        INSTALL_HANAUTA_NATIVE_ONLY=true
+        HANAUTA_NATIVE_SELECTION="all"
+        INSTALL_HANAUTA_NATIVE_SYSTEM=false
+        ;;
+      --hanauta-native-themes=*)
+        INSTALL_HANAUTA_NATIVE_ONLY=true
+        HANAUTA_NATIVE_SELECTION="${1#*=}"
+        INSTALL_HANAUTA_NATIVE_SYSTEM=false
+        ;;
+      --hanauta-native-system)
+        INSTALL_HANAUTA_NATIVE_SYSTEM=true
+        if [ "$INSTALL_HANAUTA_NATIVE_ONLY" = false ]; then
+          HANAUTA_NATIVE_SELECTION="all"
+        fi
         ;;
       --custom-themes)
         INSTALL_CUSTOM_THEMES=true
@@ -3476,6 +3511,52 @@ install_adw_gtk_theme() {
   fi
 }
 
+install_hanauta_native_themes() {
+  local selection="${HANAUTA_NATIVE_SELECTION:-all}"
+  selection="$(normalize_hanauta_native_selection "$selection")" || {
+    error "Invalid hanauta native theme selection: ${HANAUTA_NATIVE_SELECTION:-all}"
+    return 1
+  }
+
+  local themes_arg=""
+  case "$selection" in
+    all) themes_arg="hanauta_dark,hanauta_light" ;;
+    dark) themes_arg="hanauta_dark" ;;
+    light) themes_arg="hanauta_light" ;;
+  esac
+
+  local generator="$SCRIPT_DIR/hanauta/scripts/generate_hanauta_themes.py"
+  if [ ! -f "$generator" ]; then
+    error "Theme generator not found at $generator"
+    return 1
+  fi
+
+  info "Installing Hanauta native GTK + Qt themes: $themes_arg"
+  PYTHONPATH="$SCRIPT_DIR/hanauta/src/pyqt/settings-page${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 "$generator" --themes "$themes_arg" --dest "$HOME/.themes" --apply-qt
+
+  if [ "$INSTALL_HANAUTA_NATIVE_SYSTEM" = true ]; then
+    if need_cmd sudo; then
+      info "Copying hanauta native themes to /usr/share/themes with sudo..."
+      for t in hanauta_dark hanauta_light; do
+        local theme_name="Hanauta-Dark"
+        [ "$t" = "hanauta_light" ] && theme_name="Hanauta-Light"
+        if [ -d "$HOME/.themes/$theme_name" ]; then
+          sudo rm -rf "/usr/share/themes/$theme_name"
+          sudo cp -a "$HOME/.themes/$theme_name" "/usr/share/themes/"
+        fi
+      done
+      success "Hanauta native themes installed system-wide"
+    else
+      warn "sudo not found; skipping system-wide install"
+    fi
+  fi
+
+  success "Hanauta native themes generated and installed to ~/.themes"
+  info "Qt color schemes installed for qt5ct/qt6ct"
+  info "Kvantum themes installed to ~/.config/Kvantum/"
+}
+
 offer_custom_theme_install() {
   local selection="${CUSTOM_THEMES_SELECTION:-}"
   local reply=""
@@ -3532,6 +3613,7 @@ print_summary() {
   echo -e "  ${GREEN}✓${NC} Sweet cursor theme"
   echo -e "  ${GREEN}✓${NC} i3-volume + volnoti"
   echo -e "  ${GREEN}✓${NC} Optional custom themes"
+  echo -e "  ${GREEN}✓${NC} Optional hanauta-native themes (--hanauta-native-themes)"
   echo ""
 }
 
@@ -3540,6 +3622,7 @@ post_notes() {
   echo -e "${YELLOW}Important notes:${NC}"
   echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
   echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
+  echo -e "  • Hanauta-native themes also include ${BOLD}Qt color schemes${NC} (qt5ct/qt6ct) and ${BOLD}Kvantum themes${NC}"
   echo -e "  • Cursor defaults are set to ${BOLD}${SWEET_CURSOR_THEME_NAME}${NC} (${BOLD}${SWEET_CURSOR_THEME_SIZE}${NC}) to match Caelestia"
   echo -e "  • Volume keys are wired through ${BOLD}i3-volume${NC} with ${BOLD}volnoti${NC} notifications"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
@@ -3548,6 +3631,10 @@ post_notes() {
   echo -e "${CYAN}Next steps:${NC}"
   echo -e "  1. Log out and log back in, or reload i3"
   echo -e "  2. Verify ${BOLD}matugen --help${NC} and ${BOLD}hellwal --help${NC} work from your shell"
+  echo "  To generate Hanauta-native GTK+Qt themes:"
+  echo "    ./install.sh --hanauta-native-themes"
+  echo "    ./install.sh --hanauta-native-themes=light (or dark, all)"
+  echo "    ./install.sh --hanauta-native-themes --hanauta-native-system"
   echo ""
 }
 
@@ -3567,6 +3654,7 @@ main() {
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
        [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_HANAUTA_NATIVE_ONLY" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
@@ -3584,6 +3672,7 @@ main() {
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
        [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_HANAUTA_NATIVE_ONLY" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
@@ -3600,6 +3689,7 @@ main() {
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
        [ "$INSTALL_I3LOCK_COLOR_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_HANAUTA_NATIVE_ONLY" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
@@ -3617,6 +3707,7 @@ main() {
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
        [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_HANAUTA_NATIVE_ONLY" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
@@ -3650,6 +3741,7 @@ main() {
        [ "$INSTALL_VSCODIUM_ONLY" = true ] || \
        [ "$INSTALL_I3_VOLUME_ONLY" = true ] || \
        [ "$INSTALL_CUSTOM_THEMES" = true ] || \
+       [ "$INSTALL_HANAUTA_NATIVE_ONLY" = true ] || \
        [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ] || \
        [ "$INSTALL_NOTIFICATION_DAEMON_ONLY" = true ] || \
        [ "$INSTALL_QUICKSHELL_ONLY" = true ] || \
@@ -3709,6 +3801,13 @@ main() {
     }
     print_banner
     install_sweet_cursor_theme
+    info "Done!"
+    return 0
+  fi
+
+  if [ "$INSTALL_HANAUTA_NATIVE_ONLY" = true ]; then
+    print_banner
+    install_hanauta_native_themes
     info "Done!"
     return 0
   fi
