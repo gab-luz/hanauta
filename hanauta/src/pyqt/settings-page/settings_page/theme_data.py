@@ -135,6 +135,7 @@ THEME_LIBRARY = {
         "palette": HANAUTA_DARK_PALETTE,
         "fonts": HANAUTA_FONT_PROFILE,
         "gtk_theme": "Hanauta-Dark",
+        "icon_theme": "Papirus-Dark",
         "color_scheme": "prefer-dark",
     },
     "hanauta_light": {
@@ -142,6 +143,7 @@ THEME_LIBRARY = {
         "palette": HANAUTA_LIGHT_PALETTE,
         "fonts": HANAUTA_FONT_PROFILE,
         "gtk_theme": "Hanauta-Light",
+        "icon_theme": "Papirus-Light",
         "color_scheme": "prefer-light",
     },
     "retrowave": {
@@ -154,6 +156,7 @@ THEME_LIBRARY = {
             "serif_font_family": "Noto Serif",
         },
         "gtk_theme": "Retrowave",
+        "icon_theme": "Papirus-Dark",
         "color_scheme": "prefer-dark",
     },
     "dracula": {
@@ -166,6 +169,7 @@ THEME_LIBRARY = {
             "serif_font_family": "Noto Serif",
         },
         "gtk_theme": "Dracula",
+        "icon_theme": "Papirus-Dark",
         "color_scheme": "prefer-dark",
     },
     "caelestia": {
@@ -178,6 +182,7 @@ THEME_LIBRARY = {
             "serif_font_family": "Inter",
         },
         "gtk_theme": "Caelestia",
+        "icon_theme": "Papirus-Dark",
         "color_scheme": "prefer-dark",
     },
 }

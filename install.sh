@@ -1654,6 +1654,7 @@ install_packages_debian() {
   local -a optional_pkgs=(
     copyq clipit plank ukui-window-switch
     kdeconnect qt6-tools-dev-tools     polkitd
+    papirus-icon-theme
   )
 
   echo -e "${CYAN}[*]${NC} Updating package lists..."
@@ -1705,6 +1706,7 @@ install_packages_arch() {
     copyq clipit plank ukui-window-switch
     kdeconnect qt6-tools polkit-gnome
     pacman-contrib
+    papirus-icon-theme
   )
 
   install_pacman_group "core desktop stack" "${core_pkgs[@]}"
@@ -3623,6 +3625,7 @@ post_notes() {
   echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
   echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
   echo -e "  • Hanauta-native themes also include ${BOLD}Qt color schemes${NC} (qt5ct/qt6ct) and ${BOLD}Kvantum themes${NC}"
+  echo -e "  • Icon theme is set to ${BOLD}Papirus${NC} (Material Design) — install ${BOLD}papirus-icon-theme${NC} via your package manager"
   echo -e "  • Cursor defaults are set to ${BOLD}${SWEET_CURSOR_THEME_NAME}${NC} (${BOLD}${SWEET_CURSOR_THEME_SIZE}${NC}) to match Caelestia"
   echo -e "  • Volume keys are wired through ${BOLD}i3-volume${NC} with ${BOLD}volnoti${NC} notifications"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"

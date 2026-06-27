@@ -1464,7 +1464,8 @@ Sidebar=0.96
     return {"Kvantum.kvconfig": kvantum_kvconfig}
 
 
-def _write_index_theme(theme_dir: Path, display_name: str, gtk_theme: str) -> None:
+def _write_index_theme(theme_dir: Path, display_name: str, gtk_theme: str,
+                       icon_theme: str = "Papirus") -> None:
     _ensure_parent(theme_dir / "index.theme")
     (theme_dir / "index.theme").write_text(
         "\n".join(
@@ -1477,7 +1478,7 @@ def _write_index_theme(theme_dir: Path, display_name: str, gtk_theme: str) -> No
                 "",
                 "[X-GNOME-Metatheme]",
                 f"GtkTheme={gtk_theme}",
-                "IconTheme=Adwaita",
+                f"IconTheme={icon_theme}",
                 "CursorTheme=Adwaita",
                 "ButtonLayout=menu:minimize,maximize,close",
                 "",
@@ -1510,12 +1511,13 @@ def ensure_builtin_hanauta_gtk_theme(theme_key: str) -> str:
     metadata = THEME_LIBRARY[theme_key]
     theme_name = str(metadata["gtk_theme"])
     palette = dict(metadata["palette"])
+    icon_theme = str(metadata.get("icon_theme", "Papirus"))
     theme_dir = THEMES_HOME / theme_name
     for gtk_dir_name in ("gtk-3.0", "gtk-4.0"):
         gtk_dir = theme_dir / gtk_dir_name
         gtk_dir.mkdir(parents=True, exist_ok=True)
         (gtk_dir / "gtk.css").write_text(_hanauta_gtk_css(palette), encoding="utf-8")
-    _write_index_theme(theme_dir, str(metadata["label"]), theme_name)
+    _write_index_theme(theme_dir, str(metadata["label"]), theme_name, icon_theme=icon_theme)
     _write_qt_theme_files(theme_dir, palette, theme_name)
     return theme_name
 
@@ -1596,7 +1598,8 @@ def install_qt_color_scheme(theme_name: str, palette: dict[str, str]) -> None:
         (kvantum_dir / filename).write_text(content, encoding="utf-8")
 
 
-def apply_qt_theme(theme_name: str, palette: dict[str, str]) -> None:
+def apply_qt_theme(theme_name: str, palette: dict[str, str],
+                   icon_theme: str = "Papirus") -> None:
     install_qt_color_scheme(theme_name, palette)
     settings_ini = Path.home() / ".config" / "qt5ct" / "qt5ct.conf"
     if settings_ini.exists():
@@ -1610,7 +1613,7 @@ def apply_qt_theme(theme_name: str, palette: dict[str, str]) -> None:
                 Path.home() / ".config" / "qt5ct" / "colors" / f"{theme_name}.conf"
             )
             cfg["Appearance"]["color_scheme"] = theme_name
-            cfg["Appearance"]["icon_theme"] = "Adwaita"
+            cfg["Appearance"]["icon_theme"] = icon_theme
             with open(settings_ini, "w") as f:
                 cfg.write(f)
         except Exception:
@@ -1628,6 +1631,7 @@ def apply_qt_theme(theme_name: str, palette: dict[str, str]) -> None:
                 Path.home() / ".config" / "qt6ct" / "colors" / f"{theme_name}.conf"
             )
             cfg["Appearance"]["color_scheme"] = theme_name
+            cfg["Appearance"]["icon_theme"] = icon_theme
             with open(settings6_ini, "w") as f:
                 cfg.write(f)
         except Exception:
@@ -1674,8 +1678,10 @@ def sync_static_theme_from_settings(
     if apply_gtk:
         theme_name = ensure_theme_installed(theme_key)
         palette = dict(metadata["palette"])
-        apply_qt_theme(theme_name, palette)
-        apply_gtk_theme(theme_name, str(metadata.get("color_scheme", "prefer-dark")), palette=palette)
+        icon_theme = str(metadata.get("icon_theme", "Papirus"))
+        apply_qt_theme(theme_name, palette, icon_theme=icon_theme)
+        apply_gtk_theme(theme_name, str(metadata.get("color_scheme", "prefer-dark")),
+                        icon_theme=icon_theme, palette=palette)
     return theme_key
 
 

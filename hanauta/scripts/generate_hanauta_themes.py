@@ -103,7 +103,9 @@ def main() -> None:
                 _hanauta_gtk_css(palette), encoding="utf-8"
             )
 
-        _write_index_theme(theme_dir, str(metadata["label"]), theme_name)
+        icon_theme = str(metadata.get("icon_theme", "Papirus"))
+        _write_index_theme(theme_dir, str(metadata["label"]), theme_name,
+                           icon_theme=icon_theme)
 
         qt_dir = theme_dir / "qt"
         qt_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +147,9 @@ def main() -> None:
 
     if args.apply and generated:
         first_theme = generated[0][1]
-        color_scheme = THEME_LIBRARY[generated[0][0]].get("color_scheme", "prefer-dark")
+        first_key = generated[0][0]
+        color_scheme = THEME_LIBRARY[first_key].get("color_scheme", "prefer-dark")
+        icon_theme = str(THEME_LIBRARY[first_key].get("icon_theme", "Papirus"))
         print(f"Applying GTK theme: {first_theme}")
         subprocess.run(
             ["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", first_theme],
@@ -155,12 +159,17 @@ def main() -> None:
             ["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", color_scheme],
             check=False,
         )
+        subprocess.run(
+            ["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", icon_theme],
+            check=False,
+        )
 
         settings_ini = Path.home() / ".config" / "gtk-3.0" / "settings.ini"
         settings_ini.parent.mkdir(parents=True, exist_ok=True)
         with open(settings_ini, "w") as f:
             f.write("[Settings]\n")
             f.write(f"gtk-theme-name={first_theme}\n")
+            f.write(f"gtk-icon-theme-name={icon_theme}\n")
             if "dark" in color_scheme:
                 f.write("gtk-application-prefer-dark-theme=1\n")
             else:
