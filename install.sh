@@ -3651,8 +3651,7 @@ install_hanauta_native_themes() {
     {
       echo "[Settings]"
       echo "gtk-font-name=Rubik 10"
-      echo "gtk-monospace-font-name=JetBrains Mono 10"
-      cat "$conf" 2>/dev/null | grep -vE '^\[|gtk-font-name|gtk-monospace-font-name|^$' || true
+      cat "$conf" 2>/dev/null | grep -vE '^\[|gtk-font-name|^$' || true
     } > "${conf}.tmp" 2>/dev/null || true
     mv "${conf}.tmp" "$conf" 2>/dev/null || true
   done
@@ -3660,7 +3659,7 @@ install_hanauta_native_themes() {
   {
     echo 'gtk-font-name="Rubik 10"'
     echo 'gtk-monospace-font-name="JetBrains Mono 10"'
-  } >> "$gtk2_conf" 2>/dev/null || true
+  } > "$gtk2_conf" 2>/dev/null || true
 
   if need_cmd gsettings; then
     gsettings set org.gnome.desktop.interface font-name "Rubik 10" >/dev/null 2>&1 || true

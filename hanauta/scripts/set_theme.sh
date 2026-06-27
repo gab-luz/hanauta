@@ -51,7 +51,6 @@ write_gtk_settings_ini() {
     echo "gtk-theme-name=$THEME"
     echo "gtk-icon-theme-name=$ICON_THEME"
     echo "gtk-font-name=$FONT_FAMILY 10"
-    echo "gtk-monospace-font-name=$MONO_FONT_FAMILY 10"
     if [ "$COLOR_SCHEME" = "prefer-dark" ]; then
       echo "gtk-application-prefer-dark-theme=1"
     else

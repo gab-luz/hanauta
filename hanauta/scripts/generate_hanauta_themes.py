@@ -197,7 +197,6 @@ def main() -> None:
             f.write(f"gtk-theme-name={first_theme}\n")
             f.write(f"gtk-icon-theme-name={icon_theme}\n")
             f.write(f"gtk-font-name={font_family} 10\n")
-            f.write(f"gtk-monospace-font-name={mono_font_family} 10\n")
             if "dark" in color_scheme:
                 f.write("gtk-application-prefer-dark-theme=1\n")
             else:
@@ -209,7 +208,6 @@ def main() -> None:
             f.write("[Settings]\n")
             f.write(f"gtk-theme-name={first_theme}\n")
             f.write(f"gtk-font-name={font_family} 10\n")
-            f.write(f"gtk-monospace-font-name={mono_font_family} 10\n")
 
     print("Done.")
 
