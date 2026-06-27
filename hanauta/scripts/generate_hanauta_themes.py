@@ -89,6 +89,9 @@ def main() -> None:
         metadata = THEME_LIBRARY[key]
         theme_name = str(metadata["gtk_theme"])
         palette = dict(metadata["palette"])
+        fonts = metadata.get("fonts", {})
+        font_family = fonts.get("ui_font_family", "Rubik")
+        mono_font_family = fonts.get("mono_font_family", "JetBrains Mono")
         theme_dir = dest_root / theme_name
 
         print(f"Generating theme: {metadata['label']} -> {theme_dir}")
@@ -100,7 +103,10 @@ def main() -> None:
             gtk_dir = theme_dir / gtk_dir_name
             gtk_dir.mkdir(parents=True, exist_ok=True)
             (gtk_dir / "gtk.css").write_text(
-                _hanauta_gtk_css(palette), encoding="utf-8"
+                _hanauta_gtk_css(palette,
+                                font_family=font_family,
+                                mono_font_family=mono_font_family),
+                encoding="utf-8"
             )
 
         icon_theme = str(metadata.get("icon_theme", "Papirus"))
@@ -115,7 +121,9 @@ def main() -> None:
 
         kvantum_dir = theme_dir / "Kvantum"
         kvantum_dir.mkdir(parents=True, exist_ok=True)
-        kvantum_files = _hanauta_kvantum_theme(palette)
+        kvantum_files = _hanauta_kvantum_theme(palette,
+                                                font_family=font_family,
+                                                mono_font_family=mono_font_family)
         for filename, content in kvantum_files.items():
             (kvantum_dir / filename).write_text(content, encoding="utf-8")
 
@@ -142,14 +150,22 @@ def main() -> None:
 
     if args.apply_qt:
         for key, theme_name, palette in generated:
+            fonts = THEME_LIBRARY[key].get("fonts", {})
+            font_family = fonts.get("ui_font_family", "Rubik")
+            mono_font_family = fonts.get("mono_font_family", "JetBrains Mono")
             print(f"Installing Qt color scheme for: {theme_name}")
-            install_qt_color_scheme(theme_name, palette)
+            install_qt_color_scheme(theme_name, palette,
+                                    font_family=font_family,
+                                    mono_font_family=mono_font_family)
 
     if args.apply and generated:
         first_theme = generated[0][1]
         first_key = generated[0][0]
         color_scheme = THEME_LIBRARY[first_key].get("color_scheme", "prefer-dark")
         icon_theme = str(THEME_LIBRARY[first_key].get("icon_theme", "Papirus"))
+        fonts = THEME_LIBRARY[first_key].get("fonts", {})
+        font_family = fonts.get("ui_font_family", "Rubik")
+        mono_font_family = fonts.get("mono_font_family", "JetBrains Mono")
         print(f"Applying GTK theme: {first_theme}")
         subprocess.run(
             ["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", first_theme],
@@ -163,6 +179,16 @@ def main() -> None:
             ["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", icon_theme],
             check=False,
         )
+        subprocess.run(
+            ["gsettings", "set", "org.gnome.desktop.interface", "font-name",
+             f"{font_family} 10"],
+            check=False,
+        )
+        subprocess.run(
+            ["gsettings", "set", "org.gnome.desktop.interface", "monospace-font-name",
+             f"{mono_font_family} 10"],
+            check=False,
+        )
 
         settings_ini = Path.home() / ".config" / "gtk-3.0" / "settings.ini"
         settings_ini.parent.mkdir(parents=True, exist_ok=True)
@@ -170,6 +196,8 @@ def main() -> None:
             f.write("[Settings]\n")
             f.write(f"gtk-theme-name={first_theme}\n")
             f.write(f"gtk-icon-theme-name={icon_theme}\n")
+            f.write(f"gtk-font-name={font_family} 10\n")
+            f.write(f"gtk-monospace-font-name={mono_font_family} 10\n")
             if "dark" in color_scheme:
                 f.write("gtk-application-prefer-dark-theme=1\n")
             else:
@@ -180,6 +208,8 @@ def main() -> None:
         with open(settings4_ini, "w") as f:
             f.write("[Settings]\n")
             f.write(f"gtk-theme-name={first_theme}\n")
+            f.write(f"gtk-font-name={font_family} 10\n")
+            f.write(f"gtk-monospace-font-name={mono_font_family} 10\n")
 
     print("Done.")
 

@@ -5,9 +5,11 @@ set -euo pipefail
 THEME="${1:-}"
 ICON_THEME="${2:-}"
 COLOR_SCHEME="${3:-prefer-dark}"
+FONT_FAMILY="${4:-Rubik}"
+MONO_FONT_FAMILY="${5:-JetBrains Mono}"
 
 if [ -z "$THEME" ]; then
-  echo "Usage: $0 <theme-name> [icon-theme] [prefer-dark|prefer-light]"
+  echo "Usage: $0 <theme-name> [icon-theme] [prefer-dark|prefer-light] [font] [mono-font]"
   exit 1
 fi
 
@@ -37,6 +39,8 @@ if [ -d "$GTK3_PATH" ] || [ -d "$HOME/.local/share/themes/$THEME" ]; then
   gsettings set org.gnome.desktop.interface gtk-theme "$THEME" || true
   gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME" || true
   gsettings set org.gnome.desktop.interface color-scheme "$COLOR_SCHEME" || true
+  gsettings set org.gnome.desktop.interface font-name "$FONT_FAMILY 10" || true
+  gsettings set org.gnome.desktop.interface monospace-font-name "$MONO_FONT_FAMILY 10" || true
 fi
 
 write_gtk_settings_ini() {
@@ -46,6 +50,8 @@ write_gtk_settings_ini() {
     echo "[Settings]"
     echo "gtk-theme-name=$THEME"
     echo "gtk-icon-theme-name=$ICON_THEME"
+    echo "gtk-font-name=$FONT_FAMILY 10"
+    echo "gtk-monospace-font-name=$MONO_FONT_FAMILY 10"
     if [ "$COLOR_SCHEME" = "prefer-dark" ]; then
       echo "gtk-application-prefer-dark-theme=1"
     else
@@ -63,6 +69,8 @@ write_gtk2_settings() {
     if [ -n "$ICON_THEME" ]; then
       echo "gtk-icon-theme-name=\"$ICON_THEME\""
     fi
+    echo "gtk-font-name=\"$FONT_FAMILY 10\""
+    echo "gtk-monospace-font-name=\"$MONO_FONT_FAMILY 10\""
     if [ "$COLOR_SCHEME" = "prefer-dark" ]; then
       echo "gtk-application-prefer-dark-theme=1"
     else

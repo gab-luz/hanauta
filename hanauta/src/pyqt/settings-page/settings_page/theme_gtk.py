@@ -54,7 +54,9 @@ def _rgba_str(color: str, alpha: float) -> str:
     return f"rgba({r}, {g}, {b}, {alpha:.2f})"
 
 
-def _hanauta_gtk_css(palette: dict[str, str]) -> str:
+def _hanauta_gtk_css(palette: dict[str, str],
+                     font_family: str = "Rubik",
+                     mono_font_family: str = "JetBrains Mono") -> str:
     bg = palette["background"]
     fg = palette["on_background"]
     base = palette["surface_container"]
@@ -130,6 +132,7 @@ def _hanauta_gtk_css(palette: dict[str, str]) -> str:
   outline-color: alpha(currentColor, 0.15);
   outline-offset: -3px;
   outline-style: dashed;
+  font-family: "{font_family}";
 }}
 
 *:selected, *:selected:focus {{
@@ -730,6 +733,7 @@ textview text {{
   background-color: transparent;
   color: {text};
   caret-color: {selected_bg};
+  font-family: "{mono_font_family}";
 }}
 
 textview border {{
@@ -1402,7 +1406,9 @@ sidebar_selection_fg={text}
 """
 
 
-def _hanauta_kvantum_theme(palette: dict[str, str]) -> dict[str, str]:
+def _hanauta_kvantum_theme(palette: dict[str, str],
+                           font_family: str = "Rubik",
+                           mono_font_family: str = "JetBrains Mono") -> dict[str, str]:
     bg = palette["background"]
     fg = palette["on_background"]
     base = palette["surface_container"]
@@ -1427,6 +1433,10 @@ Style=Kvantum
 CustomDecorations=true
 BackgroundColor={bg}
 ForegroundColor={fg}
+
+[Fonts]
+fixed={mono_font_family},10,-1,5,400,0,0,0,0,0
+general={font_family},10,-1,5,400,0,0,0,0,0
 
 [Colors]
 Window={bg}
@@ -1488,7 +1498,9 @@ def _write_index_theme(theme_dir: Path, display_name: str, gtk_theme: str,
     )
 
 
-def _write_qt_theme_files(theme_dir: Path, palette: dict[str, str], theme_name: str) -> None:
+def _write_qt_theme_files(theme_dir: Path, palette: dict[str, str], theme_name: str,
+                          font_family: str = "Rubik",
+                          mono_font_family: str = "JetBrains Mono") -> None:
     qt_dir = theme_dir / "qt"
     qt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1498,7 +1510,8 @@ def _write_qt_theme_files(theme_dir: Path, palette: dict[str, str], theme_name: 
 
     kvantum_dir = theme_dir / "Kvantum"
     kvantum_dir.mkdir(parents=True, exist_ok=True)
-    kvantum_files = _hanauta_kvantum_theme(palette)
+    kvantum_files = _hanauta_kvantum_theme(palette, font_family=font_family,
+                                            mono_font_family=mono_font_family)
     for filename, content in kvantum_files.items():
         (kvantum_dir / filename).write_text(content, encoding="utf-8")
 
@@ -1512,13 +1525,20 @@ def ensure_builtin_hanauta_gtk_theme(theme_key: str) -> str:
     theme_name = str(metadata["gtk_theme"])
     palette = dict(metadata["palette"])
     icon_theme = str(metadata.get("icon_theme", "Papirus"))
+    fonts = metadata.get("fonts", HANAUTA_FONT_PROFILE)
+    font_family = fonts.get("ui_font_family", "Rubik")
+    mono_font_family = fonts.get("mono_font_family", "JetBrains Mono")
     theme_dir = THEMES_HOME / theme_name
     for gtk_dir_name in ("gtk-3.0", "gtk-4.0"):
         gtk_dir = theme_dir / gtk_dir_name
         gtk_dir.mkdir(parents=True, exist_ok=True)
-        (gtk_dir / "gtk.css").write_text(_hanauta_gtk_css(palette), encoding="utf-8")
+        (gtk_dir / "gtk.css").write_text(
+            _hanauta_gtk_css(palette, font_family=font_family, mono_font_family=mono_font_family),
+            encoding="utf-8"
+        )
     _write_index_theme(theme_dir, str(metadata["label"]), theme_name, icon_theme=icon_theme)
-    _write_qt_theme_files(theme_dir, palette, theme_name)
+    _write_qt_theme_files(theme_dir, palette, theme_name,
+                          font_family=font_family, mono_font_family=mono_font_family)
     return theme_name
 
 
@@ -1582,7 +1602,9 @@ def ensure_theme_installed(theme_key: str) -> str:
     return ensure_builtin_hanauta_gtk_theme(theme_key)
 
 
-def install_qt_color_scheme(theme_name: str, palette: dict[str, str]) -> None:
+def install_qt_color_scheme(theme_name: str, palette: dict[str, str],
+                            font_family: str = "Rubik",
+                            mono_font_family: str = "JetBrains Mono") -> None:
     colors_conf = _hanauta_qt5ct_colors(palette)
     for cfg_dir in [
         Path.home() / ".config" / "qt5ct" / "colors",
@@ -1593,14 +1615,18 @@ def install_qt_color_scheme(theme_name: str, palette: dict[str, str]) -> None:
 
     kvantum_dir = Path.home() / ".config" / "Kvantum" / theme_name
     kvantum_dir.mkdir(parents=True, exist_ok=True)
-    kvantum_files = _hanauta_kvantum_theme(palette)
+    kvantum_files = _hanauta_kvantum_theme(palette, font_family=font_family,
+                                            mono_font_family=mono_font_family)
     for filename, content in kvantum_files.items():
         (kvantum_dir / filename).write_text(content, encoding="utf-8")
 
 
 def apply_qt_theme(theme_name: str, palette: dict[str, str],
-                   icon_theme: str = "Papirus") -> None:
-    install_qt_color_scheme(theme_name, palette)
+                   icon_theme: str = "Papirus",
+                   font_family: str = "Rubik",
+                   mono_font_family: str = "JetBrains Mono") -> None:
+    install_qt_color_scheme(theme_name, palette, font_family=font_family,
+                            mono_font_family=mono_font_family)
     settings_ini = Path.home() / ".config" / "qt5ct" / "qt5ct.conf"
     if settings_ini.exists():
         try:
@@ -1614,6 +1640,8 @@ def apply_qt_theme(theme_name: str, palette: dict[str, str],
             )
             cfg["Appearance"]["color_scheme"] = theme_name
             cfg["Appearance"]["icon_theme"] = icon_theme
+            cfg["Appearance"]["font"] = f"{font_family},10,-1,5,50,0,0,0,0,0"
+            cfg["Appearance"]["monospace_font"] = f"{mono_font_family},10,-1,5,50,0,0,0,0,0"
             with open(settings_ini, "w") as f:
                 cfg.write(f)
         except Exception:
@@ -1632,6 +1660,8 @@ def apply_qt_theme(theme_name: str, palette: dict[str, str],
             )
             cfg["Appearance"]["color_scheme"] = theme_name
             cfg["Appearance"]["icon_theme"] = icon_theme
+            cfg["Appearance"]["font"] = f"{font_family},10,-1,5,50,0,0,0,0,0"
+            cfg["Appearance"]["monospace_font"] = f"{mono_font_family},10,-1,5,50,0,0,0,0,0"
             with open(settings6_ini, "w") as f:
                 cfg.write(f)
         except Exception:
@@ -1641,6 +1671,8 @@ def apply_qt_theme(theme_name: str, palette: dict[str, str],
 def apply_gtk_theme(
     theme_name: str, color_scheme: str = "prefer-dark", icon_theme: str = "",
     palette: dict[str, str] | None = None,
+    font_family: str = "Rubik",
+    mono_font_family: str = "JetBrains Mono",
 ) -> None:
     ROOT = Path(__file__).resolve().parents[2].parents[1]
     cmd = ["bash", str(ROOT / "hanauta" / "scripts" / "set_theme.sh"), theme_name]
@@ -1649,6 +1681,8 @@ def apply_gtk_theme(
     else:
         cmd.append("")
     cmd.append(color_scheme)
+    cmd.append(font_family)
+    cmd.append(mono_font_family)
     subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -1668,10 +1702,13 @@ def sync_static_theme_from_settings(
     from settings_page.settings_store import PYQT_THEME_FILE
     theme_key = selected_theme_key(settings_state)
     metadata = THEME_LIBRARY[theme_key]
+    fonts = dict(metadata.get("fonts", HANAUTA_FONT_PROFILE))
+    font_family = fonts.get("ui_font_family", "Rubik")
+    mono_font_family = fonts.get("mono_font_family", "JetBrains Mono")
     write_pyqt_palette(
         dict(metadata["palette"]),
         use_matugen=False,
-        fonts=dict(metadata.get("fonts", HANAUTA_FONT_PROFILE)),
+        fonts=fonts,
     )
     from settings_page.settings_store import PYQT_THEME_DIR
     PYQT_THEME_DIR.mkdir(parents=True, exist_ok=True)
@@ -1679,9 +1716,11 @@ def sync_static_theme_from_settings(
         theme_name = ensure_theme_installed(theme_key)
         palette = dict(metadata["palette"])
         icon_theme = str(metadata.get("icon_theme", "Papirus"))
-        apply_qt_theme(theme_name, palette, icon_theme=icon_theme)
+        apply_qt_theme(theme_name, palette, icon_theme=icon_theme,
+                       font_family=font_family, mono_font_family=mono_font_family)
         apply_gtk_theme(theme_name, str(metadata.get("color_scheme", "prefer-dark")),
-                        icon_theme=icon_theme, palette=palette)
+                        icon_theme=icon_theme, palette=palette,
+                        font_family=font_family, mono_font_family=mono_font_family)
     return theme_key
 
 
