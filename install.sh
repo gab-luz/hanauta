@@ -3712,6 +3712,34 @@ offer_custom_theme_install() {
   fi
 }
 
+offer_hanauta_native_theme_install() {
+  local reply=""
+  echo ""
+  echo -e "${MAGENTA}${BOLD}Hanauta Native GTK/Qt Themes${NC}"
+  echo -e "Install Hanauta's own GTK3/4 + Qt/Kvantum themes generated from"
+  echo -e "Material You / Matugen palette data. Includes ${BOLD}Rubik${NC} UI font and"
+  echo -e "${BOLD}JetBrains Mono${NC} monospace font."
+  if ! confirm_yes "Do you want to install Hanauta native themes?"; then
+    info "Skipping Hanauta native theme installation."
+    return 0
+  fi
+  echo "Choose which Hanauta native themes to install:"
+  echo "  1. Both dark and light"
+  echo "  2. Dark only"
+  echo "  3. Light only"
+  read -r -p "Selection [1-3]: " reply
+  case "${reply:-1}" in
+    1|"") HANAUTA_NATIVE_SELECTION="all" ;;
+    2) HANAUTA_NATIVE_SELECTION="dark" ;;
+    3) HANAUTA_NATIVE_SELECTION="light" ;;
+    *) warn "Unknown selection. Installing both dark and light."; HANAUTA_NATIVE_SELECTION="all" ;;
+  esac
+  if confirm_default_yes "Also install into /usr/share/themes using sudo for apps like Thunar?"; then
+    INSTALL_HANAUTA_NATIVE_SYSTEM=true
+  fi
+  install_hanauta_native_themes
+}
+
 print_summary() {
   echo ""
   echo -e "${GREEN}${BOLD}========================================${NC}"
@@ -4075,6 +4103,7 @@ main() {
     offer_mail_desktop_setup
     offer_shell_theme_customization
     offer_custom_theme_install
+    offer_hanauta_native_theme_install
     offer_silent_sddm_install
   fi
 
