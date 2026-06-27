@@ -1052,25 +1052,23 @@ install_theme_fonts() {
       local tmp_dir=""
       tmp_dir="$(mktemp -d)"
 
-      if need_cmd curl && curl -fsSL -o "$tmp_dir/jb.zip" "$jb_url"; then
+      if need_cmd curl && curl -fsSL --connect-timeout 10 --max-time 60 \
+        -o "$tmp_dir/jb.zip" "$jb_url"; then
         if need_cmd unzip; then
           mkdir -p "$jb_font_dir"
-          unzip -q -j "$tmp_dir/jb.zip" "fonts/ttf/*.ttf" -d "$jb_font_dir" 2>/dev/null || \
-            unzip -q -j "$tmp_dir/jb.zip" "*.ttf" -d "$jb_font_dir" 2>/dev/null || true
-          rm -rf "$tmp_dir"
-          if ls "$jb_font_dir"/*.ttf >/dev/null 2>&1; then
-            success "JetBrains Mono downloaded and installed to $jb_font_dir"
-          else
-            warn "Failed to extract JetBrains Mono TTF files"
-          fi
+          unzip -q -j -o "$tmp_dir/jb.zip" "fonts/ttf/*.ttf" -d "$jb_font_dir" 2>/dev/null || \
+            unzip -q -j -o "$tmp_dir/jb.zip" "*.ttf" -d "$jb_font_dir" 2>/dev/null || true
         else
           warn "unzip not available; cannot extract JetBrains Mono archive"
         fi
       else
-        warn "Failed to download JetBrains Mono from GitHub"
-        rm -rf "$tmp_dir"
+        warn "Failed to download JetBrains Mono from GitHub (check internet or use apt/pacman)"
       fi
       rm -rf "$tmp_dir"
+
+      if ls "$jb_font_dir"/*.ttf >/dev/null 2>&1; then
+        success "JetBrains Mono downloaded and installed to $jb_font_dir"
+      fi
     fi
 
     if need_cmd fc-cache; then
