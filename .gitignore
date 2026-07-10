@@ -86,6 +86,9 @@ hanauta/plugins/
 
 # Vendored repositories
 vendor/i3-volume/.git/
+# Screenshots (keep existing tracked, prevent new ones)
+assets/screenshots/
+
 # Local runtime state / machine-specific dirs
 .atl/
 .pi/
