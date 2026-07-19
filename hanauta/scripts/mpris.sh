@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Lightweight MPRIS helper for Eww (handles browsers like YouTube).
+declare -A _player_status_cache
 
 Control=""
 
@@ -44,6 +44,10 @@ pick_player() {
 
 Control="$(pick_player)"
 
+if [ -n "$Control" ]; then
+  _player_status_cache["$Control"]="$(playerctl --player="$Control" status 2>/dev/null)"
+fi
+
 default_title="Play Something"
 default_artist="Artist"
 default_album="Album"
@@ -70,25 +74,29 @@ album() {
 }
 
 status() {
-  local s
-  s="$(playerctl --player="$Control" status 2>/dev/null)"
-  [ -n "$s" ] && echo "$s" || echo "$default_status"
+  local cached="${_player_status_cache[$Control]}"
+  [ -n "$cached" ] && echo "$cached" || echo "$default_status"
 }
 
 statusicon() {
   local s icon
-  s="$(playerctl --player="$Control" status 2>/dev/null)"
-  icon=""
+  s="${_player_status_cache[$Control]}"
+  icon=""
   [ "$s" = "Playing" ] && icon="󰐊"
   [ "$s" = "Paused" ] && icon="󰏤"
   echo "$icon"
 }
 
 summary() {
-  local t a s
-  t="$(title)"
-  a="$(artist)"
+  local raw t a b s
+  raw="$(playerctl --player="$Control" metadata --format '{{title}}\x1f{{artist}}\x1f{{album}}' 2>/dev/null)"
+  t="$(printf '%s' "$raw" | cut -d $'\x1f' -f1)"
+  a="$(printf '%s' "$raw" | cut -d $'\x1f' -f2)"
+  b="$(printf '%s' "$raw" | cut -d $'\x1f' -f3)"
   s="$(status)"
+  [ -z "$t" ] && t="$default_title"
+  [ -z "$a" ] && a="$default_artist"
+  [ -z "$b" ] && b="$default_album"
   printf '%s\x1f%s\x1f%s\n' "$t" "$a" "$s"
 }
 
@@ -97,14 +105,20 @@ player() {
 }
 
 coverloc() {
-  local art
+  local art hash
   art="$(playerctl --player="$Control" metadata mpris:artUrl 2>/dev/null)"
   if [ -n "$art" ]; then
-    if printf "%s" "$art" | grep -q "^file://"; then
+    hash="$(printf '%s' "$art" | md5sum | cut -d' ' -f1)"
+    if [ -f "$cover_path" ] && [ -f "/tmp/cover_${hash}.flag" ]; then
+      echo "$cover_path"
+      return
+    fi
+    if printf '%s' "$art" | grep -q "^file://"; then
       cp "${art#file://}" "$cover_path" 2>/dev/null || cp "$bkp_cover" "$cover_path"
     else
       curl -s "$art" --output "$cover_path" || cp "$bkp_cover" "$cover_path"
     fi
+    touch "/tmp/cover_${hash}.flag"
   else
     cp "$bkp_cover" "$cover_path"
   fi
@@ -118,7 +132,7 @@ if [ -z "$Control" ]; then
     artist) echo "$default_artist" ;;
     album) echo "$default_album" ;;
     status) echo "$default_status" ;;
-    statusicon) echo "" ;;
+    statusicon) echo "" ;;
     summary) printf '%s\x1f%s\x1f%s\n' "$default_title" "$default_artist" "$default_status" ;;
     coverloc) cp "$bkp_cover" "$cover_path" 2>/dev/null; echo "$cover_path" ;;
     *) exit 0 ;;

@@ -2932,6 +2932,134 @@ class MailPollWorker(QThread):
         return None
 
 
+class AutolockWorker(QThread):
+    result_ready = pyqtSignal(object)
+    _busy = False
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+
+    def run(self) -> None:
+        if AutolockWorker._busy:
+            return
+        AutolockWorker._busy = True
+        try:
+            caffeine_on = run_script("caffeine.sh", "status") == "on"
+            idle_text = run_cmd(["xssstate", "-i"], timeout=1.0)
+            idle_ms = None
+            if idle_text:
+                try:
+                    idle_ms = max(0, int(idle_text))
+                except Exception:
+                    idle_ms = None
+            locker_running = False
+            for name in ("i3lock-color", "i3lock"):
+                result = subprocess.run(
+                    ["pgrep", "-x", name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    locker_running = True
+                    break
+            self.result_ready.emit({
+                "caffeine_on": caffeine_on,
+                "idle_ms": idle_ms,
+                "locker_running": locker_running,
+            })
+        finally:
+            AutolockWorker._busy = False
+
+
+class ObsStateWorker(QThread):
+    result_ready = pyqtSignal(object)
+    _busy = False
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+
+    def run(self) -> None:
+        if ObsStateWorker._busy:
+            return
+        ObsStateWorker._busy = True
+        try:
+            raw = run_cmd(entry_command(OBS_STATUS), timeout=4.0)
+            self.result_ready.emit(raw)
+        finally:
+            ObsStateWorker._busy = False
+
+
+class RssPollWorker(QThread):
+    result_ready = pyqtSignal(object)
+    _busy = False
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+
+    def run(self) -> None:
+        if RssPollWorker._busy:
+            return
+        RssPollWorker._busy = True
+        try:
+            settings = load_runtime_settings()
+            services = settings.get("services", {})
+            rss_settings = settings.get("rss", {})
+            if not isinstance(services, dict) or not isinstance(rss_settings, dict):
+                self.result_ready.emit({"new_items": [], "play_sound": False})
+                return
+            service = services.get("rss_widget", {})
+            if not isinstance(service, dict) or not bool(service.get("enabled", True)):
+                self.result_ready.emit({"new_items": [], "play_sound": False})
+                return
+            if not bool(rss_settings.get("notify_new_items", True)):
+                self.result_ready.emit({"new_items": [], "play_sound": False})
+                return
+            cache = load_rss_cache()
+            interval = max(5, int(rss_settings.get("check_interval_minutes", 15) or 15))
+            checked = cache.get("last_checked_at", "")
+            if checked and not crypto_should_check(str(checked), interval):
+                self.result_ready.emit({"new_items": [], "play_sound": False})
+                return
+            try:
+                _sources, entries = collect_rss_entries(settings)
+            except Exception:
+                self.result_ready.emit({"new_items": [], "play_sound": False})
+                return
+            seen = set(str(item) for item in cache.get("seen", []))
+            if not seen:
+                cache["seen"] = [rss_entry_fingerprint(item) for item in entries]
+                cache["last_checked_at"] = datetime.now().astimezone().isoformat()
+                save_rss_cache(cache)
+                self.result_ready.emit({"new_items": [], "play_sound": False})
+                return
+            new_items: list[dict[str, str]] = []
+            for item in entries:
+                fingerprint = rss_entry_fingerprint(item)
+                if fingerprint not in seen:
+                    new_items.append(item)
+                seen.add(fingerprint)
+            cache["seen"] = list(seen)
+            cache["last_checked_at"] = datetime.now().astimezone().isoformat()
+            save_rss_cache(cache)
+            play_sound = bool(new_items) and bool(rss_settings.get("play_notification_sound", False))
+            if play_sound:
+                sound_path = Path("/usr/share/sounds/freedesktop/stereo/complete.ogg")
+                if sound_path.exists() and shutil.which("paplay"):
+                    try:
+                        subprocess.Popen(
+                            ["paplay", str(sound_path)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True,
+                        )
+                    except Exception:
+                        pass
+            self.result_ready.emit({"new_items": new_items[:3], "play_sound": play_sound})
+        finally:
+            RssPollWorker._busy = False
+
+
 class CyberBar(QWidget):
     def __init__(self, ui_path: Optional[Path] = None):
         super().__init__()
@@ -3043,6 +3171,9 @@ class CyberBar(QWidget):
         self._num_lock_on: Optional[bool] = None
         self._autolock_armed = True
         self._autolock_launch_pending = False
+        self._autolock_worker: AutolockWorker | None = None
+        self._obs_state_worker: ObsStateWorker | None = None
+        self._rss_poll_worker: RssPollWorker | None = None
         self._rss_last_interval_ms = 0
         self._mail_last_sync_at: dict[int, float] = {}
         self._mail_account_summary: list[dict[str, object]] = []
@@ -5067,37 +5198,13 @@ class CyberBar(QWidget):
         self.autolock_timer.timeout.connect(self._poll_autolock)
         self.autolock_timer.start(5000)
 
-        self.ai_popup_timer = QTimer(self)
-        self.ai_popup_timer.timeout.connect(self._sync_ai_button)
-        self.ai_popup_timer.start(2000)
-
-        self.control_center_timer = QTimer(self)
-        self.control_center_timer.timeout.connect(self._sync_control_center_button)
-        self.control_center_timer.start(2000)
-
-        self.wifi_popup_timer = QTimer(self)
-        self.wifi_popup_timer.timeout.connect(self._sync_wifi_button)
-        self.wifi_popup_timer.start(2000)
-
-        self.vpn_popup_timer = QTimer(self)
-        self.vpn_popup_timer.timeout.connect(self._sync_vpn_button)
-        self.vpn_popup_timer.start(2000)
-
-        self.ntfy_popup_timer = QTimer(self)
-        self.ntfy_popup_timer.timeout.connect(self._sync_ntfy_button)
-        self.ntfy_popup_timer.start(2000)
-
-        self.game_mode_popup_timer = QTimer(self)
-        self.game_mode_popup_timer.timeout.connect(self._sync_game_mode_button)
-        self.game_mode_popup_timer.start(2000)
+        self.popup_sync_timer = QTimer(self)
+        self.popup_sync_timer.timeout.connect(self._sync_all_popup_buttons)
+        self.popup_sync_timer.start(2000)
 
         self.plugin_poll_timer = QTimer(self)
         self.plugin_poll_timer.timeout.connect(self._run_plugin_poll_hooks)
         self.plugin_poll_timer.start(2000)
-
-        self.weather_popup_timer = QTimer(self)
-        self.weather_popup_timer.timeout.connect(self._sync_weather_button)
-        self.weather_popup_timer.start(2000)
 
         self.obs_state_timer = QTimer(self)
         self.obs_state_timer.timeout.connect(self._poll_obs_state)
@@ -5135,9 +5242,7 @@ class CyberBar(QWidget):
         self.mail_timer.timeout.connect(self._poll_mail_state)
         self.mail_timer.start(30000)
 
-        self.powermenu_timer = QTimer(self)
-        self.powermenu_timer.timeout.connect(self._sync_powermenu_button)
-        self.powermenu_timer.start(2000)
+
 
         self._start_cava()
 
@@ -5370,16 +5475,17 @@ class CyberBar(QWidget):
         self._system_state_worker.finished.connect(self._finish_system_state_worker)
         self._system_state_worker.start()
         poll_health_reminders()
-        self._sync_vpn_button_visibility()
-        self._sync_christian_button_visibility()
-        self._sync_reminders_button_visibility()
-        self._sync_pomodoro_button_visibility()
-        self._sync_rss_button_visibility()
-        self._sync_obs_button_visibility()
-        self._sync_crypto_button_visibility()
-        self._sync_mail_button_visibility()
+        settings = load_service_settings()
+        self._sync_vpn_button_visibility(settings)
+        self._sync_christian_button_visibility(settings)
+        self._sync_reminders_button_visibility(settings)
+        self._sync_pomodoro_button_visibility(settings)
+        self._sync_rss_button_visibility(settings)
+        self._sync_obs_button_visibility(settings)
+        self._sync_crypto_button_visibility(settings)
+        self._sync_mail_button_visibility(settings)
         self._sync_ntfy_button_visibility()
-        self._sync_game_mode_button_visibility()
+        self._sync_game_mode_button_visibility(settings)
         self._run_bar_plugin_hooks("settings_reloaded")
         self._enforce_plugin_icon_mode()
         self._sync_health_pill_visibility()
@@ -6236,52 +6342,17 @@ class CyberBar(QWidget):
         )
 
     def _poll_rss_notifications(self) -> None:
-        settings = load_runtime_settings()
-        services = settings.get("services", {})
-        rss_settings = settings.get("rss", {})
-        if not isinstance(services, dict) or not isinstance(rss_settings, dict):
+        if self._rss_poll_worker is not None and self._rss_poll_worker.isRunning():
             return
-        service = services.get("rss_widget", {})
-        if not isinstance(service, dict) or not bool(service.get("enabled", True)):
+        self._rss_poll_worker = RssPollWorker(self)
+        self._rss_poll_worker.result_ready.connect(self._apply_rss_poll_result)
+        self._rss_poll_worker.start()
+
+    def _apply_rss_poll_result(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        new_items = payload.get("new_items", [])
+        if not isinstance(new_items, list):
             return
-        if not bool(rss_settings.get("notify_new_items", True)):
-            return
-        cache = load_rss_cache()
-        interval = max(5, int(rss_settings.get("check_interval_minutes", 15) or 15))
-        checked = cache.get("last_checked_at", "")
-        if checked and not crypto_should_check(str(checked), interval):
-            return
-        try:
-            _sources, entries = collect_rss_entries(settings)
-        except Exception:
-            return
-        seen = set(str(item) for item in cache.get("seen", []))
-        if not seen:
-            cache["seen"] = [rss_entry_fingerprint(item) for item in entries]
-            cache["last_checked_at"] = datetime.now().astimezone().isoformat()
-            save_rss_cache(cache)
-            return
-        new_items: list[dict[str, str]] = []
-        for item in entries:
-            fingerprint = rss_entry_fingerprint(item)
-            if fingerprint not in seen:
-                new_items.append(item)
-            seen.add(fingerprint)
-        cache["seen"] = list(seen)
-        cache["last_checked_at"] = datetime.now().astimezone().isoformat()
-        save_rss_cache(cache)
-        if new_items and bool(rss_settings.get("play_notification_sound", False)):
-            sound_path = Path("/usr/share/sounds/freedesktop/stereo/complete.ogg")
-            if sound_path.exists() and shutil.which("paplay"):
-                try:
-                    subprocess.Popen(
-                        ["paplay", str(sound_path)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-                except Exception:
-                    pass
         for index, item in enumerate(new_items[:3]):
             title = str(item.get("title", "New story")).strip() or "New story"
             feed_title = str(item.get("feed_title", "")).strip() or "RSS feed"
@@ -6422,8 +6493,8 @@ class CyberBar(QWidget):
     ) -> None:
         self._mail_notification_actions.pop(int(notification_id), None)
 
-    def _sync_mail_button_visibility(self) -> None:
-        service = load_service_settings().get("mail", {})
+    def _sync_mail_button_visibility(self, settings=None) -> None:
+        service = (settings or load_service_settings()).get("mail", {})
         if not isinstance(service, dict):
             service = {}
         enabled = bool(service.get("enabled", True))
@@ -6838,7 +6909,14 @@ class CyberBar(QWidget):
     def _poll_obs_state(self) -> None:
         if OBS_STATUS is None or not OBS_STATUS.exists():
             return
-        raw = run_cmd(entry_command(OBS_STATUS), timeout=4.0)
+        if self._obs_state_worker is not None and self._obs_state_worker.isRunning():
+            return
+        self._obs_state_worker = ObsStateWorker(self)
+        self._obs_state_worker.result_ready.connect(self._apply_obs_state_result)
+        self._obs_state_worker.start()
+
+    def _apply_obs_state_result(self, raw_obj: object) -> None:
+        raw = str(raw_obj) if raw_obj else ""
         if not raw:
             self._obs_streaming = False
             self._obs_recording = False
@@ -6855,8 +6933,8 @@ class CyberBar(QWidget):
             self._obs_flash_visible = True
         self._set_obs_button_icon()
 
-    def _sync_christian_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_christian_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("christian_widget", {})
         if not isinstance(service, dict):
             service = {}
@@ -6868,8 +6946,8 @@ class CyberBar(QWidget):
         )
         self.christian_button.setVisible(enabled and show_in_bar)
 
-    def _sync_reminders_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_reminders_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("reminders_widget", {})
         if not isinstance(service, dict):
             service = {}
@@ -6877,8 +6955,8 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.reminders_button.setVisible(enabled and show_in_bar)
 
-    def _sync_pomodoro_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_pomodoro_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("pomodoro_widget", {})
         if not isinstance(service, dict):
             service = {}
@@ -6886,8 +6964,8 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.pomodoro_button.setVisible(enabled and show_in_bar)
 
-    def _sync_rss_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_rss_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("rss_widget", {})
         if not isinstance(service, dict):
             service = {}
@@ -6897,8 +6975,8 @@ class CyberBar(QWidget):
         has_script = script_path is not None and script_path.exists()
         self.rss_button.setVisible(enabled and show_in_bar and has_script)
 
-    def _sync_obs_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_obs_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("obs_widget", {})
         if not isinstance(service, dict):
             service = {}
@@ -6906,8 +6984,8 @@ class CyberBar(QWidget):
         show_in_bar = bool(service.get("show_in_bar", False))
         self.obs_button.setVisible(enabled and show_in_bar)
 
-    def _sync_crypto_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_crypto_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("crypto_widget", {})
         if not isinstance(service, dict):
             service = {}
@@ -6923,8 +7001,8 @@ class CyberBar(QWidget):
         show_in_bar = bool(ntfy.get("show_in_bar", False))
         self.ntfy_button.setVisible(enabled and show_in_bar)
 
-    def _sync_game_mode_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_game_mode_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("game_mode", {})
         if not isinstance(service, dict):
             service = {}
@@ -7036,16 +7114,30 @@ class CyberBar(QWidget):
         if not bool(settings.get("enabled", True)):
             self._autolock_armed = True
             return
-        if run_script("caffeine.sh", "status") == "on":
+        if (
+            self._autolock_worker is not None
+            and self._autolock_worker.isRunning()
+        ):
+            return
+        self._autolock_worker = AutolockWorker(self)
+        self._autolock_worker.result_ready.connect(self._apply_autolock_result)
+        self._autolock_worker.start()
+
+    def _apply_autolock_result(self, payload_obj: object) -> None:
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        settings = (
+            self.autolock_settings if isinstance(self.autolock_settings, dict) else {}
+        )
+        if bool(payload.get("caffeine_on", False)):
             self._autolock_armed = True
             return
-        idle_ms = self._current_idle_milliseconds()
+        idle_ms = payload.get("idle_ms")
         if idle_ms is None:
             return
         if idle_ms < 1000:
             self._autolock_armed = True
             return
-        if self._locker_running():
+        if bool(payload.get("locker_running", False)):
             self._autolock_armed = False
             return
         threshold_ms = max(1, int(settings.get("timeout_minutes", 2))) * 60 * 1000
@@ -7574,8 +7666,8 @@ class CyberBar(QWidget):
             sync_active_property=False,
         )
 
-    def _sync_vpn_button_visibility(self) -> None:
-        services = load_service_settings()
+    def _sync_vpn_button_visibility(self, settings=None) -> None:
+        services = settings or load_service_settings()
         service = services.get("vpn_control", {})
         if not isinstance(service, dict):
             service = {}
@@ -7611,6 +7703,16 @@ class CyberBar(QWidget):
         if not active:
             self._powermenu_process = None
         self.btn_power.setChecked(active)
+
+    def _sync_all_popup_buttons(self) -> None:
+        self._sync_ai_button()
+        self._sync_control_center_button()
+        self._sync_wifi_button()
+        self._sync_vpn_button()
+        self._sync_ntfy_button()
+        self._sync_game_mode_button()
+        self._sync_weather_button()
+        self._sync_powermenu_button()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._closing = True

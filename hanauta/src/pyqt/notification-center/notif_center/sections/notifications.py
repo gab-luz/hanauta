@@ -10,6 +10,7 @@ from notif_center.game_carousel import *
 from notif_center.paths import *
 from notif_center.poller import *
 from notif_center.settings_io import *
+from notif_center.notification_icons import notification_icon_pixmap
 from notif_center.utils import *
 from notif_center.widgets import *
 from pyqt.shared.calendar_card import *
@@ -19,6 +20,8 @@ from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
 
 class NotificationsMixin:
     """Notification history and cards methods for NotificationCenter."""
+
+    _notification_icon_cache: dict[str, QPixmap] = {}
 
     def _build_notifications_card(self) -> QFrame:
         card = QFrame()
@@ -37,7 +40,7 @@ class NotificationsMixin:
             QCursor(Qt.CursorShape.PointingHandCursor)
         )
         self.clear_notifications_btn.setFont(QFont(self.material_font, 16))
-        self.clear_notifications_btn.setFixedSize(28, 28)
+        self.clear_notifications_btn.setFixedSize(26, 26)
         self.clear_notifications_btn.setToolTip(t("notif.tooltip.clear_all"))
         self.clear_notifications_btn.clicked.connect(self._clear_all_notifications)
         header.addWidget(title_label)
@@ -57,7 +60,7 @@ class NotificationsMixin:
             QCursor(Qt.CursorShape.PointingHandCursor)
         )
         self.view_all_notifications_btn.setFont(QFont(self.material_font, 16))
-        self.view_all_notifications_btn.setFixedSize(28, 28)
+        self.view_all_notifications_btn.setFixedSize(26, 26)
         self.view_all_notifications_btn.setToolTip(t("notif.tooltip.view_all"))
         self.view_all_notifications_btn.clicked.connect(self._enter_full_history_view)
         header.addWidget(self.view_all_notifications_btn)
@@ -185,7 +188,7 @@ class NotificationsMixin:
         card = QFrame()
         card.setObjectName("feedCard")
         row = QHBoxLayout(card)
-        row.setContentsMargins(12, 12, 12, 12)
+        row.setContentsMargins(10, 10, 10, 10)
         row.setSpacing(10)
 
         icon = QLabel(
@@ -225,127 +228,15 @@ class NotificationsMixin:
         summary: str = "",
         body: str = "",
     ) -> QPixmap:
-        normalized = app_name.strip().lower()
-        icon_name_normalized = icon_name.strip().lower()
-        desktop_entry_normalized = desktop_entry.strip().lower()
-        summary_normalized = summary.strip().lower()
-        body_normalized = body.strip().lower()
-        if icon_name:
-            direct_icon_path = Path(icon_name.replace("file://", "")).expanduser()
-            if direct_icon_path.exists():
-                direct = render_svg_pixmap(direct_icon_path, 18)
-                if not direct.isNull():
-                    return direct
-        is_caffeine = (
-            "caffeine" in normalized
-            or "caffeine" in summary_normalized
-            or "caffeine" in body_normalized
+        cache_key = f"{app_name}\x00{desktop_entry}\x00{icon_name}\x00{summary}\x00{body}"
+        cached = self._notification_icon_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        pixmap = notification_icon_pixmap(
+            app_name, desktop_entry, icon_name, summary, body, self.theme_palette
         )
-        if is_caffeine:
-            caffeine_path = Path(CAFFEINE_NOTIFICATION_ICON).expanduser()
-            if caffeine_path.exists():
-                return tinted_svg_pixmap(
-                    caffeine_path, QColor(self.theme_palette.primary), 18
-                )
-            fallback = render_theme_icon_pixmap(["coffee"], 18)
-            if not fallback.isNull():
-                return fallback
-        is_night_light = (
-            "night light" in normalized
-            or "nightlight" in normalized
-            or "night light" in summary_normalized
-            or "nightlight" in summary_normalized
-            or "night light" in body_normalized
-            or "nightlight" in body_normalized
-            or icon_name.strip().lower() in {"nightlight", "weather-clear-night"}
-        )
-        if is_night_light:
-            night_path = Path(NIGHT_LIGHT_NOTIFICATION_ICON).expanduser()
-            if night_path.exists():
-                return tinted_svg_pixmap(
-                    night_path, QColor(self.theme_palette.primary), 18
-                )
-            fallback = render_theme_icon_pixmap(["nightlight", "weather-clear-night"], 18)
-            if not fallback.isNull():
-                return fallback
-        is_weather = (
-            "weather" in normalized
-            or "weather" in summary_normalized
-            or "weather" in body_normalized
-            or "sunrise" in summary_normalized
-            or "sunset" in summary_normalized
-            or "sunrise" in body_normalized
-            or "sunset" in body_normalized
-        )
-        if is_weather and WEATHER_HISTORY_ICON.exists():
-            return tinted_svg_pixmap(
-                WEATHER_HISTORY_ICON, QColor(self.theme_palette.primary), 18
-            )
-        known_assets = {
-            "kde connect": KDECONNECT_ICON,
-            "kdeconnect": KDECONNECT_ICON,
-            "home assistant": HOME_ASSISTANT_ICON,
-            "steam": STEAM_ICON,
-            "lutris": LUTRIS_ICON,
-        }
-        asset = known_assets.get(normalized)
-        if asset is not None:
-            return tinted_svg_pixmap(asset, QColor(self.theme_palette.primary), 18)
-
-        theme_name_candidates = {
-            "kde connect": ["kdeconnect", "org.kde.kdeconnect", "kde-connect"],
-            "kdeconnect": ["kdeconnect", "org.kde.kdeconnect", "kde-connect"],
-            "discord": ["discord", "Discord", "com.discordapp.Discord"],
-            "spotify": ["spotify", "Spotify", "com.spotify.Client"],
-            "steam": ["steam", "Steam"],
-            "lutris": ["lutris", "Lutris", "net.lutris.Lutris"],
-            "telegram": ["telegram", "Telegram", "org.telegram.desktop"],
-            "firefox": ["firefox", "Firefox", "firefox-esr"],
-            "chromium": ["chromium", "Chromium"],
-            "google chrome": ["google-chrome", "Google-chrome", "chrome"],
-            "ferdium": ["ferdium", "Ferdium"],
-            "thunderbird": ["thunderbird", "Thunderbird", "org.mozilla.Thunderbird"],
-            "obs": ["obs", "com.obsproject.Studio"],
-            "obsidian": ["obsidian", "md.obsidian.Obsidian"],
-            "vlc": ["vlc", "VLC", "org.videolan.VLC"],
-            "rhythmbox": ["rhythmbox", "org.gnome.Rhythmbox3"],
-            "gimp": ["gimp", "GIMP", "org.gimp.GIMP"],
-            "blueman": ["blueman", "bluetooth", "preferences-system-bluetooth"],
-            "networkmanager": ["networkmanager", "nm-applet", "preferences-system-network"],
-            "pavucontrol": ["pavucontrol", "multimedia-volume-control"],
-            "copyq": ["copyq", "com.github.hluk.copyq"],
-            "kitty": ["kitty", "org.kitty.Kitty"],
-            "alacritty": ["alacritty", "Alacritty"],
-            "code": ["code", "visual-studio-code", "com.visualstudio.code"],
-            "slack": ["slack", "Slack", "com.slack.Slack"],
-            "whatsapp": ["whatsapp", "WhatsApp", "io.whatsapp.WhatsApp"],
-            "signal": ["signal", "Signal", "org.signal.Signal"],
-            "element": ["element", "Element", "im.riot.Riot"],
-            "vps care": ["dns", "cloud", "server", "network-server", "computer"],
-            "vps": ["dns", "cloud", "server", "network-server", "computer"],
-            "server": ["dns", "cloud", "server", "network-server", "computer"],
-            "alertas-vps": ["dns", "cloud", "server", "network-server", "computer"],
-            "terminal": ["terminal", "utilities-terminal", "gnome-terminal"],
-            "system": ["computer", "system", "preferences-system", "application-x-executable"],
-        }
-        candidates = []
-        if icon_name:
-            candidates.append(icon_name)
-        if desktop_entry:
-            candidates.extend(
-                [
-                    desktop_entry,
-                    desktop_entry.removesuffix(".desktop"),
-                    desktop_entry.replace(".desktop", ""),
-                ]
-            )
-        candidates.extend(theme_name_candidates.get(normalized, []))
-        if not candidates:
-            slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
-            dotted = re.sub(r"[^a-z0-9]+", ".", normalized).strip(".")
-            compact = re.sub(r"[^a-z0-9]+", "", normalized)
-            candidates = [slug, dotted, compact, app_name]
-        return render_theme_icon_pixmap(candidates, 18)
+        self._notification_icon_cache[cache_key] = pixmap
+        return pixmap
 
 
     def _enter_full_history_view(self) -> None:
@@ -378,6 +269,17 @@ class NotificationsMixin:
             ]
         else:
             self._notification_history = load_notification_history(3)
+
+        if not hasattr(self, "_notification_ids"):
+            self._notification_ids: list[str] = []
+
+        new_ids = [
+            f"{item.get('app_name', '')}\x00{item.get('summary', '')}\x00{item.get('timestamp', '')}"
+            for item in self._notification_history
+        ]
+        if new_ids == self._notification_ids:
+            return
+        self._notification_ids = new_ids
 
         self._clear_layout_widgets(self.notifications_layout)
 
@@ -452,7 +354,7 @@ class NotificationsMixin:
             dismiss_btn.setObjectName("notificationCloseButton")
             dismiss_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             dismiss_btn.setFont(QFont(self.material_font, 14))
-            dismiss_btn.setFixedSize(20, 20)
+            dismiss_btn.setFixedSize(18, 18)
             dismiss_btn.setToolTip(t("notif.tooltip.dismiss"))
             dismiss_btn.clicked.connect(
                 lambda checked=False, current=dict(item): self._dismiss_notification(

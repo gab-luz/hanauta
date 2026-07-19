@@ -16,6 +16,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+_icon_cache: dict[str, QPixmap] = {}
+
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QKeyEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
@@ -239,17 +241,25 @@ def _svg_fallback_pixmap(app: DesktopApp, size: int, theme=None, use_matugen: bo
 
 
 def resolve_app_icon_pixmap(app: DesktopApp, size: int, theme=None, use_matugen: bool = False) -> QPixmap | None:
+    cache_key = f"{app.desktop_id}:{size}:{use_matugen}"
+    cached = _icon_cache.get(cache_key)
+    if cached is not None:
+        return cached
     icon_name = str(app.icon_name or "").strip()
+    result = None
     if icon_name:
         icon = QIcon.fromTheme(icon_name)
         if not icon.isNull():
             pix = icon.pixmap(size, size)
             if not pix.isNull():
-                return pix
-        path_pix = _load_icon_from_path(icon_name, size)
-        if path_pix is not None:
-            return path_pix
-    return _svg_fallback_pixmap(app, size, theme=theme, use_matugen=use_matugen)
+                result = pix
+        if result is None:
+            result = _load_icon_from_path(icon_name, size)
+    if result is None:
+        result = _svg_fallback_pixmap(app, size, theme=theme, use_matugen=use_matugen)
+    if result is not None:
+        _icon_cache[cache_key] = result
+    return result
 
 
 def launcher_theme_enabled() -> bool:
@@ -682,6 +692,11 @@ class LauncherWindow(QWidget):
         self.category = "all"
         self.selected_index = 0
         self._ready_to_autoclose = False
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(150)
+        self._filter_timer.timeout.connect(self._apply_filter)
+        self._last_filter_ids: list[str] = []
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(
             Qt.WindowType.Tool
@@ -775,7 +790,7 @@ class LauncherWindow(QWidget):
         self.search_input = SearchLineEdit()
         self.search_input.setPlaceholderText("Type to search applications…")
         self.search_input.setFont(QFont(self.ui_font, 12))
-        self.search_input.textChanged.connect(self._apply_filter)
+        self.search_input.textChanged.connect(self._filter_timer.start)
         self.search_input.move_selection.connect(self._move_selection)
         self.search_input.launch_selected.connect(self._launch_selected)
         self.search_input.close_requested.connect(self.close)
@@ -1000,6 +1015,7 @@ class LauncherWindow(QWidget):
         self.use_matugen = current_use_matugen
         self._theme_mtime = current_mtime
         self.theme = load_theme_palette()
+        _icon_cache.clear()
         self._apply_styles()
         self._refresh_header_icons()
         for button in self.category_buttons.values():
@@ -1033,13 +1049,15 @@ class LauncherWindow(QWidget):
             button.apply_state(key == self.category)
 
     def _render_results(self) -> None:
-        while self.results_layout.count() > 1:
-            item = self.results_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        new_ids = [a.desktop_id for a in self.filtered_apps]
 
         if not self.apps:
+            while self.results_layout.count() > 1:
+                item = self.results_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+            self._card_pool = []
             empty = QLabel("No applications cached yet. Run once for the service to build the index.")
             empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
             empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
@@ -1048,9 +1066,16 @@ class LauncherWindow(QWidget):
             self.results_count.setText("0 applications")
             self.footer_label.setText("")
             self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
+            self._last_filter_ids = []
             return
 
         if not self.filtered_apps:
+            while self.results_layout.count() > 1:
+                item = self.results_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+            self._card_pool = []
             empty = QLabel("No applications match this search.")
             empty_color = self.theme.text_muted if self.use_matugen else "rgba(255,255,255,0.56)"
             empty.setStyleSheet(f"color: {empty_color}; padding: 10px 2px;")
@@ -1058,7 +1083,24 @@ class LauncherWindow(QWidget):
             self.results_count.setText("0 applications")
             self.footer_label.setText("Enter launches the selected app")
             self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
+            self._last_filter_ids = []
             return
+
+        same_ids = new_ids == self._last_filter_ids
+        self._last_filter_ids = new_ids
+
+        if same_ids and getattr(self, "_card_pool", None):
+            self._sync_visible_cards()
+            self.results_count.setText(f"{len(self.filtered_apps)} applications")
+            self.footer_label.setText("Enter launches the selected app • Up/Down changes selection")
+            self._scroll_selection_into_view()
+            return
+
+        while self.results_layout.count() > 1:
+            item = self.results_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
         card_height = 68 + self.results_layout.spacing()
         visible_count = max(8, self.scroll_area.viewport().height() // card_height + 2)

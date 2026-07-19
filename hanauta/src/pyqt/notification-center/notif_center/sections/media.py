@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, QSize, pyqtSignal
+from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTextCharFormat, QPalette
 from PyQt6.QtWidgets import QApplication, QButtonGroup, QDialog, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget
 
@@ -10,11 +10,84 @@ from notif_center.game_carousel import *
 from notif_center.paths import *
 from notif_center.poller import *
 from notif_center.settings_io import *
+from notif_center.color_utils import darken_hex, extract_cover_palette, hex_to_rgba
 from notif_center.utils import *
 from notif_center.widgets import *
 from pyqt.shared.calendar_card import *
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+
+
+class MediaMetadataWorker(QThread):
+    metadata_ready = pyqtSignal(object)
+    _busy = False
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def start_fetch(self):
+        if MediaMetadataWorker._busy:
+            return
+        MediaMetadataWorker._busy = True
+        self.start()
+
+    def run(self):
+        try:
+            title = run_script("mpris.sh", "title") or t("media.no_music")
+            artist = run_script("mpris.sh", "artist") or t("media.no_artist")
+            status = run_script("mpris.sh", "status") or "Stopped"
+            player = run_script("mpris.sh", "player")
+            art = run_script("mpris.sh", "coverloc")
+            media_url = ""
+            if player:
+                media_url = run_cmd([
+                    "playerctl", f"--player={player}", "metadata",
+                    "--format", "{{xesam:url}}",
+                ])
+            result = {
+                "title": title,
+                "artist": artist,
+                "status": status,
+                "player": player,
+                "art": art,
+                "media_url": media_url,
+            }
+        except Exception:
+            result = {
+                "title": t("media.no_music"),
+                "artist": t("media.no_artist"),
+                "status": "Stopped",
+                "player": "",
+                "art": "",
+                "media_url": "",
+            }
+        finally:
+            MediaMetadataWorker._busy = False
+        self.metadata_ready.emit(result)
+
+
+class CoverPaletteWorker(QThread):
+    palette_ready = pyqtSignal(object)
+    _busy = False
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def start_extract(self, cover_path):
+        if CoverPaletteWorker._busy:
+            return
+        CoverPaletteWorker._busy = True
+        self._cover_path = cover_path
+        self.start()
+
+    def run(self):
+        try:
+            palette = extract_cover_palette(self._cover_path)
+        except Exception:
+            palette = None
+        finally:
+            CoverPaletteWorker._busy = False
+        self.palette_ready.emit(palette)
 
 
 class MediaMixin:
@@ -23,7 +96,7 @@ class MediaMixin:
     def _build_media_card(self) -> QFrame:
         self.media_card = QFrame()
         self.media_card.setObjectName("mediaCard")
-        self.media_card.setMinimumHeight(132)
+        self.media_card.setMinimumHeight(120)
         self.media_base = QFrame(self.media_card)
         self.media_base.setObjectName("mediaBase")
         self.media_scrim = QFrame(self.media_card)
@@ -44,7 +117,7 @@ class MediaMixin:
 
         self.cover = QLabel()
         self.cover.setObjectName("cover")
-        self.cover.setFixedSize(54, 54)
+        self.cover.setFixedSize(48, 48)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         text_wrap = QWidget()
@@ -119,38 +192,48 @@ class MediaMixin:
         return self.media_card
 
 
+    def _init_media_workers(self):
+        self._media_metadata_worker = MediaMetadataWorker(self)
+        self._media_metadata_worker.metadata_ready.connect(self._on_media_metadata_done)
+        self._cover_palette_worker = CoverPaletteWorker(self)
+        self._cover_palette_worker.palette_ready.connect(self._on_cover_palette_done)
+
     def _poll_media_metadata(self, force_refresh: bool = False) -> None:
         if not hasattr(self, "media_title"):
             return
         if force_refresh:
-            title = run_script("mpris.sh", "title") or t("media.no_music")
-            artist = run_script("mpris.sh", "artist") or t("media.no_artist")
-            status = run_script("mpris.sh", "status") or "Stopped"
-            player = run_script("mpris.sh", "player")
-            art = run_script("mpris.sh", "coverloc")
-            media_url = ""
-            if player:
-                media_url = run_cmd([
-                    "playerctl", f"--player={player}", "metadata",
-                    "--format", "{{xesam:url}}",
-                ])
-            self._media_player = player
-            self._media_status = status
-            self._media_last_sync = monotonic()
-            self._media_url = media_url
-        else:
-            r = self._poll_result
-            if r is None:
-                return
-            title = r.media_title or t("media.no_music")
-            artist = r.media_artist or t("media.no_artist")
-            status = r.media_status or "Stopped"
-            player = r.media_player
-            art = r.media_art
-            media_url = r.media_url
-            self._media_player = player
-            self._media_status = status
-            self._media_url = media_url
+            if not hasattr(self, "_media_metadata_worker"):
+                self._init_media_workers()
+            self._media_metadata_worker.start_fetch()
+            return
+        r = self._poll_result
+        if r is None:
+            return
+        title = r.media_title or t("media.no_music")
+        artist = r.media_artist or t("media.no_artist")
+        status = r.media_status or "Stopped"
+        player = r.media_player
+        art = r.media_art
+        media_url = r.media_url
+        self._media_player = player
+        self._media_status = status
+        self._media_url = media_url
+        self._apply_media_meta(title, artist, status, player, art, media_url)
+
+    def _on_media_metadata_done(self, result):
+        title = result["title"]
+        artist = result["artist"]
+        status = result["status"]
+        player = result["player"]
+        art = result["art"]
+        media_url = result["media_url"]
+        self._media_player = player
+        self._media_status = status
+        self._media_last_sync = monotonic()
+        self._media_url = media_url
+        self._apply_media_meta(title, artist, status, player, art, media_url)
+
+    def _apply_media_meta(self, title, artist, status, player, art, media_url):
         self.media_title.setText(title)
         self.media_artist.setText(artist)
         self.media_title.setVisible(True)
@@ -391,44 +474,25 @@ class MediaMixin:
     def _update_media_palette_from_cover(self, cover_path: Path) -> None:
         if not hasattr(self, "media_base"):
             return
-        palette = self._extract_cover_palette(cover_path)
+        if not hasattr(self, "_cover_palette_worker"):
+            self._init_media_workers()
+        self._cover_palette_worker.start_extract(cover_path)
+
+    def _on_cover_palette_done(self, palette):
         if palette is None:
             self._apply_media_palette()
             return
         self._apply_media_palette(*palette)
 
-
     def _extract_cover_palette(
         self, cover_path: Path
     ) -> tuple[str, str, str, str] | None:
-        colors_raw = run_script("cover_colors.sh", "colors")
-        colors = [color for color in colors_raw.split() if color.startswith("#")][:6]
-        if len(colors) < 3:
-            return None
-        center = self._hex_to_rgba(colors[0], 0.26)
-        mid = self._hex_to_rgba(colors[min(2, len(colors) - 1)], 0.58)
-        border = self._darken_hex(colors[1], 0.12)
-        accent = colors[min(4, len(colors) - 1)]
-        return center, mid, border, accent
-
+        return extract_cover_palette(cover_path)
 
     def _hex_to_rgba(self, color: str, alpha: float) -> str:
-        color = color.lstrip("#")
-        if len(color) != 6:
-            return f"rgba(208, 188, 255, {alpha:.2f})"
-        red = int(color[0:2], 16)
-        green = int(color[2:4], 16)
-        blue = int(color[4:6], 16)
-        return f"rgba({red}, {green}, {blue}, {alpha:.2f})"
-
+        return hex_to_rgba(color, alpha)
 
     def _darken_hex(self, color: str, amount: float) -> str:
-        color = color.lstrip("#")
-        if len(color) != 6:
-            return "#4d4458"
-        red = max(0, min(255, int(int(color[0:2], 16) * (1.0 - amount))))
-        green = max(0, min(255, int(int(color[2:4], 16) * (1.0 - amount))))
-        blue = max(0, min(255, int(int(color[4:6], 16) * (1.0 - amount))))
-        return f"#{red:02X}{green:02X}{blue:02X}"
+        return darken_hex(color, amount)
 
 

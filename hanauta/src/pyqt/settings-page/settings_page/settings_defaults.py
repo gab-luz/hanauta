@@ -75,6 +75,10 @@ def load_settings_state() -> dict:
             "use_matugen_palette": False,
             "matugen_notifications_enabled": False,
         },
+        "notification_center": {
+            "width": 800,
+            "height": 740,
+        },
         "home_assistant": {
             "url": "",
             "token": "",
@@ -377,6 +381,16 @@ def load_settings_state() -> dict:
     appearance.setdefault("wallpaper_change_notifications_enabled", False)
     appearance.setdefault("use_matugen_palette", False)
     appearance.setdefault("matugen_notifications_enabled", False)
+    nc = dict(payload.get("notification_center", {}))
+    try:
+        nc["width"] = max(400, min(2400, int(nc.get("width", 800))))
+    except Exception:
+        nc["width"] = 800
+    try:
+        nc["height"] = max(300, min(1600, int(nc.get("height", 740))))
+    except Exception:
+        nc["height"] = 740
+    payload["notification_center"] = nc
     theme_choice = str(appearance.get("theme_choice", "")).strip().lower()
     if theme_choice not in THEME_CHOICES:
         theme_choice = (
@@ -1122,6 +1136,7 @@ def load_settings_state() -> dict:
     result = {
         "profile": profile,
         "appearance": appearance,
+        "notification_center": nc,
         "home_assistant": home_assistant,
         "ntfy": ntfy,
         "weather": weather,

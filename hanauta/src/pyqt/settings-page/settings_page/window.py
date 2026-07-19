@@ -652,6 +652,8 @@ class SettingsWindow(
         "card opacity": ("appearance", "Card Opacity"),
         "toast max width": ("appearance", "Toast Max Width"),
         "toast max height": ("appearance", "Toast Max Height"),
+        "notification center width": ("notification_center", "Width"),
+        "notification center height": ("notification_center", "Height"),
         "matugen": ("appearance", "Matugen Palette"),
         "display": ("display", "Display"),
         "monitor": ("display", "Monitor"),
@@ -936,14 +938,15 @@ class SettingsWindow(
             "energy": 4,
             "audio": 5,
             "notifications": 6,
-            "input": 7,
-            "startup": 8,
-            "privacy": 9,
-            "networking": 10,
-            "storage": 11,
-            "region": 12,
-            "bar": 13,
-            "services": 14,
+            "notification_center": 7,
+            "input": 8,
+            "startup": 9,
+            "privacy": 10,
+            "networking": 11,
+            "storage": 12,
+            "region": 13,
+            "bar": 14,
+            "services": 15,
         }
         page_index = order.get(page, 1)
         if page_index >= self.page_stack.count():
@@ -1061,6 +1064,9 @@ class SettingsWindow(
     def _build_notifications_page(self) -> QWidget:
         return self._scroll_page(self._build_notifications_card())
 
+    def _build_notification_center_page(self) -> QWidget:
+        return self._scroll_page(self._build_notification_center_card())
+
     def _build_input_page(self) -> QWidget:
         return self._scroll_page(self._build_input_card())
 
@@ -1098,6 +1104,7 @@ class SettingsWindow(
             "energy",
             "audio",
             "notifications",
+            "notification_center",
             "input",
             "startup",
             "privacy",
@@ -1148,6 +1155,7 @@ class SettingsWindow(
             "audio": self._build_audio_page,
             "energy": self._build_energy_page,
             "notifications": self._build_notifications_page,
+            "notification_center": self._build_notification_center_page,
             "input": self._build_input_page,
             "startup": self._build_startup_page,
             "privacy": self._build_privacy_page,
@@ -1940,6 +1948,133 @@ class SettingsWindow(
         save_button.clicked.connect(self._save_notifications_page_settings)
         layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
         return card
+
+    def _build_notification_center_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("contentCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        icon = IconLabel(material_icon("notifications"), self.icon_font, 15, "#F4EAF7")
+        icon.setFixedSize(22, 22)
+        title = QLabel("Notification Center")
+        title.setFont(QFont(self.display_font, 13))
+        title.setStyleSheet("color: rgba(246,235,247,0.72);")
+        subtitle = QLabel(
+            "Adjust the size of the notification center panel."
+        )
+        subtitle.setFont(QFont(self.ui_font, 9))
+        subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(2)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+        header.addWidget(icon)
+        header.addLayout(title_wrap)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        nc = self.settings_state.get("notification_center", {})
+
+        self.nc_width_slider = QSlider(Qt.Orientation.Horizontal)
+        self.nc_width_slider.setRange(400, 2400)
+        self.nc_width_slider.setValue(int(nc.get("width", 800)))
+        self.nc_width_slider.setFixedWidth(164)
+
+        self.nc_width_label = QLabel(str(int(nc.get("width", 800))))
+        self.nc_width_label.setFixedWidth(56)
+        self.nc_width_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.nc_width_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+
+        width_row = QWidget()
+        width_row_layout = QHBoxLayout(width_row)
+        width_row_layout.setContentsMargins(0, 0, 0, 0)
+        width_row_layout.setSpacing(10)
+        width_row_layout.addWidget(self.nc_width_slider)
+        width_row_layout.addWidget(self.nc_width_label)
+
+        self.nc_width_slider.valueChanged.connect(self._on_nc_width_changed)
+
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Width",
+                "Panel width in pixels (400-2400).",
+                self.icon_font,
+                self.ui_font,
+                width_row,
+            )
+        )
+
+        self.nc_height_slider = QSlider(Qt.Orientation.Horizontal)
+        self.nc_height_slider.setRange(300, 1600)
+        self.nc_height_slider.setValue(int(nc.get("height", 740)))
+        self.nc_height_slider.setFixedWidth(164)
+
+        self.nc_height_label = QLabel(str(int(nc.get("height", 740))))
+        self.nc_height_label.setFixedWidth(56)
+        self.nc_height_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.nc_height_label.setStyleSheet("color: rgba(246,235,247,0.78);")
+
+        height_row = QWidget()
+        height_row_layout = QHBoxLayout(height_row)
+        height_row_layout.setContentsMargins(0, 0, 0, 0)
+        height_row_layout.setSpacing(10)
+        height_row_layout.addWidget(self.nc_height_slider)
+        height_row_layout.addWidget(self.nc_height_label)
+
+        self.nc_height_slider.valueChanged.connect(self._on_nc_height_changed)
+
+        layout.addWidget(
+            SettingsRow(
+                material_icon("crop_square"),
+                "Height",
+                "Panel height in pixels (300-1600).",
+                self.icon_font,
+                self.ui_font,
+                height_row,
+            )
+        )
+
+        self.nc_status = QLabel("Notification center size settings are ready.")
+        self.nc_status.setWordWrap(True)
+        self.nc_status.setStyleSheet("color: rgba(246,235,247,0.72);")
+        layout.addWidget(self.nc_status)
+
+        save_button = QPushButton("Save notification center size")
+        save_button.setObjectName("primaryButton")
+        save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        save_button.clicked.connect(self._save_notification_center_page_settings)
+        layout.addWidget(save_button, 0, Qt.AlignmentFlag.AlignLeft)
+        return card
+
+    def _on_nc_width_changed(self, value: int) -> None:
+        value = max(400, min(2400, int(value)))
+        self.settings_state.setdefault("notification_center", {})["width"] = value
+        save_settings_state(self.settings_state)
+        self.nc_width_label.setText(str(value))
+
+    def _on_nc_height_changed(self, value: int) -> None:
+        value = max(300, min(1600, int(value)))
+        self.settings_state.setdefault("notification_center", {})["height"] = value
+        save_settings_state(self.settings_state)
+        self.nc_height_label.setText(str(value))
+
+    def _save_notification_center_page_settings(self) -> None:
+        nc = self.settings_state.setdefault("notification_center", {})
+        nc["width"] = max(400, min(2400, int(self.nc_width_slider.value())))
+        nc["height"] = max(300, min(1600, int(self.nc_height_slider.value())))
+        save_settings_state(self.settings_state)
+        self.nc_status.setText(
+            f"Notification center size saved: {nc['width']}×{nc['height']}."
+        )
 
     def _build_input_card(self) -> QWidget:
         card = QFrame()

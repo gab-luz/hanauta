@@ -183,6 +183,19 @@ MATERIAL_ICONS: dict[str, str] = {
     "sports_esports": "\uea28",
     "desktop_windows": "\uefe8",
     "terminal": "\ue31c",
+    "sensors": "\ue1b2",
+    "battery_std": "\ue19c",
+    "arrow_forward": "\ue5cc",
+    "info": "\ue88e",
+    "computer": "\ue30a",
+    "open_in_new": "\ue89e",
+    "monitor_heart": "\ueaa2",
+    "palette": "\ue40a",
+    "eco": "\ue1b3",
+    "local_florist": "\ue548",
+    "wb_twilight": "\ue1c6",
+    "volume_off": "\ue04e",
+    "volume_down": "\ue04d",
 }
 
 

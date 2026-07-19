@@ -31,7 +31,7 @@ try:
 except Exception:  # pragma: no cover
     tomllib = None
 
-from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap, QScreen
 from PyQt6.QtWidgets import (
     QApplication,
@@ -473,8 +473,9 @@ class WindowEntry:
     focused: bool
 
 
-def get_open_windows() -> list[WindowEntry]:
-    tree = i3_tree()
+def get_open_windows(tree: dict | None = None) -> list[WindowEntry]:
+    if tree is None:
+        tree = i3_tree()
     if not tree:
         return []
     windows: list[WindowEntry] = []
@@ -502,8 +503,9 @@ def get_open_windows() -> list[WindowEntry]:
     return windows
 
 
-def get_workspaces_by_con_id() -> dict[int, str]:
-    tree = i3_tree()
+def get_workspaces_by_con_id(tree: dict | None = None) -> dict[int, str]:
+    if tree is None:
+        tree = i3_tree()
     mapping: dict[int, str] = {}
 
     def walk(node: dict, workspace_name: str = "") -> None:
@@ -841,6 +843,28 @@ def self_command(command: str, arg: str) -> str:
     return f"{shlex.quote(interpreter)} {shlex.quote(str(target))} {command} {shlex.quote(arg)}"
 
 
+class DockItemsWorker(QThread):
+    items_ready = pyqtSignal(object)
+
+    def __init__(self, config: dict, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._config = config
+        self._busy = False
+
+    def start_build(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        self.start()
+
+    def run(self) -> None:
+        try:
+            items = build_dock_items(self._config)
+            self.items_ready.emit(items)
+        finally:
+            self._busy = False
+
+
 def build_dock_items(config: dict) -> list[DockItem]:
     pinned: list[str] = list((config.get("pinned", {}) or {}).get("apps", []) or [])
     blacklist = config.get("blacklist", {}) or {}
@@ -848,12 +872,13 @@ def build_dock_items(config: dict) -> list[DockItem]:
     bl_did: list[str] = list(blacklist.get("desktop_id", []) or [])
     bl_names: list[str] = list(blacklist.get("window_name", []) or [])
 
+    tree = i3_tree()
     visible_windows = [
         window
-        for window in get_open_windows()
+        for window in get_open_windows(tree)
         if not is_blacklisted(window.wm_class, bl_wm) and not is_blacklisted(window.title, bl_names)
     ]
-    workspace_by_con_id = get_workspaces_by_con_id()
+    workspace_by_con_id = get_workspaces_by_con_id(tree)
     current_workspace = get_current_workspace()
 
     windows_by_class: dict[str, list[WindowEntry]] = {}
@@ -2111,6 +2136,8 @@ class CyberDock(QWidget):
         self._theme_refresh_restart_pending = False
         self.config = load_dock_config()
         self._last_items_json = ""
+        self._items_worker = DockItemsWorker(self.config, self)
+        self._items_worker.items_ready.connect(self._on_items_ready)
         self._geometry_animation: QPropertyAnimation | None = None
         self._panel_animation: QPropertyAnimation | None = None
         self._hidden = False
@@ -2392,7 +2419,9 @@ class CyberDock(QWidget):
         self.hide_timer.timeout.connect(self._hide_if_enabled)
 
     def _refresh_items(self) -> None:
-        items = build_dock_items(self.config)
+        self._items_worker.start_build()
+
+    def _on_items_ready(self, items: list[DockItem]) -> None:
         raw = json.dumps([asdict(item) for item in items], sort_keys=True)
         if raw == self._last_items_json:
             return
@@ -2723,6 +2752,13 @@ class CyberDock(QWidget):
         should_retry = self._startup_reposition_attempt < (4 if outputs_ready else 10)
         if should_retry:
             self._startup_reposition_timer.start(450)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        worker = getattr(self, "_items_worker", None)
+        if worker is not None:
+            worker.wait(500)
+            worker.deleteLater()
+        super().closeEvent(event)
 
 
 def main() -> int:

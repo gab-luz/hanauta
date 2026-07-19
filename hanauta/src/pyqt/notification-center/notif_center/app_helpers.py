@@ -15,6 +15,7 @@ from notif_center.widgets import *
 from pyqt.shared.calendar_card import *
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+from notif_center.plugin_paths import QCAL_WRAPPER
 
 
 def load_calendar_events(limit: int = 30) -> list[dict]:

@@ -181,7 +181,7 @@ class ActionTile(QFrame):
         self.setObjectName("actionTile")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
         self.icon_label = QLabel(material_icon(icon))
         self.icon_label.setObjectName("actionTileIcon")
@@ -225,7 +225,7 @@ class CompactIconAction(QPushButton):
         super().__init__()
         self.setObjectName("compactIconAction")
         self.setFont(QFont(material_font, 16))
-        self.setFixedSize(28, 28)
+        self.setFixedSize(26, 26)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setText(material_icon(icon))
 

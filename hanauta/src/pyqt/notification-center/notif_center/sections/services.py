@@ -15,130 +15,72 @@ from notif_center.widgets import *
 from pyqt.shared.calendar_card import *
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+from notif_center.plugin_paths import (
+    VPN_CONTROL_SCRIPT, CHRISTIAN_WIDGET_SCRIPT, REMINDERS_WIDGET_SCRIPT,
+    POMODORO_WIDGET_SCRIPT, OBS_WIDGET_SCRIPT, CRYPTO_WIDGET_SCRIPT,
+    VPS_WIDGET_SCRIPT, GAME_MODE_POPUP_SCRIPT, resolve_rss_widget_script,
+)
+
+_SERVICE_DESCRIPTORS = (
+    {"key": "vpn_control", "attr": "vpn_launcher_card", "title": "service.vpn.title", "detail": "service.vpn.detail", "icon": "lock", "action": "service.vpn.action", "open": "_open_vpn_widget"},
+    {"key": "christian_widget", "attr": "christian_launcher_card", "title": "service.christian.title", "detail": "service.christian.detail", "icon": "auto_awesome", "action": "service.christian.action", "open": "_open_christian_widget"},
+    {"key": "reminders_widget", "attr": "reminders_launcher_card", "title": "service.reminders.title", "detail": "service.reminders.detail", "icon": "notifications", "action": "service.reminders.action", "open": "_open_reminders_widget"},
+    {"key": "pomodoro_widget", "attr": "pomodoro_launcher_card", "title": "service.pomodoro.title", "detail": "service.pomodoro.detail", "icon": "timer", "action": "service.pomodoro.action", "open": "_open_pomodoro_widget"},
+    {"key": "rss_widget", "attr": "rss_launcher_card", "title": "service.rss.title", "detail": "service.rss.detail", "icon": "public", "action": "service.rss.action", "open": "_open_rss_widget"},
+    {"key": "obs_widget", "attr": "obs_launcher_card", "title": "service.obs.title", "detail": "service.obs.detail", "icon": "videocam", "action": "service.obs.action", "open": "_open_obs_widget"},
+    {"key": "crypto_widget", "attr": "crypto_launcher_card", "title": "service.crypto.title", "detail": "service.crypto.detail", "icon": "show_chart", "action": "service.crypto.action", "open": "_open_crypto_widget"},
+    {"key": "vps_widget", "attr": "vps_launcher_card", "title": "service.vps.title", "detail": "service.vps.detail", "icon": "storage", "action": "service.vps.action", "open": "_open_vps_widget"},
+    {"key": "desktop_clock_widget", "attr": "desktop_clock_launcher_card", "title": "service.desktop_clock.title", "detail": "service.desktop_clock.detail", "icon": "watch", "action": "service.desktop_clock.action", "open": "_open_desktop_clock_widget"},
+    {"key": "game_mode", "attr": "game_mode_launcher_card", "title": "service.game_mode.title", "detail": "service.game_mode.detail", "icon": "sports_esports", "action": "service.game_mode.action", "open": "_open_game_mode_popup"},
+)
+
+_SERVICE_BY_ATTR = {d["attr"]: d for d in _SERVICE_DESCRIPTORS}
 
 
 class ServicesMixin:
     """Service launcher cards methods for NotificationCenter."""
 
-    def _build_vpn_launcher_card(self) -> QFrame:
-        self.vpn_launcher_card = ServiceLauncherCard(
+    def _build_launcher_card(self, desc: dict) -> QFrame:
+        card = ServiceLauncherCard(
             self.material_font,
-            t("service.vpn.title"),
-            t("service.vpn.detail"),
-            "lock",
-            t("service.vpn.action"),
-            self._open_vpn_widget,
+            t(desc["title"]),
+            t(desc["detail"]),
+            desc["icon"],
+            t(desc["action"]),
+            getattr(self, desc["open"]),
         )
-        return self.vpn_launcher_card
+        setattr(self, desc["attr"], card)
+        return card
 
+    def _build_vpn_launcher_card(self) -> QFrame:
+        return self._build_launcher_card(_SERVICE_BY_ATTR["vpn_launcher_card"])
 
     def _build_christian_launcher_card(self) -> QFrame:
-        self.christian_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.christian.title"),
-            t("service.christian.detail"),
-            "auto_awesome",
-            t("service.christian.action"),
-            self._open_christian_widget,
-        )
-        return self.christian_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["christian_launcher_card"])
 
     def _build_reminders_launcher_card(self) -> QFrame:
-        self.reminders_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.reminders.title"),
-            t("service.reminders.detail"),
-            "notifications",
-            t("service.reminders.action"),
-            self._open_reminders_widget,
-        )
-        return self.reminders_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["reminders_launcher_card"])
 
     def _build_pomodoro_launcher_card(self) -> QFrame:
-        self.pomodoro_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.pomodoro.title"),
-            t("service.pomodoro.detail"),
-            "timer",
-            t("service.pomodoro.action"),
-            self._open_pomodoro_widget,
-        )
-        return self.pomodoro_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["pomodoro_launcher_card"])
 
     def _build_rss_launcher_card(self) -> QFrame:
-        self.rss_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.rss.title"),
-            t("service.rss.detail"),
-            "public",
-            t("service.rss.action"),
-            self._open_rss_widget,
-        )
-        return self.rss_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["rss_launcher_card"])
 
     def _build_obs_launcher_card(self) -> QFrame:
-        self.obs_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.obs.title"),
-            t("service.obs.detail"),
-            "videocam",
-            t("service.obs.action"),
-            self._open_obs_widget,
-        )
-        return self.obs_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["obs_launcher_card"])
 
     def _build_crypto_launcher_card(self) -> QFrame:
-        self.crypto_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.crypto.title"),
-            t("service.crypto.detail"),
-            "show_chart",
-            t("service.crypto.action"),
-            self._open_crypto_widget,
-        )
-        return self.crypto_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["crypto_launcher_card"])
 
     def _build_vps_launcher_card(self) -> QFrame:
-        self.vps_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.vps.title"),
-            t("service.vps.detail"),
-            "storage",
-            t("service.vps.action"),
-            self._open_vps_widget,
-        )
-        return self.vps_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["vps_launcher_card"])
 
     def _build_desktop_clock_launcher_card(self) -> QFrame:
-        self.desktop_clock_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.desktop_clock.title"),
-            t("service.desktop_clock.detail"),
-            "watch",
-            t("service.desktop_clock.action"),
-            self._open_desktop_clock_widget,
-        )
-        return self.desktop_clock_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["desktop_clock_launcher_card"])
 
     def _build_game_mode_launcher_card(self) -> QFrame:
-        self.game_mode_launcher_card = ServiceLauncherCard(
-            self.material_font,
-            t("service.game_mode.title"),
-            t("service.game_mode.detail"),
-            "sports_esports",
-            t("service.game_mode.action"),
-            self._open_game_mode_popup,
-        )
-        return self.game_mode_launcher_card
-
+        return self._build_launcher_card(_SERVICE_BY_ATTR["game_mode_launcher_card"])
 
     def _settings_field(self, label_text: str, widget: QWidget) -> QWidget:
         wrap = QWidget()
@@ -150,7 +92,6 @@ class ServicesMixin:
         row.addWidget(label)
         row.addWidget(widget)
         return wrap
-
 
     def _metric_block(self, title: str, value_label: QLabel) -> QWidget:
         wrap = QFrame()
@@ -164,19 +105,16 @@ class ServicesMixin:
         layout.addWidget(value_label)
         return wrap
 
-
     def _soft_button(self, title: str) -> QPushButton:
         button = QPushButton(title)
         button.setObjectName("softButton")
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         return button
 
-
     def _service_enabled(self, key: str) -> bool:
         return bool(
             self.settings_state.get("services", {}).get(key, {}).get("enabled", True)
         )
-
 
     def _service_visible_in_notification_center(self, key: str) -> bool:
         service = self.settings_state.get("services", {}).get(key, {})
@@ -185,86 +123,34 @@ class ServicesMixin:
             and service.get("show_in_notification_center", False)
         )
 
-
     def _sync_service_card_visibility(self) -> None:
         if hasattr(self, "ha_card"):
             self.ha_card.setVisible(
                 self._service_visible_in_notification_center("home_assistant")
             )
-        if hasattr(self, "vpn_launcher_card"):
-            self.vpn_launcher_card.setVisible(
-                self._service_visible_in_notification_center("vpn_control")
-            )
-        if hasattr(self, "christian_launcher_card"):
-            self.christian_launcher_card.setVisible(
-                self._service_visible_in_notification_center("christian_widget")
-            )
-        if hasattr(self, "reminders_launcher_card"):
-            self.reminders_launcher_card.setVisible(
-                self._service_visible_in_notification_center("reminders_widget")
-            )
-        if hasattr(self, "pomodoro_launcher_card"):
-            self.pomodoro_launcher_card.setVisible(
-                self._service_visible_in_notification_center("pomodoro_widget")
-            )
-        if hasattr(self, "rss_launcher_card"):
-            self.rss_launcher_card.setVisible(
-                self._service_visible_in_notification_center("rss_widget")
-            )
-        if hasattr(self, "obs_launcher_card"):
-            self.obs_launcher_card.setVisible(
-                self._service_visible_in_notification_center("obs_widget")
-            )
-        if hasattr(self, "crypto_launcher_card"):
-            self.crypto_launcher_card.setVisible(
-                self._service_visible_in_notification_center("crypto_widget")
-            )
-        if hasattr(self, "vps_launcher_card"):
-            self.vps_launcher_card.setVisible(
-                self._service_visible_in_notification_center("vps_widget")
-            )
-        if hasattr(self, "desktop_clock_launcher_card"):
-            self.desktop_clock_launcher_card.setVisible(
-                self._service_visible_in_notification_center("desktop_clock_widget")
-            )
-        if hasattr(self, "game_mode_launcher_card"):
-            self.game_mode_launcher_card.setVisible(
-                self._service_visible_in_notification_center("game_mode")
-            )
+        for desc in _SERVICE_DESCRIPTORS:
+            card = getattr(self, desc["attr"], None)
+            if card is not None:
+                card.setVisible(
+                    self._service_visible_in_notification_center(desc["key"])
+                )
 
+    def _open_standard_widget(self, key: str, script) -> None:
+        if not self._service_enabled(key) or not script.exists():
+            return
+        run_bg_singleton(script)
 
     def _open_vpn_widget(self) -> None:
-        if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
-            return
-        run_bg_singleton(VPN_CONTROL_SCRIPT)
-
+        self._open_standard_widget("vpn_control", VPN_CONTROL_SCRIPT)
 
     def _open_christian_widget(self) -> None:
-        if (
-            not self._service_enabled("christian_widget")
-            or not CHRISTIAN_WIDGET_SCRIPT.exists()
-        ):
-            return
-        run_bg_singleton(CHRISTIAN_WIDGET_SCRIPT)
-
+        self._open_standard_widget("christian_widget", CHRISTIAN_WIDGET_SCRIPT)
 
     def _open_reminders_widget(self) -> None:
-        if (
-            not self._service_enabled("reminders_widget")
-            or not REMINDERS_WIDGET_SCRIPT.exists()
-        ):
-            return
-        run_bg_singleton(REMINDERS_WIDGET_SCRIPT)
-
+        self._open_standard_widget("reminders_widget", REMINDERS_WIDGET_SCRIPT)
 
     def _open_pomodoro_widget(self) -> None:
-        if (
-            not self._service_enabled("pomodoro_widget")
-            or not POMODORO_WIDGET_SCRIPT.exists()
-        ):
-            return
-        run_bg_singleton(POMODORO_WIDGET_SCRIPT)
-
+        self._open_standard_widget("pomodoro_widget", POMODORO_WIDGET_SCRIPT)
 
     def _open_rss_widget(self) -> None:
         rss_widget_script = resolve_rss_widget_script(self.settings_state)
@@ -272,27 +158,14 @@ class ServicesMixin:
             return
         run_bg_singleton(rss_widget_script)
 
-
     def _open_obs_widget(self) -> None:
-        if not self._service_enabled("obs_widget") or not OBS_WIDGET_SCRIPT.exists():
-            return
-        run_bg_singleton(OBS_WIDGET_SCRIPT)
-
+        self._open_standard_widget("obs_widget", OBS_WIDGET_SCRIPT)
 
     def _open_crypto_widget(self) -> None:
-        if (
-            not self._service_enabled("crypto_widget")
-            or not CRYPTO_WIDGET_SCRIPT.exists()
-        ):
-            return
-        run_bg_singleton(CRYPTO_WIDGET_SCRIPT)
-
+        self._open_standard_widget("crypto_widget", CRYPTO_WIDGET_SCRIPT)
 
     def _open_vps_widget(self) -> None:
-        if not self._service_enabled("vps_widget") or not VPS_WIDGET_SCRIPT.exists():
-            return
-        run_bg_singleton(VPS_WIDGET_SCRIPT)
-
+        self._open_standard_widget("vps_widget", VPS_WIDGET_SCRIPT)
 
     def _open_desktop_clock_widget(self) -> None:
         if not self._service_enabled("desktop_clock_widget"):
@@ -310,13 +183,5 @@ class ServicesMixin:
         except Exception:
             pass
 
-
     def _open_game_mode_popup(self) -> None:
-        if (
-            not self._service_enabled("game_mode")
-            or not GAME_MODE_POPUP_SCRIPT.exists()
-        ):
-            return
-        run_bg_singleton(GAME_MODE_POPUP_SCRIPT)
-
-
+        self._open_standard_widget("game_mode", GAME_MODE_POPUP_SCRIPT)

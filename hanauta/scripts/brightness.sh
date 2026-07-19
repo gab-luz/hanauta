@@ -1,10 +1,7 @@
 #!/bin/bash
 
-# Prefer xrandr so the same slider can drive all active desktop outputs.
-
 percentage() {
-  local val
-  val="$(echo "$1" | tr '%' ' ' | awk '{print $1}')"
+  local val="${1%%\%}"
   local icon1="$2"
   local icon2="$3"
   local icon3="$4"
@@ -32,31 +29,6 @@ list_outputs() {
   xrandr --query 2>/dev/null | awk '/ connected / {print $1}'
 }
 
-get_brightness_xrandr() {
-  local values
-  values="$(xrandr --verbose 2>/dev/null | awk '
-    $2 == "connected" { connected=1; next }
-    $0 !~ /^[[:space:]]/ { connected=0 }
-    connected && /Brightness:/ { print $2 }
-  ')"
-
-  if [ -z "$values" ]; then
-    return 1
-  fi
-
-  awk '
-    { sum += $1; count += 1 }
-    END {
-      if (count == 0) {
-        exit 1
-      }
-      printf "%d\n", (sum / count) * 100
-    }
-  ' <<EOF
-$values
-EOF
-}
-
 get_brightness_backlight() {
   local current max
 
@@ -71,7 +43,7 @@ get_brightness_backlight() {
 }
 
 get_brightness() {
-  get_brightness_xrandr || get_brightness_backlight || echo 0
+  get_brightness_backlight || echo 0
 }
 
 set_brightness_xrandr() {
@@ -130,21 +102,12 @@ get_percent() {
 get_icon() {
   local br
   br="$(get_percent)"
-  echo "$(percentage "$br" "" "" "" "")"
+  echo "$(percentage "$br" "" "" "" "")"
 }
 
-if [[ $1 == "br" ]]; then
-  get_brightness
-fi
-
-if [[ $1 == "percent" ]]; then
-  get_percent
-fi
-
-if [[ $1 == "icon" ]]; then
-  get_icon
-fi
-
-if [[ $1 == "set" ]]; then
-  set_brightness "$2"
-fi
+case "$1" in
+  br) get_brightness ;;
+  percent) get_percent ;;
+  icon) get_icon ;;
+  set) set_brightness "$2" ;;
+esac

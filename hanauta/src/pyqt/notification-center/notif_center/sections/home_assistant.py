@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, QSize, pyqtSignal
+from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTextCharFormat, QPalette
 from PyQt6.QtWidgets import QApplication, QButtonGroup, QDialog, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget
 
@@ -15,6 +15,65 @@ from notif_center.widgets import *
 from pyqt.shared.calendar_card import *
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+
+
+class HaFetchWorker(QThread):
+    fetch_ready = pyqtSignal(object)
+    _busy = False
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def start_fetch(self, base_url, token, path):
+        if HaFetchWorker._busy:
+            return
+        HaFetchWorker._busy = True
+        self._base_url = base_url
+        self._token = token
+        self._path = path
+        self.start()
+
+    def run(self):
+        try:
+            result = fetch_home_assistant_json(self._base_url, self._token, self._path)
+        except Exception:
+            result = (None, "Unable to reach Home Assistant.")
+        finally:
+            HaFetchWorker._busy = False
+        self.fetch_ready.emit(result)
+
+
+class HaPostWorker(QThread):
+    post_done = pyqtSignal(bool, object)
+    _busy = False
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def start_post(self, base_url, token, path, payload, tile_key=None):
+        if HaPostWorker._busy:
+            return
+        HaPostWorker._busy = True
+        self._base_url = base_url
+        self._token = token
+        self._path = path
+        self._payload = payload
+        self._tile_key = tile_key
+        self.start()
+
+    def run(self):
+        try:
+            result = post_home_assistant_json(
+                self._base_url, self._token, self._path, self._payload
+            )
+            success = not result[1]
+        except Exception:
+            result = (None, "Unable to reach Home Assistant.")
+            success = False
+        finally:
+            HaPostWorker._busy = False
+        self.post_done.emit(success, self._tile_key)
+        self._result = result
 
 
 class HomeAssistantMixin:
@@ -51,8 +110,8 @@ class HomeAssistantMixin:
                 "hub",
                 lambda checked=False, i=index: self._activate_ha_tile(i),
             )
-            tile.setMinimumSize(58, 64)
-            tile.setMaximumSize(58, 64)
+            tile.setMinimumSize(52, 58)
+            tile.setMaximumSize(52, 58)
             self.ha_action_tiles.append(tile)
             tile_row.addWidget(tile)
 
@@ -81,6 +140,12 @@ class HomeAssistantMixin:
         self._refresh_home_assistant_entities()
 
 
+    def _init_ha_workers(self):
+        self._ha_fetch_worker = HaFetchWorker(self)
+        self._ha_fetch_worker.fetch_ready.connect(self._on_ha_fetch_done)
+        self._ha_post_worker = HaPostWorker(self)
+        self._ha_post_worker.post_done.connect(self._on_ha_post_done)
+
     def _refresh_home_assistant_entities(self) -> None:
         if not self._service_visible_in_notification_center("home_assistant"):
             self._ha_entities = []
@@ -91,7 +156,12 @@ class HomeAssistantMixin:
             self.settings_state["home_assistant"].get("url", "")
         )
         token = self.settings_state["home_assistant"].get("token", "")
-        payload, error_text = fetch_home_assistant_json(base_url, token, "/api/states")
+        if not hasattr(self, "_ha_fetch_worker"):
+            self._init_ha_workers()
+        self._ha_fetch_worker.start_fetch(base_url, token, "/api/states")
+
+    def _on_ha_fetch_done(self, result):
+        payload, error_text = result
         self._ha_last_error = error_text
         if error_text or not isinstance(payload, list):
             if self.ha_summary_label is not None:
@@ -245,14 +315,21 @@ class HomeAssistantMixin:
         else:
             self.ha_status_label.setText(f"{entity_id} is view-only right now.")
             return
-        _, error_text = post_home_assistant_json(
+        if not hasattr(self, "_ha_post_worker"):
+            self._init_ha_workers()
+        self._ha_post_worker.start_post(
             self.settings_state["home_assistant"].get("url", ""),
             self.settings_state["home_assistant"].get("token", ""),
             f"/api/services/{service_domain}/{service}",
             payload,
+            entity_id,
         )
+
+    def _on_ha_post_done(self, success, entity_id):
+        result = getattr(self._ha_post_worker, "_result", (None, ""))
+        error_text = result[1] if isinstance(result, tuple) else ""
         self.ha_status_label.setText(
-            error_text or f"Triggered {service} for {entity_id}."
+            error_text or f"Triggered service for {entity_id}."
         )
         QTimer.singleShot(900, self._refresh_home_assistant_entities)
 

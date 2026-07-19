@@ -15,6 +15,7 @@ from notif_center.widgets import *
 from pyqt.shared.calendar_card import *
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+from notif_center.calendar_dialog import show_calendar_day_events
 
 
 class CalendarMixin:
@@ -121,93 +122,15 @@ class CalendarMixin:
         events = self._calendar_events_for_date(date)
         if not events:
             return
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle(t("dialog.calendar_events"))
-        dialog.setModal(False)
-        dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        dialog.setStyleSheet(self.styleSheet())
-
-        shell = QFrame(dialog)
-        shell.setObjectName("confirmPopup")
-        shell_layout = QVBoxLayout(shell)
-        shell_layout.setContentsMargins(16, 16, 16, 16)
-        shell_layout.setSpacing(10)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        title_label = QLabel(date.toString("dddd, d MMMM"))
-        title_label.setObjectName("confirmTitle")
-        close_button = QPushButton(material_icon("close"))
-        close_button.setObjectName("compactIconAction")
-        close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        close_button.setFont(QFont(self.material_font, 16))
-        close_button.setFixedSize(28, 28)
-        close_button.clicked.connect(dialog.accept)
-        header.addWidget(title_label, 1)
-        header.addWidget(close_button)
-        shell_layout.addLayout(header)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setObjectName("eventsPopupScroll")
-        scroll.setMinimumWidth(420)
-        scroll.setMaximumHeight(420 if len(events) > 2 else 320)
-
-        content = QWidget()
-        content.setObjectName("eventsPopupContent")
-        scroll.setWidget(content)
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(8)
-
-        for event in events:
-            item = QFrame()
-            item.setObjectName("feedCard")
-            item_layout = QVBoxLayout(item)
-            item_layout.setContentsMargins(12, 10, 12, 10)
-            item_layout.setSpacing(4)
-
-            event_title = QLabel(str(event.get("title", t("events.untitled"))).strip())
-            event_title.setObjectName("feedCardTitle")
-            event_title.setWordWrap(True)
-            meta = QLabel(self._calendar_event_meta(event))
-            meta.setObjectName("feedCardMeta")
-            item_layout.addWidget(event_title)
-            item_layout.addWidget(meta)
-
-            location = str(event.get("location", "")).strip()
-            source = str(event.get("source", "")).strip()
-            detail_parts = [part for part in (location, source) if part]
-            if detail_parts:
-                details = QLabel(" • ".join(detail_parts))
-                details.setObjectName("feedCardBody")
-                details.setWordWrap(True)
-                item_layout.addWidget(details)
-
-            description = str(
-                event.get("description", event.get("body", event.get("notes", "")))
-            ).strip()
-            if description:
-                desc = QLabel(description)
-                desc.setObjectName("feedCardBody")
-                desc.setWordWrap(True)
-                item_layout.addWidget(desc)
-
-            content_layout.addWidget(item)
-        content_layout.addStretch(1)
-        shell_layout.addWidget(scroll)
-
-        root = QVBoxLayout(dialog)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(shell)
-        dialog.adjustSize()
-        dialog.move(
-            self.geometry().center().x() - dialog.width() // 2,
-            self.geometry().center().y() - dialog.height() // 2,
+        dialog = show_calendar_day_events(
+            parent=self,
+            date=date,
+            events=events,
+            material_font=self.material_font,
+            ui_font=self.ui_font,
+            theme_palette=self.theme_palette,
+            on_open_url=None,
+            on_dismiss=None,
         )
         self._calendar_event_dialogs.append(dialog)
         dialog.destroyed.connect(
@@ -215,7 +138,6 @@ class CalendarMixin:
             if popup in self._calendar_event_dialogs
             else None
         )
-        dialog.show()
 
 
     def _apply_calendar_formats(self) -> None:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 percentage () {
-  local val=$(echo $1 | tr '%' ' ' | awk '{print $1}')
+  local val="${1%%\%}"
   local icon1=$2
   local icon2=$3
   local icon3=$4
@@ -17,7 +17,7 @@ percentage () {
 }
 
 get_ram () {
-  free -m | grep Mem | awk '{print ($3/$2)*100}' | tr '.' ' ' | awk '{print $1}'
+  awk '/^Mem:/{printf "%d", $3*100/$2}' <(free -m)
 }
 
 get_percent () {
@@ -26,7 +26,7 @@ get_percent () {
 
 get_icon () {
   local percent=$(get_percent)
-  echo $(percentage "$percent" "")
+  echo $(percentage "$percent" "")
 }
 
 get_class () {
@@ -34,18 +34,9 @@ get_class () {
   echo $(percentage "$percent" "yellow" "magenta" "purple" "red")
 }
 
-if [[ $1 == "ram" ]]; then
-  get_ram
-fi
-
-if [[ $1 == "percent" ]]; then
-  get_percent
-fi
-
-if [[ $1 == "icon" ]]; then
-  get_icon
-fi
-
-if [[ $1 == "class" ]]; then
-  get_class
-fi
+case "$1" in
+  ram) get_ram ;;
+  percent) get_percent ;;
+  icon) get_icon ;;
+  class) get_class ;;
+esac

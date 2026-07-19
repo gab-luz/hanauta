@@ -99,7 +99,7 @@ class QuickActionsPanel(QFrame):
         ]
         for key, row, col in positions:
             button = self.quick_buttons[key]
-            button.setMinimumHeight(62)
+            button.setMinimumHeight(56)
             grid.addWidget(button, row, col)
         return card
 
