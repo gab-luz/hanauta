@@ -24,6 +24,7 @@ CACHE_FILE = STATE_DIR / "launcher" / "apps_cache.json"
 DESKTOP_DIRS = [
     Path.home() / ".config" / "i3" / "hanauta" / "config" / "applications",
     Path.home() / ".local" / "share" / "applications",
+    Path.home() / ".local" / "share" / "flatpak" / "exports" / "share" / "applications",
     Path("/var/lib/flatpak/exports/share/applications"),
     Path("/usr/local/share/applications"),
     Path("/usr/share/applications"),

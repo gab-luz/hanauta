@@ -105,6 +105,7 @@ CATEGORY_ICON_ASSET = {
 DESKTOP_DIRS = [
     ROOT / "hanauta" / "config" / "applications",
     Path.home() / ".local/share/applications",
+    Path.home() / ".local/share/flatpak/exports/share/applications",
     Path("/var/lib/flatpak/exports/share/applications"),
     Path("/usr/local/share/applications"),
     Path("/usr/share/applications"),
