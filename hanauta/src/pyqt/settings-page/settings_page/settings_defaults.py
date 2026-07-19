@@ -105,6 +105,7 @@ def load_settings_state() -> dict:
             "latitude": 0.0,
             "longitude": 0.0,
             "timezone": "auto",
+            "openweathermap_api_key": "",
             "notify_climate_changes": True,
             "notify_rain_soon": True,
             "notify_sunset_soon": True,
@@ -498,6 +499,7 @@ def load_settings_state() -> dict:
     weather.setdefault("latitude", 0.0)
     weather.setdefault("longitude", 0.0)
     weather.setdefault("timezone", "auto")
+    weather.setdefault("openweathermap_api_key", "")
     weather.setdefault("notify_climate_changes", True)
     weather.setdefault("notify_rain_soon", True)
     weather.setdefault("notify_sunset_soon", True)

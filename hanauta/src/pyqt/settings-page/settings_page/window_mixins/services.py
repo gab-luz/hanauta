@@ -2770,6 +2770,32 @@ class ServicesMixin:
             weather_settings = {}
             self.settings_state["weather"] = weather_settings
 
+        api_keys_title = QLabel("API Keys")
+        api_keys_title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        api_keys_title.setStyleSheet("color: rgba(246,235,247,0.86);")
+        layout.addWidget(api_keys_title)
+
+        self.weather_owm_key_input = QLineEdit(
+            str(weather_settings.get("openweathermap_api_key", "")).strip()
+        )
+        self.weather_owm_key_input.setPlaceholderText(
+            "Optional — overrides free Open-Meteo when set"
+        )
+        self.weather_owm_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.weather_owm_key_input.editingFinished.connect(
+            self._save_weather_api_keys
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("key"),
+                "OpenWeatherMap API key",
+                "Free tier available at openweathermap.org. When set, weather data comes from OpenWeatherMap instead of Open-Meteo. Falls back to wttr.in if both fail.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_owm_key_input,
+            )
+        )
+
         notifications_title = QLabel("Notifications")
         notifications_title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
         notifications_title.setStyleSheet("color: rgba(246,235,247,0.86);")

@@ -2395,6 +2395,24 @@ class SettersMixin:
         if hasattr(self, "region_status"):
             self.region_status.setText(f"Shared location saved: {city.label}")
 
+    def _save_weather_api_keys(self) -> None:
+        weather = self.settings_state.setdefault("weather", {})
+        if hasattr(self, "weather_owm_key_input"):
+            weather["openweathermap_api_key"] = (
+                self.weather_owm_key_input.text().strip()
+            )
+        save_settings_state(self.settings_state)
+        if hasattr(self, "weather_status"):
+            owm = str(weather.get("openweathermap_api_key", "")).strip()
+            if owm:
+                self.weather_status.setText(
+                    "OpenWeatherMap API key saved. Weather will use OpenWeatherMap."
+                )
+            else:
+                self.weather_status.setText(
+                    "API key cleared. Weather will use free Open-Meteo (fallback: wttr.in)."
+                )
+
 
     def _save_home_assistant_settings(self) -> None:
         self.settings_state["home_assistant"]["url"] = normalize_ha_url(

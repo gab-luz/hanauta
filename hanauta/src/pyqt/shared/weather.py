@@ -27,6 +27,37 @@ ANIMATED_ICON_FALLBACKS = {
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
 AIR_QUALITY_API = "https://air-quality-api.open-meteo.com/v1/air-quality"
+WTTR_API = "https://wttr.in"
+OPENWEATHER_API = "https://api.openweathermap.org/data/2.5/onecall"
+
+_WTTR_CODE_MAP: dict[int, int] = {
+    113: 0, 116: 2, 119: 3, 122: 3,
+    143: 45, 176: 61, 179: 71, 182: 66, 185: 56,
+    200: 95, 227: 75, 230: 75,
+    248: 45, 260: 48,
+    263: 51, 266: 53, 281: 56, 284: 57,
+    293: 61, 296: 63, 299: 63, 302: 65, 305: 65, 308: 65,
+    311: 66, 314: 67, 317: 66, 320: 67,
+    323: 71, 326: 73, 329: 73, 332: 75, 335: 75, 338: 75,
+    350: 77, 353: 80, 356: 81, 359: 82,
+    362: 66, 365: 67, 368: 85, 371: 86,
+    374: 77, 377: 77,
+    386: 95, 389: 96, 392: 73, 395: 75,
+}
+
+_OPENWEATHER_CODE_MAP: dict[int, int] = {
+    200: 95, 201: 95, 202: 96, 210: 95, 211: 95, 212: 96, 221: 95,
+    230: 95, 231: 95, 232: 96,
+    300: 51, 301: 51, 302: 53, 303: 53, 304: 55,
+    310: 51, 311: 53, 312: 55, 313: 53, 314: 55,
+    321: 53, 322: 55,
+    500: 61, 501: 63, 502: 65, 503: 65, 504: 65,
+    511: 66, 520: 80, 521: 80, 522: 81, 531: 81,
+    600: 71, 601: 73, 602: 75, 611: 66, 612: 66, 613: 67,
+    615: 71, 616: 73, 620: 71, 621: 73, 622: 75,
+    701: 45, 711: 45, 721: 45, 731: 45, 741: 45, 751: 45, 761: 45, 762: 48, 771: 45, 781: 45,
+    800: 0, 801: 1, 802: 2, 803: 3, 804: 3,
+}
 
 
 @dataclass(frozen=True)
@@ -280,7 +311,12 @@ def _fmt_time(iso_text: str) -> str:
     return moment.strftime("%-I:%M %p")
 
 
-def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
+def _load_weather_api_key(service: str) -> str:
+    weather = load_weather_settings()
+    return str(weather.get(f"{service}_api_key", "")).strip()
+
+
+def _fetch_open_meteo(city: WeatherCity) -> WeatherForecast | None:
     params = parse.urlencode(
         {
             "latitude": f"{city.latitude:.5f}",
@@ -332,6 +368,7 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
             payload = _get_json(f"{WEATHER_API}?{params}", timeout=5.0)
         except Exception:
             return None
+
     air_payload: dict[str, Any] | None = None
     aqi_params = parse.urlencode(
         {
@@ -358,6 +395,14 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
     except Exception:
         air_payload = None
 
+    return _parse_open_meteo_payload(city, payload, air_payload)
+
+
+def _parse_open_meteo_payload(
+    city: WeatherCity,
+    payload: dict[str, Any],
+    air_payload: dict[str, Any] | None = None,
+) -> WeatherForecast | None:
     current_payload = payload.get("current", {})
     daily_payload = payload.get("daily", {})
     if not isinstance(current_payload, dict) or not isinstance(daily_payload, dict):
@@ -568,6 +613,341 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
                 )
 
     return WeatherForecast(city=city, current=current, daily=daily, hourly=hourly)
+
+
+def _fetch_openweather(city: WeatherCity, api_key: str) -> WeatherForecast | None:
+    params = parse.urlencode(
+        {
+            "lat": f"{city.latitude:.5f}",
+            "lon": f"{city.longitude:.5f}",
+            "appid": api_key,
+            "units": "metric",
+            "exclude": "minutely",
+        }
+    )
+    try:
+        payload = _get_json(f"{OPENWEATHER_API}?{params}", timeout=5.0)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    current_data = payload.get("current", {})
+    if not isinstance(current_data, dict):
+        return None
+
+    owm_id = 800
+    owm_desc = "Unknown"
+    owm_weather = current_data.get("weather", [])
+    if isinstance(owm_weather, list) and owm_weather:
+        first = owm_weather[0]
+        if isinstance(first, dict):
+            owm_id = int(first.get("id", 800))
+            owm_desc = str(first.get("description", "Unknown"))
+
+    weather_code = _OPENWEATHER_CODE_MAP.get(owm_id, 0)
+    is_day = bool(current_data.get("dt", 0)) and not _is_night_openweather(
+        current_data, payload.get("daily", [])
+    )
+    sunrise_ts = current_data.get("sunrise", 0)
+    sunset_ts = current_data.get("sunset", 0)
+    sunrise_iso = _ts_to_iso(sunrise_ts)
+    sunset_iso = _ts_to_iso(sunset_ts)
+
+    current = WeatherCurrent(
+        observed_time_iso=_ts_to_iso(current_data.get("dt", 0)),
+        temperature=float(current_data.get("temp", 0.0)),
+        apparent_temperature=float(current_data.get("feels_like", 0.0)),
+        humidity=int(current_data.get("humidity", 0)),
+        wind_speed=float(current_data.get("wind_speed", 0.0)) * 3.6,
+        precipitation=float(
+            (current_data.get("rain") or {}).get("1h", 0.0)
+        ),
+        pressure=float(current_data.get("pressure", 0.0)),
+        weather_code=weather_code,
+        is_day=is_day,
+        condition=weather_condition_label(weather_code),
+        icon_name=_current_icon_name(weather_code, is_day),
+        sunrise_iso=sunrise_iso,
+        sunset_iso=sunset_iso,
+        sunrise=_fmt_time(sunrise_iso) if sunrise_iso else "--:--",
+        sunset=_fmt_time(sunset_iso) if sunset_iso else "--:--",
+    )
+
+    daily: list[WeatherDaily] = []
+    daily_list = payload.get("daily", [])
+    if isinstance(daily_list, list):
+        for index, day_data in enumerate(daily_list[:7]):
+            if not isinstance(day_data, dict):
+                continue
+            try:
+                day_weather = day_data.get("weather", [{}])
+                day_owm_id = 800
+                if isinstance(day_weather, list) and day_weather:
+                    day_owm_id = int(day_weather[0].get("id", 800))
+                day_code = _OPENWEATHER_CODE_MAP.get(day_owm_id, 0)
+                day_dt = day_data.get("dt", 0)
+                date_value = datetime.fromtimestamp(day_dt)
+                temp_data = day_data.get("temp", {})
+                daily.append(
+                    WeatherDaily(
+                        date=date_value.strftime("%Y-%m-%d"),
+                        weekday="Today" if index == 0 else date_value.strftime("%a"),
+                        weather_code=day_code,
+                        icon_name=_daily_icon_name(day_code),
+                        max_temp=float(temp_data.get("max", 0.0)),
+                        min_temp=float(temp_data.get("min", 0.0)),
+                        precipitation_probability=int(float(day_data.get("pop", 0)) * 100),
+                    )
+                )
+            except Exception:
+                continue
+
+    hourly: list[WeatherHourly] = []
+    hourly_list = payload.get("hourly", [])
+    if isinstance(hourly_list, list):
+        for index, hour_data in enumerate(hourly_list[:48]):
+            if not isinstance(hour_data, dict):
+                continue
+            try:
+                h_weather = hour_data.get("weather", [{}])
+                h_owm_id = 800
+                if isinstance(h_weather, list) and h_weather:
+                    h_owm_id = int(h_weather[0].get("id", 800))
+                h_code = _OPENWEATHER_CODE_MAP.get(h_owm_id, 0)
+                h_dt = hour_data.get("dt", 0)
+                h_iso = _ts_to_iso(h_dt)
+                h_timestamp = datetime.fromtimestamp(h_dt)
+                h_rain = float((hour_data.get("rain") or {}).get("1h", 0.0))
+                h_snow = float((hour_data.get("snow") or {}).get("1h", 0.0))
+                minutes_from_current = 0
+                try:
+                    ref = datetime.fromisoformat(current.observed_time_iso)
+                    minutes_from_current = int((h_timestamp - ref).total_seconds() // 60)
+                except Exception:
+                    pass
+                hourly.append(
+                    WeatherHourly(
+                        time_iso=h_iso,
+                        weather_code=h_code,
+                        icon_name=_current_icon_name(h_code, True),
+                        temperature=float(hour_data.get("temp", 0.0)),
+                        apparent_temperature=float(hour_data.get("feels_like", 0.0)),
+                        wind_speed=float(hour_data.get("wind_speed", 0.0)) * 3.6,
+                        wind_gusts=float(hour_data.get("wind_gust", 0.0)) * 3.6,
+                        visibility=float(hour_data.get("visibility", 10000)),
+                        uv_index=float(hour_data.get("uvi", 0.0)),
+                        rain=h_rain,
+                        snowfall=h_snow,
+                        precipitation_probability=int(float(hour_data.get("pop", 0)) * 100),
+                        precipitation=h_rain + h_snow,
+                        us_aqi=None,
+                        pollen_index=None,
+                        minutes_from_current=minutes_from_current,
+                    )
+                )
+            except Exception:
+                continue
+
+    return WeatherForecast(city=city, current=current, daily=daily, hourly=hourly)
+
+
+def _ts_to_iso(ts: int | float) -> str:
+    try:
+        return datetime.fromtimestamp(int(ts)).isoformat()
+    except Exception:
+        return ""
+
+
+def _is_night_openweather(current: dict, daily: list) -> bool:
+    dt = int(current.get("dt", 0))
+    sunrise = int(current.get("sunrise", 0))
+    sunset = int(current.get("sunset", 0))
+    if sunrise and sunset:
+        return dt < sunrise or dt > sunset
+    if isinstance(daily, list) and daily:
+        today = daily[0]
+        if isinstance(today, dict):
+            s = int(today.get("sunrise", 0))
+            e = int(today.get("sunset", 0))
+            if s and e:
+                return dt < s or dt > e
+    return False
+
+
+def _fetch_wttr(city: WeatherCity) -> WeatherForecast | None:
+    params = parse.urlencode({"format": "j1"})
+    url = f"{WTTR_API}/{city.latitude:.5f},{city.longitude:.5f}?{params}"
+    try:
+        payload = _get_json(url, timeout=5.0)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    cc_list = payload.get("current_condition", [])
+    if not isinstance(cc_list, list) or not cc_list:
+        return None
+    cc = cc_list[0]
+    if not isinstance(cc, dict):
+        return None
+
+    wttr_code = int(cc.get("weatherCode", 113))
+    weather_code = _WTTR_CODE_MAP.get(wttr_code, 0)
+    is_day = str(cc.get("is_day", "yes")).lower() == "yes"
+
+    weather_days = payload.get("weather", [])
+    sunrise_iso = ""
+    sunset_iso = ""
+    if isinstance(weather_days, list) and weather_days:
+        today = weather_days[0]
+        if isinstance(today, dict):
+            astr = today.get("astronomy", [{}])
+            if isinstance(astr, list) and astr:
+                ast = astr[0]
+                if isinstance(ast, dict):
+                    sunrise_raw = str(ast.get("sunrise", "")).strip()
+                    sunset_raw = str(ast.get("sunset", "")).strip()
+                    today_date = str(today.get("date", "")).strip()
+                    if sunrise_raw and today_date:
+                        sunrise_iso = f"{today_date}T{_parse_12h_to_24h(sunrise_raw)}"
+                    if sunset_raw and today_date:
+                        sunset_iso = f"{today_date}T{_parse_12h_to_24h(sunset_raw)}"
+
+    current = WeatherCurrent(
+        observed_time_iso=str(cc.get("observation_time", "")).strip(),
+        temperature=float(cc.get("temp_C", 0.0)),
+        apparent_temperature=float(cc.get("FeelsLikeC", 0.0)),
+        humidity=int(cc.get("humidity", 0)),
+        wind_speed=float(cc.get("windspeedKmph", 0.0)),
+        precipitation=float(cc.get("precipMM", 0.0)),
+        pressure=float(cc.get("pressure", 0.0)),
+        weather_code=weather_code,
+        is_day=is_day,
+        condition=weather_condition_label(weather_code),
+        icon_name=_current_icon_name(weather_code, is_day),
+        sunrise_iso=sunrise_iso,
+        sunset_iso=sunset_iso,
+        sunrise=_fmt_time(sunrise_iso) if sunrise_iso else "--:--",
+        sunset=_fmt_time(sunset_iso) if sunset_iso else "--:--",
+    )
+
+    daily: list[WeatherDaily] = []
+    if isinstance(weather_days, list):
+        for index, day_data in enumerate(weather_days[:7]):
+            if not isinstance(day_data, dict):
+                continue
+            try:
+                date_str = str(day_data.get("date", ""))
+                date_value = datetime.fromisoformat(date_str)
+                day_wttr = int(day_data.get("hourly", [{}])[4].get("weatherCode", 113)) if day_data.get("hourly") else 113
+                day_code = _WTTR_CODE_MAP.get(day_wttr, 0)
+                daily.append(
+                    WeatherDaily(
+                        date=date_str,
+                        weekday="Today" if index == 0 else date_value.strftime("%a"),
+                        weather_code=day_code,
+                        icon_name=_daily_icon_name(day_code),
+                        max_temp=float(day_data.get("maxtempC", 0.0)),
+                        min_temp=float(day_data.get("mintempC", 0.0)),
+                        precipitation_probability=int(
+                            day_data.get("hourly", [{}])[4].get("chanceofrain", 0)
+                            if day_data.get("hourly")
+                            else 0
+                        ),
+                    )
+                )
+            except Exception:
+                continue
+
+    hourly: list[WeatherHourly] = []
+    reference_time = None
+    try:
+        reference_time = datetime.fromisoformat(current.observed_time_iso)
+    except Exception:
+        reference_time = None
+    if isinstance(weather_days, list):
+        for day_data in weather_days[:3]:
+            if not isinstance(day_data, dict):
+                continue
+            date_str = str(day_data.get("date", ""))
+            hours = day_data.get("hourly", [])
+            if not isinstance(hours, list):
+                continue
+            for h in hours:
+                if not isinstance(h, dict):
+                    continue
+                try:
+                    time_val = int(h.get("time", 0))
+                    hour = time_val // 100
+                    minute = time_val % 100
+                    h_iso = f"{date_str}T{hour:02d}:{minute:02d}:00"
+                    h_timestamp = datetime.fromisoformat(h_iso)
+                    h_wttr = int(h.get("weatherCode", 113))
+                    h_code = _WTTR_CODE_MAP.get(h_wttr, 0)
+                    h_rain = float(h.get("precipMM", 0.0))
+                    h_visibility = float(h.get("visibility", 10.0)) * 1000
+                    minutes_from_current = 0
+                    if reference_time is not None:
+                        minutes_from_current = int(
+                            (h_timestamp - reference_time).total_seconds() // 60
+                        )
+                    hourly.append(
+                        WeatherHourly(
+                            time_iso=h_iso,
+                            weather_code=h_code,
+                            icon_name=_current_icon_name(h_code, True),
+                            temperature=float(h.get("tempC", 0.0)),
+                            apparent_temperature=float(h.get("FeelsLikeC", 0.0)),
+                            wind_speed=float(h.get("windspeedKmph", 0.0)),
+                            wind_gusts=float(h.get("WindGustKmph", 0.0)),
+                            visibility=h_visibility,
+                            uv_index=float(h.get("uvIndex", 0.0)),
+                            rain=h_rain,
+                            snowfall=0.0,
+                            precipitation_probability=int(float(h.get("chanceofrain", 0))),
+                            precipitation=h_rain,
+                            us_aqi=None,
+                            pollen_index=None,
+                            minutes_from_current=minutes_from_current,
+                        )
+                    )
+                except Exception:
+                    continue
+
+    return WeatherForecast(city=city, current=current, daily=daily, hourly=hourly)
+
+
+def _parse_12h_to_24h(time_str: str) -> str:
+    cleaned = time_str.strip().upper()
+    is_pm = "PM" in cleaned
+    is_am = "AM" in cleaned
+    cleaned = cleaned.replace("AM", "").replace("PM", "").strip()
+    parts = cleaned.split(":")
+    if len(parts) != 2:
+        return cleaned
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except ValueError:
+        return cleaned
+    if is_pm and hour != 12:
+        hour += 12
+    elif is_am and hour == 12:
+        hour = 0
+    return f"{hour:02d}:{minute:02d}"
+
+
+def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
+    owm_key = _load_weather_api_key("openweathermap")
+    if owm_key:
+        forecast = _fetch_openweather(city, owm_key)
+        if forecast is not None:
+            return forecast
+    forecast = _fetch_open_meteo(city)
+    if forecast is not None:
+        return forecast
+    return _fetch_wttr(city)
 
 
 def animated_icon_path(name: str) -> Path:
