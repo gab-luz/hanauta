@@ -2413,6 +2413,11 @@ class SettersMixin:
                     "API key cleared. Weather will use free Open-Meteo (fallback: wttr.in)."
                 )
 
+    def _save_weather_poll_interval(self, value: int) -> None:
+        weather = self.settings_state.setdefault("weather", {})
+        weather["poll_interval_minutes"] = max(15, min(1440, int(value)))
+        save_settings_state(self.settings_state)
+
 
     def _save_home_assistant_settings(self) -> None:
         self.settings_state["home_assistant"]["url"] = normalize_ha_url(

@@ -106,6 +106,7 @@ def load_settings_state() -> dict:
             "longitude": 0.0,
             "timezone": "auto",
             "openweathermap_api_key": "",
+            "poll_interval_minutes": 15,
             "notify_climate_changes": True,
             "notify_rain_soon": True,
             "notify_sunset_soon": True,
@@ -500,6 +501,12 @@ def load_settings_state() -> dict:
     weather.setdefault("longitude", 0.0)
     weather.setdefault("timezone", "auto")
     weather.setdefault("openweathermap_api_key", "")
+    try:
+        weather["poll_interval_minutes"] = max(
+            15, min(1440, int(weather.get("poll_interval_minutes", 15) or 15))
+        )
+    except Exception:
+        weather["poll_interval_minutes"] = 15
     weather.setdefault("notify_climate_changes", True)
     weather.setdefault("notify_rain_soon", True)
     weather.setdefault("notify_sunset_soon", True)

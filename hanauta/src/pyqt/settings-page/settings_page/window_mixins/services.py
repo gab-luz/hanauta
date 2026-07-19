@@ -2796,6 +2796,27 @@ class ServicesMixin:
             )
         )
 
+        self.weather_poll_interval_spin = QSpinBox()
+        self.weather_poll_interval_spin.setRange(15, 1440)
+        self.weather_poll_interval_spin.setSingleStep(5)
+        self.weather_poll_interval_spin.setSuffix(" min")
+        self.weather_poll_interval_spin.setValue(
+            max(15, min(1440, int(weather_settings.get("poll_interval_minutes", 15) or 15)))
+        )
+        self.weather_poll_interval_spin.valueChanged.connect(
+            self._save_weather_poll_interval
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Background poll interval",
+                "How often the weather cache is refreshed in the background (minimum 15 minutes). The popup loads from cache instantly.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_poll_interval_spin,
+            )
+        )
+
         notifications_title = QLabel("Notifications")
         notifications_title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
         notifications_title.setStyleSheet("color: rgba(246,235,247,0.86);")

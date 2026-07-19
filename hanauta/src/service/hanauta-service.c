@@ -15,7 +15,6 @@
 typedef struct {
     gchar *settings_path;
     gchar *state_dir;
-    gchar *weather_path;
     gchar *crypto_path;
     gchar *wifi_path;
     gchar *marketplace_git_status_path;
@@ -502,7 +501,6 @@ static void write_status_json(const gchar *status, const gchar *details) {
         "  \"status\": %s,\n"
         "  \"details\": %s,\n"
         "  \"updated_at\": %s,\n"
-        "  \"weather_cache\": \"service/weather.json\",\n"
         "  \"crypto_cache\": \"service/crypto.json\",\n"
         "  \"wifi_cache\": \"service/wifi.json\",\n"
         "  \"home_assistant_cache\": \"service/home_assistant.json\"\n"
@@ -596,110 +594,9 @@ static gboolean refresh_launcher_apps_cache(void) {
     return ok;
 }
 
-static gboolean refresh_weather(void) {
-    gchar *settings = load_file_text(g_service.settings_path);
-    gchar *weather_obj = extract_object_block(settings, "weather");
-    gchar *lat_text = NULL;
-    gchar *lon_text = NULL;
-    gchar *timezone = NULL;
-    gchar *timezone_uri = NULL;
-    gchar *name = NULL;
-    gchar *admin1 = NULL;
-    gchar *country = NULL;
-    GError *error = NULL;
-    gchar *payload = NULL;
-    gchar *url = NULL;
-    gchar *requested = NULL;
-    gchar *updated_at = NULL;
-    gchar *json = NULL;
-    gchar *timezone_q = NULL;
-    gchar *name_q = NULL;
-    gchar *admin1_q = NULL;
-    gchar *country_q = NULL;
-    GDateTime *now = NULL;
-    gboolean ok = FALSE;
-
-    if (weather_obj == NULL || !object_bool(weather_obj, "enabled", FALSE)) {
-        goto cleanup;
-    }
-
-    lat_text = g_strdup_printf("%.5f", object_number(weather_obj, "latitude", 0.0));
-    lon_text = g_strdup_printf("%.5f", object_number(weather_obj, "longitude", 0.0));
-    timezone = object_string(weather_obj, "timezone", "auto");
-    name = object_string(weather_obj, "name", "");
-    admin1 = object_string(weather_obj, "admin1", "");
-    country = object_string(weather_obj, "country", "");
-
-    url = g_strdup_printf(
-        "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&timezone=%s&forecast_days=7&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,pressure_msl,weather_code,wind_speed_10m,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset",
-        lat_text,
-        lon_text,
-        timezone_uri = g_uri_escape_string(timezone, NULL, TRUE)
-    );
-
-    const gchar *argv[] = {"curl", "-fsSL", "-H", "User-Agent: HanautaService/1.0", url, NULL};
-    payload = run_capture(&error, argv);
-    if (payload == NULL) {
-        write_status_json("degraded", error != NULL ? error->message : "Weather refresh failed.");
-        g_clear_error(&error);
-        goto cleanup;
-    }
-
-    requested = g_strdup_printf(
-        "    \"requested\": {\n"
-        "      \"latitude\": %s,\n"
-        "      \"longitude\": %s,\n"
-        "      \"timezone\": %s,\n"
-        "      \"name\": %s,\n"
-        "      \"admin1\": %s,\n"
-        "      \"country\": %s\n"
-        "    }",
-        lat_text,
-        lon_text,
-        timezone_q = escape_json_string(timezone),
-        name_q = escape_json_string(name),
-        admin1_q = escape_json_string(admin1),
-        country_q = escape_json_string(country)
-    );
-    now = g_date_time_new_now_local();
-    updated_at = g_date_time_format(now, "%Y-%m-%dT%H:%M:%S%z");
-    json = g_strdup_printf(
-        "{\n"
-        "  \"source\": \"open-meteo\",\n"
-        "  \"updated_at\": \"%s\",\n"
-        "%s,\n"
-        "  \"payload\": %s\n"
-        "}\n",
-        updated_at,
-        requested,
-        payload
-    );
-    ok = g_file_set_contents(g_service.weather_path, json, -1, NULL);
-
-cleanup:
-    g_free(settings);
-    g_free(weather_obj);
-    g_free(lat_text);
-    g_free(lon_text);
-    g_free(timezone);
-    g_free(timezone_uri);
-    g_free(name);
-    g_free(admin1);
-    g_free(country);
-    g_free(payload);
-    g_free(url);
-    g_free(requested);
-    g_free(updated_at);
-    g_free(json);
-    g_free(timezone_q);
-    g_free(name_q);
-    g_free(admin1_q);
-    g_free(country_q);
-    if (now != NULL) {
-        g_date_time_unref(now);
-    }
-    return ok;
-}
+/* Weather caching moved to the weather plugin (hanauta-service-plugin.json).
+   The plugin's weather_cache.py fetches and writes weather.json as a
+   background task scheduled by hanauta-service. */
 
 static gboolean spawn_fullscreen_alert(const gchar *title, const gchar *body, const gchar *severity) {
     if (g_service.fullscreen_alert_script == NULL || *g_service.fullscreen_alert_script == '\0') {
@@ -2376,7 +2273,6 @@ static gboolean ensure_bar_running(gpointer user_data) {
 static gboolean refresh_all(gpointer user_data) {
     (void)user_data;
     gboolean wifi_ok = refresh_wifi();
-    gboolean weather_ok = refresh_weather();
     gboolean crypto_ok = refresh_crypto();
     gboolean ntfy_ok = refresh_ntfy();
     gboolean games_ok = refresh_games_cache();
@@ -2385,7 +2281,7 @@ static gboolean refresh_all(gpointer user_data) {
     gboolean marketplace_ok = refresh_marketplace_git_status();
     gboolean wifi_offer_ok = maybe_offer_wifi_plugin_install();
     refresh_plugin_background_tasks();
-    gboolean any_ok = wifi_ok || weather_ok || crypto_ok || ntfy_ok || games_ok || launcher_ok || disk_ok || marketplace_ok || wifi_offer_ok;
+    gboolean any_ok = wifi_ok || crypto_ok || ntfy_ok || games_ok || launcher_ok || disk_ok || marketplace_ok || wifi_offer_ok;
     write_status_json(
         any_ok ? "running" : "idle",
         any_ok ? "Background caches refreshed." : "Waiting for enabled services."
@@ -2642,7 +2538,6 @@ int main(int argc, char **argv) {
 
     g_service.settings_path = g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "notification-center", "settings.json", NULL);
     g_service.state_dir = g_build_filename(g_get_home_dir(), ".local", "state", "hanauta", "service", NULL);
-    g_service.weather_path = g_build_filename(g_service.state_dir, "weather.json", NULL);
     g_service.crypto_path = g_build_filename(g_service.state_dir, "crypto.json", NULL);
     g_service.wifi_path = g_build_filename(g_service.state_dir, "wifi.json", NULL);
     g_service.marketplace_git_status_path = g_build_filename(g_service.state_dir, "marketplace_git_status.json", NULL);
@@ -2699,7 +2594,6 @@ int main(int argc, char **argv) {
     g_main_loop_unref(loop);
     g_free(g_service.settings_path);
     g_free(g_service.state_dir);
-    g_free(g_service.weather_path);
     g_free(g_service.crypto_path);
     g_free(g_service.wifi_path);
     g_free(g_service.marketplace_git_status_path);

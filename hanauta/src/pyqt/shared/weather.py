@@ -950,6 +950,42 @@ def fetch_forecast(city: WeatherCity) -> WeatherForecast | None:
     return _fetch_wttr(city)
 
 
+def load_cached_forecast(city: WeatherCity) -> WeatherForecast | None:
+    """Load the last forecast written by the plugin weather cache daemon.
+
+    Returns a parsed WeatherForecast if the cache exists and matches the
+    requested city, or None if the cache is missing / stale / wrong city.
+    """
+    cached = _load_service_weather_cache(city)
+    if cached is None:
+        return None
+    air_payload: dict[str, Any] | None = None
+    return _parse_open_meteo_payload(city, cached, air_payload)
+
+
+def cache_age_seconds() -> float | None:
+    """Return how many seconds have passed since the cache was last written.
+
+    Returns None if the cache file does not exist or cannot be read.
+    """
+    try:
+        raw = json.loads(SERVICE_WEATHER_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    updated = str(raw.get("updated_at", "")).strip()
+    if not updated:
+        return None
+    try:
+        from datetime import datetime, timezone
+        ts = datetime.fromisoformat(updated)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - ts
+        return max(0.0, delta.total_seconds())
+    except Exception:
+        return None
+
+
 def animated_icon_path(name: str) -> Path:
     fallback_name = ANIMATED_ICON_FALLBACKS.get(name, "")
     if fallback_name:
