@@ -43,8 +43,14 @@ APP_DIR = source_root()
 ROOT = project_root()
 FONTS_DIR = fonts_root()
 SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
-STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "launcher"
-CACHE_FILE = STATE_DIR / "apps_cache.json"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+STATE_DIR = Path(
+    os.environ.get("HANAUTA_LAUNCHER_STATE_DIR")
+    or os.environ.get("HANAUTA_SERVICE_STATE_DIR")
+    or os.environ.get("HANAUTA_STATE_DIR")
+    or str(SERVICE_STATE_DIR)
+)
+CACHE_FILE = STATE_DIR / "launcher" / "apps_cache.json"
 LAUNCHER_ICON_DIR = ROOT / "hanauta" / "src" / "assets" / "launcher"
 
 if str(APP_DIR) not in sys.path:
@@ -689,6 +695,8 @@ class LauncherWindow(QWidget):
         self.use_matugen = launcher_theme_enabled()
         self._theme_mtime = palette_mtime()
         self.apps = load_cached_desktop_apps()
+        if not self.apps:
+            self.apps = scan_desktop_apps()
         self.filtered_apps: list[DesktopApp] = []
         self.category = "all"
         self.selected_index = 0
@@ -1049,6 +1057,12 @@ class LauncherWindow(QWidget):
         for key, button in self.category_buttons.items():
             button.apply_state(key == self.category)
 
+    def _disconnect_scroll_handler(self) -> None:
+        try:
+            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
+        except TypeError:
+            pass
+
     def _render_results(self) -> None:
         new_ids = [a.desktop_id for a in self.filtered_apps]
 
@@ -1066,7 +1080,7 @@ class LauncherWindow(QWidget):
             self.results_layout.insertWidget(0, empty)
             self.results_count.setText("0 applications")
             self.footer_label.setText("")
-            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
+            self._disconnect_scroll_handler()
             self._last_filter_ids = []
             return
 
@@ -1083,7 +1097,7 @@ class LauncherWindow(QWidget):
             self.results_layout.insertWidget(0, empty)
             self.results_count.setText("0 applications")
             self.footer_label.setText("Enter launches the selected app")
-            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
+            self._disconnect_scroll_handler()
             self._last_filter_ids = []
             return
 
@@ -1121,10 +1135,7 @@ class LauncherWindow(QWidget):
         self.footer_label.setText("Enter launches the selected app • Up/Down changes selection")
         self._scroll_selection_into_view()
 
-        try:
-            self.scroll_area.verticalScrollBar().valueChanged.disconnect(self._on_scroll)
-        except TypeError:
-            pass
+        self._disconnect_scroll_handler()
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
     def _sync_visible_cards(self) -> None:

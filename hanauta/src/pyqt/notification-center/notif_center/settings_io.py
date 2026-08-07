@@ -102,7 +102,7 @@ def merged_service_settings(payload: object) -> dict[str, dict]:
 def load_notification_settings() -> dict:
     default = {
         "appearance": {"accent": "orchid"},
-        "notification_center": {"width": 800, "height": 740},
+        "notification_center": {"width": 420, "height": 740},
         "home_assistant": {"url": "", "token": "", "pinned_entities": []},
         "services": merged_service_settings({}),
         "display": {"layout_mode": "extend", "primary": "", "outputs": []},
@@ -150,9 +150,9 @@ def load_notification_settings() -> dict:
     ntfy["topics"] = [str(item).strip() for item in ntfy.get("topics", []) if isinstance(item, str) and str(item).strip()]
     nc = dict(payload.get("notification_center", {}))
     try:
-        nc["width"] = max(400, min(2400, int(nc.get("width", 800))))
+        nc["width"] = max(400, min(2400, int(nc.get("width", 420))))
     except Exception:
-        nc["width"] = 800
+        nc["width"] = 420
     try:
         nc["height"] = max(300, min(1600, int(nc.get("height", 740))))
     except Exception:

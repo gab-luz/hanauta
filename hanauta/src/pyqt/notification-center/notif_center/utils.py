@@ -157,6 +157,7 @@ MATERIAL_ICONS: dict[str, str] = {
     "hub": "\uee20",
     "invert_colors": "\ue891",
     "lightbulb": "\ue0f0",
+    "music_note": "\ue310",
     "nightlight": "\uf03d",
     "pause": "\ue034",
     "person": "\ue7fd",

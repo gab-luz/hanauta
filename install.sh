@@ -259,7 +259,7 @@ Options:
   --vscodium                    Install only the VSCodium extension
   --notification-daemon         Install only Hanauta notification daemon components
   --quickshell                  Install only Quickshell runtime dependencies
-  --wireguard-systemd           Offer a systemd-based WireGuard auto-start setup
+  --wireguard-systemd           Install the Hanauta VPN plugin + offer systemd WireGuard auto-start
   --i3-volume                   Install only i3-volume + volnoti integration
   --i3lock-color                Install only i3lock-color into ~/.local/bin
   --printer-plugin              Install/update only the Hanauta printer plugin from git
@@ -3187,32 +3187,22 @@ ensure_hanauta_settings() {
   fi
 }
 
-configure_wireguard_support_prompt() {
+enable_wireguard_vpn_plugin() {
   local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
-  local target_dir="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-vpn-control"
 
   if [ ! -f "$settings_file" ]; then
-    warn "Hanauta settings file not found; skipping WireGuard support prompt."
-    return 0
+    warn "Hanauta settings file not found; cannot enable WireGuard VPN plugin."
+    return 1
   fi
 
-  if [ -d "$target_dir/.git" ]; then
-    info "VPN Control plugin already installed at $target_dir; skipping WireGuard prompt."
-    return 0
+  if need_cmd git; then
+    sync_vpn_plugin_repo || warn "VPN plugin install failed; you can retry later from Marketplace."
+    register_vpn_plugin_in_settings || true
+  else
+    warn "git is not available; skipping automatic VPN plugin install."
   fi
 
-  echo
-  echo -e "${MAGENTA}WireGuard support${NC}"
-  echo -e "Enable Hanauta VPN Control integration now?"
-  echo -e "If enabled, Hanauta installs the VPN widget plugin and uses /etc/wireguard configs by default."
-  if confirm_yes "Enable WireGuard support now?"; then
-    if need_cmd git; then
-      sync_vpn_plugin_repo || warn "VPN plugin install failed; you can retry later from Marketplace."
-      register_vpn_plugin_in_settings || true
-    else
-      warn "git is not available; skipping automatic VPN plugin install."
-    fi
-    python3 - "$settings_file" <<'PY'
+  python3 - "$settings_file" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -3238,9 +3228,15 @@ vpn.setdefault("reconnect_on_login", False)
 vpn.setdefault("preferred_interface", "")
 path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
-    success "WireGuard support enabled in Hanauta settings."
-  else
-    python3 - "$settings_file" <<'PY'
+  success "WireGuard VPN Control plugin enabled in Hanauta."
+}
+
+disable_wireguard_vpn_plugin() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+
+  [ -f "$settings_file" ] || return 0
+
+  python3 - "$settings_file" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -3264,6 +3260,31 @@ vpn["enabled"] = False
 vpn["reconnect_on_login"] = False
 path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
+}
+
+configure_wireguard_support_prompt() {
+  local settings_file="$HOME/.local/state/hanauta/notification-center/settings.json"
+  local target_dir="$HOME/.config/i3/hanauta/plugins/hanauta-plugin-vpn-control"
+
+  if [ ! -f "$settings_file" ]; then
+    warn "Hanauta settings file not found; skipping WireGuard support prompt."
+    return 0
+  fi
+
+  if [ -d "$target_dir/.git" ]; then
+    info "VPN Control plugin already installed at $target_dir; skipping WireGuard prompt."
+    return 0
+  fi
+
+  echo
+  echo -e "${MAGENTA}WireGuard support${NC}"
+  echo -e "Enable Hanauta VPN Control integration now?"
+  echo -e "If enabled, Hanauta installs the VPN widget plugin and uses /etc/wireguard configs by default."
+  if confirm_yes "Enable WireGuard support now?"; then
+    enable_wireguard_vpn_plugin
+    success "WireGuard support enabled in Hanauta settings."
+  else
+    disable_wireguard_vpn_plugin
     info "WireGuard support left disabled (can be enabled later in Settings > Services > VPN Control)."
   fi
 }
@@ -4009,6 +4030,8 @@ main() {
 
   if [ "$INSTALL_WIREGUARD_SYSTEMD_ONLY" = true ]; then
     print_banner
+    ensure_hanauta_settings
+    enable_wireguard_vpn_plugin || true
     offer_wireguard_systemd_setup
     info "Done!"
     return 0

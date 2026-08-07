@@ -119,6 +119,7 @@ def save_cached_desktop_apps(apps: list[DesktopApp]) -> None:
     try:
         cache_dir = CACHE_FILE.parent
         cache_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(cache_dir), 0o755)
         payload = {"apps": [app.to_cache_dict() for app in apps]}
         temp_path: Path | None = None
         try:
@@ -135,6 +136,7 @@ def save_cached_desktop_apps(apps: list[DesktopApp]) -> None:
                 os.fsync(handle.fileno())
                 temp_path = Path(handle.name)
             os.replace(str(temp_path), str(CACHE_FILE))
+            os.chmod(str(CACHE_FILE), 0o644)
         finally:
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink(missing_ok=True)

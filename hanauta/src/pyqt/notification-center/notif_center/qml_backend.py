@@ -72,6 +72,8 @@ class ColorPalette(QObject):
         self._accent_soft = "rgba(208, 188, 255, 0.18)"
         self._primary = "#D0BCFF"
         self._tertiary = "#EFB8C8"
+        self._secondary = "#CCC2DC"
+        self._on_secondary = "#332D41"
         self._on_primary = "#381E72"
         self._text = "#E6E0E9"
         self._text_muted = "rgba(202, 196, 208, 0.78)"
@@ -102,6 +104,8 @@ class ColorPalette(QObject):
         self._accent_soft = getattr(theme, "accent_soft", "rgba(208, 188, 255, 0.18)")
         self._primary = getattr(theme, "primary", "#D0BCFF")
         self._tertiary = getattr(theme, "tertiary", "#EFB8C8")
+        self._secondary = getattr(theme, "secondary", "#CCC2DC")
+        self._on_secondary = getattr(theme, "on_secondary", "#332D41")
         self._on_primary = active_text
         self._text = getattr(theme, "text", "#E6E0E9")
         self._text_muted = getattr(theme, "text_muted", "rgba(202, 196, 208, 0.78)")
@@ -116,6 +120,33 @@ class ColorPalette(QObject):
         self._phone_online = getattr(theme, "primary", "#D0BCFF")
         self._phone_offline = rgba(getattr(theme, "on_surface", "#E6E0E9"), 0.18)
         self._changed.emit()
+
+    def snapshot(self) -> dict[str, str]:
+        return {
+            "panelBg": self._panel_bg,
+            "panelBorder": self._panel_border,
+            "cardBg": self._card_bg,
+            "cardStrongBg": self._card_strong_bg,
+            "hoverBg": self._hover_bg,
+            "accentSoft": self._accent_soft,
+            "primary": self._primary,
+            "tertiary": self._tertiary,
+            "secondary": self._secondary,
+            "onSecondary": self._on_secondary,
+            "onPrimary": self._on_primary,
+            "text": self._text,
+            "textMuted": self._text_muted,
+            "icon": self._icon,
+            "inactive": self._inactive,
+            "dangerFg": self._danger_fg,
+            "dangerBg": self._danger_bg,
+            "playFg": self._play_fg,
+            "mediaStart": self._media_start,
+            "mediaEnd": self._media_end,
+            "mediaBorder": self._media_border,
+            "phoneOnline": self._phone_online,
+            "phoneOffline": self._phone_offline,
+        }
 
     @pyqtProperty(str, notify=_changed)
     def panelBg(self) -> str:
@@ -148,6 +179,14 @@ class ColorPalette(QObject):
     @pyqtProperty(str, notify=_changed)
     def tertiary(self) -> str:
         return self._tertiary
+
+    @pyqtProperty(str, notify=_changed)
+    def secondary(self) -> str:
+        return self._secondary
+
+    @pyqtProperty(str, notify=_changed)
+    def onSecondary(self) -> str:
+        return self._on_secondary
 
     @pyqtProperty(str, notify=_changed)
     def onPrimary(self) -> str:
@@ -339,6 +378,7 @@ class NotificationCenterBackend(QObject):
         self._ha_last_error = ""
 
         self._service_cards: list[dict] = []
+        self._quick_settings: list[dict] = []
         self._system_overview: list[dict] = []
         self._appearance_status = ""
         self._ha_url = self._settings_state["home_assistant"].get("url", "")
@@ -672,9 +712,97 @@ class NotificationCenterBackend(QObject):
         self._home_assistant_tiles = tiles
         self.homeAssistantChanged.emit()
 
-    @pyqtProperty(object, notify=paletteChanged)
-    def palette(self) -> ColorPalette:
-        return self._color_palette
+    @pyqtProperty(str, notify=paletteChanged)
+    def palettePrimary(self) -> str:
+        return self._color_palette.primary
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteTertiary(self) -> str:
+        return self._color_palette.tertiary
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteSecondary(self) -> str:
+        return self._color_palette.secondary
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteOnSecondary(self) -> str:
+        return self._color_palette.on_secondary
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteOnPrimary(self) -> str:
+        return self._color_palette.on_primary
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def palettePanelBg(self) -> str:
+        return self._color_palette.panelBg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def palettePanelBorder(self) -> str:
+        return self._color_palette.panelBorder
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteCardBg(self) -> str:
+        return self._color_palette.cardBg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteCardStrongBg(self) -> str:
+        return self._color_palette.cardStrongBg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteHoverBg(self) -> str:
+        return self._color_palette.hoverBg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteAccentSoft(self) -> str:
+        return self._color_palette.accentSoft
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteText(self) -> str:
+        return self._color_palette.text
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteTextMuted(self) -> str:
+        return self._color_palette.textMuted
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteIcon(self) -> str:
+        return self._color_palette.icon
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteInactive(self) -> str:
+        return self._color_palette.inactive
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteDangerFg(self) -> str:
+        return self._color_palette.dangerFg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteDangerBg(self) -> str:
+        return self._color_palette.dangerBg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def palettePlayFg(self) -> str:
+        return self._color_palette.playFg
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteMediaStart(self) -> str:
+        return self._color_palette.mediaStart
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteMediaEnd(self) -> str:
+        return self._color_palette.mediaEnd
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def paletteMediaBorder(self) -> str:
+        return self._color_palette.mediaBorder
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def palettePhoneOnline(self) -> str:
+        return self._color_palette.phoneOnline
+
+    @pyqtProperty(str, notify=paletteChanged)
+    def palettePhoneOffline(self) -> str:
+        return self._color_palette.phoneOffline
 
     @pyqtProperty(str, notify=paletteChanged)
     def materialFontFamily(self) -> str:
@@ -687,6 +815,10 @@ class NotificationCenterBackend(QObject):
     @pyqtProperty(str, notify=paletteChanged)
     def monoFontFamily(self) -> str:
         return self._mono_font
+
+    @pyqtProperty(list, notify=quickSettingsChanged)
+    def quickSettings(self) -> list[dict]:
+        return self._quick_settings
 
     @pyqtProperty(str, notify=quickSettingsChanged)
     def username(self) -> str:
@@ -798,8 +930,8 @@ class NotificationCenterBackend(QObject):
 
     @pyqtSlot()
     def closeCenter(self) -> None:
-        from PyQt6.QtWidgets import QCoreApplication
-        for win in QCoreApplication.topLevelWindows():
+        from PyQt6.QtGui import QGuiApplication
+        for win in QGuiApplication.topLevelWindows():
             win.close()
 
     @pyqtSlot(str)
