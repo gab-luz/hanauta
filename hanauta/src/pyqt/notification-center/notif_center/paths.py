@@ -32,7 +32,6 @@ POWERMENU_SCRIPT = _APP_DIR / "pyqt" / "powermenu" / "powermenu.py"
 STEAM_ICON = ASSETS_DIR / "steam-logo.svg"
 LUTRIS_ICON = ASSETS_DIR / "lutris-logo.svg"
 HOME_ASSISTANT_ICON = ASSETS_DIR / "home-assistant-dark.svg"
-PLATFORM_ICONS_DIR = ASSETS_DIR / "platform-icons"
 KDECONNECT_ICON = ASSETS_DIR / "kdeconnect.svg"
 
 LUTRIS_DB = Path.home() / ".local" / "share" / "lutris" / "pga.db"
@@ -47,22 +46,3 @@ DESKTOP_CLOCK_BINARY = ROOT / "bin" / "hanauta-clock"
 def preferred_icon_path(asset_name: str, system_path: str) -> str:
     local_icon = ASSETS_DIR / asset_name
     return str(local_icon) if local_icon.exists() else system_path
-
-CAFFEINE_NOTIFICATION_ICON = preferred_icon_path("caffeine.svg", "coffee")
-NIGHT_LIGHT_NOTIFICATION_ICON = preferred_icon_path("night-light.svg", "nightlight")
-WIFI_NOTIFICATION_ICON = preferred_icon_path(
-    "network-wireless-connected-100.svg",
-    "/usr/share/icons/Papirus-Dark/24x24/panel/network-wireless-connected-100.svg",
-)
-BLUETOOTH_NOTIFICATION_ICON = preferred_icon_path(
-    "bluetooth-active.svg",
-    "/usr/share/icons/Papirus-Dark/24x24/panel/bluetooth-active.svg",
-)
-AIRPLANE_NOTIFICATION_ICON = preferred_icon_path(
-    "airplane-mode-on.svg",
-    "/usr/share/icons/Papirus-Dark/24x24/panel/airplane-mode-on.svg",
-)
-CALENDAR_NOTIFICATION_ICON = preferred_icon_path("calendar_today.svg", "x-office-calendar")
-WEATHER_HISTORY_ICON = ASSETS_DIR / "weather-icons" / "monochrome" / "svg-static" / "overcast.svg"
-HISTORY_ICON = ASSETS_DIR / "history.svg"
-ARROW_BACK_ICON = ASSETS_DIR / "arrow_back.svg"

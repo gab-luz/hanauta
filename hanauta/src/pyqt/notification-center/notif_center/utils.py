@@ -20,7 +20,6 @@ from notif_center.paths import (
     BIN_DIR,
     DESKTOP_CLOCK_BINARY,
     FONTS_DIR,
-    PLATFORM_ICONS_DIR,
     ROOT,
     SCRIPTS_DIR,
     STATE_DIR,
@@ -157,7 +156,6 @@ MATERIAL_ICONS: dict[str, str] = {
     "hub": "\uee20",
     "invert_colors": "\ue891",
     "lightbulb": "\ue0f0",
-    "music_note": "\ue310",
     "nightlight": "\uf03d",
     "pause": "\ue034",
     "person": "\ue7fd",
@@ -182,47 +180,11 @@ MATERIAL_ICONS: dict[str, str] = {
     "storage": "\ue1db",
     "watch": "\ue334",
     "sports_esports": "\uea28",
-    "desktop_windows": "\uefe8",
-    "terminal": "\ue31c",
-    "sensors": "\ue1b2",
-    "battery_std": "\ue19c",
-    "arrow_forward": "\ue5cc",
-    "info": "\ue88e",
-    "computer": "\ue30a",
-    "open_in_new": "\ue89e",
-    "monitor_heart": "\ueaa2",
-    "palette": "\ue40a",
-    "eco": "\ue1b3",
-    "local_florist": "\ue548",
-    "wb_twilight": "\ue1c6",
-    "volume_off": "\ue04e",
-    "volume_down": "\ue04d",
 }
 
 
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
-
-
-_PLATFORM_ICON_SVGS: dict[str, str] = {
-    "wine": "desktop_windows.svg",
-    "windows": "desktop_windows.svg",
-    "winesteam": "desktop_windows.svg",
-    "linux": "terminal.svg",
-    "steam": "sports_esports.svg",
-    "lutris": "sports_esports.svg",
-    "dos": "terminal.svg",
-    "retroarch": "sports_esports.svg",
-    "scummvm": "sports_esports.svg",
-}
-
-
-def platform_icon_svg_path(stat_text: str) -> Path:
-    lower = stat_text.lower()
-    for key, filename in _PLATFORM_ICON_SVGS.items():
-        if key in lower:
-            return PLATFORM_ICONS_DIR / filename
-    return PLATFORM_ICONS_DIR / "sports_esports.svg"
 
 
 def load_app_fonts() -> dict[str, str]:

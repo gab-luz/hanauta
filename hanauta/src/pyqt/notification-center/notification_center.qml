@@ -2,339 +2,22 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import QtQuick.Effects
 
 Window {
     id: root
-
-    width: backend.ncWidth
-    height: backend.ncHeight
+    width: 430
+    height: 900
     visible: true
     color: "transparent"
     title: "Hanauta Notification Center"
     flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
 
+    property var colors: backend.palette
     property int settingsSection: 0
-
-    QtObject {
-        id: colors
-
-        property color panelBg: backend.palettePanelBg
-        property color panelBorder: backend.palettePanelBorder
-        property color cardBg: backend.paletteCardBg
-        property color cardStrongBg: backend.paletteCardStrongBg
-        property color hoverBg: backend.paletteHoverBg
-        property color accentSoft: backend.paletteAccentSoft
-        property color primary: backend.palettePrimary
-        property color tertiary: backend.paletteTertiary
-        property color secondary: backend.paletteSecondary
-        property color onSecondary: backend.paletteOnSecondary
-        property color onPrimary: backend.paletteOnPrimary
-        property color text: backend.paletteText
-        property color textMuted: backend.paletteTextMuted
-        property color icon: backend.paletteIcon
-        property color inactive: backend.paletteInactive
-        property color dangerFg: backend.paletteDangerFg
-        property color dangerBg: backend.paletteDangerBg
-        property color playFg: backend.palettePlayFg
-        property color mediaStart: backend.paletteMediaStart
-        property color mediaEnd: backend.paletteMediaEnd
-        property color mediaBorder: backend.paletteMediaBorder
-        property color phoneOnline: backend.palettePhoneOnline
-        property color phoneOffline: backend.palettePhoneOffline
-    }
-
-    property color panelColor: colors.panelBg
-    property color onPrimaryColor: colors.onPrimary
-    property color secondaryColor: colors.secondary
-    property color onSecondaryColor: colors.onSecondary
+    property color mediaControlColor: Qt.rgba(1, 1, 1, 0.76)
 
     function glyph(name) {
         return backend.materialIcon(name)
-    }
-
-    function clamp(value, minimum, maximum) {
-        return Math.max(minimum, Math.min(maximum, value))
-    }
-
-    function quickLabel(key, title) {
-        if (key === "dnd")
-            return "DND"
-        if (key === "airplane")
-            return "Airplane"
-        return title
-    }
-
-    component IconButton: RoundButton {
-        id: iconButton
-
-        property string iconName: ""
-        property color foreground: colors.icon
-        property color restingColor: Qt.rgba(1, 1, 1, 0.05)
-        property color hoverColor: Qt.rgba(1, 1, 1, 0.10)
-
-        implicitWidth: 40
-        implicitHeight: 40
-        hoverEnabled: true
-        padding: 0
-
-        contentItem: Text {
-            text: root.glyph(iconButton.iconName)
-            color: iconButton.foreground
-            font.family: backend.materialFontFamily
-            font.pixelSize: 19
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-
-        background: Rectangle {
-            radius: width / 2
-            color: iconButton.down || iconButton.hovered
-                   ? iconButton.hoverColor
-                   : iconButton.restingColor
-            border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.06)
-
-            Behavior on color {
-                ColorAnimation { duration: 120 }
-            }
-        }
-
-        scale: down ? 0.92 : 1.0
-
-        Behavior on scale {
-            NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
-        }
-    }
-
-    component ActionButton: Button {
-        id: actionButton
-
-        property bool emphasized: false
-
-        implicitHeight: 38
-        leftPadding: 16
-        rightPadding: 16
-        hoverEnabled: true
-
-        contentItem: Text {
-            text: actionButton.text
-            color: actionButton.emphasized
-                   ? root.onPrimaryColor
-                   : colors.text
-            font.family: backend.uiFontFamily
-            font.pixelSize: 11
-            font.weight: Font.DemiBold
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-        }
-
-        background: Rectangle {
-            radius: 13
-            color: actionButton.emphasized
-                   ? colors.primary
-                   : actionButton.hovered
-                     ? colors.hoverBg
-                     : colors.cardStrongBg
-            border.width: actionButton.emphasized ? 0 : 1
-            border.color: colors.panelBorder
-
-            Behavior on color {
-                ColorAnimation { duration: 120 }
-            }
-        }
-
-        scale: down ? 0.97 : 1.0
-
-        Behavior on scale {
-            NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
-        }
-    }
-
-    component SurfaceCard: Rectangle {
-        radius: 20
-        color: colors.cardBg
-        border.width: 1
-        border.color: colors.panelBorder
-
-        Behavior on color {
-            ColorAnimation { duration: 180 }
-        }
-    }
-
-    component SectionHeader: RowLayout {
-        id: sectionHeader
-
-        property string title: ""
-        property string detail: ""
-
-        Layout.fillWidth: true
-        spacing: 8
-
-        Text {
-            text: sectionHeader.title
-            color: colors.text
-            font.family: backend.uiFontFamily
-            font.pixelSize: 12
-            font.weight: Font.DemiBold
-        }
-
-        Item { Layout.fillWidth: true }
-
-        Text {
-            visible: sectionHeader.detail.length > 0
-            text: sectionHeader.detail
-            color: colors.inactive
-            font.family: backend.uiFontFamily
-            font.pixelSize: 9
-        }
-    }
-
-    component QuickTile: Rectangle {
-        id: quickTile
-
-        required property var modelData
-        required property int index
-
-        property string key: String(modelData.key)
-        property string iconName: String(modelData.icon)
-        property string title: root.quickLabel(key, String(modelData.title))
-        property string subtitle: String(modelData.subtitle)
-        property bool active: Boolean(modelData.active)
-        property color activeColor: colors.primary
-        property color activeTextColor: root.onPrimaryColor
-
-        Layout.fillWidth: true
-        Layout.preferredHeight: 62
-        radius: 16
-        border.width: 1
-        color: active
-               ? activeColor
-               : tileMouse.containsMouse
-                 ? Qt.rgba(1, 1, 1, 0.10)
-                 : Qt.rgba(1, 1, 1, 0.05)
-        border.color: active
-                      ? Qt.rgba(activeColor.r, activeColor.g, activeColor.b, 0.55)
-                      : Qt.rgba(1, 1, 1, 0.06)
-        scale: tileMouse.pressed
-               ? 0.95
-               : tileMouse.containsMouse
-                 ? 1.02
-                 : 1.0
-
-        Behavior on color {
-            ColorAnimation { duration: 140 }
-        }
-
-        Behavior on scale {
-            NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
-        }
-
-        MouseArea {
-            id: tileMouse
-
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: backend.toggleQuickSetting(quickTile.key)
-        }
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 12
-            spacing: 12
-
-            Text {
-                text: root.glyph(quickTile.iconName)
-                color: quickTile.active
-                       ? quickTile.activeTextColor
-                       : Qt.rgba(1, 1, 1, 0.72)
-                font.family: backend.materialFontFamily
-                font.pixelSize: 22
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 1
-
-                Text {
-                    Layout.fillWidth: true
-                    text: quickTile.title
-                    color: quickTile.active
-                           ? quickTile.activeTextColor
-                           : "#FFFFFF"
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 12
-                    font.weight: Font.Bold
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: quickTile.subtitle
-                    color: quickTile.active
-                           ? Qt.rgba(quickTile.activeTextColor.r,
-                                     quickTile.activeTextColor.g,
-                                     quickTile.activeTextColor.b,
-                                     0.72)
-                           : Qt.rgba(1, 1, 1, 0.50)
-                    font.family: backend.uiFontFamily
-                    font.pixelSize: 10
-                    elide: Text.ElideRight
-                }
-            }
-        }
-    }
-
-    component PillSlider: Rectangle {
-        id: pillSlider
-
-        property string iconName: ""
-        property real sliderValue: 0
-        signal edited(real value)
-
-        Layout.fillWidth: true
-        Layout.preferredHeight: 44
-        radius: height / 2
-        color: Qt.rgba(1, 1, 1, 0.05)
-
-        Rectangle {
-            id: sliderFill
-
-            width: Math.max(56, pillSlider.width * (pillSlider.sliderValue / 100))
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            radius: height / 2
-            color: colors.primary
-
-            Behavior on width {
-                NumberAnimation { duration: 90 }
-            }
-        }
-
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 16
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.glyph(pillSlider.iconName)
-            color: root.onPrimaryColor
-            font.family: backend.materialFontFamily
-            font.pixelSize: 20
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: pillSlider.edited(
-                           root.clamp(Math.round(mouse.x / width * 100), 0, 100))
-            onPositionChanged: if (pressed)
-                                   pillSlider.edited(
-                                       root.clamp(Math.round(mouse.x / width * 100), 0, 100))
-        }
     }
 
     Rectangle {
@@ -343,74 +26,77 @@ Window {
 
         Rectangle {
             id: panel
-
-            width: parent.width - 18
-            height: parent.height - 18
+            width: parent.width - 22
+            height: parent.height - 22
             anchors.centerIn: parent
-            radius: 24
-            color: Qt.rgba(panelColor.r, panelColor.g, panelColor.b, 0.65)
+            radius: 28
+            color: colors.panelBg
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.08)
+            border.color: colors.panelBorder
             clip: true
-            opacity: 0
-            scale: 0.97
 
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: "black"
-                shadowOpacity: 0.42
-                shadowBlur: 0.6
-                shadowVerticalOffset: 8
-                shadowHorizontalOffset: 0
+            Rectangle {
+                width: 240
+                height: 240
+                radius: 120
+                x: -40
+                y: -70
+                color: colors.accentSoft
+                opacity: 0.28
             }
 
-            ParallelAnimation {
-                running: true
-
-                NumberAnimation {
-                    target: panel
-                    property: "opacity"
-                    from: 0
-                    to: 1
-                    duration: 190
-                    easing.type: Easing.OutCubic
-                }
-
-                NumberAnimation {
-                    target: panel
-                    property: "scale"
-                    from: 0.97
-                    to: 1
-                    duration: 240
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 0.75
-                }
+            Rectangle {
+                width: 180
+                height: 180
+                radius: 90
+                anchors.right: parent.right
+                anchors.rightMargin: -36
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 84
+                color: colors.primary
+                opacity: 0.10
             }
 
             StackLayout {
-                id: mainStack
-
+                id: stack
                 anchors.fill: parent
+                anchors.margins: 20
                 currentIndex: 0
 
-                Item {
+                ScrollView {
+                    id: overviewView
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                        width: 10
+                        opacity: 0.0
+
+                        contentItem: Rectangle {
+                            implicitWidth: 10
+                            implicitHeight: 80
+                            radius: 5
+                            color: "transparent"
+                        }
+
+                        background: Rectangle {
+                            color: "transparent"
+                        }
+                    }
+
+                    contentWidth: availableWidth
+
                     ColumnLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 24
-                        anchors.rightMargin: 24
-                        anchors.topMargin: 22
-                        anchors.bottomMargin: 22
-                        spacing: 18
+                        width: overviewView.availableWidth
+                        spacing: 12
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 48
                             spacing: 14
 
                             Rectangle {
-                                Layout.preferredWidth: 48
-                                Layout.preferredHeight: 48
+                                width: 48
+                                height: 48
                                 radius: 24
                                 gradient: Gradient {
                                     GradientStop { position: 0.0; color: colors.primary }
@@ -419,31 +105,27 @@ Window {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: root.glyph("person")
-                                    color: root.onPrimaryColor
+                                    text: glyph("person")
                                     font.family: backend.materialFontFamily
                                     font.pixelSize: 24
+                                    color: colors.onPrimary
                                 }
                             }
 
                             ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 1
+                                spacing: 2
 
                                 Text {
-                                    Layout.fillWidth: true
                                     text: backend.username
-                                    color: "#FFFFFF"
+                                    color: colors.text
                                     font.family: backend.uiFontFamily
-                                    font.pixelSize: 15
-                                    font.weight: Font.Bold
-                                    elide: Text.ElideRight
+                                    font.pixelSize: 18
+                                    font.weight: Font.Medium
                                 }
 
                                 Text {
-                                    Layout.fillWidth: true
                                     text: "up " + backend.uptime
-                                    color: Qt.rgba(1, 1, 1, 0.50)
+                                    color: colors.textMuted
                                     font.family: backend.monoFontFamily
                                     font.pixelSize: 10
                                 }
@@ -451,73 +133,230 @@ Window {
 
                             Item { Layout.fillWidth: true }
 
-                            IconButton {
-                                iconName: "settings"
-                                onClicked: mainStack.currentIndex = 1
+                            RoundButton {
+                                text: root.glyph("settings")
+                                font.family: backend.materialFontFamily
+                                font.pixelSize: 18
+                                palette.buttonText: colors.icon
+                                onClicked: stack.currentIndex = 1
+
+                                background: Rectangle {
+                                    radius: width / 2
+                                    color: parent.hovered ? colors.hoverBg : colors.cardStrongBg
+                                }
                             }
 
-                            IconButton {
-                                iconName: "power_settings_new"
-                                foreground: "#F87171"
-                                restingColor: Qt.rgba(239, 68, 68, 0.20)
-                                hoverColor: Qt.rgba(239, 68, 68, 0.30)
+                            RoundButton {
+                                text: root.glyph("power_settings_new")
+                                font.family: backend.materialFontFamily
+                                font.pixelSize: 18
+                                palette.buttonText: colors.dangerFg
                                 onClicked: backend.closeCenter()
+
+                                background: Rectangle {
+                                    radius: width / 2
+                                    color: colors.dangerBg
+                                }
                             }
                         }
 
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 2
-                            columnSpacing: 10
                             rowSpacing: 10
+                            columnSpacing: 10
 
                             Repeater {
                                 model: backend.quickSettings
 
-                                delegate: QuickTile {
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    required property int index
                                     Layout.fillWidth: true
-                                    activeColor: modelData.key === "night"
-                                                 ? root.secondaryColor
-                                                 : colors.primary
-                                    activeTextColor: modelData.key === "night"
-                                                     ? root.onSecondaryColor
-                                                     : root.onPrimaryColor
+                                    Layout.preferredHeight: 78
+                                    radius: 20
+                                    color: modelData.active ? colors.primary : colors.cardBg
+                                    border.width: 1
+                                    border.color: modelData.active ? colors.primary : colors.panelBorder
+                                    scale: tileMouse.containsMouse ? 1.015 : 1.0
+
+                                    Behavior on scale {
+                                        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                    }
+
+                                    MouseArea {
+                                        id: tileMouse
+                                        anchors.fill: parent
+                                        onClicked: backend.toggleQuickSetting(parent.modelData.key)
+                                        hoverEnabled: true
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 10
+
+                                        Text {
+                                            text: root.glyph(modelData.icon)
+                                            font.family: backend.materialFontFamily
+                                            font.pixelSize: 20
+                                            color: modelData.active ? colors.onPrimary : colors.icon
+                                        }
+
+                                        ColumnLayout {
+                                            spacing: 2
+                                            Layout.fillWidth: true
+
+                                            Text {
+                                                text: modelData.title
+                                                color: modelData.active ? colors.onPrimary : colors.text
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 12
+                                                font.weight: Font.Medium
+                                            }
+
+                                            Text {
+                                                text: modelData.subtitle
+                                                color: modelData.active ? colors.onPrimary : colors.textMuted
+                                                opacity: modelData.active ? 0.75 : 1.0
+                                                font.family: backend.uiFontFamily
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 10
+                            spacing: 8
 
-                            PillSlider {
-                                iconName: "brightness_medium"
-                                sliderValue: backend.brightness
-                                onEdited: value => backend.setBrightness(Math.round(value))
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 48
+                                radius: 24
+                                color: colors.cardBg
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 14
+                                    spacing: 12
+
+                                    Text {
+                                        text: root.glyph("brightness_medium")
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 20
+                                        color: colors.primary
+                                    }
+
+                                    Slider {
+                                        Layout.fillWidth: true
+                                        from: 0
+                                        to: 100
+                                        value: backend.brightness
+                                        live: true
+                                        onValueChanged: if (pressed) backend.setBrightness(Math.round(value))
+
+                                        background: Rectangle {
+                                            x: 0
+                                            y: (parent.height - height) / 2
+                                            width: parent.width
+                                            height: 42
+                                            radius: 21
+                                            color: colors.cardStrongBg
+
+                                            Rectangle {
+                                                width: parent.width * (parent.parent.visualPosition || 0)
+                                                height: parent.height
+                                                radius: 21
+                                                color: colors.primary
+                                            }
+                                        }
+
+                                        handle: Rectangle {
+                                            implicitWidth: 18
+                                            implicitHeight: 18
+                                            radius: 9
+                                            color: "transparent"
+                                        }
+                                    }
+                                }
                             }
 
-                            PillSlider {
-                                iconName: backend.volume <= 0
-                                          ? "volume_off"
-                                          : backend.volume < 45
-                                            ? "volume_down"
-                                            : "volume_up"
-                                sliderValue: backend.volume
-                                onEdited: value => backend.setVolume(Math.round(value))
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 48
+                                radius: 24
+                                color: colors.cardBg
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 14
+                                    spacing: 12
+
+                                    Text {
+                                        text: root.glyph("volume_up")
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 20
+                                        color: colors.primary
+                                    }
+
+                                    Slider {
+                                        Layout.fillWidth: true
+                                        from: 0
+                                        to: 100
+                                        value: backend.volume
+                                        live: true
+                                        onValueChanged: if (pressed) backend.setVolume(Math.round(value))
+
+                                        background: Rectangle {
+                                            x: 0
+                                            y: (parent.height - height) / 2
+                                            width: parent.width
+                                            height: 42
+                                            radius: 21
+                                            color: colors.cardStrongBg
+
+                                            Rectangle {
+                                                width: parent.width * (parent.parent.visualPosition || 0)
+                                                height: parent.height
+                                                radius: 21
+                                                color: colors.primary
+                                            }
+                                        }
+
+                                        handle: Rectangle {
+                                            implicitWidth: 18
+                                            implicitHeight: 18
+                                            radius: 9
+                                            color: "transparent"
+                                        }
+                                    }
+                                }
                             }
                         }
 
-                        Item { Layout.fillHeight: true }
-
                         Rectangle {
-                            id: mediaCard
-
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 160
-                            radius: 16
-                            color: Qt.rgba(73, 69, 79, 0.40)
+                            Layout.preferredHeight: 168
+                            radius: 22
                             border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, 0.05)
+                            border.color: colors.mediaBorder
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: colors.mediaStart }
+                                GradientStop { position: 0.55; color: colors.mediaEnd }
+                                GradientStop { position: 1.0; color: colors.panelBg }
+                            }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                radius: parent.radius - 1
+                                color: "#7F000000"
+                            }
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -529,54 +368,43 @@ Window {
                                     spacing: 14
 
                                     Rectangle {
-                                        Layout.preferredWidth: 56
-                                        Layout.preferredHeight: 56
-                                        radius: 12
-                                        clip: true
-                                        color: "#1F2937"
+                                        width: 62
+                                        height: 62
+                                        radius: 16
+                                        color: colors.cardStrongBg
                                         border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.10)
+                                        border.color: colors.panelBorder
+                                        clip: true
 
                                         Image {
                                             anchors.fill: parent
                                             source: backend.mediaCover
                                             fillMode: Image.PreserveAspectCrop
-                                            asynchronous: true
-                                            visible: String(backend.mediaCover || "").length > 0
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            visible: String(backend.mediaCover || "").length === 0
-                                            text: root.glyph("music_note")
-                                            color: colors.primary
-                                            font.family: backend.materialFontFamily
-                                            font.pixelSize: 26
+                                            visible: source !== ""
                                         }
                                     }
 
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        Layout.fillHeight: true
-                                        spacing: 3
+                                        spacing: 2
 
                                         Text {
-                                            Layout.fillWidth: true
-                                            text: backend.mediaTitle || "Nothing playing"
-                                            color: "#FFFFFF"
+                                            text: backend.mediaTitle
+                                            color: colors.text
                                             font.family: backend.uiFontFamily
-                                            font.pixelSize: 14
-                                            font.weight: Font.Bold
+                                            font.pixelSize: 15
+                                            font.weight: Font.Medium
                                             elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
 
                                         Text {
-                                            Layout.fillWidth: true
-                                            text: backend.mediaArtist || "Start audio in any MPRIS player"
+                                            text: backend.mediaArtist
                                             color: colors.primary
                                             font.family: backend.uiFontFamily
                                             font.pixelSize: 12
                                             elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
                                     }
                                 }
@@ -585,73 +413,271 @@ Window {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 4
                                     radius: 2
-                                    color: Qt.rgba(1, 1, 1, 0.10)
+                                    color: colors.panelBorder
 
                                     Rectangle {
-                                        width: parent.width
-                                               * root.clamp(backend.mediaProgress || 0, 0, 1)
+                                        width: parent.width * backend.mediaProgress
                                         height: parent.height
-                                        radius: parent.radius
+                                        radius: 2
                                         color: colors.primary
-
-                                        Behavior on width {
-                                            NumberAnimation { duration: 200 }
-                                        }
                                     }
                                 }
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 8
 
                                     Text {
                                         text: backend.mediaElapsed
-                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                        color: colors.inactive
                                         font.family: backend.monoFontFamily
                                         font.pixelSize: 10
                                     }
 
                                     Item { Layout.fillWidth: true }
 
-                                    IconButton {
-                                        implicitWidth: 34
-                                        implicitHeight: 34
-                                        iconName: "skip_previous"
-                                        foreground: Qt.rgba(1, 1, 1, 0.72)
-                                        restingColor: "transparent"
-                                        hoverColor: Qt.rgba(1, 1, 1, 0.10)
+                                    RoundButton {
+                                        text: root.glyph("skip_previous")
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 20
+                                        palette.buttonText: root.mediaControlColor
                                         onClicked: backend.triggerMediaAction("previous")
+                                        background: Rectangle { color: "transparent"; radius: width / 2 }
                                     }
 
-                                    IconButton {
-                                        implicitWidth: 42
-                                        implicitHeight: 42
-                                        iconName: backend.mediaStatus === "Playing"
-                                                  ? "pause"
-                                                  : "play_arrow"
-                                        foreground: colors.onPrimary
-                                        restingColor: colors.primary
-                                        hoverColor: colors.primary
+                                    RoundButton {
+                                        text: backend.mediaStatus === "Playing" ? root.glyph("pause") : root.glyph("play_arrow")
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 20
                                         onClicked: backend.triggerMediaAction("toggle")
+                                        palette.buttonText: colors.playFg
+                                        background: Rectangle { color: colors.primary; radius: width / 2 }
                                     }
 
-                                    IconButton {
-                                        implicitWidth: 34
-                                        implicitHeight: 34
-                                        iconName: "skip_next"
-                                        foreground: Qt.rgba(1, 1, 1, 0.72)
-                                        restingColor: "transparent"
-                                        hoverColor: Qt.rgba(1, 1, 1, 0.10)
+                                    RoundButton {
+                                        text: root.glyph("skip_next")
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 20
+                                        palette.buttonText: root.mediaControlColor
                                         onClicked: backend.triggerMediaAction("next")
+                                        background: Rectangle { color: "transparent"; radius: width / 2 }
                                     }
 
                                     Item { Layout.fillWidth: true }
 
                                     Text {
                                         text: backend.mediaTotal
-                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                        color: colors.inactive
                                         font.family: backend.monoFontFamily
                                         font.pixelSize: 10
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 64
+                            radius: 20
+                            color: colors.cardBg
+                            border.width: 1
+                            border.color: colors.panelBorder
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 8
+
+                                Image {
+                                    source: "../../assets/kdeconnect.svg"
+                                    sourceSize.width: 18
+                                    sourceSize.height: 18
+                                    fillMode: Image.PreserveAspectFit
+                                    Layout.preferredWidth: 18
+                                    Layout.preferredHeight: 18
+                                }
+
+                                Text {
+                                    text: backend.phoneInfo.name || "No devices connected"
+                                    color: colors.text
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    text: backend.phoneInfo.status || ""
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                Text {
+                                    text: backend.phoneInfo.battery || ""
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                Rectangle {
+                                    width: 10
+                                    height: 10
+                                    radius: 5
+                                    color: backend.phoneInfo.online ? colors.phoneOnline : colors.phoneOffline
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            visible: backend.homeAssistantVisible
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 118
+                            radius: 20
+                            color: colors.cardBg
+                            border.width: 1
+                            border.color: colors.panelBorder
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Image {
+                                        source: "../../assets/home-assistant-dark.svg"
+                                        sourceSize.width: 18
+                                        sourceSize.height: 18
+                                        fillMode: Image.PreserveAspectFit
+                                        Layout.preferredWidth: 18
+                                        Layout.preferredHeight: 18
+                                    }
+
+                                    Text {
+                                        text: backend.homeAssistantStatus
+                                        color: colors.textMuted
+                                        font.family: backend.uiFontFamily
+                                        font.pixelSize: 10
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Button {
+                                        text: "Settings"
+                                        onClicked: backend.openSettingsApp("services")
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Repeater {
+                                        model: backend.homeAssistantTiles
+
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            required property int index
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 72
+                                            radius: 16
+                                            color: colors.cardStrongBg
+                                            border.width: 1
+                                            border.color: colors.panelBorder
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                enabled: parent.modelData.enabled
+                                                onClicked: backend.activateHomeAssistantTile(index)
+                                            }
+
+                                            Column {
+                                                anchors.centerIn: parent
+                                                spacing: 4
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: root.glyph(modelData.icon)
+                                                    font.family: backend.materialFontFamily
+                                                    font.pixelSize: 18
+                                                    color: colors.primary
+                                                }
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: modelData.title
+                                                    color: colors.text
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.Medium
+                                                }
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: modelData.subtitle
+                                                    color: colors.textMuted
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 9
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            model: backend.serviceCards
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                required property int index
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 72
+                                radius: 20
+                                color: colors.cardBg
+                                border.width: 1
+                                border.color: colors.panelBorder
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 10
+
+                                    Text {
+                                        text: root.glyph(modelData.icon)
+                                        font.family: backend.materialFontFamily
+                                        font.pixelSize: 18
+                                        color: colors.primary
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            text: modelData.title
+                                            color: colors.text
+                                            font.family: backend.uiFontFamily
+                                            font.pixelSize: 12
+                                            font.weight: Font.Medium
+                                        }
+
+                                        Text {
+                                            text: modelData.detail
+                                            color: colors.textMuted
+                                            font.family: backend.uiFontFamily
+                                            font.pixelSize: 10
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    Button {
+                                        text: "Open"
+                                        onClicked: backend.launchService(modelData.key)
                                     }
                                 }
                             }
@@ -659,750 +685,316 @@ Window {
                     }
                 }
 
-                Item {
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 20
-                        anchors.rightMargin: 20
-                        anchors.topMargin: 16
-                        anchors.bottomMargin: 16
-                        spacing: 12
+                RowLayout {
+                    spacing: 16
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 46
+                    Rectangle {
+                        Layout.preferredWidth: 150
+                        Layout.fillHeight: true
+                        radius: 22
+                        color: colors.cardBg
+                        border.width: 1
+                        border.color: colors.panelBorder
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 14
                             spacing: 10
 
-                            IconButton {
-                                iconName: "arrow_back"
-                                onClicked: mainStack.currentIndex = 0
-                            }
-
-                            ColumnLayout {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 0
+
+                                RoundButton {
+                                    text: root.glyph("arrow_back")
+                                    font.family: backend.materialFontFamily
+                                    onClicked: stack.currentIndex = 0
+                                    background: Rectangle { radius: width / 2; color: colors.cardStrongBg }
+                                }
 
                                 Text {
-                                    text: "Center settings"
+                                    text: "Settings"
                                     color: colors.text
                                     font.family: backend.uiFontFamily
-                                    font.pixelSize: 16
-                                    font.weight: Font.DemiBold
-                                }
-
-                                Text {
-                                    text: "Configure without leaving the panel"
-                                    color: colors.textMuted
-                                    font.family: backend.uiFontFamily
-                                    font.pixelSize: 9
+                                    font.pixelSize: 15
+                                    font.weight: Font.Medium
                                 }
                             }
 
-                            IconButton {
-                                iconName: "open_in_new"
+                            Repeater {
+                                model: [
+                                    { title: "Overview", icon: "hub" },
+                                    { title: "Appearance", icon: "invert_colors" },
+                                    { title: "Home Assistant", icon: "home" }
+                                ]
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    required property int index
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 48
+                                    radius: 16
+                                    color: index === settingsSection ? colors.primary : colors.cardStrongBg
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: settingsSection = index
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 10
+
+                                        Text {
+                                            text: root.glyph(modelData.icon)
+                                            font.family: backend.materialFontFamily
+                                            font.pixelSize: 18
+                                            color: index === settingsSection ? colors.onPrimary : colors.icon
+                                        }
+
+                                        Text {
+                                            text: modelData.title
+                                            color: index === settingsSection ? colors.onPrimary : colors.text
+                                            font.family: backend.uiFontFamily
+                                            font.pixelSize: 12
+                                            font.weight: Font.Medium
+                                        }
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillHeight: true }
+
+                            Button {
+                                Layout.fillWidth: true
+                                text: "Open Full Settings"
                                 onClicked: backend.openOverviewSettings()
                             }
                         }
+                    }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 46
-                            radius: 16
-                            color: colors.cardBg
-                            border.width: 1
-                            border.color: colors.panelBorder
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 4
-                                spacing: 4
-
-                                Repeater {
-                                    model: [
-                                        { title: "Overview", icon: "monitor_heart" },
-                                        { title: "Theme", icon: "palette" },
-                                        { title: "Home", icon: "home" }
-                                    ]
-
-                                    delegate: Rectangle {
-                                        id: settingsTab
-
-                                        required property var modelData
-                                        required property int index
-
-                                        Layout.fillWidth: true
-                                        Layout.fillHeight: true
-                                        radius: 12
-                                        color: settingsSection === index
-                                               ? colors.primary
-                                               : tabArea.containsMouse
-                                                 ? colors.hoverBg
-                                                 : "transparent"
-
-                                        Behavior on color {
-                                            ColorAnimation { duration: 120 }
-                                        }
-
-                                        MouseArea {
-                                            id: tabArea
-
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: settingsSection = settingsTab.index
-                                        }
-
-                                        Row {
-                                            anchors.centerIn: parent
-                                            spacing: 6
-
-                                            Text {
-                                                text: root.glyph(settingsTab.modelData.icon)
-                                                color: settingsSection === settingsTab.index
-                                                       ? colors.onPrimary
-                                                       : colors.icon
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 15
-                                            }
-
-                                            Text {
-                                                text: settingsTab.modelData.title
-                                                color: settingsSection === settingsTab.index
-                                                       ? colors.onPrimary
-                                                       : colors.text
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 9
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 22
+                        color: colors.cardBg
+                        border.width: 1
+                        border.color: colors.panelBorder
 
                         StackLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            anchors.fill: parent
+                            anchors.margins: 16
                             currentIndex: settingsSection
 
-                            ScrollView {
-                                id: systemOverviewView
+                            ColumnLayout {
+                                spacing: 12
 
-                                clip: true
-                                contentWidth: availableWidth
-                                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                                ScrollBar.vertical: ScrollBar {
-                                    policy: ScrollBar.AsNeeded
-                                    width: 4
-                                    opacity: 0.0
-
-                                    contentItem: Rectangle {
-                                        implicitWidth: 4
-                                        implicitHeight: 72
-                                        radius: 2
-                                        color: colors.primary
-                                    }
-
-                                    background: Rectangle { color: "transparent" }
+                                Text {
+                                    text: "System Overview"
+                                    color: colors.text
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 16
+                                    font.weight: Font.Medium
                                 }
 
-                                ColumnLayout {
-                                    width: systemOverviewView.availableWidth
-                                    spacing: 12
+                                Text {
+                                    text: "Quick telemetry for this session and shell environment."
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                }
 
-                                    SurfaceCard {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 88
-                                        radius: 20
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    rowSpacing: 10
+                                    columnSpacing: 10
 
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 14
-                                            spacing: 12
+                                    Repeater {
+                                        model: backend.systemOverview
 
-                                            Rectangle {
-                                                Layout.preferredWidth: 50
-                                                Layout.preferredHeight: 50
-                                                radius: 16
-                                                gradient: Gradient {
-                                                    GradientStop { position: 0.0; color: colors.primary }
-                                                    GradientStop { position: 1.0; color: colors.tertiary }
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            required property int index
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 78
+                                            radius: 16
+                                            color: colors.cardStrongBg
+                                            border.width: 1
+                                            border.color: colors.panelBorder
+
+                                            Column {
+                                                anchors.fill: parent
+                                                anchors.margins: 12
+                                                spacing: 4
+
+                                                Text {
+                                                    text: modelData.label
+                                                    color: colors.inactive
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 10
                                                 }
 
                                                 Text {
-                                                    anchors.centerIn: parent
-                                                    text: root.glyph("computer")
-                                                    color: colors.onPrimary
-                                                    font.family: backend.materialFontFamily
-                                                    font.pixelSize: 24
-                                                }
-                                            }
-
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 3
-
-                                                Text {
-                                                    text: "System overview"
+                                                    text: modelData.value
                                                     color: colors.text
                                                     font.family: backend.uiFontFamily
-                                                    font.pixelSize: 14
-                                                    font.weight: Font.DemiBold
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: "Live information from this i3 session and the Hanauta shell."
-                                                    color: colors.textMuted
-                                                    font.family: backend.uiFontFamily
-                                                    font.pixelSize: 9
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Medium
                                                     wrapMode: Text.WordWrap
                                                 }
                                             }
                                         }
                                     }
+                                }
+                            }
 
-                                    GridLayout {
-                                        Layout.fillWidth: true
-                                        columns: 2
-                                        rowSpacing: 9
-                                        columnSpacing: 9
+                            ColumnLayout {
+                                spacing: 12
 
-                                        Repeater {
-                                            model: backend.systemOverview
+                                Text {
+                                    text: "Appearance"
+                                    color: colors.text
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 16
+                                    font.weight: Font.Medium
+                                }
 
-                                            delegate: SurfaceCard {
-                                                id: overviewMetric
+                                Text {
+                                    text: "Pick an accent preset for the notification center."
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                }
 
-                                                required property var modelData
-                                                required property int index
+                                Text {
+                                    text: backend.appearanceStatus
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                }
 
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 82
-                                                radius: 18
+                                RowLayout {
+                                    spacing: 10
 
-                                                ColumnLayout {
-                                                    anchors.fill: parent
-                                                    anchors.margins: 12
-                                                    spacing: 5
+                                    Repeater {
+                                        model: ["orchid", "mint", "sunset"]
 
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: overviewMetric.modelData.label
-                                                        color: colors.inactive
-                                                        font.family: backend.uiFontFamily
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.Medium
-                                                        font.capitalization: Font.AllUppercase
-                                                        font.letterSpacing: 0.6
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: overviewMetric.modelData.value
-                                                        color: colors.text
-                                                        font.family: backend.uiFontFamily
-                                                        font.pixelSize: 12
-                                                        font.weight: Font.DemiBold
-                                                        wrapMode: Text.WordWrap
-                                                        maximumLineCount: 2
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    Item { Layout.fillHeight: true }
-
-                                                    Rectangle {
-                                                        Layout.fillWidth: true
-                                                        Layout.preferredHeight: 3
-                                                        radius: 2
-                                                        color: colors.cardStrongBg
-
-                                                        Rectangle {
-                                                            width: parent.width * 0.62
-                                                            height: parent.height
-                                                            radius: parent.radius
-                                                            color: colors.primary
-                                                            opacity: 0.72
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                        delegate: Button {
+                                            required property string modelData
+                                            text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
+                                            onClicked: backend.setAccent(modelData)
                                         }
                                     }
                                 }
                             }
 
-                            ScrollView {
-                                id: appearanceView
+                            ColumnLayout {
+                                spacing: 12
 
-                                clip: true
-                                contentWidth: availableWidth
-                                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                                ScrollBar.vertical: ScrollBar {
-                                    policy: ScrollBar.AsNeeded
-                                    width: 4
-                                    opacity: 0.0
-
-                                    contentItem: Rectangle {
-                                        implicitWidth: 4
-                                        implicitHeight: 72
-                                        radius: 2
-                                        color: colors.primary
-                                    }
-
-                                    background: Rectangle { color: "transparent" }
+                                Text {
+                                    text: "Home Assistant"
+                                    color: colors.text
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 16
+                                    font.weight: Font.Medium
                                 }
 
-                                ColumnLayout {
-                                    width: appearanceView.availableWidth
-                                    spacing: 12
+                                Text {
+                                    text: "Connect to your instance, browse entities, and pin up to five controls."
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
 
-                                    SurfaceCard {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 150
-                                        radius: 22
-                                        clip: true
+                                TextField {
+                                    Layout.fillWidth: true
+                                    placeholderText: "https://homeassistant.local:8123"
+                                    text: backend.haUrl
+                                    onTextChanged: backend.setHomeAssistantUrl(text)
+                                }
 
-                                        Rectangle {
-                                            width: 150
-                                            height: 150
-                                            radius: width / 2
-                                            x: -56
-                                            y: -64
-                                            color: colors.accentSoft
-                                            opacity: 0.55
-                                        }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    placeholderText: "Long-lived access token"
+                                    echoMode: TextInput.Password
+                                    text: backend.haToken
+                                    onTextChanged: backend.setHomeAssistantToken(text)
+                                }
 
-                                        Rectangle {
-                                            width: 110
-                                            height: 110
-                                            radius: width / 2
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: -40
-                                            anchors.bottom: parent.bottom
-                                            anchors.bottomMargin: -24
-                                            color: colors.primary
-                                            opacity: 0.16
-                                        }
+                                RowLayout {
+                                    spacing: 8
 
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 16
-                                            spacing: 8
-
-                                            Text {
-                                                text: "Appearance"
-                                                color: colors.text
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 16
-                                                font.weight: Font.DemiBold
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: "Choose a Hanauta accent. The panel updates immediately through your palette backend."
-                                                color: colors.textMuted
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
-                                                wrapMode: Text.WordWrap
-                                            }
-
-                                            Item { Layout.fillHeight: true }
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 8
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 40
-                                                    Layout.preferredHeight: 40
-                                                    radius: 14
-                                                    color: colors.primary
-                                                }
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 40
-                                                    Layout.preferredHeight: 40
-                                                    radius: 14
-                                                    color: colors.tertiary
-                                                }
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 40
-                                                    Layout.preferredHeight: 40
-                                                    radius: 14
-                                                    color: colors.accentSoft
-                                                }
-
-                                                Item { Layout.fillWidth: true }
-
-                                                Text {
-                                                    text: root.glyph("auto_awesome")
-                                                    color: colors.primary
-                                                    font.family: backend.materialFontFamily
-                                                    font.pixelSize: 24
-                                                }
-                                            }
-                                        }
+                                    Button {
+                                        text: "Save"
+                                        onClicked: backend.saveHomeAssistantSettings()
                                     }
 
-                                    SectionHeader {
-                                        title: "Accent presets"
-                                        detail: "Live preview"
+                                    Button {
+                                        text: "Fetch Entities"
+                                        onClicked: backend.refreshHomeAssistant()
                                     }
+                                }
 
-                                    GridLayout {
-                                        Layout.fillWidth: true
-                                        columns: 3
-                                        columnSpacing: 8
-                                        rowSpacing: 8
+                                Text {
+                                    text: backend.haSettingsStatus
+                                    color: colors.textMuted
+                                    font.family: backend.uiFontFamily
+                                    font.pixelSize: 11
+                                }
 
-                                        Repeater {
-                                            model: [
-                                                { key: "orchid", title: "Orchid", icon: "local_florist" },
-                                                { key: "mint", title: "Mint", icon: "eco" },
-                                                { key: "sunset", title: "Sunset", icon: "wb_twilight" }
-                                            ]
+                                ListView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 8
+                                    model: backend.haEntities
 
-                                            delegate: Rectangle {
-                                                id: accentPreset
-
-                                                required property var modelData
-                                                required property int index
-
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 82
-                                                radius: 18
-                                                color: presetMouse.containsMouse
-                                                       ? colors.hoverBg
-                                                       : colors.cardBg
-                                                border.width: 1
-                                                border.color: colors.panelBorder
-
-                                                Behavior on color {
-                                                    ColorAnimation { duration: 120 }
-                                                }
-
-                                                MouseArea {
-                                                    id: presetMouse
-
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: backend.setAccent(accentPreset.modelData.key)
-                                                }
-
-                                                Column {
-                                                    anchors.centerIn: parent
-                                                    width: parent.width - 12
-                                                    spacing: 6
-
-                                                    Text {
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        text: root.glyph(accentPreset.modelData.icon)
-                                                        color: colors.primary
-                                                        font.family: backend.materialFontFamily
-                                                        font.pixelSize: 22
-                                                    }
-
-                                                    Text {
-                                                        width: parent.width
-                                                        text: accentPreset.modelData.title
-                                                        color: colors.text
-                                                        font.family: backend.uiFontFamily
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.DemiBold
-                                                        horizontalAlignment: Text.AlignHCenter
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    SurfaceCard {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 54
-                                        radius: 18
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        width: ListView.view.width
+                                        height: 72
+                                        radius: 16
+                                        color: colors.cardStrongBg
+                                        border.width: 1
+                                        border.color: colors.panelBorder
 
                                         RowLayout {
                                             anchors.fill: parent
                                             anchors.margins: 12
                                             spacing: 10
 
-                                            Text {
-                                                text: root.glyph("info")
-                                                color: colors.primary
-                                                font.family: backend.materialFontFamily
-                                                font.pixelSize: 18
-                                            }
-
-                                            Text {
+                                            ColumnLayout {
                                                 Layout.fillWidth: true
-                                                text: backend.appearanceStatus
-                                                color: colors.textMuted
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 9
-                                                wrapMode: Text.WordWrap
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                                                spacing: 2
 
-                            ScrollView {
-                                id: homeView
-
-                                clip: true
-                                contentWidth: availableWidth
-                                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                                ScrollBar.vertical: ScrollBar {
-                                    policy: ScrollBar.AsNeeded
-                                    width: 4
-                                    opacity: 0.0
-
-                                    contentItem: Rectangle {
-                                        implicitWidth: 4
-                                        implicitHeight: 72
-                                        radius: 2
-                                        color: colors.primary
-                                    }
-
-                                    background: Rectangle { color: "transparent" }
-                                }
-
-                                ColumnLayout {
-                                    width: homeView.availableWidth
-                                    spacing: 10
-
-                                    SurfaceCard {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 176
-                                        radius: 22
-
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 14
-                                            spacing: 9
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 10
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 38
-                                                    Layout.preferredHeight: 38
-                                                    radius: 13
-                                                    color: colors.accentSoft
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: root.glyph("home")
-                                                        color: colors.primary
-                                                        font.family: backend.materialFontFamily
-                                                        font.pixelSize: 20
-                                                    }
-                                                }
-
-                                                ColumnLayout {
+                                                Text {
+                                                    text: parent.modelData.name
+                                                    color: colors.text
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Medium
+                                                    elide: Text.ElideRight
                                                     Layout.fillWidth: true
-                                                    spacing: 1
-
-                                                    Text {
-                                                        text: "Home Assistant"
-                                                        color: colors.text
-                                                        font.family: backend.uiFontFamily
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.DemiBold
-                                                    }
-
-                                                    Text {
-                                                        text: "Connect and pin up to five entities"
-                                                        color: colors.textMuted
-                                                        font.family: backend.uiFontFamily
-                                                        font.pixelSize: 9
-                                                    }
-                                                }
-                                            }
-
-                                            TextField {
-                                                id: haUrlField
-
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 42
-                                                placeholderText: "https://homeassistant.local:8123"
-                                                text: backend.haUrl
-                                                color: colors.text
-                                                placeholderTextColor: colors.inactive
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
-                                                leftPadding: 13
-                                                rightPadding: 13
-                                                selectByMouse: true
-                                                onTextEdited: backend.setHomeAssistantUrl(text)
-
-                                                background: Rectangle {
-                                                    radius: 14
-                                                    color: colors.cardStrongBg
-                                                    border.width: haUrlField.activeFocus ? 2 : 1
-                                                    border.color: haUrlField.activeFocus
-                                                                  ? colors.primary
-                                                                  : colors.panelBorder
-                                                }
-                                            }
-
-                                            TextField {
-                                                id: haTokenField
-
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 42
-                                                placeholderText: "Long-lived access token"
-                                                echoMode: TextInput.Password
-                                                text: backend.haToken
-                                                color: colors.text
-                                                placeholderTextColor: colors.inactive
-                                                font.family: backend.uiFontFamily
-                                                font.pixelSize: 10
-                                                leftPadding: 13
-                                                rightPadding: 13
-                                                selectByMouse: true
-                                                onTextEdited: backend.setHomeAssistantToken(text)
-
-                                                background: Rectangle {
-                                                    radius: 14
-                                                    color: colors.cardStrongBg
-                                                    border.width: haTokenField.activeFocus ? 2 : 1
-                                                    border.color: haTokenField.activeFocus
-                                                                  ? colors.primary
-                                                                  : colors.panelBorder
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        ActionButton {
-                                            Layout.fillWidth: true
-                                            text: "Save connection"
-                                            emphasized: true
-                                            onClicked: backend.saveHomeAssistantSettings()
-                                        }
-
-                                        ActionButton {
-                                            Layout.fillWidth: true
-                                            text: "Fetch entities"
-                                            onClicked: backend.refreshHomeAssistant()
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: backend.haSettingsStatus
-                                        color: colors.textMuted
-                                        font.family: backend.uiFontFamily
-                                        font.pixelSize: 9
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    SectionHeader {
-                                        title: "Available entities"
-                                        detail: "Pin to dashboard"
-                                    }
-
-                                    ListView {
-                                        id: entitiesList
-
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 260
-                                        clip: true
-                                        spacing: 8
-                                        model: backend.haEntities
-                                        boundsBehavior: Flickable.StopAtBounds
-
-                                        ScrollBar.vertical: ScrollBar {
-                                            policy: ScrollBar.AsNeeded
-                                            width: 4
-
-                                            contentItem: Rectangle {
-                                                implicitWidth: 4
-                                                implicitHeight: 70
-                                                radius: 2
-                                                color: colors.primary
-                                                opacity: 0.5
-                                            }
-                                        }
-
-                                        delegate: SurfaceCard {
-                                            id: entityCard
-
-                                            required property var modelData
-
-                                            width: ListView.view.width
-                                            height: 64
-                                            radius: 18
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 11
-                                                spacing: 10
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 36
-                                                    Layout.preferredHeight: 36
-                                                    radius: 12
-                                                    color: colors.cardStrongBg
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: root.glyph("sensors")
-                                                        color: colors.primary
-                                                        font.family: backend.materialFontFamily
-                                                        font.pixelSize: 17
-                                                    }
                                                 }
 
-                                                ColumnLayout {
+                                                Text {
+                                                    text: parent.modelData.entity_id + " • " + parent.modelData.state
+                                                    color: colors.textMuted
+                                                    font.family: backend.uiFontFamily
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
                                                     Layout.fillWidth: true
-                                                    spacing: 2
-
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: entityCard.modelData.name
-                                                        color: colors.text
-                                                        font.family: backend.uiFontFamily
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: entityCard.modelData.entity_id
-                                                              + "  •  "
-                                                              + entityCard.modelData.state
-                                                        color: colors.textMuted
-                                                        font.family: backend.monoFontFamily
-                                                        font.pixelSize: 8
-                                                        elide: Text.ElideRight
-                                                    }
-                                                }
-
-                                                ActionButton {
-                                                    text: entityCard.modelData.pinned ? "Unpin" : "Pin"
-                                                    emphasized: !entityCard.modelData.pinned
-                                                    onClicked: backend.togglePinEntity(
-                                                                   entityCard.modelData.entity_id)
                                                 }
                                             }
-                                        }
 
-                                        footer: Item { height: 4 }
+                                            Button {
+                                                text: parent.modelData.pinned ? "Unpin" : "Pin"
+                                                onClicked: backend.togglePinEntity(parent.parent.modelData.entity_id)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1415,11 +1007,6 @@ Window {
 
     Shortcut {
         sequence: "Escape"
-        onActivated: {
-            if (mainStack.currentIndex === 1)
-                mainStack.currentIndex = 0
-            else
-                backend.closeCenter()
-        }
+        onActivated: backend.closeCenter()
     }
 }

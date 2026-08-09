@@ -12,8 +12,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWi
 from notif_center.paths import (
     FALLBACK_COVER, GAMES_CACHE_PATH, LUTRIS_COVERART_DIRS, LUTRIS_DB, LUTRIS_ICON, SCRIPTS_DIR, STEAM_ICON,
 )
-from notif_center.utils import format_playtime_hours, material_icon, platform_icon_svg_path, render_svg_pixmap, run_cmd
-from app_locale import t
+from notif_center.utils import format_playtime_hours, material_icon, render_svg_pixmap, run_cmd
 
 
 def load_cached_game_slides(limit: int = 4) -> list[dict]:
@@ -90,7 +89,7 @@ def load_lutris_game_slides(limit: int = 2) -> list[dict]:
     slides: list[dict] = []
     for name, slug, playtime, lastplayed, runner, platform in rows:
         hours = float(playtime or 0.0)
-        platform_label = f"Lutris \u2022 {runner or platform or t('carousel.platform_lutris_label')}"
+        platform_label = f"Lutris \u2022 {runner or platform or 'Library'}"
         cover_path = ""
         if slug:
             for root in LUTRIS_COVERART_DIRS:
@@ -159,12 +158,10 @@ def load_steam_game_slides(limit: int = 2) -> list[dict]:
 
 
 class GameCarouselCard(QFrame):
-    def __init__(self, ui_font: str, material_font: str, panel_bg: str = "rgba(31, 22, 38, 0.94)") -> None:
+    def __init__(self, ui_font: str, material_font: str) -> None:
         super().__init__()
         self.ui_font = ui_font
         self.material_font = material_font
-        self._panel_bg = panel_bg
-        self._slide_palettes: list[tuple[str, str, str, str] | None] = []
         self.setObjectName("gameCarouselCard")
         self._slides: list[QFrame] = []
         self._dots: list[QLabel] = []
@@ -173,10 +170,6 @@ class GameCarouselCard(QFrame):
         self._auto_timer.timeout.connect(self.next_slide)
         self._auto_timer.start()
 
-        self.game_base = QFrame(self)
-        self.game_base.setObjectName("gameBase")
-        self.game_base.lower()
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
@@ -184,11 +177,11 @@ class GameCarouselCard(QFrame):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(6)
-        self.kicker = QLabel(t("carousel.recently_played"))
+        self.kicker = QLabel("Recently games played")
         self.kicker.setObjectName("gameKicker")
         header.addWidget(self.kicker, 1)
 
-        self.play_button = QPushButton(t("btn.play"))
+        self.play_button = QPushButton("PLAY")
         self.play_button.setObjectName("playButton")
         self.play_button.setCursor(Qt.CursorShape.PointingHandCursor)
         header.addWidget(self.play_button)
@@ -196,12 +189,12 @@ class GameCarouselCard(QFrame):
         self.prev_button = QPushButton(material_icon("chevron_left"))
         self.prev_button.setObjectName("compactIconAction")
         self.prev_button.setFont(QFont(self.material_font, 17))
-        self.prev_button.setFixedSize(28, 28)
+        self.prev_button.setFixedSize(30, 30)
         self.prev_button.clicked.connect(self.previous_slide)
         self.next_button = QPushButton(material_icon("chevron_right"))
         self.next_button.setObjectName("compactIconAction")
         self.next_button.setFont(QFont(self.material_font, 17))
-        self.next_button.setFixedSize(28, 28)
+        self.next_button.setFixedSize(30, 30)
         self.next_button.clicked.connect(self.next_slide)
         self.prev_button.clicked.connect(self._restart_autoplay)
         self.next_button.clicked.connect(self._restart_autoplay)
@@ -211,7 +204,6 @@ class GameCarouselCard(QFrame):
 
         self.stack = QStackedWidget()
         self.stack.setObjectName("gameStack")
-        self.stack.currentChanged.connect(self._on_slide_changed)
         layout.addWidget(self.stack)
 
         footer = QHBoxLayout()
@@ -290,7 +282,7 @@ class GameCarouselCard(QFrame):
         top.setSpacing(10)
         cover = QLabel()
         cover.setObjectName("gameCover")
-        cover.setFixedSize(68, 86)
+        cover.setFixedSize(74, 92)
         cover.setPixmap(self._cover_pixmap(cover_path or Path()))
         top.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -306,27 +298,11 @@ class GameCarouselCard(QFrame):
         chip_row = QHBoxLayout()
         chip_row.setContentsMargins(0, 0, 0, 0)
         chip_row.setSpacing(6)
-        stat_values = stats or [t("carousel.no_telemetry")]
+        stat_values = stats or ["No telemetry yet"]
         for idx, text in enumerate(stat_values):
-            if idx == 1:
-                svg_path = platform_icon_svg_path(text)
-                icon_pix = render_svg_pixmap(svg_path, 12)
-                chip = QFrame()
-                chip.setObjectName("gameStatLabel")
-                chip_layout = QHBoxLayout(chip)
-                chip_layout.setContentsMargins(6, 2, 8, 2)
-                chip_layout.setSpacing(4)
-                icon_lbl = QLabel()
-                icon_lbl.setFixedSize(12, 12)
-                if icon_pix and not icon_pix.isNull():
-                    icon_lbl.setPixmap(icon_pix)
-                text_lbl = QLabel(text)
-                chip_layout.addWidget(icon_lbl)
-                chip_layout.addWidget(text_lbl)
-            else:
-                chip = QLabel(text)
-                chip.setObjectName("gameStatChip")
-            chip_row.addWidget(chip)
+            stat = QLabel(text)
+            stat.setObjectName("gameStatChip" if idx == 0 else "gameStatLabel")
+            chip_row.addWidget(stat)
         chip_row.addStretch(1)
         title_wrap.addLayout(chip_row)
         top.addLayout(title_wrap, 1)
@@ -336,7 +312,7 @@ class GameCarouselCard(QFrame):
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.setSpacing(6)
-        hint = QLabel(t("carousel.hint"))
+        hint = QLabel("Last played across your launchers")
         hint.setObjectName("gameSlideHint")
         bottom.addWidget(hint, 1, Qt.AlignmentFlag.AlignBottom)
         logo = QLabel()
@@ -370,7 +346,6 @@ class GameCarouselCard(QFrame):
             except Exception:
                 pass
         self._dots = []
-        self._slide_palettes = []
         try:
             self.caption.setText("0/0")
         except Exception:
@@ -401,46 +376,6 @@ class GameCarouselCard(QFrame):
             return
         self.stack.setCurrentIndex((self.stack.currentIndex() - 1) % self.stack.count())
         self._refresh_state()
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self.game_base.setGeometry(self.rect())
-
-    def set_slide_palette(
-        self, index: int, start: str, end: str, border: str, accent: str
-    ) -> None:
-        while len(self._slide_palettes) <= index:
-            self._slide_palettes.append(None)
-        self._slide_palettes[index] = (start, end, border, accent)
-        if index == self.stack.currentIndex():
-            self._apply_current_palette()
-
-    def _on_slide_changed(self, index: int) -> None:
-        self._apply_current_palette()
-        self._refresh_state()
-
-    def _apply_current_palette(self) -> None:
-        index = self.stack.currentIndex()
-        if index < 0 or index >= len(self._slide_palettes):
-            return
-        palette = self._slide_palettes[index]
-        if palette is None:
-            self.game_base.setStyleSheet(
-                f"background: {self._panel_bg}; border-radius: 20px;"
-            )
-            return
-        start, end, _border, _accent = palette
-        self.game_base.setStyleSheet(
-            f"""
-            background: qradialgradient(
-                cx: 0.36, cy: 0.26, radius: 0.95, fx: 0.36, fy: 0.26,
-                stop: 0 {start},
-                stop: 0.38 {end},
-                stop: 1 {self._panel_bg}
-            );
-            border-radius: 20px;
-            """
-        )
 
     def _restart_autoplay(self) -> None:
         if self.stack.count() < 2:
