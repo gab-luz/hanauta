@@ -1963,7 +1963,7 @@ class SettingsWindow(
         title.setFont(QFont(self.display_font, 13))
         title.setStyleSheet("color: rgba(246,235,247,0.72);")
         subtitle = QLabel(
-            "Adjust the size of the notification center panel."
+            "Adjust the size and behavior of the notification center panel."
         )
         subtitle.setFont(QFont(self.ui_font, 9))
         subtitle.setStyleSheet("color: rgba(246,235,247,0.72);")
@@ -1978,6 +1978,44 @@ class SettingsWindow(
         layout.addLayout(header)
 
         nc = self.settings_state.get("notification_center", {})
+
+        # Media player style
+        self.nc_media_style_group = QButtonGroup(self)
+        self.nc_media_style_group.setExclusive(True)
+        self.nc_media_style_artwork = QPushButton("Artwork + Dynamic Gradient")
+        self.nc_media_style_artwork.setObjectName("secondaryButton")
+        self.nc_media_style_artwork.setCheckable(True)
+        self.nc_media_style_artwork.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.nc_media_style_artwork.clicked.connect(
+            lambda: self._set_media_player_style("artwork_gradient")
+        )
+        self.nc_media_style_immersive = QPushButton("Immersive Artwork")
+        self.nc_media_style_immersive.setObjectName("secondaryButton")
+        self.nc_media_style_immersive.setCheckable(True)
+        self.nc_media_style_immersive.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.nc_media_style_immersive.clicked.connect(
+            lambda: self._set_media_player_style("immersive_artwork")
+        )
+        self.nc_media_style_group.addButton(self.nc_media_style_artwork)
+        self.nc_media_style_group.addButton(self.nc_media_style_immersive)
+        current_style = nc.get("media_player_style", "artwork_gradient")
+        if current_style == "artwork_gradient":
+            self.nc_media_style_artwork.setChecked(True)
+        else:
+            self.nc_media_style_immersive.setChecked(True)
+
+        media_style_row = QHBoxLayout()
+        media_style_row.setSpacing(8)
+        media_style_row.addWidget(self.nc_media_style_artwork)
+        media_style_row.addWidget(self.nc_media_style_immersive)
+        media_player_style = SettingsRow(
+            material_icon("music_note"),
+            "Media player style",
+            "Choose how the media card displays artwork and colors.",
+            self.icon_font,
+            self.ui_font,
+            media_style_row,
+        )
 
         self.nc_width_slider = QSlider(Qt.Orientation.Horizontal)
         self.nc_width_slider.setRange(400, 2400)
@@ -2043,12 +2081,14 @@ class SettingsWindow(
             )
         )
 
-        self.nc_status = QLabel("Notification center size settings are ready.")
+        self.nc_status = QLabel("Notification center settings are ready.")
         self.nc_status.setWordWrap(True)
         self.nc_status.setStyleSheet("color: rgba(246,235,247,0.72);")
         layout.addWidget(self.nc_status)
 
-        save_button = QPushButton("Save notification center size")
+        layout.addWidget(media_player_style)
+
+        save_button = QPushButton("Save notification center settings")
         save_button.setObjectName("primaryButton")
         save_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         save_button.clicked.connect(self._save_notification_center_page_settings)
@@ -2066,6 +2106,20 @@ class SettingsWindow(
         self.settings_state.setdefault("notification_center", {})["height"] = value
         save_settings_state(self.settings_state)
         self.nc_height_label.setText(str(value))
+
+    def _set_media_player_style(self, style: str) -> None:
+        style = str(style).strip().lower()
+        if style not in ("artwork_gradient", "immersive_artwork"):
+            return
+        nc = self.settings_state.setdefault("notification_center", {})
+        nc["media_player_style"] = style
+        save_settings_state(self.settings_state)
+        if hasattr(self, "nc_status"):
+            labels = {
+                "artwork_gradient": "Media player style: Artwork + Dynamic Gradient",
+                "immersive_artwork": "Media player style: Immersive Artwork",
+            }
+            self.nc_status.setText(labels.get(style, "Media player style updated."))
 
     def _save_notification_center_page_settings(self) -> None:
         nc = self.settings_state.setdefault("notification_center", {})

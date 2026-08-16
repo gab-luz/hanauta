@@ -707,6 +707,19 @@ class AppearanceMixin:
                 else "Wallpaper change notifications disabled."
             )
 
+    def _set_media_player_style(self, style: str) -> None:
+        style = str(style).strip().lower()
+        if style not in ("artwork_gradient", "immersive_artwork"):
+            return
+        nc_cfg = self.settings_state.setdefault("notification_center", {})
+        nc_cfg["media_player_style"] = style
+        save_settings_state(self.settings_state)
+        if hasattr(self, "appearance_status"):
+            labels = {
+                "artwork_gradient": "Media player style: Artwork + Dynamic Gradient",
+                "immersive_artwork": "Media player style: Immersive Artwork",
+            }
+            self.appearance_status.setText(labels.get(style, "Media player style updated."))
 
     def _set_theme_choice(self, choice: str) -> None:
         choice = str(choice).strip().lower()

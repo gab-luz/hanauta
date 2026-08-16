@@ -350,8 +350,48 @@ def build_wallpaper_colors_card(window) -> QWidget:
         window.ui_font,
         window.wallpaper_change_notifications_switch,
     )
+
+    # Media player style
+    window.media_player_style_group = QButtonGroup(window)
+    window.media_player_style_group.setExclusive(True)
+    window.media_player_style_artwork = QPushButton("Artwork + Dynamic Gradient")
+    window.media_player_style_artwork.setObjectName("secondaryButton")
+    window.media_player_style_artwork.setCheckable(True)
+    window.media_player_style_artwork.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+    window.media_player_style_artwork.clicked.connect(
+        lambda: window._set_media_player_style("artwork_gradient")
+    )
+    window.media_player_style_immersive = QPushButton("Immersive Artwork")
+    window.media_player_style_immersive.setObjectName("secondaryButton")
+    window.media_player_style_immersive.setCheckable(True)
+    window.media_player_style_immersive.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+    window.media_player_style_immersive.clicked.connect(
+        lambda: window._set_media_player_style("immersive_artwork")
+    )
+    window.media_player_style_group.addButton(window.media_player_style_artwork)
+    window.media_player_style_group.addButton(window.media_player_style_immersive)
+    current_style = window.settings_state["notification_center"].get("media_player_style", "artwork_gradient")
+    if current_style == "artwork_gradient":
+        window.media_player_style_artwork.setChecked(True)
+    else:
+        window.media_player_style_immersive.setChecked(True)
+
+    media_style_row = QHBoxLayout()
+    media_style_row.setSpacing(8)
+    media_style_row.addWidget(window.media_player_style_artwork)
+    media_style_row.addWidget(window.media_player_style_immersive)
+    media_player_style = SettingsRow(
+        material_icon("music_note"),
+        "Media player style",
+        "Choose how the media card displays artwork and colors.",
+        window.icon_font,
+        window.ui_font,
+        media_style_row,
+    )
+
     layout.addWidget(interval)
     layout.addWidget(matugen)
     layout.addWidget(matugen_notifications)
     layout.addWidget(wallpaper_change_notifications)
+    layout.addWidget(media_player_style)
     return card

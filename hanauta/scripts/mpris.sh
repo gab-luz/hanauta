@@ -104,6 +104,24 @@ player() {
   [ -n "$Control" ] && echo "$Control"
 }
 
+identity() {
+  local id
+  id="$(playerctl --player="$Control" metadata --format '{{mpris:trackid}}' 2>/dev/null)"
+  [ -n "$id" ] && echo "$id" || echo ""
+}
+
+desktop_entry() {
+  local de
+  de="$(playerctl --player="$Control" metadata --format '{{mpris:desktopEntry}}' 2>/dev/null)"
+  [ -n "$de" ] && echo "$de" || echo ""
+}
+
+url() {
+  local u
+  u="$(playerctl --player="$Control" metadata --format '{{xesam:url}}' 2>/dev/null)"
+  [ -n "$u" ] && echo "$u" || echo ""
+}
+
 coverloc() {
   local art hash
   art="$(playerctl --player="$Control" metadata mpris:artUrl 2>/dev/null)"
@@ -134,6 +152,9 @@ if [ -z "$Control" ]; then
     status) echo "$default_status" ;;
     statusicon) echo "" ;;
     summary) printf '%s\x1f%s\x1f%s\n' "$default_title" "$default_artist" "$default_status" ;;
+    identity) echo "" ;;
+    desktop-entry) echo "" ;;
+    url) echo "" ;;
     coverloc) cp "$bkp_cover" "$cover_path" 2>/dev/null; echo "$cover_path" ;;
     *) exit 0 ;;
   esac
@@ -145,6 +166,7 @@ case "$1" in
   --previous) playerctl --player="$Control" previous ;;
   --toggle) playerctl --player="$Control" play-pause ;;
   --stop) playerctl --player="$Control" stop ;;
+  --shuffle) playerctl --player="$Control" shuffle Toggle ;;
   player) player ;;
   title) title ;;
   artist) artist ;;
@@ -152,6 +174,9 @@ case "$1" in
   status) status ;;
   statusicon) statusicon ;;
   summary) summary ;;
+  identity) identity ;;
+  desktop-entry) desktop_entry ;;
+  url) url ;;
   coverloc) coverloc ;;
   *) exit 0 ;;
 esac

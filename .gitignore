@@ -30,6 +30,7 @@ hanauta/src/pyqt/widget-religion-christian/idea.html
 # IDEs
 .idea/
 .vscode/
+*.code-workspace
 *.swp
 *.swo
 *~
@@ -44,6 +45,9 @@ backups/
 # Temp files
 *.tmp
 *.log
+logs/
+*-audit.json
+fix_qml*.py
 *.cache/
 *.qmlc
 *.jsc
@@ -64,6 +68,8 @@ Makefile
 *.cmake.user
 *.ninja
 .ninja_*
+target/
+hanauta/src/native/**/target/
 
 # Specific configs that might differ per machine
 TODO.md

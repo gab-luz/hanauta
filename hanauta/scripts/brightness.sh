@@ -43,7 +43,7 @@ get_brightness_backlight() {
 }
 
 get_brightness() {
-  get_brightness_backlight || echo 0
+  get_brightness_backlight || return 1
 }
 
 set_brightness_xrandr() {
@@ -52,7 +52,7 @@ set_brightness_xrandr() {
   local output
   local had_output=0
 
-  brightness="$(awk -v p="$percent" 'BEGIN { printf "%.2f\n", p / 100 }')"
+  brightness=$(awk -v p="$percent" 'BEGIN { printf "%.2f", p / 100 }')
 
   while IFS= read -r output; do
     [ -n "$output" ] || continue
@@ -86,13 +86,14 @@ set_brightness() {
     percent=0
   fi
 
-  if [ "$percent" -lt 1 ]; then
-    percent=1
+  # Prevent screen from going too dark - minimum 30%
+  if [ "$percent" -lt 30 ]; then
+    percent=30
   elif [ "$percent" -gt 100 ]; then
     percent=100
   fi
 
-  set_brightness_xrandr "$percent" || set_brightness_backlight "$percent"
+  set_brightness_backlight "$percent"
 }
 
 get_percent() {
@@ -110,4 +111,5 @@ case "$1" in
   percent) get_percent ;;
   icon) get_icon ;;
   set) set_brightness "$2" ;;
+  has_backlight) get_brightness_backlight >/dev/null && echo "true" || echo "false" ;;
 esac
