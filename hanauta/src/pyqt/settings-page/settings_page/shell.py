@@ -211,13 +211,6 @@ def build_sidebar(window) -> QWidget:
             str(NAV_ICONS_DIR / "notifications.svg"),
         ),
         (
-            "notification_center",
-            material_icon("notifications"),
-            "Notification Center",
-            False,
-            str(NAV_ICONS_DIR / "notifications.svg"),
-        ),
-        (
             "input",
             material_icon("language"),
             "Input",
@@ -368,7 +361,6 @@ def build_scroll_body(window) -> QWidget:
     _add_page("energy", build_lazy_placeholder(window, "Energy"))
     _add_page("audio", build_lazy_placeholder(window, "Audio"))
     _add_page("notifications", build_lazy_placeholder(window, "Notifications"))
-    _add_page("notification_center", build_lazy_placeholder(window, "Notification Center"))
     _add_page("input", build_lazy_placeholder(window, "Input"))
     _add_page("startup", build_lazy_placeholder(window, "Startup"))
     _add_page("privacy", build_lazy_placeholder(window, "Privacy"))

@@ -380,13 +380,15 @@ def build_wallpaper_colors_card(window) -> QWidget:
     media_style_row.setSpacing(8)
     media_style_row.addWidget(window.media_player_style_artwork)
     media_style_row.addWidget(window.media_player_style_immersive)
+    media_style_widget = QWidget()
+    media_style_widget.setLayout(media_style_row)
     media_player_style = SettingsRow(
         material_icon("music_note"),
         "Media player style",
         "Choose how the media card displays artwork and colors.",
         window.icon_font,
         window.ui_font,
-        media_style_row,
+        media_style_widget,
     )
 
     layout.addWidget(interval)
