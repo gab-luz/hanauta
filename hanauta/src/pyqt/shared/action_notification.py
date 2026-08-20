@@ -4,11 +4,20 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import logging
 import subprocess
 import sys
+from pathlib import Path
 
 from dbus_next import Variant
 from dbus_next.aio import MessageBus
+
+
+APP_DIR = Path(__file__).resolve().parents[2]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.app_logging import init_app_logging
 
 
 def auth_token(password: str, salt: str, challenge: str) -> str:
@@ -94,6 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    init_app_logging("action_notification")
+    logging.info("action-notification main starting")
     parser = build_parser()
     args = parser.parse_args()
     return asyncio.run(send_action_notification(args))

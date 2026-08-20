@@ -7,11 +7,21 @@ Minimal StatusNotifierWatcher service for the PyQt bar.
 from __future__ import annotations
 
 import asyncio
+import logging
 import signal
+import sys
+from pathlib import Path
 
 from dbus_next import BusType, Message, Variant
 from dbus_next.aio import MessageBus
 from dbus_next.constants import MessageType
+
+
+APP_DIR = Path(__file__).resolve().parents[2]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.app_logging import init_app_logging
 
 
 WATCHER_INTERFACE = "org.kde.StatusNotifierWatcher"
@@ -146,6 +156,8 @@ async def _main() -> int:
 
 
 def main() -> int:
+    init_app_logging("status_notifier_watcher")
+    logging.info("status-notifier-watcher main starting")
     return asyncio.run(_main())
 
 

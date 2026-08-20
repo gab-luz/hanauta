@@ -8,6 +8,21 @@ import traceback
 from pathlib import Path
 
 
+def _handler_targets_file(handler: logging.Handler, path: Path) -> bool:
+    return (
+        isinstance(handler, logging.FileHandler)
+        and getattr(handler, "baseFilename", "") == str(path)
+    )
+
+
+def _handler_targets_stderr(handler: logging.Handler) -> bool:
+    return (
+        isinstance(handler, logging.StreamHandler)
+        and not isinstance(handler, logging.FileHandler)
+        and getattr(handler, "stream", None) is sys.stderr
+    )
+
+
 def init_app_logging(app_name: str) -> tuple[Path, Path]:
     safe_name = "".join(
         ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in str(app_name).strip().lower()
@@ -17,24 +32,24 @@ def init_app_logging(app_name: str) -> tuple[Path, Path]:
     log_file = log_dir / f"{safe_name}.log"
     fault_file = log_dir / f"{safe_name}_fault.log"
 
-    formatter = logging.Formatter(
+    file_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
+    )
+    console_formatter = logging.Formatter(
+        f"[{safe_name}] %(levelname)s [%(name)s] %(message)s"
     )
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    has_file_handler = False
-    for handler in root_logger.handlers:
-        if (
-            isinstance(handler, logging.FileHandler)
-            and getattr(handler, "baseFilename", "") == str(log_file)
-        ):
-            has_file_handler = True
-            break
-    if not has_file_handler:
+    if not any(_handler_targets_file(handler, log_file) for handler in root_logger.handlers):
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
+
+    if not any(_handler_targets_stderr(handler) for handler in root_logger.handlers):
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setFormatter(console_formatter)
+        root_logger.addHandler(console_handler)
 
     logging.info("logging initialized for %s", safe_name)
 
@@ -65,4 +80,3 @@ def init_app_logging(app_name: str) -> tuple[Path, Path]:
     sys.excepthook = _log_excepthook
     threading.excepthook = _log_thread_excepthook
     return log_file, fault_file
-

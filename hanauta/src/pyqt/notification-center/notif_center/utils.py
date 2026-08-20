@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from datetime import datetime
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QProcess, Qt
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QWidget
@@ -25,7 +25,7 @@ from notif_center.paths import (
     STATE_DIR,
     preferred_icon_path,
 )
-from pyqt.shared.runtime import entry_command, entry_patterns, python_executable
+from pyqt.shared.runtime import entry_command, entry_patterns
 
 
 def run_cmd(cmd: list[str], timeout: float = 2.0) -> str:
@@ -61,9 +61,42 @@ def run_script_bg(script_name: str, *args: str) -> None:
         pass
 
 
-def run_bg(cmd: list[str]) -> None:
+def run_bg_detached(cmd: list[str]) -> bool:
+    if not cmd:
+        return False
     try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if QProcess.startDetached(cmd[0], cmd[1:]):
+            return True
+    except Exception:
+        pass
+    try:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def run_bg(cmd: list[str]) -> None:
+    run_bg_detached(cmd)
+
+
+def _process_pattern(pattern: str) -> str:
+    return re.escape(pattern)
+
+
+def terminate_background_matches(pattern: str) -> None:
+    try:
+        subprocess.run(
+            ["pkill", "-f", _process_pattern(pattern)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
     except Exception:
         pass
 
@@ -78,33 +111,13 @@ def apply_antialias_font(widget: QWidget) -> None:
         child.setFont(child_font)
 
 
-def terminate_background_matches(pattern: str) -> None:
-    try:
-        subprocess.run(
-            ["pkill", "-f", pattern],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except Exception:
-        pass
-
-
 def run_bg_singleton(script_path: Path, *args: str) -> None:
     command = entry_command(script_path, *args)
     if not command:
         return
     for pattern in entry_patterns(script_path):
         terminate_background_matches(pattern)
-    try:
-        subprocess.Popen(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception:
-        pass
+    run_bg_detached(command)
 
 
 def desktop_clock_command() -> list[str]:

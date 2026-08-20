@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -34,12 +35,13 @@ from PyQt6.QtWidgets import (
 )
 
 
-from pyqt.shared.runtime import fonts_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
-
-APP_DIR = source_root()
+APP_DIR = Path(__file__).resolve().parents[2]
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
+
+from pyqt.shared.runtime import fonts_root, source_root
+from pyqt.shared.app_logging import init_app_logging
+from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 
 FONTS_DIR = fonts_root()
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-daemon"
@@ -691,6 +693,8 @@ class NotificationDaemon(QObject):
 
 
 def main() -> int:
+    init_app_logging("notification_daemon")
+    logging.info("notification-daemon main starting")
     app = QApplication(sys.argv)
     signal.signal(signal.SIGINT, lambda *_args: app.quit())
     sigint_timer = QTimer()
@@ -698,6 +702,7 @@ def main() -> int:
     sigint_timer.start(250)
     daemon = NotificationDaemon()
     _ = daemon
+    logging.info("notification-daemon running; entering event loop")
     return app.exec()
 
 

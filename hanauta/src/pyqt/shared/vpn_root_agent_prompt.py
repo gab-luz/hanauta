@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,13 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+APP_DIR = Path(__file__).resolve().parents[2]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.app_logging import init_app_logging
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -195,9 +203,12 @@ class Prompt(QWidget):
 
 
 def main() -> int:
+    init_app_logging("vpn_root_agent_prompt")
+    logging.info("vpn-root-agent-prompt main starting")
     app = QApplication(sys.argv)
     prompt = Prompt()
     prompt.show()
+    logging.info("vpn-root-agent-prompt shown; entering event loop")
     return app.exec()
 
 

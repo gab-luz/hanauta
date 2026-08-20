@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 import os
+import sys
 from pathlib import Path
 
 
+APP_DIR = Path(__file__).resolve().parents[2]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.app_logging import init_app_logging
+
+
 def main() -> int:
+    init_app_logging("render_qml_lock")
+    logging.info("render-qml-lock main starting")
     parser = argparse.ArgumentParser(description="Render Hanauta QML lockscreen to a PNG.")
     parser.add_argument(
         "--qml",
@@ -35,10 +46,11 @@ def main() -> int:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if not image.save(str(out_path), "PNG"):
+        logging.error("failed to save rendered PNG at %s", out_path)
         raise SystemExit("Failed to save rendered PNG.")
+    logging.info("rendered QML lockscreen to %s", out_path)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

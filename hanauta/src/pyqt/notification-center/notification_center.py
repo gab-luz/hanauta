@@ -22,7 +22,9 @@ from pathlib import Path
 from time import monotonic
 from urllib import error, parse, request
 
-from PyQt6.QtCore import QDate, QEasingCurve, QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import (
+    QDate, QEasingCurve, QProcess, QPropertyAnimation, Qt, QTimer, pyqtSignal,
+)
 from PyQt6.QtGui import (
     QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette,
     QPainter, QPainterPath, QPen, QPixmap, QTextCharFormat,
@@ -78,6 +80,13 @@ from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.calendar_card import apply_calendar_theme, build_calendar_card
+
+
+LOGGER = logging.getLogger("notification_center")
+
+
+def log_to_console_and_file(level: int, message: str, *args: object, exc_info: bool = False) -> None:
+    LOGGER.log(level, message, *args, exc_info=exc_info)
 
 # Notification icon paths
 WIFI_NOTIFICATION_ICON = preferred_icon_path(
@@ -3286,20 +3295,72 @@ class NotificationCenter(QWidget):
 
     def _launch_settings_page(self, page: str, service_section: str = "") -> None:
         if not SETTINGS_PAGE_SCRIPT.exists():
+            log_to_console_and_file(
+                logging.ERROR,
+                "settings launch failed: settings script does not exist at %s",
+                SETTINGS_PAGE_SCRIPT,
+            )
             return
         args = ["--page", page]
         if service_section:
             args.extend(["--service-section", service_section])
         for pattern in entry_patterns(SETTINGS_PAGE_SCRIPT):
+            log_to_console_and_file(
+                logging.INFO,
+                "terminating existing settings process matching %s",
+                pattern,
+            )
             terminate_background_matches(pattern)
+        command = entry_command(SETTINGS_PAGE_SCRIPT, *args)
+        if not command:
+            log_to_console_and_file(
+                logging.ERROR,
+                "settings launch failed: no command resolved for %s with args %s",
+                SETTINGS_PAGE_SCRIPT,
+                args,
+            )
+            return
+        log_to_console_and_file(
+            logging.INFO,
+            "launching settings page=%s service_section=%s command=%s",
+            page,
+            service_section or "<none>",
+            command,
+        )
+        launched = False
         try:
-            subprocess.Popen(
-                [python_executable(), str(SETTINGS_PAGE_SCRIPT), *args],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
+            launched = QProcess.startDetached(command[0], command[1:])
+            log_to_console_and_file(
+                logging.INFO,
+                "settings QProcess.startDetached returned %s",
+                launched,
             )
         except Exception:
+            log_to_console_and_file(
+                logging.ERROR,
+                "settings QProcess.startDetached raised an exception",
+                exc_info=True,
+            )
+        if not launched:
+            try:
+                subprocess.Popen(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                launched = True
+                log_to_console_and_file(
+                    logging.INFO,
+                    "settings subprocess fallback launched successfully",
+                )
+            except Exception:
+                log_to_console_and_file(
+                    logging.ERROR,
+                    "settings subprocess fallback failed",
+                    exc_info=True,
+                )
+        if not launched:
             return
         self.hide()
 

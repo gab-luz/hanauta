@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
+from pathlib import Path
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect, QLabel, QVBoxLayout, QWidget
+
+
+APP_DIR = Path(__file__).resolve().parents[2]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.app_logging import init_app_logging
 
 try:
     from pyqt.shared.theme import load_theme_palette
@@ -133,11 +142,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    init_app_logging("lock_osd")
+    logging.info("lock-osd main starting")
     args = parse_args(argv if argv is not None else sys.argv[1:])
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Lock OSD")
     widget = LockOsd(args.title, args.body, args.duration_ms)
     widget.show()
+    logging.info("lock-osd shown; entering event loop")
     return app.exec()
 
 

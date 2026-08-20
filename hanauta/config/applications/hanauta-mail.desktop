@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Hanauta Mail
+Comment=Open the Hanauta Mail client
+Exec=@HANAUTA_MAIL_LAUNCHER@ %u
+Icon=internet-mail
+Terminal=false
+Type=Application
+Categories=Network;Email;
+StartupWMClass=Hanauta Mail
+MimeType=x-scheme-handler/mailto;

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,7 @@ if str(HERE) not in sys.path:
     sys.path.append(str(HERE))
 
 from pyqt.shared.runtime import entry_command
+from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.theme import blend, load_theme_palette, rgba
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 
@@ -477,6 +479,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    init_app_logging("fullscreen_alert")
+    logging.info("fullscreen-alert main starting")
     args = parse_args(argv if argv is not None else sys.argv[1:])
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Fullscreen Alert")
@@ -484,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     window.show()
     window.raise_()
     window.activateWindow()
+    logging.info("fullscreen-alert shown; entering event loop")
     return app.exec()
 
 

@@ -12,12 +12,20 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 import xml.etree.ElementTree as ET
+
+
+APP_DIR = Path(__file__).resolve().parents[2]
+if str(APP_DIR) not in sys.path:
+    sys.path.append(str(APP_DIR))
+
+from pyqt.shared.app_logging import init_app_logging
 
 try:
     import caldav  # type: ignore
@@ -878,6 +886,8 @@ def _print(payload: dict[str, Any]) -> None:
 
 
 def main(argv: list[str]) -> int:
+    init_app_logging("qcal_wrapper")
+    logging.info("qcal-wrapper main starting")
     parser = argparse.ArgumentParser(prog="qcal-wrapper.py")
     sub = parser.add_subparsers(dest="command", required=True)
 

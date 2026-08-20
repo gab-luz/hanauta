@@ -3079,11 +3079,48 @@ install_wifi_plugin_if_available() {
   return 0
 }
 
+hanauta_mail_client_available() {
+  local candidate=""
+  local -a candidates=(
+    "$HOME/.config/i3/hanauta/bin/hanauta-email-client"
+    "$SCRIPT_DIR/hanauta/bin/hanauta-email-client"
+    "$HOME/.config/i3/hanauta/src/pyqt/email-client/email_client.py"
+    "$SCRIPT_DIR/hanauta/src/pyqt/email-client/email_client.py"
+  )
+  for candidate in "${candidates[@]}"; do
+    if [ -e "$candidate" ]; then
+      return 0
+    fi
+  done
+
+  local root=""
+  local found=""
+  for root in \
+    "$HOME/.config/i3/hanauta/plugins" \
+    "$SCRIPT_DIR/hanauta/plugins" \
+    "$HOME/dev" \
+    "/mnt/outros/DEV"; do
+    [ -d "$root" ] || continue
+    found="$(find "$root" -maxdepth 3 -type f -name email_client.py -print -quit 2>/dev/null || true)"
+    if [ -n "$found" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 offer_mail_desktop_setup() {
-  local helper="$HOME/.config/i3/hanauta/scripts/install_mail_desktop.sh"
+  local installed_helper="$HOME/.config/i3/hanauta/scripts/install_mail_desktop.sh"
+  local source_helper="$SCRIPT_DIR/hanauta/scripts/install_mail_desktop.sh"
+  local helper="$installed_helper"
   local desktop_id="hanauta-mail.desktop"
   local target_desktop="$HOME/.local/share/applications/$desktop_id"
   local -a args=()
+
+  if ! hanauta_mail_client_available; then
+    info "Hanauta Mail client is not installed; skipping optional mail desktop integration."
+    return 0
+  fi
 
   if [ -f "$target_desktop" ]; then
     info "Hanauta Mail desktop integration is already installed; skipping optional mail integration prompt."
@@ -3098,9 +3135,12 @@ offer_mail_desktop_setup() {
     return 0
   fi
 
+  if [ ! -f "$helper" ] && [ -f "$source_helper" ]; then
+    helper="$source_helper"
+  fi
   if [ ! -f "$helper" ]; then
-    warn "Mail desktop integration helper not found at $helper"
-    return 1
+    warn "Mail desktop integration helper is unavailable; skipping optional Hanauta Mail desktop integration."
+    return 0
   fi
 
   if confirm_yes "Do you want Hanauta Mail to support mailto links?"; then

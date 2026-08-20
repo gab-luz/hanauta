@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import signal
@@ -52,6 +53,7 @@ GLOBAL_SETTINGS_FILE = Path.home() / ".local" / "state" / "hanauta" / "notificat
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
 
+from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.theme import ThemePalette, blend, load_theme_palette, palette_mtime, pick_foreground, rgba
 
 
@@ -2780,6 +2782,8 @@ class OrganizerWindow(QMainWindow):
 
 
 def main() -> int:
+    init_app_logging("study_studio")
+    logging.info("study-studio main starting")
     app = QApplication(sys.argv)
     signal.signal(signal.SIGINT, lambda *_args: app.quit())
     app.setStyle("Fusion")
@@ -2788,6 +2792,7 @@ def main() -> int:
     signal_timer = QTimer()
     signal_timer.timeout.connect(lambda: None)
     signal_timer.start(250)
+    logging.info("study-studio shown; entering event loop")
     return app.exec()
 
 
