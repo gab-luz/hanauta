@@ -605,6 +605,9 @@ class SettingsWindow(
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self._reload_theme_if_needed)
         self.theme_timer.start(3000)
+        self._system_theme_timer = QTimer(self)
+        self._system_theme_timer.timeout.connect(self._check_system_theme_change)
+        self._system_theme_timer.start(5000)
         self._slideshow_timer.setInterval(
             max(5, int(self.settings_state["appearance"].get("slideshow_interval", 30)))
             * 1000

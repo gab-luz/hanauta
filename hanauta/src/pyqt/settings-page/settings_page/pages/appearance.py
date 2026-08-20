@@ -142,6 +142,16 @@ def build_wallpaper_colors_card(window) -> QWidget:
     modes.addWidget(wallpaper_aware, 1, 1)
 
     actions.addLayout(modes)
+    follow_system = SettingsRow(
+        material_icon("brightness_auto"),
+        "Follow system theme",
+        "Automatically switch between dark and light themes based on system GTK color-scheme.",
+        window.icon_font,
+        window.ui_font,
+        window._make_follow_system_switch(),
+    )
+    actions.addWidget(follow_system)
+
     window.custom_theme_heading = QLabel("Custom theme")
     window.custom_theme_heading.setObjectName("appearanceSectionLabel")
     window.custom_theme_heading.setFont(QFont(window.ui_font, 9, QFont.Weight.DemiBold))

@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import time
+import os
 from pathlib import Path
 
 from settings_page.settings_defaults import load_settings_state
@@ -335,3 +336,39 @@ def sync_wallpaper_source_preset(source_key: str) -> tuple[bool, str, Path | Non
         community_root=ROOT / "hanauta" / "walls" / "community",
         image_suffixes=IMAGE_SUFFIXES,
     ).split("/", 1)
+
+
+def apply_system_theme_preference() -> None:
+    """Apply system GTK color-scheme if follow_system_theme is enabled in settings."""
+    settings = load_settings_state()
+    appearance = settings.get("appearance", {})
+    if not bool(appearance.get("follow_system_theme", False)):
+        return
+
+    # Detect system color scheme
+    color_scheme_script = ROOT / "hanauta" / "scripts" / "color_scheme.sh"
+    if not color_scheme_script.exists():
+        return
+
+    try:
+        result = subprocess.run(
+            ["bash", str(color_scheme_script)],
+            capture_output=True, text=True, timeout=2.0, check=False
+        )
+        system_scheme = result.stdout.strip()
+        if system_scheme not in ("dark", "light"):
+            system_scheme = "dark"
+    except Exception:
+        system_scheme = "dark"
+
+    # Apply the corresponding theme
+    theme_choice = str(appearance.get("theme_choice", "dark")).strip().lower()
+    target_choice = system_scheme if system_scheme in {"dark", "light"} else "dark"
+    if theme_choice != target_choice:
+        appearance["theme_choice"] = target_choice
+        appearance["theme_mode"] = target_choice
+        appearance["use_matugen_palette"] = False
+        from settings_page.settings_store import save_settings_state
+        save_settings_state(settings)
+        from settings_page.theme_gtk import sync_static_theme_from_settings
+        sync_static_theme_from_settings(settings, apply_gtk=True)

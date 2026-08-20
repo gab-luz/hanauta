@@ -74,6 +74,7 @@ def load_settings_state() -> dict:
             "wallpaper_change_notifications_enabled": False,
             "use_matugen_palette": False,
             "matugen_notifications_enabled": False,
+            "follow_system_theme": False,
         },
         "notification_center": {
             "width": 800,
@@ -383,6 +384,7 @@ def load_settings_state() -> dict:
     appearance.setdefault("wallpaper_change_notifications_enabled", False)
     appearance.setdefault("use_matugen_palette", False)
     appearance.setdefault("matugen_notifications_enabled", False)
+    appearance.setdefault("follow_system_theme", False)
     nc = dict(payload.get("notification_center", {}))
     try:
         nc["width"] = max(400, min(2400, int(nc.get("width", 800))))

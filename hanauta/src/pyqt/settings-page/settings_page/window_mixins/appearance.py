@@ -519,6 +519,14 @@ class AppearanceMixin:
         self.matugen_palette_switch = switch
         return switch
 
+    def _make_follow_system_switch(self) -> SwitchButton:
+        switch = SwitchButton(
+            bool(self.settings_state["appearance"].get("follow_system_theme", False))
+        )
+        switch.toggledValue.connect(self._set_follow_system_theme)
+        self.follow_system_switch = switch
+        return switch
+
 
     def _slider_settings_row(
         self,
@@ -680,6 +688,44 @@ class AppearanceMixin:
         self._refresh_current_accent()
         self._apply_styles()
         self._sync_accent_controls()
+
+
+    def _set_follow_system_theme(self, enabled: bool) -> None:
+        self.settings_state["appearance"]["follow_system_theme"] = bool(enabled)
+        save_settings_state(self.settings_state)
+        if enabled:
+            self._apply_system_theme_preference()
+        if hasattr(self, "appearance_status"):
+            self.appearance_status.setText(
+                "Follow system theme enabled. Hanauta will match GTK color-scheme."
+                if enabled
+                else "Follow system theme disabled."
+            )
+
+    def _apply_system_theme_preference(self) -> None:
+        """Detect system GTK color-scheme and apply matching Hanauta theme."""
+        from pathlib import Path
+        import subprocess
+        result = subprocess.run(
+            ["bash", str(Path.home() / ".config" / "i3" / "hanauta" / "scripts" / "color_scheme.sh")],
+            capture_output=True, text=True, timeout=2.0, check=False
+        )
+        system_scheme = result.stdout.strip()
+        if system_scheme not in ("dark", "light"):
+            system_scheme = "dark"
+        current_choice = str(self.settings_state["appearance"].get("theme_choice", "dark")).strip().lower()
+        target_choice = system_scheme if system_scheme in {"dark", "light"} else "dark"
+        if current_choice != target_choice:
+            self.settings_state["appearance"]["theme_choice"] = target_choice
+            self.settings_state["appearance"]["theme_mode"] = target_choice
+            self.settings_state["appearance"]["use_matugen_palette"] = False
+            save_settings_state(self.settings_state)
+            sync_static_theme_from_settings(self.settings_state, apply_gtk=True)
+            self.theme_palette = load_theme_palette()
+            self._theme_mtime = palette_mtime()
+            self._refresh_current_accent()
+            self._apply_styles()
+            self._sync_accent_controls()
 
 
     def _set_matugen_notifications_enabled(self, enabled: bool) -> None:
@@ -906,6 +952,17 @@ class AppearanceMixin:
             self.custom_theme_wrap.setVisible(custom_visible)
         if hasattr(self, "custom_theme_hint"):
             self.custom_theme_hint.setVisible(custom_visible)
+        follow_system = bool(self.settings_state["appearance"].get("follow_system_theme", False))
+        if hasattr(self, "follow_system_switch"):
+            self.follow_system_switch.setChecked(follow_system)
+        for button in getattr(self, "theme_buttons", {}).values():
+            button.setEnabled(not follow_system)
+        if hasattr(self, "custom_theme_wrap"):
+            self.custom_theme_wrap.setEnabled(not follow_system)
+        if hasattr(self, "custom_theme_heading"):
+            self.custom_theme_heading.setEnabled(not follow_system)
+        if hasattr(self, "custom_theme_hint"):
+            self.custom_theme_hint.setEnabled(not follow_system)
         self._refresh_current_accent()
 
 
@@ -974,6 +1031,13 @@ class AppearanceMixin:
         if self._restart_if_theme_fonts_changed():
             return
         self._apply_styles()
+
+
+    def _check_system_theme_change(self) -> None:
+        """Check if system GTK color-scheme changed and apply if follow_system_theme is enabled."""
+        if not self.settings_state["appearance"].get("follow_system_theme", False):
+            return
+        self._apply_system_theme_preference()
 
 
     def _sync_wallpaper_controls(self) -> None:

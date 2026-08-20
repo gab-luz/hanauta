@@ -31,6 +31,7 @@ def main() -> None:
     br = run_script("brightness.sh", "br")
     vol = run_script("volume.sh", "vol")
     ph = run_script("phone_info.sh")
+    cs = run_script("color_scheme.sh")
 
     state = {
         "bluetooth": bt if bt == "on" else "off",
@@ -38,6 +39,7 @@ def main() -> None:
         "caffeine": cf if cf == "on" else "off",
         "brightness": int(br) if br and br.isdigit() else 0,
         "volume": int(vol) if vol and vol.isdigit() else 0,
+        "color_scheme": cs if cs in ("dark", "light") else "dark",
     }
 
     if ph:

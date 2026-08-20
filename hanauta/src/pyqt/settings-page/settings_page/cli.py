@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restore-wallpaper", action="store_true")
     parser.add_argument("--restore-vpn", action="store_true")
     parser.add_argument("--restore-all", action="store_true")
+    parser.add_argument("--apply-system-theme", action="store_true")
     parser.add_argument("--marketplace-refresh-catalog", action="store_true")
     parser.add_argument("--marketplace-update-all", action="store_true")
     parser.add_argument("--marketplace-update-plugin", default="")
@@ -56,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
         restore_saved_displays()
         restore_saved_wallpaper()
         restore_saved_vpn()
+        return 0
+    if args.apply_system_theme:
+        from settings_page.startup import apply_system_theme_preference
+        apply_system_theme_preference()
         return 0
     if args.restore_displays:
         from settings_page.startup import restore_saved_displays
