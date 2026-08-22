@@ -31,7 +31,7 @@ try:
 except Exception:  # pragma: no cover
     tomllib = None
 
-from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QLockFile, QProcess, QPropertyAnimation, QRect, Qt, QThread, QTimer, pyqtSignal, QFileSystemWatcher
 from PyQt6.QtGui import QAction, QGuiApplication, QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette, QPixmap, QScreen
 from PyQt6.QtWidgets import (
     QApplication,
@@ -2151,6 +2151,12 @@ class CyberDock(QWidget):
         self._startup_reposition_timer.setSingleShot(True)
         self._startup_reposition_timer.timeout.connect(self._startup_reposition_tick)
 
+        # Watch for dock config changes to apply in real-time
+        self._config_watcher = QFileSystemWatcher(self)
+        if DOCK_CONFIG.exists():
+            self._config_watcher.addPath(str(DOCK_CONFIG))
+        self._config_watcher.fileChanged.connect(self._on_config_changed)
+
         self._build_window()
         self._build_ui()
         self._apply_shadow()
@@ -2544,6 +2550,45 @@ class CyberDock(QWidget):
             start_new_session=True,
         )
         QTimer.singleShot(0, self.close)
+
+    def _on_config_changed(self, path: str) -> None:
+        """Reload dock configuration when dock.toml changes."""
+        if path != str(DOCK_CONFIG):
+            return
+        try:
+            new_config = load_dock_config()
+        except Exception:
+            return
+        # Check if relevant settings changed
+        old_width = self.config.get("dock", {}).get("width", 60)
+        old_height = self.config.get("dock", {}).get("height", 64)
+        old_position = self.config.get("dock", {}).get("position", "center")
+        old_width_unit = self.config.get("dock", {}).get("width_unit", "%")
+        old_auto_hide = self.config.get("dock", {}).get("auto_hide", False)
+        old_icons_left = self.config.get("dock", {}).get("icons_left", False)
+
+        new_width = new_config.get("dock", {}).get("width", 60)
+        new_height = new_config.get("dock", {}).get("height", 64)
+        new_position = new_config.get("dock", {}).get("position", "center")
+        new_width_unit = new_config.get("dock", {}).get("width_unit", "%")
+        new_auto_hide = new_config.get("dock", {}).get("auto_hide", False)
+        new_icons_left = new_config.get("dock", {}).get("icons_left", False)
+
+        self.config = new_config
+
+        # Apply changes that don't require full rebuild
+        if old_height != new_height:
+            self._apply_dock_height()
+        if old_position != new_position:
+            self._apply_dock_preferences()
+        if old_auto_hide != new_auto_hide:
+            self._apply_dock_preferences()
+        if old_icons_left != new_icons_left:
+            self._apply_dock_preferences()
+
+        # For width/width_unit, we need to rebuild the panel
+        if old_width != new_width or old_width_unit != new_width_unit:
+            self._rebuild_panel_layout()
 
     def _update_clock(self) -> None:
         self.clock_label.setText(datetime.now().strftime("%H:%M"))

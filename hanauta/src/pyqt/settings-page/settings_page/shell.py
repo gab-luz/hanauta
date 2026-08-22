@@ -376,7 +376,7 @@ def build_scroll_body(window) -> QWidget:
     _add_page("storage", build_lazy_placeholder(window, "Storage"))
     _add_page("region", build_lazy_placeholder(window, "Region"))
     _add_page("bar", build_bar_placeholder(window))
-    _add_page("dock", build_dock_page(window), ready=True)
+    _add_page("dock", window._scroll_page(build_dock_page(window)), ready=True)
     _add_page("services", build_services_placeholder(window))
 
     window._show_page(window.initial_page)

@@ -561,6 +561,11 @@ class StylesMixin:
                 border: 1px solid {rgba(theme.outline, 0.16)};
                 border-radius: 18px;
             }}
+            QFrame#dockCard {{
+                background: {rgba(theme.surface_container, 0.92)};
+                border: 1px solid {rgba(theme.outline, 0.16)};
+                border-radius: 18px;
+            }}
             QLabel#appearanceTitle {{
                 color: {theme.text};
             }}
