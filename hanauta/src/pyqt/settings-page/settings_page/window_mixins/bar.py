@@ -1400,44 +1400,44 @@ class BarMixin:
 
     # Dock settings handlers
     def _set_dock_auto_hide(self, enabled: bool) -> None:
-        self.settings_state.setdefault("dock", {})["auto_hide"] = bool(enabled)
+        self.dock_settings_state.setdefault("dock", {})["auto_hide"] = bool(enabled)
         self._save_dock_settings()
 
     def _set_dock_icons_left(self, enabled: bool) -> None:
-        self.settings_state.setdefault("dock", {})["icons_left"] = bool(enabled)
+        self.dock_settings_state.setdefault("dock", {})["icons_left"] = bool(enabled)
         self._save_dock_settings()
 
     def _set_dock_width(self, value: int) -> None:
-        self.settings_state.setdefault("dock", {})["width"] = int(value)
+        self.dock_settings_state.setdefault("dock", {})["width"] = int(value)
         self._save_dock_settings()
 
     def _set_dock_height(self, value: int) -> None:
-        self.settings_state.setdefault("dock", {})["height"] = int(value)
+        self.dock_settings_state.setdefault("dock", {})["height"] = int(value)
         self._save_dock_settings()
 
     def _set_dock_transparency(self, value: int) -> None:
-        self.settings_state.setdefault("dock", {})["transparency"] = int(value)
+        self.dock_settings_state.setdefault("dock", {})["transparency"] = int(value)
         self._save_dock_settings()
 
     def _set_dock_position(self, position: str) -> None:
         valid_positions = {"left", "center", "right"}
         pos = position if position in valid_positions else "center"
-        self.settings_state.setdefault("dock", {})["position"] = pos
+        self.dock_settings_state.setdefault("dock", {})["position"] = pos
         self._save_dock_settings()
 
     def _set_dock_monitor_mode(self, mode: str) -> None:
         valid_modes = {"primary", "follow_mouse", "named"}
         m = mode if mode in valid_modes else "primary"
-        self.settings_state.setdefault("dock", {})["monitor_mode"] = m
+        self.dock_settings_state.setdefault("dock", {})["monitor_mode"] = m
         self._save_dock_settings()
 
     def _set_dock_monitor_name(self, name: str) -> None:
-        self.settings_state.setdefault("dock", {})["monitor_name"] = str(name).strip()
+        self.dock_settings_state.setdefault("dock", {})["monitor_name"] = str(name).strip()
         self._save_dock_settings()
 
     def _save_dock_settings(self) -> None:
         from settings_page.dock_settings import save_dock_settings_state
-        save_dock_settings_state(self.settings_state)
+        save_dock_settings_state(self.dock_settings_state)
         self._save_settings()
 
 

@@ -76,7 +76,7 @@ def build_dock_page(window) -> QWidget:
 
     layout.addLayout(header)
 
-    dock_cfg = window.settings_state.get("dock", load_dock_settings_state().get("dock", {}))
+    dock_cfg = window.dock_settings_state.get("dock", load_dock_settings_state().get("dock", {}))
 
     auto_hide_switch = SwitchButton(bool(dock_cfg.get("auto_hide", False)))
     auto_hide_switch.toggledValue.connect(window._set_dock_auto_hide)
