@@ -666,7 +666,7 @@ class StylesMixin:
             }}
             QLabel[iconRole="true"] {{
                 font-family: "{self.icon_font}";
-                color: {theme.primary};
+                color: {theme.icon};
             }}
             QPushButton#segmentedChip {{
                 padding: 0 14px;

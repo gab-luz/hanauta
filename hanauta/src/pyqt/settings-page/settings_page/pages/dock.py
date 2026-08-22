@@ -21,6 +21,7 @@ from settings_page.material_icons import material_icon
 from settings_page.ui_widgets import SettingsRow, SwitchButton
 from settings_page.widgets import IconLabel, SegmentedChip
 
+NAV_ICONS_DIR = Path(__file__).resolve().parents[2].parents[1] / "assets" / "nav-icons"
 ICONS_DIR = Path(__file__).resolve().parents[2].parents[1] / "assets" / "icons"
 
 
@@ -34,7 +35,26 @@ def build_dock_page(window) -> QWidget:
     header = QHBoxLayout()
     header.setSpacing(8)
 
-    icon = IconLabel(material_icon("dock"), window.icon_font, 15, "#F4EAF7")
+    icon = IconLabel("", window.icon_font, 15, "#F4EAF7")
+    icon.setFixedSize(22, 22)
+    icon.setObjectName("dockHeaderIcon")
+    # Load the dock SVG icon like the sidebar does
+    dock_svg_path = str(NAV_ICONS_DIR / "dock.svg")
+    from pathlib import Path
+    svg_path = Path(dock_svg_path)
+    if svg_path.exists():
+        from PyQt6.QtGui import QPixmap
+        pix = QPixmap(str(svg_path))
+        if not pix.isNull():
+            icon.setText("")
+            icon.setPixmap(
+                pix.scaled(
+                    16,
+                    16,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
     icon.setFixedSize(22, 22)
     icon.setObjectName("dockHeaderIcon")
     title = QLabel("Dock")
