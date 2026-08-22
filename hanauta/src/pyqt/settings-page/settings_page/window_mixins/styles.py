@@ -567,6 +567,12 @@ class StylesMixin:
             QLabel#appearanceSubtitle {{
                 color: {theme.text_muted};
             }}
+            QLabel#dockTitle {{
+                color: {theme.text};
+            }}
+            QLabel#dockSubtitle {{
+                color: {theme.text_muted};
+            }}
             QFrame#appearanceHeroWrap {{
                 background: {rgba(theme.surface_container_high, 0.86)};
                 border: 1px solid {rgba(theme.outline, 0.16)};

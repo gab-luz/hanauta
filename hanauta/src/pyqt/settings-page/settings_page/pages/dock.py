@@ -134,7 +134,7 @@ def build_dock_page(window) -> QWidget:
     window.dock_position_buttons = {}
     for key, label in (("left", "Left"), ("center", "Center"), ("right", "Right")):
         chip = SegmentedChip(label, checked=(key == dock_cfg.get("position", "center")))
-        chip.setObjectName("dockSegmentedChip")
+        chip.setObjectName("segmentedChip")
         chip.clicked.connect(lambda checked=False, current=key: window._set_dock_position(current))
         window.dock_position_group.addButton(chip)
         window.dock_position_buttons[key] = chip
@@ -160,7 +160,7 @@ def build_dock_page(window) -> QWidget:
     window.dock_monitor_mode_buttons = {}
     for key, label in (("primary", "Primary"), ("follow_mouse", "Follow Mouse"), ("named", "Named")):
         chip = SegmentedChip(label, checked=(key == dock_cfg.get("monitor_mode", "primary")))
-        chip.setObjectName("dockSegmentedChip")
+        chip.setObjectName("segmentedChip")
         chip.clicked.connect(lambda checked=False, current=key: window._set_dock_monitor_mode(current))
         window.dock_monitor_mode_group.addButton(chip)
         window.dock_monitor_mode_buttons[key] = chip
