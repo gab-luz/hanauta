@@ -1520,6 +1520,289 @@ def _write_qt_theme_files(theme_dir: Path, palette: dict[str, str], theme_name: 
     )
 
 
+def _hanauta_gtk2_rc(palette: dict[str, str],
+                     font_family: str = "Rubik",
+                     mono_font_family: str = "JetBrains Mono") -> str:
+    bg = palette["background"]
+    fg = palette["on_background"]
+    base = palette["surface_container"]
+    text = palette["on_surface"]
+    selected_bg = palette["primary"]
+    selected_fg = palette["on_primary"]
+    border = palette["outline"]
+    container_high = palette["surface_container_high"]
+    variant = palette["surface_variant"]
+    on_variant = palette["on_surface_variant"]
+    error = palette["error"]
+    on_error = palette["on_error"]
+
+    def hex_to_rgb(c: str) -> tuple:
+        return int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+
+    def shade(c: str, factor: float) -> str:
+        r, g, b = hex_to_rgb(c)
+        if factor >= 0:
+            r = int(r + (255 - r) * factor)
+            g = int(g + (255 - g) * factor)
+            b = int(b + (255 - b) * factor)
+        else:
+            r = int(r * (1 + factor))
+            g = int(g * (1 + factor))
+            b = int(b * (1 + factor))
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def rgba(c: str, alpha: float) -> str:
+        r, g, b = hex_to_rgb(c)
+        return f"rgba({r}, {g}, {b}, {alpha:.2f})"
+
+    base_hover = shade(base, -0.05)
+    base_active = shade(base, -0.10)
+    selected_hover = shade(selected_bg, 0.12)
+    selected_active = shade(selected_bg, -0.10)
+    error_hover = shade(error, 0.15)
+    variant_hover = shade(variant, 0.05)
+
+    return (
+        f"""
+style "hanauta-default" {{
+    GtkWidget::focus-line-width = 1
+    GtkWidget::focus-padding = 1
+    GtkWidget::interior-focus = 1
+
+    bg[NORMAL] = "{bg}"
+    bg[PRELIGHT] = "{base_hover}"
+    bg[ACTIVE] = "{base_active}"
+    bg[SELECTED] = "{selected_bg}"
+    bg[INSENSITIVE] = "{rgba(bg, 0.50)}"
+
+    fg[NORMAL] = "{fg}"
+    fg[PRELIGHT] = "{text}"
+    fg[ACTIVE] = "{selected_fg}"
+    fg[SELECTED] = "{selected_fg}"
+    fg[INSENSITIVE] = "{rgba(text, 0.45)}"
+
+    text[NORMAL] = "{text}"
+    text[PRELIGHT] = "{text}"
+    text[ACTIVE] = "{selected_fg}"
+    text[SELECTED] = "{selected_fg}"
+    text[INSENSITIVE] = "{rgba(text, 0.45)}"
+
+    base[NORMAL] = "{base}"
+    base[PRELIGHT] = "{base_hover}"
+    base[ACTIVE] = "{base_active}"
+    base[SELECTED] = "{selected_bg}"
+    base[INSENSITIVE] = "{rgba(base, 0.50)}"
+
+    font_name = "{font_family} 10"
+}}
+
+style "hanauta-button" = "hanauta-default" {{
+    xthickness = 6
+    ythickness = 4
+
+    bg[NORMAL] = "{container_high}"
+    bg[PRELIGHT] = "{base_hover}"
+    bg[ACTIVE] = "{selected_bg}"
+    bg[SELECTED] = "{selected_bg}"
+    bg[INSENSITIVE] = "{rgba(bg, 0.50)}"
+
+    fg[NORMAL] = "{text}"
+    fg[PRELIGHT] = "{text}"
+    fg[ACTIVE] = "{selected_fg}"
+    fg[SELECTED] = "{selected_fg}"
+    fg[INSENSITIVE] = "{rgba(text, 0.45)}"
+}}
+
+style "hanauta-entry" = "hanauta-default" {{
+    xthickness = 8
+    ythickness = 6
+
+    bg[NORMAL] = "{base}"
+    bg[PRELIGHT] = "{base}"
+    bg[ACTIVE] = "{base}"
+    bg[SELECTED] = "{selected_bg}"
+    bg[INSENSITIVE] = "{rgba(base, 0.50)}"
+
+    fg[NORMAL] = "{text}"
+    fg[PRELIGHT] = "{text}"
+    fg[ACTIVE] = "{selected_fg}"
+    fg[SELECTED] = "{selected_fg}"
+    fg[INSENSITIVE] = "{rgba(text, 0.45)}"
+}}
+
+style "hanauta-combobox" = "hanauta-entry" {{
+    xthickness = 6
+    ythickness = 4
+}}
+
+style "hanauta-scale" = "hanauta-default" {{
+    bg[NORMAL] = "{variant}"
+    bg[PRELIGHT] = "{variant_hover}"
+    bg[ACTIVE] = "{selected_bg}"
+    bg[SELECTED] = "{selected_bg}"
+}}
+
+style "hanauta-scrollbar" = "hanauta-default" {{
+    bg[NORMAL] = "{rgba(variant, 0.40)}"
+    bg[PRELIGHT] = "{rgba(selected_bg, 0.65)}"
+    bg[ACTIVE] = "{selected_bg}"
+    bg[SELECTED] = "{selected_bg}"
+}}
+
+style "hanauta-menu" = "hanauta-default" {{
+    bg[NORMAL] = "{container_high}"
+    bg[PRELIGHT] = "{rgba(selected_bg, 0.16)}"
+    bg[ACTIVE] = "{selected_bg}"
+    bg[SELECTED] = "{selected_bg}"
+    bg[INSENSITIVE] = "{rgba(container_high, 0.50)}"
+
+    fg[NORMAL] = "{text}"
+    fg[PRELIGHT] = "{text}"
+    fg[ACTIVE] = "{selected_fg}"
+    fg[SELECTED] = "{selected_fg}"
+    fg[INSENSITIVE] = "{rgba(text, 0.45)}"
+}}
+
+style "hanauta-tooltip" = "hanauta-default" {{
+    bg[NORMAL] = "{shade(container_high, 0.10)}"
+    fg[NORMAL] = "{text}"
+    xthickness = 6
+    ythickness = 4
+}}
+
+style "hanauta-notebook" = "hanauta-default" {{
+    bg[NORMAL] = "{bg}"
+    bg[PRELIGHT] = "{rgba(text, 0.06)}"
+    bg[ACTIVE] = "{rgba(selected_bg, 0.16)}"
+    bg[SELECTED] = "{rgba(selected_bg, 0.16)}"
+    xthickness = 2
+    ythickness = 2
+}}
+
+style "hanauta-progressbar" = "hanauta-default" {{
+    bg[NORMAL] = "{variant}"
+    bg[PRELIGHT] = "{variant}"
+    bg[ACTIVE] = "{selected_bg}"
+    bg[SELECTED] = "{selected_bg}"
+}}
+
+style "hanauta-treeview" = "hanauta-default" {{
+    bg[NORMAL] = "{base}"
+    bg[PRELIGHT] = "{rgba(base, 0.85)}"
+    bg[ACTIVE] = "{selected_bg}"
+    bg[SELECTED] = "{selected_bg}"
+    bg[INSENSITIVE] = "{rgba(base, 0.50)}"
+
+    fg[NORMAL] = "{text}"
+    fg[PRELIGHT] = "{text}"
+    fg[ACTIVE] = "{selected_fg}"
+    fg[SELECTED] = "{selected_fg}"
+    fg[INSENSITIVE] = "{rgba(text, 0.45)}"
+}}
+
+style "hanauta-frame" = "hanauta-default" {{
+    bg[NORMAL] = "{bg}"
+    fg[NORMAL] = "{text}"
+}}
+
+style "hanauta-toolbar" = "hanauta-default" {{
+    bg[NORMAL] = "{rgba(container_high, 0.85)}"
+    bg[PRELIGHT] = "{rgba(text, 0.08)}"
+    bg[ACTIVE] = "{rgba(selected_bg, 0.18)}"
+    bg[SELECTED] = "{rgba(selected_bg, 0.18)}"
+}}
+
+style "hanauta-menubar" = "hanauta-default" {{
+    bg[NORMAL] = "{container_high}"
+    bg[PRELIGHT] = "{rgba(text, 0.08)}"
+    bg[ACTIVE] = "{rgba(selected_bg, 0.16)}"
+    bg[SELECTED] = "{rgba(selected_bg, 0.16)}"
+}}
+
+style "hanauta-statusbar" = "hanauta-default" {{
+    bg[NORMAL] = "{rgba(container_high, 0.60)}"
+    fg[NORMAL] = "{text}"
+}}
+
+style "hanauta-paned" = "hanauta-default" {{
+    bg[NORMAL] = "{rgba(border, 0.25)}"
+    bg[PRELIGHT] = "{rgba(selected_bg, 0.40)}"
+    bg[ACTIVE] = "{selected_bg}"
+}}
+
+class "GtkWidget" style "hanauta-default"
+class "GtkButton" style "hanauta-button"
+class "GtkToggleButton" style "hanauta-button"
+class "GtkCheckButton" style "hanauta-button"
+class "GtkRadioButton" style "hanauta-button"
+class "GtkEntry" style "hanauta-entry"
+class "GtkSpinButton" style "hanauta-entry"
+class "GtkComboBox" style "hanauta-combobox"
+class "GtkComboBoxEntry" style "hanauta-combobox"
+class "GtkScale" style "hanauta-scale"
+class "GtkHScale" style "hanauta-scale"
+class "GtkVScale" style "hanauta-scale"
+class "GtkScrollbar" style "hanauta-scrollbar"
+class "GtkHScrollbar" style "hanauta-scrollbar"
+class "GtkVScrollbar" style "hanauta-scrollbar"
+class "GtkMenu" style "hanauta-menu"
+class "GtkMenuItem" style "hanauta-menu"
+class "GtkMenuBar" style "hanauta-menubar"
+class "GtkToolbar" style "hanauta-toolbar"
+class "GtkHandleBox" style "hanauta-toolbar"
+class "GtkTooltip" style "hanauta-tooltip"
+class "GtkNotebook" style "hanauta-notebook"
+class "GtkProgressBar" style "hanauta-progressbar"
+class "GtkTreeView" style "hanauta-treeview"
+class "GtkFrame" style "hanauta-frame"
+class "GtkStatusbar" style "hanauta-statusbar"
+class "GtkPaned" style "hanauta-paned"
+class "GtkSeparator" style "hanauta-default"
+
+# Suggested action button
+style "hanauta-suggested-button" = "hanauta-button" {{
+    bg[NORMAL] = "{selected_bg}"
+    bg[PRELIGHT] = "{selected_hover}"
+    bg[ACTIVE] = "{selected_active}"
+    fg[NORMAL] = "{selected_fg}"
+    fg[PRELIGHT] = "{selected_fg}"
+    fg[ACTIVE] = "{selected_fg}"
+}}
+
+# Destructive action button
+style "hanauta-destructive-button" = "hanauta-button" {{
+    bg[NORMAL] = "{error}"
+    bg[PRELIGHT] = "{error_hover}"
+    bg[ACTIVE] = "{shade(error, -0.10)}"
+    fg[NORMAL] = "{on_error}"
+    fg[PRELIGHT] = "{on_error}"
+    fg[ACTIVE] = "{on_error}"
+}}
+
+widget_class "*<GtkButton>*<GtkLabel>" style "hanauta-button"
+widget_class "*<GtkButton>*<GtkImage>" style "hanauta-button"
+
+# Suggested action buttons (often used for OK, Apply, etc.)
+widget "*dialog*action_area*button*" style "hanauta-suggested-button"
+widget "*Dialog*action_area*button*" style "hanauta-suggested-button"
+widget "*MessageDialog*action_area*button*" style "hanauta-suggested-button"
+
+# Destructive action buttons (Delete, Remove, etc.)
+widget "*dialog*action_area*button.destructive*" style "hanauta-destructive-button"
+widget "*Dialog*action_area*button.destructive*" style "hanauta-destructive-button"
+widget "*MessageDialog*action_area*button.destructive*" style "hanauta-destructive-button"
+
+# Panel/statusbar
+widget_class "*Panel*" style "hanauta-statusbar"
+widget_class "*Applet*" style "hanauta-statusbar"
+
+# Tooltips
+widget "gtk-tooltip*" style "hanauta-tooltip"
+""".strip()
+        + "\n"
+    )
+
+
 def ensure_builtin_hanauta_gtk_theme(theme_key: str) -> str:
     metadata = THEME_LIBRARY[theme_key]
     theme_name = str(metadata["gtk_theme"])
@@ -1529,13 +1812,19 @@ def ensure_builtin_hanauta_gtk_theme(theme_key: str) -> str:
     font_family = fonts.get("ui_font_family", "Rubik")
     mono_font_family = fonts.get("mono_font_family", "JetBrains Mono")
     theme_dir = THEMES_HOME / theme_name
-    for gtk_dir_name in ("gtk-3.0", "gtk-4.0"):
+    for gtk_dir_name in ("gtk-2.0", "gtk-3.0", "gtk-4.0"):
         gtk_dir = theme_dir / gtk_dir_name
         gtk_dir.mkdir(parents=True, exist_ok=True)
-        (gtk_dir / "gtk.css").write_text(
-            _hanauta_gtk_css(palette, font_family=font_family, mono_font_family=mono_font_family),
-            encoding="utf-8"
-        )
+        if gtk_dir_name == "gtk-2.0":
+            (gtk_dir / "gtkrc").write_text(
+                _hanauta_gtk2_rc(palette, font_family=font_family, mono_font_family=mono_font_family),
+                encoding="utf-8"
+            )
+        else:
+            (gtk_dir / "gtk.css").write_text(
+                _hanauta_gtk_css(palette, font_family=font_family, mono_font_family=mono_font_family),
+                encoding="utf-8"
+            )
     _write_index_theme(theme_dir, str(metadata["label"]), theme_name, icon_theme=icon_theme)
     _write_qt_theme_files(theme_dir, palette, theme_name,
                           font_family=font_family, mono_font_family=mono_font_family)

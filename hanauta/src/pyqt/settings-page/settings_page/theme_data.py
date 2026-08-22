@@ -135,7 +135,7 @@ THEME_LIBRARY = {
         "palette": HANAUTA_DARK_PALETTE,
         "fonts": HANAUTA_FONT_PROFILE,
         "gtk_theme": "Hanauta-Dark",
-        "icon_theme": "Papirus-Dark",
+        "icon_theme": "Tela-purple",
         "color_scheme": "prefer-dark",
     },
     "hanauta_light": {
@@ -143,7 +143,7 @@ THEME_LIBRARY = {
         "palette": HANAUTA_LIGHT_PALETTE,
         "fonts": HANAUTA_FONT_PROFILE,
         "gtk_theme": "Hanauta-Light",
-        "icon_theme": "Papirus-Light",
+        "icon_theme": "Tela-purple-light",
         "color_scheme": "prefer-light",
     },
     "retrowave": {

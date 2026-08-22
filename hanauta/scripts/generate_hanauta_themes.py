@@ -69,6 +69,7 @@ def main() -> None:
     from settings_page.theme_data import THEME_LIBRARY, THEMES_HOME
     from settings_page.theme_gtk import (
         _hanauta_gtk_css,
+        _hanauta_gtk2_rc,
         _hanauta_qt5ct_colors,
         _hanauta_kvantum_theme,
         _write_index_theme,
@@ -99,15 +100,23 @@ def main() -> None:
         if theme_dir.exists():
             shutil.rmtree(theme_dir)
 
-        for gtk_dir_name in ("gtk-3.0", "gtk-4.0"):
+        for gtk_dir_name in ("gtk-2.0", "gtk-3.0", "gtk-4.0"):
             gtk_dir = theme_dir / gtk_dir_name
             gtk_dir.mkdir(parents=True, exist_ok=True)
-            (gtk_dir / "gtk.css").write_text(
-                _hanauta_gtk_css(palette,
-                                font_family=font_family,
-                                mono_font_family=mono_font_family),
-                encoding="utf-8"
-            )
+            if gtk_dir_name == "gtk-2.0":
+                (gtk_dir / "gtkrc").write_text(
+                    _hanauta_gtk2_rc(palette,
+                                    font_family=font_family,
+                                    mono_font_family=mono_font_family),
+                    encoding="utf-8"
+                )
+            else:
+                (gtk_dir / "gtk.css").write_text(
+                    _hanauta_gtk_css(palette,
+                                    font_family=font_family,
+                                    mono_font_family=mono_font_family),
+                    encoding="utf-8"
+                )
 
         icon_theme = str(metadata.get("icon_theme", "Papirus"))
         _write_index_theme(theme_dir, str(metadata["label"]), theme_name,
@@ -129,8 +138,9 @@ def main() -> None:
 
         generated.append((key, theme_name, palette))
 
-        for gtk_dir_name in ("gtk-3.0", "gtk-4.0"):
-            print(f"  GTK:   {gtk_dir_name}/gtk.css")
+        for gtk_dir_name in ("gtk-2.0", "gtk-3.0", "gtk-4.0"):
+            ext = "gtkrc" if gtk_dir_name == "gtk-2.0" else "gtk.css"
+            print(f"  GTK:   {gtk_dir_name}/{ext}")
         print("  Qt:    qt/colors.conf")
         print("  Kvantum: Kvantum/Kvantum.kvconfig")
         print()

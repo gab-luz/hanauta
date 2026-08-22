@@ -224,7 +224,7 @@ normalize_hanauta_native_selection() {
   local raw="${1:-all}"
   raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
   case "$raw" in
-    all|dark|light)
+    all|dark|light|auto)
       printf '%s\n' "$raw"
       ;;
     *)
@@ -3657,6 +3657,39 @@ install_adw_gtk_theme() {
   fi
 }
 
+install_tela_purple_icon_theme() {
+  local dest_dir="${1:-$HOME/.local/share/icons}"
+  local src_dir="$SCRIPT_DIR/hanauta/vendor/themes/Tela-icon-theme"
+
+  if [ ! -f "$src_dir/install.sh" ]; then
+    warn "Tela icon theme not found at $src_dir"
+    return 1
+  fi
+
+  info "Installing Tela Purple icon theme to $dest_dir..."
+  cd "$src_dir"
+  bash install.sh -d "$dest_dir" purple 2>&1 | while IFS= read -r line; do
+    case "$line" in
+      *"Installing"*) info "$line" ;;
+      *"success"*) success "$line" ;;
+      *"error"*|*"Error"*) warn "$line" ;;
+      *) [ -n "$line" ] && info "$line" ;;
+    esac
+  done
+  cd - >/dev/null
+
+  # Update gtk-update-icon-cache
+  if need_cmd gtk-update-icon-cache; then
+    for theme_dir in "$dest_dir"/Tela-purple*; do
+      if [ -d "$theme_dir" ]; then
+        gtk-update-icon-cache -f "$theme_dir" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+
+  success "Tela Purple icon theme installed"
+}
+
 install_hanauta_native_themes() {
   local selection="${HANAUTA_NATIVE_SELECTION:-all}"
   selection="$(normalize_hanauta_native_selection "$selection")" || {
@@ -3665,10 +3698,27 @@ install_hanauta_native_themes() {
   }
 
   local themes_arg=""
+  local apply_theme=""
   case "$selection" in
     all) themes_arg="hanauta_dark,hanauta_light" ;;
-    dark) themes_arg="hanauta_dark" ;;
-    light) themes_arg="hanauta_light" ;;
+    dark) themes_arg="hanauta_dark"; apply_theme="hanauta_dark" ;;
+    light) themes_arg="hanauta_light"; apply_theme="hanauta_light" ;;
+    auto)
+      themes_arg="hanauta_dark,hanauta_light"
+      # Detect system theme and apply the matching one
+      local color_scheme_script="$SCRIPT_DIR/hanauta/scripts/color_scheme.sh"
+      if [ -f "$color_scheme_script" ]; then
+        local system_scheme
+        system_scheme=$(bash "$color_scheme_script" 2>/dev/null || echo "dark")
+        case "$system_scheme" in
+          light) apply_theme="hanauta_light" ;;
+          *) apply_theme="hanauta_dark" ;;
+        esac
+        info "System theme detected: $system_scheme -> applying $apply_theme"
+      else
+        apply_theme="hanauta_dark"
+      fi
+      ;;
   esac
 
   install_theme_fonts
@@ -3683,6 +3733,77 @@ install_hanauta_native_themes() {
   PYTHONPATH="$SCRIPT_DIR/hanauta/src/pyqt/settings-page${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$generator" --themes "$themes_arg" --dest "$HOME/.themes" --apply-qt
 
+  # Apply the selected theme (or auto-detected theme) via gsettings and settings.ini
+  if [ -n "$apply_theme" ]; then
+    local metadata_script="$SCRIPT_DIR/hanauta/src/pyqt/settings-page"
+    local theme_name=""
+    local icon_theme=""
+    local color_scheme=""
+    local font_family="Rubik"
+    local mono_font_family="JetBrains Mono"
+
+    # Get theme metadata from the Python module
+    PYTHONPATH="$SCRIPT_DIR/hanauta/src/pyqt/settings-page${PYTHONPATH:+:$PYTHONPATH}" \
+      python3 -c "
+from settings_page.theme_data import THEME_LIBRARY
+meta = THEME_LIBRARY['$apply_theme']
+print(meta['gtk_theme'])
+# Use Tela-purple instead of Papirus
+print('Tela-purple')
+print(meta.get('color_scheme', 'prefer-dark'))
+" 2>/dev/null | {
+      read -r theme_name
+      read -r icon_theme
+      read -r color_scheme
+
+      # Apply via gsettings
+      if need_cmd gsettings; then
+        gsettings set org.gnome.desktop.interface gtk-theme "$theme_name" 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface icon-theme "$icon_theme" 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface color-scheme "$color_scheme" 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface font-name "$font_family 10" 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface monospace-font-name "$mono_font_family 10" 2>/dev/null || true
+      fi
+
+      # Apply via settings.ini
+      local gtk3_conf="$HOME/.config/gtk-3.0/settings.ini"
+      local gtk4_conf="$HOME/.config/gtk-4.0/settings.ini"
+      local gtk2_conf="$HOME/.gtkrc-2.0"
+      mkdir -p "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"
+
+      for conf in "$gtk3_conf" "$gtk4_conf"; do
+        {
+          echo "[Settings]"
+          echo "gtk-theme-name=$theme_name"
+          echo "gtk-icon-theme-name=$icon_theme"
+          echo "gtk-font-name=$font_family 10"
+          if [ "$color_scheme" = "prefer-dark" ]; then
+            echo "gtk-application-prefer-dark-theme=1"
+          else
+            echo "gtk-application-prefer-dark-theme=0"
+          fi
+        } > "$conf"
+      done
+
+      {
+        echo "gtk-theme-name=\"$theme_name\""
+        echo "gtk-icon-theme-name=\"$icon_theme\""
+        echo "gtk-font-name=\"$font_family 10\""
+        echo "gtk-monospace-font-name=\"$mono_font_family 10\""
+        if [ "$color_scheme" = "prefer-dark" ]; then
+          echo "gtk-application-prefer-dark-theme=1"
+        else
+          echo "gtk-application-prefer-dark-theme=0"
+        fi
+      } > "$gtk2_conf"
+
+      info "Applied theme: $theme_name ($color_scheme)"
+    }
+  fi
+
+  # Install Tela Purple icon theme (user)
+  install_tela_purple_icon_theme "$HOME/.local/share/icons"
+
   if [ "$INSTALL_HANAUTA_NATIVE_SYSTEM" = true ]; then
     if need_cmd sudo; then
       info "Copying hanauta native themes to /usr/share/themes with sudo..."
@@ -3695,6 +3816,20 @@ install_hanauta_native_themes() {
         fi
       done
       success "Hanauta native themes installed system-wide"
+
+      # Install Tela Purple icon theme (system)
+      if need_cmd sudo; then
+        info "Installing Tela Purple icon theme to /usr/share/icons with sudo..."
+        sudo bash "$SCRIPT_DIR/hanauta/vendor/themes/Tela-icon-theme/install.sh" -d "/usr/share/icons" purple
+        if need_cmd gtk-update-icon-cache; then
+          sudo gtk-update-icon-cache -f /usr/share/icons/Tela-purple >/dev/null 2>&1 || true
+          sudo gtk-update-icon-cache -f /usr/share/icons/Tela-purple-dark >/dev/null 2>&1 || true
+          sudo gtk-update-icon-cache -f /usr/share/icons/Tela-purple-light >/dev/null 2>&1 || true
+        fi
+        success "Tela Purple icon theme installed system-wide"
+      else
+        warn "sudo not found; skipping system-wide icon theme install"
+      fi
     else
       warn "sudo not found; skipping system-wide install"
     fi
@@ -3775,7 +3910,7 @@ offer_hanauta_native_theme_install() {
   local reply=""
   echo ""
   echo -e "${MAGENTA}${BOLD}Hanauta Native GTK/Qt Themes${NC}"
-  echo -e "Install Hanauta's own GTK3/4 + Qt/Kvantum themes generated from"
+  echo -e "Install Hanauta's own GTK2/3/4 + Qt/Kvantum themes generated from"
   echo -e "Material You / Matugen palette data. Includes ${BOLD}Rubik${NC} UI font and"
   echo -e "${BOLD}JetBrains Mono${NC} monospace font."
   if ! confirm_yes "Do you want to install Hanauta native themes?"; then
@@ -3786,14 +3921,16 @@ offer_hanauta_native_theme_install() {
   echo "  1. Both dark and light"
   echo "  2. Dark only"
   echo "  3. Light only"
-  read -r -p "Selection [1-3]: " reply
+  echo "  4. Auto (follow system theme)"
+  read -r -p "Selection [1-4]: " reply
   case "${reply:-1}" in
     1|"") HANAUTA_NATIVE_SELECTION="all" ;;
     2) HANAUTA_NATIVE_SELECTION="dark" ;;
     3) HANAUTA_NATIVE_SELECTION="light" ;;
+    4) HANAUTA_NATIVE_SELECTION="auto" ;;
     *) warn "Unknown selection. Installing both dark and light."; HANAUTA_NATIVE_SELECTION="all" ;;
   esac
-  if confirm_default_yes "Also install into /usr/share/themes using sudo for apps like Thunar?"; then
+  if confirm_default_yes "Also install into /usr/share/themes using sudo/polkit for apps like Thunar?"; then
     INSTALL_HANAUTA_NATIVE_SYSTEM=true
   fi
   install_hanauta_native_themes
@@ -3823,14 +3960,19 @@ post_notes() {
   echo ""
   echo -e "${YELLOW}Important notes:${NC}"
   echo -e "  • Ensure ${BOLD}~/.local/bin${NC} is on PATH so bundled binaries like ${BOLD}matugen${NC} and ${BOLD}hellwal${NC} are usable"
-  echo -e "  • GTK themes are written for both ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
+  echo -e "  • GTK themes are written for ${BOLD}gtk-2.0${NC}, ${BOLD}gtk-3.0${NC} and ${BOLD}gtk-4.0${NC} when applied from Hanauta Settings"
   echo -e "  • Hanauta-native themes also include ${BOLD}Qt color schemes${NC} (qt5ct/qt6ct) and ${BOLD}Kvantum themes${NC}"
-  echo -e "  • Icon theme is set to ${BOLD}Papirus${NC} (Material Design) — install ${BOLD}papirus-icon-theme${NC} via your package manager"
+  echo -e "  • Icon theme is set to ${BOLD}Tela-purple${NC} (Flat & Colorful) — Tela Purple variant is installed automatically with Hanauta themes"
   echo -e "  • Theme fonts: ${BOLD}Rubik${NC} (UI) + ${BOLD}JetBrains Mono${NC} (monospace) — ${BOLD}fonts-jetbrains-mono${NC} on Debian, ${BOLD}ttf-jetbrains-mono${NC} on Arch, or auto-downloaded if missing"
   echo -e "  • Cursor defaults are set to ${BOLD}${SWEET_CURSOR_THEME_NAME}${NC} (${BOLD}${SWEET_CURSOR_THEME_SIZE}${NC}) to match Caelestia"
   echo -e "  • Volume keys are wired through ${BOLD}i3-volume${NC} with ${BOLD}volnoti${NC} notifications"
   echo -e "  • Optional integrations such as ${BOLD}ukui-window-switch${NC}, ${BOLD}clipit/copyq${NC}, and ${BOLD}KDE Connect${NC} may be skipped if unavailable in your distro repositories"
   echo -e "  • PyQt6 notification center opens from the bar"
+  echo ""
+  echo -e "${MAGENTA}${BOLD}Credits & Thanks:${NC}"
+  echo -e "  ${CYAN}• vinceliuice${NC} — ${BOLD}Tela icon theme${NC} (https://github.com/vinceliuice/Tela-icon-theme)"
+  echo -e "  ${CYAN}• NVIDIA${NC} — ${BOLD}Nemotron 3 Ultra${NC} model powering this assistant"
+  echo -e "  ${CYAN}• OpenAI${NC} — ${BOLD}Open source tools & research${NC} enabling AI-assisted development"
   echo ""
   echo -e "${CYAN}Next steps:${NC}"
   echo -e "  1. Log out and log back in, or reload i3"
