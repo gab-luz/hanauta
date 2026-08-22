@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor, QFont
 from PyQt6.QtWidgets import (
@@ -18,6 +20,8 @@ from settings_page.dock_settings import load_dock_settings_state, save_dock_sett
 from settings_page.material_icons import material_icon
 from settings_page.ui_widgets import SettingsRow, SwitchButton
 from settings_page.widgets import IconLabel, SegmentedChip
+
+ICONS_DIR = Path(__file__).resolve().parents[2].parents[1] / "assets" / "icons"
 
 
 def build_dock_page(window) -> QWidget:
@@ -63,6 +67,7 @@ def build_dock_page(window) -> QWidget:
         window.icon_font,
         window.ui_font,
         auto_hide_switch,
+        icon_svg_path=str(ICONS_DIR / "dock-auto-hide.svg"),
     )
     layout.addWidget(auto_hide)
 
@@ -75,6 +80,7 @@ def build_dock_page(window) -> QWidget:
         window.icon_font,
         window.ui_font,
         icons_left_switch,
+        icon_svg_path=str(ICONS_DIR / "dock-icons-left.svg"),
     )
     layout.addWidget(icons_left)
 
@@ -91,6 +97,7 @@ def build_dock_page(window) -> QWidget:
         window.icon_font,
         window.ui_font,
         width_spin,
+        icon_svg_path=str(ICONS_DIR / "dock-width.svg"),
     )
     layout.addWidget(width)
 
@@ -107,6 +114,7 @@ def build_dock_page(window) -> QWidget:
         window.icon_font,
         window.ui_font,
         height_spin,
+        icon_svg_path=str(ICONS_DIR / "dock-height.svg"),
     )
     layout.addWidget(height)
 
@@ -123,6 +131,7 @@ def build_dock_page(window) -> QWidget:
         window.icon_font,
         window.ui_font,
         transparency_spin,
+        icon_svg_path=str(ICONS_DIR / "dock-transparency.svg"),
     )
     layout.addWidget(transparency)
 
