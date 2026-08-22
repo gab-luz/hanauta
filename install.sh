@@ -289,6 +289,15 @@ init_safety_backups() {
   mkdir -p "$SAFETY_BACKUP_ROOT"
 }
 
+clear_python_cache() {
+  info "Clearing Python cache files..."
+  find "$HOME/.config/i3/hanauta" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+  find "$HOME/.config/i3/hanauta" -name "*.pyc" -delete 2>/dev/null || true
+  find "$SCRIPT_DIR/hanauta/src/pyqt" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+  find "$SCRIPT_DIR/hanauta/src/pyqt" -name "*.pyc" -delete 2>/dev/null || true
+  success "Python cache cleared"
+}
+
 backup_path_if_exists() {
   local path="$1"
   local label="${2:-path}"
@@ -4241,6 +4250,8 @@ main() {
   fi
 
   print_banner
+
+  clear_python_cache
 
   if ! need_cmd sudo; then
     warn "sudo not found; package install may fail unless run as root."
