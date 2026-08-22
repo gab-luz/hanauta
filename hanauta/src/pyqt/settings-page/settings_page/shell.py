@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 from pyqt.shared.button_helpers import create_close_button
 from settings_page.material_icons import material_icon
 from settings_page.widgets import NavPillButton
+from settings_page.pages.dock import build_dock_page
 
 APP_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = APP_DIR.parent / "assets"
@@ -260,6 +261,13 @@ def build_sidebar(window) -> QWidget:
             str(NAV_ICONS_DIR / "crop_square.svg"),
         ),
         (
+            "dock",
+            material_icon("dock"),
+            "Dock",
+            False,
+            str(NAV_ICONS_DIR / "dock.svg"),
+        ),
+        (
             "services",
             material_icon("widgets"),
             "Services",
@@ -368,6 +376,7 @@ def build_scroll_body(window) -> QWidget:
     _add_page("storage", build_lazy_placeholder(window, "Storage"))
     _add_page("region", build_lazy_placeholder(window, "Region"))
     _add_page("bar", build_bar_placeholder(window))
+    _add_page("dock", build_dock_page(window), ready=True)
     _add_page("services", build_services_placeholder(window))
 
     window._show_page(window.initial_page)
