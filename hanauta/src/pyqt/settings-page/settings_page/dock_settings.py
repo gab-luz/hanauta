@@ -5,7 +5,7 @@ except Exception:
 
 from pathlib import Path
 
-APP_DIR = Path(__file__).resolve().parents[2]
+APP_DIR = Path(__file__).resolve().parents[3]
 DOCK_CONFIG = APP_DIR / "pyqt" / "dock" / "dock.toml"
 
 
