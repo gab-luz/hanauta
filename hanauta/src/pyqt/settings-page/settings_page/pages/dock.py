@@ -3,6 +3,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor, QFont
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -125,37 +126,55 @@ def build_dock_page(window) -> QWidget:
     )
     layout.addWidget(transparency)
 
-    position_chip = SegmentedChip(window)
-    position_chip.addOption("Left", "left", window.icon_font, window.ui_font)
-    position_chip.addOption("Center", "center", window.icon_font, window.ui_font)
-    position_chip.addOption("Right", "right", window.icon_font, window.ui_font)
-    current_pos = dock_cfg.get("position", "center")
-    position_chip.setSelected(current_pos)
-    position_chip.selectionChanged.connect(window._set_dock_position)
+    # Position: Left / Center / Right
+    position_row = QHBoxLayout()
+    position_row.setSpacing(8)
+    window.dock_position_group = QButtonGroup(window)
+    window.dock_position_group.setExclusive(True)
+    window.dock_position_buttons = {}
+    for key, label in (("left", "Left"), ("center", "Center"), ("right", "Right")):
+        chip = SegmentedChip(label, checked=(key == dock_cfg.get("position", "center")))
+        chip.setObjectName("dockSegmentedChip")
+        chip.clicked.connect(lambda checked=False, current=key: window._set_dock_position(current))
+        window.dock_position_group.addButton(chip)
+        window.dock_position_buttons[key] = chip
+        position_row.addWidget(chip)
+    position_row.addStretch(1)
+    position_widget = QWidget()
+    position_widget.setLayout(position_row)
     position = SettingsRow(
         material_icon("horizontal_align_center"),
         "Position",
         "Set the dock horizontal position on screen.",
         window.icon_font,
         window.ui_font,
-        position_chip,
+        position_widget,
     )
     layout.addWidget(position)
 
-    monitor_mode_chip = SegmentedChip(window)
-    monitor_mode_chip.addOption("Primary", "primary", window.icon_font, window.ui_font)
-    monitor_mode_chip.addOption("Follow Mouse", "follow_mouse", window.icon_font, window.ui_font)
-    monitor_mode_chip.addOption("Named", "named", window.icon_font, window.ui_font)
-    current_mode = dock_cfg.get("monitor_mode", "primary")
-    monitor_mode_chip.setSelected(current_mode)
-    monitor_mode_chip.selectionChanged.connect(window._set_dock_monitor_mode)
+    # Monitor mode: Primary / Follow Mouse / Named
+    monitor_mode_row = QHBoxLayout()
+    monitor_mode_row.setSpacing(8)
+    window.dock_monitor_mode_group = QButtonGroup(window)
+    window.dock_monitor_mode_group.setExclusive(True)
+    window.dock_monitor_mode_buttons = {}
+    for key, label in (("primary", "Primary"), ("follow_mouse", "Follow Mouse"), ("named", "Named")):
+        chip = SegmentedChip(label, checked=(key == dock_cfg.get("monitor_mode", "primary")))
+        chip.setObjectName("dockSegmentedChip")
+        chip.clicked.connect(lambda checked=False, current=key: window._set_dock_monitor_mode(current))
+        window.dock_monitor_mode_group.addButton(chip)
+        window.dock_monitor_mode_buttons[key] = chip
+        monitor_mode_row.addWidget(chip)
+    monitor_mode_row.addStretch(1)
+    monitor_mode_widget = QWidget()
+    monitor_mode_widget.setLayout(monitor_mode_row)
     monitor_mode = SettingsRow(
         material_icon("monitor"),
         "Monitor mode",
         "Choose which monitor the dock appears on.",
         window.icon_font,
         window.ui_font,
-        monitor_mode_chip,
+        monitor_mode_widget,
     )
     layout.addWidget(monitor_mode)
 
