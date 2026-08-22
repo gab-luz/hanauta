@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -77,6 +77,7 @@ MATERIAL_ICONS = {
     "alarm": "\ue855",
     "check": "\ue5ca",
     "close": "\ue5cd",
+    "cancel": "\ue5c9",
     "notifications_active": "\ue7f7",
     "snooze": "\ue046",
 }
@@ -113,7 +114,9 @@ def material_icon(name: str) -> str:
 
 
 class ReminderAlert(QWidget):
-    def __init__(self, title: str, body: str, severity: str, mode: str = "reminder") -> None:
+    pass  # Using callback instead of signal
+    
+    def __init__(self, title: str, body: str, severity: str, mode: str = "reminder", on_confirm: Optional[Callable[[str], None]] = None) -> None:
         super().__init__()
         fonts = load_app_fonts()
         self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
@@ -132,6 +135,8 @@ class ReminderAlert(QWidget):
         self._audio_fade_timer: QTimer | None = None
         self._audio_process: subprocess.Popen[str] | None = None
         self._i3_rules_applied = False
+        self._confirm_result: Optional[str] = None  # "yes", "no", "cancel"
+        self._on_confirm = on_confirm
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
@@ -229,15 +234,15 @@ class ReminderAlert(QWidget):
 
         if self.mode == "confirm":
             yes_btn = self._action_button("Yes", material_icon("check"), primary=True)
-            yes_btn.clicked.connect(self.close)
+            yes_btn.clicked.connect(lambda: self._confirm_done("yes"))
             actions.addWidget(yes_btn)
 
             no_btn = self._action_button("No", material_icon("close"))
-            no_btn.clicked.connect(self.close)
+            no_btn.clicked.connect(lambda: self._confirm_done("no"))
             actions.addWidget(no_btn)
 
-            cancel_btn = self._action_button("Cancel", material_icon("close"))
-            cancel_btn.clicked.connect(self.close)
+            cancel_btn = self._action_button("Cancel", material_icon("cancel"))
+            cancel_btn.clicked.connect(lambda: self._confirm_done("cancel"))
             actions.addWidget(cancel_btn)
         else:
             dismiss_button = self._action_button("Done", material_icon("check"), primary=True)
@@ -257,13 +262,28 @@ class ReminderAlert(QWidget):
         root.addWidget(backdrop)
 
     def _action_button(self, label: str, icon_text: str, *, primary: bool = False) -> QPushButton:
-        button = QPushButton(f"{icon_text}  {label}")
+        button = QPushButton()
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setMinimumHeight(48)
         button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        button.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
+        
+        # Use icon font for the icon, ui_font for the label
+        button.setFont(QFont(self.icon_font, 11, QFont.Weight.DemiBold))
+        button.setText(f"{icon_text}  {label}")
+        
         button.setObjectName("primaryButton" if primary else "secondaryButton")
         return button
+
+    def _confirm_done(self, result: str) -> None:
+        """Handle confirm dialog result."""
+        self._confirm_result = result
+        if self._on_confirm:
+            self._on_confirm(result)
+        self.close()
+    
+    def get_confirm_result(self) -> Optional[str]:
+        """Get the confirm dialog result."""
+        return self._confirm_result
 
     def _apply_styles(self) -> None:
         theme = self.theme
