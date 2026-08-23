@@ -1,0 +1,12 @@
+{
+  "plugin_id": "calendar_widget",
+  "tasks": [
+    {
+      "id": "calendar_cache",
+      "command": ["python3", "${PLUGIN_DIR}/calendar_cache.py"],
+      "interval_seconds": 300,
+      "timeout_seconds": 30,
+      "working_dir": "${PLUGIN_DIR}"
+    }
+  ]
+}

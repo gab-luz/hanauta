@@ -317,11 +317,14 @@ def _load_weather_api_key(service: str) -> str:
 
 
 def _fetch_open_meteo(city: WeatherCity) -> WeatherForecast | None:
+    weather_settings = load_weather_settings()
+    language = str(weather_settings.get("language", "en"))
     params = parse.urlencode(
         {
             "latitude": f"{city.latitude:.5f}",
             "longitude": f"{city.longitude:.5f}",
             "timezone": city.timezone or "auto",
+            "language": language,
             "forecast_days": "7",
             "current": ",".join(
                 [

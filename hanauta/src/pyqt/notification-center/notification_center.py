@@ -80,6 +80,7 @@ from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.plugin_runtime import resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, theme_font_family
 from pyqt.shared.calendar_card import apply_calendar_theme, build_calendar_card
+from pyqt.shared.sound import play_sound, is_sound_enabled, get_event_volume
 
 
 LOGGER = logging.getLogger("notification_center")
@@ -366,6 +367,14 @@ class NotificationCenter(QWidget):
         self._apply_styles()
         self._apply_media_palette()
         self._start_polls()
+
+    def _play_click_sound(self) -> None:
+        if is_sound_enabled():
+            play_sound("click", volume=get_event_volume("click"))
+
+    def _play_sound(self, event: str) -> None:
+        if is_sound_enabled():
+            play_sound(event, volume=get_event_volume(event))
 
     def _build_window(self) -> None:
         self.setWindowTitle("Hanauta Control Center")
@@ -1493,6 +1502,7 @@ class NotificationCenter(QWidget):
     def _open_vpn_widget(self) -> None:
         if not self._service_enabled("vpn_control") or not VPN_CONTROL_SCRIPT.exists():
             return
+        self._play_click_sound()
         run_bg_singleton(VPN_CONTROL_SCRIPT)
 
     def _open_christian_widget(self) -> None:
@@ -1501,6 +1511,7 @@ class NotificationCenter(QWidget):
             or not CHRISTIAN_WIDGET_SCRIPT.exists()
         ):
             return
+        self._play_click_sound()
         run_bg_singleton(CHRISTIAN_WIDGET_SCRIPT)
 
     def _open_reminders_widget(self) -> None:
@@ -1509,6 +1520,7 @@ class NotificationCenter(QWidget):
             or not REMINDERS_WIDGET_SCRIPT.exists()
         ):
             return
+        self._play_click_sound()
         run_bg_singleton(REMINDERS_WIDGET_SCRIPT)
 
     def _open_pomodoro_widget(self) -> None:
@@ -1517,17 +1529,20 @@ class NotificationCenter(QWidget):
             or not POMODORO_WIDGET_SCRIPT.exists()
         ):
             return
+        self._play_click_sound()
         run_bg_singleton(POMODORO_WIDGET_SCRIPT)
 
     def _open_rss_widget(self) -> None:
         rss_widget_script = resolve_rss_widget_script(self.settings_state)
         if not self._service_enabled("rss_widget") or not rss_widget_script.exists():
             return
+        self._play_click_sound()
         run_bg_singleton(rss_widget_script)
 
     def _open_obs_widget(self) -> None:
         if not self._service_enabled("obs_widget") or not OBS_WIDGET_SCRIPT.exists():
             return
+        self._play_click_sound()
         run_bg_singleton(OBS_WIDGET_SCRIPT)
 
     def _open_crypto_widget(self) -> None:
@@ -1536,16 +1551,19 @@ class NotificationCenter(QWidget):
             or not CRYPTO_WIDGET_SCRIPT.exists()
         ):
             return
+        self._play_click_sound()
         run_bg_singleton(CRYPTO_WIDGET_SCRIPT)
 
     def _open_vps_widget(self) -> None:
         if not self._service_enabled("vps_widget") or not VPS_WIDGET_SCRIPT.exists():
             return
+        self._play_click_sound()
         run_bg_singleton(VPS_WIDGET_SCRIPT)
 
     def _open_desktop_clock_widget(self) -> None:
         if not self._service_enabled("desktop_clock_widget"):
             return
+        self._play_click_sound()
         command = desktop_clock_command()
         if not command:
             return
@@ -1565,6 +1583,7 @@ class NotificationCenter(QWidget):
             or not GAME_MODE_POPUP_SCRIPT.exists()
         ):
             return
+        self._play_click_sound()
         run_bg_singleton(GAME_MODE_POPUP_SCRIPT)
 
     def _circle_icon_button(
@@ -3255,6 +3274,7 @@ class NotificationCenter(QWidget):
         self._avatar_mtime_ns = mtime_ns
 
     def _open_profile_photo_picker(self) -> None:
+        self._play_click_sound()
         run_script_bg("chpfp.sh")
         for delay in (1200, 3000, 7000):
             QTimer.singleShot(
@@ -3262,6 +3282,7 @@ class NotificationCenter(QWidget):
             )
 
     def _open_settings(self) -> None:
+        self._play_click_sound()
         self._launch_settings_page("overview")
 
     def _show_overview_page(self) -> None:
@@ -3285,9 +3306,11 @@ class NotificationCenter(QWidget):
             )
 
     def _open_settings_homeassistant(self) -> None:
+        self._play_click_sound()
         self._launch_settings_page("services")
 
     def _open_powermenu(self) -> None:
+        self._play_click_sound()
         if not POWERMENU_SCRIPT.exists():
             return
         run_bg_singleton(POWERMENU_SCRIPT)
@@ -3478,6 +3501,7 @@ class NotificationCenter(QWidget):
         self.ha_entity_layout.addStretch(1)
 
     def _toggle_pin_entity(self, entity_id: str) -> None:
+        self._play_click_sound()
         pinned = list(self.settings_state["home_assistant"].get("pinned_entities", []))
         if entity_id in pinned:
             pinned.remove(entity_id)
@@ -3562,6 +3586,7 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(900, self._refresh_home_assistant_entities)
 
     def _toggle_wifi(self) -> None:
+        self._play_sound("wifi_toggle")
         run_script_bg("network.sh", "toggle")
         QTimer.singleShot(
             300,
@@ -3577,6 +3602,7 @@ class NotificationCenter(QWidget):
         )
 
     def _toggle_bluetooth(self) -> None:
+        self._play_sound("bluetooth_toggle")
         run_script_bg("bluetooth", "toggle")
         QTimer.singleShot(
             300,
@@ -3592,6 +3618,7 @@ class NotificationCenter(QWidget):
         )
 
     def _toggle_airplane(self) -> None:
+        self._play_sound("alert")
         run_script_bg("network.sh", "toggle-radio")
         QTimer.singleShot(
             300,
@@ -3607,6 +3634,7 @@ class NotificationCenter(QWidget):
         )
 
     def _toggle_night(self) -> None:
+        self._play_sound("dnd_toggle")
         run_script_bg("redshift", "toggle")
         QTimer.singleShot(
             300,
@@ -3620,6 +3648,7 @@ class NotificationCenter(QWidget):
         )
 
     def _toggle_caffeine(self) -> None:
+        self._play_sound("click")
         caffeine_script = SCRIPTS_DIR / "caffeine.sh"
         if caffeine_script.exists():
             run_bg(["env", "HANAUTA_QUIET=1", str(caffeine_script), "toggle"])
@@ -3671,6 +3700,7 @@ class NotificationCenter(QWidget):
         return "nightlight"
 
     def _toggle_dnd(self) -> None:
+        self._play_sound("dnd_toggle")
         dnd_on = parse_bool_text(run_cmd(notification_control_command("is-paused")))
         if dnd_on:
             run_cmd(notification_control_command("set-paused", "false"))
@@ -3694,6 +3724,7 @@ class NotificationCenter(QWidget):
         QTimer.singleShot(350, self._enable_dnd_after_warning)
 
     def _enable_dnd_after_warning(self) -> None:
+        self._play_sound("alert")
         run_cmd(notification_control_command("set-paused", "true"))
         self._poll_quick_settings()
 

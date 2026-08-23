@@ -107,6 +107,7 @@ from pyqt.shared.plugin_bridge import (
 )
 from pyqt.shared.plugin_runtime import discover_plugin_dirs, resolve_plugin_script
 from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba, relative_luminance, theme_font_family
+from pyqt.shared.sound import play_sound, is_sound_enabled, get_event_volume
 
 LOG_DIR = Path.home() / ".local" / "state" / "hanauta" / "logs"
 UI_BAR_LOG_FILE = LOG_DIR / "hanauta-bar.log"
@@ -521,47 +522,7 @@ if not HAS_DBUS_NEXT:
         "dbus_next is not installed; action notifications will fall back to notify-send."
     )
 
-MATERIAL_ICONS = {
-    "battery_2_bar": "\uebe0",
-    "battery_3_bar": "\uebdd",
-    "battery_5_bar": "\uebd4",
-    "battery_alert": "\ue19c",
-    "battery_charging_full": "\ue1a3",
-    "battery_full": "\ue1a4",
-    "auto_awesome": "\ue65f",
-    "bluetooth": "\ue1a7",
-    "coffee": "\uefef",
-    "content_paste": "\ue14f",
-    "md-bitcoin": "\uebc5",
-    "currency_bitcoin": "\uebc5",
-    "dashboard": "\ue871",
-    "home": "\ue88a",
-    "mail": "\ue158",
-    "music_note": "\ue405",
-    "notifications": "\ue7f4",
-    "notifications_active": "\ue7f7",
-    "pause": "\ue034",
-    "play_arrow": "\ue037",
-    "power_settings_new": "\ue8ac",
-    "public": "\ue80b",
-    "warning": "\ue002",
-    "videocam": "\ue04b",
-    "show_chart": "\ue6e1",
-    "timer": "\ue425",
-    "skip_next": "\ue044",
-    "skip_previous": "\ue045",
-    "system_update": "\ue62a",
-    "favorite": "\ue87d",
-    "shield": "\ue9e0",
-    "trip_origin": "\ue57b",
-    "vpn_key": "\ue0da",
-    "wifi": "\ue63e",
-    "wifi_off": "\ue648",
-    "sports_esports": "\uea28",
-    "school": "\ue80c",
-    "expand_more": "\ue5cf",
-    "expand_less": "\ue5ce",
-}
+from pyqt.shared.material_icons import material_icon
 MONITOR_MODE_PRIMARY = "primary"
 MONITOR_MODE_FOLLOW_MOUSE = "follow_mouse"
 MONITOR_MODE_NAMED = "named"
@@ -968,10 +929,6 @@ def detect_font(*families: str) -> str:
         if QFont(family).exactMatch():
             return family
     return "Sans Serif"
-
-
-def material_icon(name: str) -> str:
-    return MATERIAL_ICONS.get(name, "?")
 
 
 def ensure_bar_icon_config() -> None:
@@ -3209,6 +3166,14 @@ class CyberBar(QWidget):
         self._setup_settings_watcher()
         self._start_polls()
 
+    def _play_click_sound(self) -> None:
+        if is_sound_enabled():
+            play_sound("click", volume=get_event_volume("click"))
+
+    def _play_sound(self, event: str) -> None:
+        if is_sound_enabled():
+            play_sound(event, volume=get_event_volume(event))
+
     def _setup_window(self) -> None:
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -3287,7 +3252,7 @@ class CyberBar(QWidget):
         self.ai_button.setCheckable(True)
         self.ai_button.setFont(QFont(self.material_font, 16))
         self.ai_button.setFixedSize(28, 24)
-        self.ai_button.pressed.connect(self._toggle_ai_popup)
+        self.ai_button.pressed.connect(lambda: (self._play_click_sound(), self._toggle_ai_popup()))
         self._refresh_ai_button_icon()
         self.launcher_trigger = ClickableFrame()
         self.launcher_trigger.setObjectName("launcherTrigger")
@@ -3296,7 +3261,7 @@ class CyberBar(QWidget):
             QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
         )
         self.launcher_trigger.setFixedHeight(20)
-        self.launcher_trigger.clicked.connect(self._open_launcher)
+        self.launcher_trigger.clicked.connect(lambda: (self._play_click_sound(), self._open_launcher()))
         self.launcher_trigger.hoveredChanged.connect(
             self._update_launcher_wordmark_colors
         )
@@ -3362,18 +3327,18 @@ class CyberBar(QWidget):
 
         self.weather_icon = AnimatedWeatherIcon(18)
         self.weather_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.weather_icon.clicked.connect(self._toggle_weather_popup)
+        self.weather_icon.clicked.connect(lambda: (self._play_click_sound(), self._toggle_weather_popup()))
         self.weather_icon.hide()
         self.time_label = QLabel("--:--")
         self.time_label.setObjectName("timeLabel")
         self.date_label = ClickableLabel("--")
         self.date_label.setObjectName("dateLabel")
         self.date_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.date_label.clicked.connect(self._toggle_calendar_popup)
+        self.date_label.clicked.connect(lambda: (self._play_click_sound(), self._toggle_calendar_popup()))
         self.health_pill = ClickableFrame()
         self.health_pill.setObjectName("healthPill")
         self.health_pill.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.health_pill.clicked.connect(self._open_health_widget)
+        self.health_pill.clicked.connect(lambda: (self._play_click_sound(), self._open_health_widget()))
         self.health_pill_layout = QHBoxLayout(self.health_pill)
         self.health_pill_layout.setContentsMargins(6, 2, 8, 2)
         self.health_pill_layout.setSpacing(4)
@@ -3387,14 +3352,14 @@ class CyberBar(QWidget):
         self.mail_wrap = ClickableFrame()
         self.mail_wrap.setObjectName("mailStatusWrap")
         self.mail_wrap.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.mail_wrap.clicked.connect(self._open_mail_client)
+        self.mail_wrap.clicked.connect(lambda: (self._play_click_sound(), self._open_mail_client()))
         self.mail_layout = QHBoxLayout(self.mail_wrap)
         self.mail_layout.setContentsMargins(0, 0, 0, 0)
         self.mail_layout.setSpacing(4)
         self.mail_button = QPushButton(self._icon_text("mail"))
         self.mail_button.setObjectName("statusIconButton")
         self.mail_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.mail_button.clicked.connect(self._open_mail_client)
+        self.mail_button.clicked.connect(lambda: (self._play_click_sound(), self._open_mail_client()))
         self.mail_count = QLabel("0")
         self.mail_count.setObjectName("mailUnreadCount")
         self.mail_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3403,7 +3368,7 @@ class CyberBar(QWidget):
         self.updates_pill = ClickableFrame()
         self.updates_pill.setObjectName("updatesPill")
         self.updates_pill.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.updates_pill.clicked.connect(self._check_updates)
+        self.updates_pill.clicked.connect(lambda: (self._play_click_sound(), self._check_updates()))
         self.updates_pill_layout = QHBoxLayout(self.updates_pill)
         self.updates_pill_layout.setContentsMargins(6, 2, 8, 2)
         self.updates_pill_layout.setSpacing(4)
@@ -3418,7 +3383,7 @@ class CyberBar(QWidget):
         self.locale_button.setObjectName("regionButton")
         self.locale_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.locale_button.setFont(QFont(self.material_font, 18))
-        self.locale_button.clicked.connect(self._open_region_settings)
+        self.locale_button.clicked.connect(lambda: (self._play_click_sound(), self._open_region_settings()))
         self.datetime_layout.addWidget(self.weather_icon)
         self.datetime_layout.addWidget(self.time_label)
         self.datetime_layout.addWidget(self.date_label)
@@ -3467,9 +3432,9 @@ class CyberBar(QWidget):
         self.media_prev = self._icon_button("skip_previous")
         self.media_play = self._icon_button("play_arrow")
         self.media_next = self._icon_button("skip_next")
-        self.media_prev.clicked.connect(lambda: run_script_bg("mpris.sh", "--previous"))
-        self.media_play.clicked.connect(lambda: run_script_bg("mpris.sh", "--toggle"))
-        self.media_next.clicked.connect(lambda: run_script_bg("mpris.sh", "--next"))
+        self.media_prev.clicked.connect(lambda: (self._play_click_sound(), run_script_bg("mpris.sh", "--previous")))
+        self.media_play.clicked.connect(lambda: (self._play_click_sound(), run_script_bg("mpris.sh", "--toggle")))
+        self.media_next.clicked.connect(lambda: (self._play_click_sound(), run_script_bg("mpris.sh", "--next")))
         for btn in (self.media_prev, self.media_play, self.media_next):
             btn.setObjectName("mediaControl")
 
@@ -3492,7 +3457,7 @@ class CyberBar(QWidget):
         self.cap_alert_chip = ClickableFrame()
         self.cap_alert_chip.setObjectName("capAlertChip")
         self.cap_alert_chip.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.cap_alert_chip.clicked.connect(self._open_cap_alerts_popup)
+        self.cap_alert_chip.clicked.connect(lambda: (self._play_click_sound(), self._open_cap_alerts_popup()))
         self.cap_alert_layout = QHBoxLayout(self.cap_alert_chip)
         self.cap_alert_layout.setContentsMargins(10, 2, 12, 2)
         self.cap_alert_layout.setSpacing(8)
@@ -3535,60 +3500,60 @@ class CyberBar(QWidget):
         self.net_icon.setObjectName("statusIconButton")
         self.net_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.net_icon.setCheckable(True)
-        self.net_icon.clicked.connect(self._toggle_wifi_popup)
+        self.net_icon.clicked.connect(lambda: (self._play_click_sound(), self._toggle_wifi_popup()))
         self.vpn_icon = QPushButton("")
         self.vpn_icon.setObjectName("statusIconButton")
         self.vpn_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.vpn_icon.setCheckable(True)
         self.vpn_icon.setProperty("active", False)
         self.vpn_icon.setText(self._icon_text("vpn_key"))
-        self.vpn_icon.clicked.connect(self._toggle_vpn_popup)
+        self.vpn_icon.clicked.connect(lambda: (self._play_click_sound(), self._toggle_vpn_popup()))
         self.christian_button = QPushButton("")
         self.christian_button.setObjectName("statusIconButton")
         self.christian_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.christian_button.clicked.connect(self._open_christian_widget)
+        self.christian_button.clicked.connect(lambda: (self._play_click_sound(), self._open_christian_widget()))
         self.christian_button.setIconSize(QSize(16, 16))
         self.reminders_button = QPushButton(REMINDERS_BAR_GLYPH)
         self.reminders_button.setObjectName("statusIconButton")
         self.reminders_button.setProperty("nerdIcon", True)
         self.reminders_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.reminders_button.clicked.connect(self._open_reminders_widget)
+        self.reminders_button.clicked.connect(lambda: (self._play_click_sound(), self._open_reminders_widget()))
         self.caps_lock_button = QPushButton("A")
         self.caps_lock_button.setObjectName("statusLockButton")
         self.caps_lock_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.caps_lock_button.clicked.connect(lambda: self._toggle_lock_state("caps"))
+        self.caps_lock_button.clicked.connect(lambda: (self._play_click_sound(), self._toggle_lock_state("caps")))
         self.caps_lock_button.hide()
         self.num_lock_button = QPushButton("1")
         self.num_lock_button.setObjectName("statusLockButton")
         self.num_lock_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.num_lock_button.clicked.connect(lambda: self._toggle_lock_state("num"))
+        self.num_lock_button.clicked.connect(lambda: (self._play_click_sound(), self._toggle_lock_state("num")))
         self.num_lock_button.hide()
         self.pomodoro_button = QPushButton(self._icon_text("timer"))
         self.pomodoro_button.setObjectName("statusIconButton")
         self.pomodoro_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.pomodoro_button.clicked.connect(self._open_pomodoro_widget)
+        self.pomodoro_button.clicked.connect(lambda: (self._play_click_sound(), self._open_pomodoro_widget()))
         self.rss_button = QPushButton(self._icon_text("public"))
         self.rss_button.setObjectName("statusIconButton")
         self.rss_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.rss_button.clicked.connect(self._open_rss_widget)
+        self.rss_button.clicked.connect(lambda: (self._play_click_sound(), self._open_rss_widget()))
         self.obs_button = QPushButton(self._icon_text("videocam"))
         self.obs_button.setObjectName("statusIconButton")
         self.obs_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.obs_button.clicked.connect(self._open_obs_widget)
+        self.obs_button.clicked.connect(lambda: (self._play_click_sound(), self._open_obs_widget()))
         self.crypto_button = QPushButton(self._icon_text("show_chart"))
         self.crypto_button.setObjectName("statusIconButton")
         self.crypto_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.crypto_button.clicked.connect(self._open_crypto_widget)
+        self.crypto_button.clicked.connect(lambda: (self._play_click_sound(), self._open_crypto_widget()))
         self.ntfy_button = QPushButton(self._icon_text("notifications"))
         self.ntfy_button.setObjectName("statusIconButton")
         self.ntfy_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.ntfy_button.setCheckable(True)
-        self.ntfy_button.clicked.connect(self._toggle_ntfy_popup)
+        self.ntfy_button.clicked.connect(lambda: (self._play_click_sound(), self._toggle_ntfy_popup()))
         self.game_mode_button = QPushButton(self._icon_text("sports_esports"))
         self.game_mode_button.setObjectName("statusIconButton")
         self.game_mode_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.game_mode_button.setCheckable(True)
-        self.game_mode_button.clicked.connect(self._toggle_game_mode_popup)
+        self.game_mode_button.clicked.connect(lambda: (self._play_click_sound(), self._toggle_game_mode_popup()))
         self.battery_icon = QLabel(self._icon_text("battery_full"))
         self.battery_icon.setObjectName("statusIcon")
         self.caffeine_icon = QLabel(self._icon_text("coffee"))
@@ -3629,11 +3594,11 @@ class CyberBar(QWidget):
         self.status_layout.addWidget(self.battery_value)
         self.btn_clip = self._icon_button("content_paste")
         self.btn_clip.setObjectName("statusIconButton")
-        self.btn_clip.clicked.connect(self._open_clipboard)
+        self.btn_clip.clicked.connect(lambda: (self._play_click_sound(), self._open_clipboard()))
         self.btn_power = self._icon_button("power_settings_new")
         self.btn_power.setObjectName("statusIconButton")
         self.btn_power.setCheckable(True)
-        self.btn_power.clicked.connect(self._toggle_powermenu)
+        self.btn_power.clicked.connect(lambda: (self._play_click_sound(), self._toggle_powermenu()))
 
         self.tray_host = StatusNotifierTray(self)
         self.tray_host.setProperty("embedded", True)
@@ -3644,7 +3609,7 @@ class CyberBar(QWidget):
         self._status_overflow_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._status_overflow_button.setCheckable(True)
         self._status_overflow_button.setProperty("iconKey", "overflow_vertical")
-        self._status_overflow_button.clicked.connect(self._toggle_status_overflow)
+        self._status_overflow_button.clicked.connect(lambda: (self._play_click_sound(), self._toggle_status_overflow()))
         self._status_overflow_button.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
         )
@@ -3797,6 +3762,7 @@ class CyberBar(QWidget):
         checkable: bool = False,
         on_click: Callable[[], None] | None = None,
         font_size: int = 16,
+        use_icon: bool = False,
     ) -> QPushButton:
         existing = self._bar_plugin_buttons.get(key)
         if existing is not None:
@@ -3805,7 +3771,10 @@ class CyberBar(QWidget):
         button.setObjectName("statusIconButton")
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setCheckable(checkable)
-        button.setFont(QFont(self.material_font, font_size))
+        if use_icon:
+            button.setProperty("useIcon", True)
+        else:
+            button.setFont(QFont(self.material_font, font_size))
         button.setProperty("statusKey", f"plugin:{key}")
         if tooltip:
             button.setToolTip(tooltip)
@@ -4051,7 +4020,9 @@ class CyberBar(QWidget):
             "trigger_fullscreen_alert": trigger_fullscreen_alert,
         }
 
-    def _load_bar_plugins(self) -> None:
+    def _load_bar_plugins(self, force_reload: bool = False) -> None:
+        if force_reload:
+            self._clear_loaded_bar_plugins()
         for entrypoint in discover_bar_plugin_entrypoints():
             path_key = str(entrypoint.resolve())
             if path_key in self._loaded_bar_plugin_paths:
@@ -4088,6 +4059,33 @@ class CyberBar(QWidget):
                         sys.path.remove(plugin_path)
                     except ValueError:
                         pass
+
+    def _clear_loaded_bar_plugins(self) -> None:
+        for button in self._bar_plugin_buttons.values():
+            try:
+                self.status_layout.removeWidget(button)
+            except Exception:
+                pass
+            button.deleteLater()
+        self._bar_plugin_buttons.clear()
+
+        for widget in list(self._status_managed_widgets):
+            key = str(widget.property("statusKey") or "").strip()
+            if key.startswith("plugin:"):
+                try:
+                    self.status_layout.removeWidget(widget)
+                except Exception:
+                    pass
+                try:
+                    if self._status_overflow_layout is not None:
+                        self._status_overflow_layout.removeWidget(widget)
+                except Exception:
+                    pass
+                widget.deleteLater()
+                self._status_managed_widgets.remove(widget)
+
+        self._loaded_bar_plugin_paths.clear()
+        self._loaded_bar_plugin_ids.clear()
 
     def _font_supports_text(self, font: QFont, text: str) -> bool:
         if not text:
@@ -4383,6 +4381,8 @@ class CyberBar(QWidget):
             if button.objectName() != "statusIconButton":
                 continue
             if not isinstance(button, QPushButton):
+                continue
+            if button.property("useIcon"):
                 continue
             icon = button.icon()
             if icon.isNull():
@@ -4684,6 +4684,12 @@ class CyberBar(QWidget):
                 min-width: 22px;
                 max-width: 22px;
                 padding: 0;
+            }}
+            #statusIconButton[useIcon="true"] {{
+                font-family: initial;
+                min-width: 0;
+                max-width: none;
+                padding: 2px 4px;
             }}
             #statusIconButton:hover {{
                 color: {status_hover_color};
@@ -5092,7 +5098,7 @@ class CyberBar(QWidget):
         self.autolock_settings = load_autolock_settings_from_payload(
             self.runtime_settings
         )
-        self._load_bar_plugins()
+        self._load_bar_plugins(force_reload=force)
         self._apply_bar_settings()
         self._apply_bar_icon_overrides()
         self._apply_styles()
@@ -7210,6 +7216,8 @@ class CyberBar(QWidget):
 
     def _goto_workspace(self, num: int) -> None:
         run_cmd(["i3-msg", "workspace", str(num)])
+        if is_sound_enabled():
+            play_sound("workspace_switch", volume=get_event_volume("workspace_switch"))
         self._poll_workspaces()
 
     def _toggle_notifications(self) -> None:

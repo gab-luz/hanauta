@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -15,6 +16,13 @@ from PyQt6.QtWidgets import (
 from settings_page.material_icons import material_icon
 from settings_page.ui_widgets import SettingsRow, SwitchButton
 from settings_page.widgets import IconLabel
+from pyqt.shared.sound import (
+    list_soundpacks,
+    get_current_soundpack,
+    get_soundpack_info,
+    get_default_volume,
+    DEFAULT_SOUND_SETTINGS,
+)
 
 
 def build_audio_page(window) -> QWidget:
@@ -86,6 +94,59 @@ def build_audio_card(window) -> QWidget:
             window.icon_font,
             window.ui_font,
             window.audio_alert_sounds_switch,
+        )
+    )
+
+    soundpacks = list_soundpacks()
+    current_pack = get_current_soundpack()
+    if current_pack not in soundpacks:
+        current_pack = soundpacks[0] if soundpacks else "default"
+    window.soundpack_combo = QComboBox()
+    window.soundpack_combo.setObjectName("settingsCombo")
+    for pack in soundpacks:
+        info = get_soundpack_info(pack)
+        display_name = info.get("display_name", pack)
+        window.soundpack_combo.addItem(display_name, pack)
+    pack_index = window.soundpack_combo.findData(current_pack)
+    window.soundpack_combo.setCurrentIndex(max(0, pack_index))
+    layout.addWidget(
+        SettingsRow(
+            material_icon("library_music"),
+            "Soundpack",
+            "Choose the sound theme for UI interactions and notifications.",
+            window.icon_font,
+            window.ui_font,
+            window.soundpack_combo,
+        )
+    )
+
+    window.sound_enabled_switch = SwitchButton(
+        bool(window.settings_state.get("sound", {}).get("enabled", True))
+    )
+    layout.addWidget(
+        SettingsRow(
+            material_icon("volume_up"),
+            "Enable sounds",
+            "Play sounds for UI interactions, notifications, and alerts.",
+            window.icon_font,
+            window.ui_font,
+            window.sound_enabled_switch,
+        )
+    )
+
+    window.sound_volume_slider = QSlider(Qt.Orientation.Horizontal)
+    window.sound_volume_slider.setObjectName("settingsSlider")
+    window.sound_volume_slider.setRange(0, 100)
+    window.sound_volume_slider.setValue(get_default_volume() * 100 // 65536)
+    window.sound_volume_slider.setFixedWidth(200)
+    layout.addWidget(
+        SettingsRow(
+            material_icon("volume_up"),
+            "Sound volume",
+            "Master volume for all Hanauta sounds (0-100%).",
+            window.icon_font,
+            window.ui_font,
+            window.sound_volume_slider,
         )
     )
 

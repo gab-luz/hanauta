@@ -1304,6 +1304,19 @@ class SettersMixin:
         if hasattr(self, "calendar_status"):
             self.calendar_status.setText("Calendar first day updated.")
 
+    def _set_calendar_background_sync_interval(self, index: int) -> None:
+        value = (
+            self.calendar_background_sync_combo.itemData(index)
+            if hasattr(self, "calendar_background_sync_combo")
+            else 5
+        )
+        self.settings_state.setdefault("calendar", {})["background_sync_interval_minutes"] = int(
+            value or 5
+        )
+        save_settings_state(self.settings_state)
+        if hasattr(self, "calendar_status"):
+            self.calendar_status.setText("Calendar background sync interval updated.")
+
 
     def _calendar_accounts(self) -> list[dict[str, object]]:
         calendar = self.settings_state.setdefault("calendar", {})
@@ -2289,6 +2302,17 @@ class SettersMixin:
         self._set_weather_notification_flag(
             "notify_sunset_soon", enabled, "Sunset soon"
         )
+
+    def _set_weather_language(self, index: int) -> None:
+        value = (
+            self.weather_language_combo.itemData(index)
+            if hasattr(self, "weather_language_combo")
+            else "en"
+        )
+        self.settings_state.setdefault("weather", {})["language"] = str(value or "en")
+        save_settings_state(self.settings_state)
+        if hasattr(self, "weather_status"):
+            self.weather_status.setText("Weather language updated.")
 
 
     def _set_weather_notification_flag(

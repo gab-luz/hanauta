@@ -823,6 +823,22 @@ class SystemPagesMixin:
             if hasattr(self, "audio_mute_behavior_combo")
             else "leave_as_is"
         )
+        sound = self.settings_state.setdefault("sound", {})
+        sound["enabled"] = (
+            bool(self.sound_enabled_switch.isChecked())
+            if hasattr(self, "sound_enabled_switch")
+            else True
+        )
+        sound["soundpack"] = (
+            str(self.soundpack_combo.currentData() or "default")
+            if hasattr(self, "soundpack_combo")
+            else "default"
+        )
+        sound["default_volume"] = (
+            int(self.sound_volume_slider.value() * 65536 // 100)
+            if hasattr(self, "sound_volume_slider")
+            else DEFAULT_SOUND_SETTINGS["default_volume"]
+        )
         save_settings_state(self.settings_state)
         if shutil.which("pactl"):
             if sink:

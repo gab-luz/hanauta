@@ -150,54 +150,7 @@ def detect_font(*families: str) -> str:
     return "Sans Serif"
 
 
-MATERIAL_ICONS: dict[str, str] = {
-    "airplanemode_active": "\ue195",
-    "arrow_back": "\ue5c4",
-    "bluetooth": "\ue1a7",
-    "brightness_medium": "\ue1ae",
-    "camera_alt": "\ue3b0",
-    "calendar_today": "\ue935",
-    "check_circle": "\ue86c",
-    "chevron_left": "\ue5cb",
-    "chevron_right": "\ue5cc",
-    "content_paste": "\ue14f",
-    "close": "\ue5cd",
-    "coffee": "\uefef",
-    "delete_sweep": "\ue16c",
-    "do_not_disturb_on": "\ue644",
-    "home": "\ue88a",
-    "hub": "\uee20",
-    "invert_colors": "\ue891",
-    "lightbulb": "\ue0f0",
-    "nightlight": "\uf03d",
-    "pause": "\ue034",
-    "person": "\ue7fd",
-    "phone_android": "\ue324",
-    "play_arrow": "\ue037",
-    "power_settings_new": "\ue8ac",
-    "smartphone": "\ue32c",
-    "save": "\ue161",
-    "settings": "\ue8b8",
-    "skip_next": "\ue044",
-    "skip_previous": "\ue045",
-    "thermostat": "\ue1ff",
-    "tune": "\ue429",
-    "volume_up": "\ue050",
-    "wifi": "\ue63e",
-    "lock": "\ue897",
-    "auto_awesome": "\ue65f",
-    "timer": "\ue425",
-    "public": "\ue80b",
-    "videocam": "\ue04b",
-    "show_chart": "\ue6e1",
-    "storage": "\ue1db",
-    "watch": "\ue334",
-    "sports_esports": "\uea28",
-}
-
-
-def material_icon(name: str) -> str:
-    return MATERIAL_ICONS.get(name, "?")
+from pyqt.shared.material_icons import material_icon
 
 
 def load_app_fonts() -> dict[str, str]:

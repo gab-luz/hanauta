@@ -140,6 +140,17 @@ def _hanauta_gtk_css(palette: dict[str, str],
   color: @theme_selected_fg_color;
 }}
 
+/* Text selection in text views (textview, sourceview, entry, etc.) */
+selection {{
+  background-color: @theme_selected_bg_color;
+  color: @theme_selected_fg_color;
+}}
+
+selection:focus-within {{
+  background-color: @theme_selected_bg_color;
+  color: @theme_selected_fg_color;
+}}
+
 *:disabled, *:insensitive {{
   color: @insensitive_fg_color;
   text-shadow: none;
@@ -737,6 +748,26 @@ textview text {{
 }}
 
 textview border {{
+  border-color: @borders;
+}}
+
+/*************
+ * SourceView (Mousepad, Gedit, etc.) *
+ *************/
+sourceview {{
+  background-color: {base};
+  color: {text};
+  border-radius: 12px;
+}}
+
+sourceview text {{
+  background-color: {base};
+  color: {text};
+  caret-color: {selected_bg};
+  font-family: "{mono_font_family}";
+}}
+
+sourceview border {{
   border-color: @borders;
 }}
 
@@ -1758,6 +1789,8 @@ class "GtkFrame" style "hanauta-frame"
 class "GtkStatusbar" style "hanauta-statusbar"
 class "GtkPaned" style "hanauta-paned"
 class "GtkSeparator" style "hanauta-default"
+class "GtkSourceView" style "hanauta-entry"
+class "GtkSourceBuffer" style "hanauta-entry"
 
 # Suggested action button
 style "hanauta-suggested-button" = "hanauta-button" {{

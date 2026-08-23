@@ -2817,6 +2817,38 @@ class ServicesMixin:
             )
         )
 
+        self.weather_language_combo = QComboBox()
+        self.weather_language_combo.setObjectName("settingsCombo")
+        languages = [
+            ("English (US)", "en"),
+            ("Portuguese (Brazil)", "pt-br"),
+            ("Spanish (Argentina)", "es-ar"),
+            ("Russian (Russia)", "ru-ru"),
+            ("German (Germany)", "de-de"),
+            ("French (France)", "fr-fr"),
+            ("Italian (Italy)", "it-it"),
+            ("Japanese (Japan)", "ja-jp"),
+            ("Chinese (Simplified)", "zh-cn"),
+        ]
+        for label, code in languages:
+            self.weather_language_combo.addItem(label, code)
+        current_lang = str(weather_settings.get("language", "en"))
+        idx = self.weather_language_combo.findData(current_lang)
+        self.weather_language_combo.setCurrentIndex(max(0, idx))
+        self.weather_language_combo.currentIndexChanged.connect(
+            self._set_weather_language
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("translate"),
+                "Weather language",
+                "Language for weather conditions and forecast text.",
+                self.icon_font,
+                self.ui_font,
+                self.weather_language_combo,
+            )
+        )
+
         notifications_title = QLabel("Notifications")
         notifications_title.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
         notifications_title.setStyleSheet("color: rgba(246,235,247,0.86);")
@@ -3115,6 +3147,41 @@ class ServicesMixin:
                 self.icon_font,
                 self.ui_font,
                 self.calendar_display_switch,
+            )
+        )
+
+        self.calendar_background_sync_combo = QComboBox()
+        self.calendar_background_sync_combo.setObjectName("settingsCombo")
+        intervals = [
+            ("1 minute", 1),
+            ("5 minutes", 5),
+            ("15 minutes", 15),
+            ("30 minutes", 30),
+            ("1 hour", 60),
+            ("2 hours", 120),
+            ("4 hours", 240),
+            ("8 hours", 480),
+            ("12 hours", 720),
+            ("24 hours", 1440),
+        ]
+        for label, value in intervals:
+            self.calendar_background_sync_combo.addItem(label, value)
+        current_interval = int(
+            self.settings_state["calendar"].get("background_sync_interval_minutes", 5)
+        )
+        idx = self.calendar_background_sync_combo.findData(current_interval)
+        self.calendar_background_sync_combo.setCurrentIndex(max(0, idx))
+        self.calendar_background_sync_combo.currentIndexChanged.connect(
+            self._set_calendar_background_sync_interval
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("schedule"),
+                "Background sync interval",
+                "How often hanauta-service should fetch calendar events in the background.",
+                self.icon_font,
+                self.ui_font,
+                self.calendar_background_sync_combo,
             )
         )
 

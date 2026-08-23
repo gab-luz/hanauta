@@ -106,6 +106,7 @@ def load_settings_state() -> dict:
             "latitude": 0.0,
             "longitude": 0.0,
             "timezone": "auto",
+            "language": "en",
             "openweathermap_api_key": "",
             "poll_interval_minutes": 15,
             "notify_climate_changes": True,
@@ -146,6 +147,7 @@ def load_settings_state() -> dict:
             "caldav_password": "",
             "last_sync_status": "",
             "connected": False,
+            "background_sync_interval_minutes": 5,
         },
         "reminders": {
             "default_lead_minutes": 20,
@@ -502,6 +504,7 @@ def load_settings_state() -> dict:
     weather.setdefault("latitude", 0.0)
     weather.setdefault("longitude", 0.0)
     weather.setdefault("timezone", "auto")
+    weather.setdefault("language", "en")
     weather.setdefault("openweathermap_api_key", "")
     try:
         weather["poll_interval_minutes"] = max(
@@ -560,6 +563,12 @@ def load_settings_state() -> dict:
     calendar.setdefault("selected_calendar_id", "")
     calendar.setdefault("selected_contact_id", "")
     calendar.setdefault("selected_remote_calendar_url", "")
+    try:
+        calendar["background_sync_interval_minutes"] = max(
+            1, min(1440, int(calendar.get("background_sync_interval_minutes", 5)))
+        )
+    except Exception:
+        calendar["background_sync_interval_minutes"] = 5
 
     calendars = calendar.get("calendars", [])
     if not isinstance(calendars, list):
