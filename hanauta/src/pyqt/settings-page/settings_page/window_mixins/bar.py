@@ -868,6 +868,54 @@ class BarMixin:
             )
         )
 
+        self.bar_show_user_photo_switch = SwitchButton(
+            bool(self.settings_state["bar"].get("show_user_photo", False))
+        )
+        self.bar_show_user_photo_switch.toggledValue.connect(
+            self._set_bar_show_user_photo
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("account_circle"),
+                "Show user photo",
+                "Display your photo/avatar at the start of the bar.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_show_user_photo_switch,
+            )
+        )
+
+        self.bar_user_photo_path_edit = QLineEdit(
+            str(self.settings_state["bar"].get("user_photo_path", "")).strip()
+        )
+        self.bar_user_photo_path_edit.setObjectName("settingsLineEdit")
+        self.bar_user_photo_path_edit.setPlaceholderText("Path to image file (e.g. ~/Pictures/avatar.png)")
+        self.bar_user_photo_path_edit.setFixedWidth(320)
+        self.bar_user_photo_path_edit.editingFinished.connect(
+            self._set_bar_user_photo_path
+        )
+        browse_photo_btn = QPushButton("Browse")
+        browse_photo_btn.setObjectName("secondaryButton")
+        browse_photo_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        browse_photo_btn.setFixedWidth(80)
+        browse_photo_btn.clicked.connect(self._browse_user_photo_path)
+        photo_path_row = QHBoxLayout()
+        photo_path_row.setContentsMargins(0, 0, 0, 0)
+        photo_path_row.setSpacing(8)
+        photo_path_row.addWidget(self.bar_user_photo_path_edit)
+        photo_path_row.addWidget(browse_photo_btn)
+        photo_path_row.addStretch(1)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("photo_library"),
+                "User photo path",
+                "Select an image file to use as your avatar on the bar.",
+                self.icon_font,
+                self.ui_font,
+                photo_path_row,
+            )
+        )
+
         rice_button = QPushButton("Open icon config")
         rice_button.setObjectName("secondaryButton")
         rice_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -1397,6 +1445,27 @@ class BarMixin:
     def _set_bar_full_radius(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["full_bar_radius"] = int(value)
         self._save_bar_settings()
+
+    def _set_bar_show_user_photo(self, enabled: bool) -> None:
+        self.settings_state.setdefault("bar", {})["show_user_photo"] = bool(enabled)
+        self._save_bar_settings()
+
+    def _set_bar_user_photo_path(self) -> None:
+        path = self.bar_user_photo_path_edit.text().strip()
+        self.settings_state.setdefault("bar", {})["user_photo_path"] = path
+        self._save_bar_settings()
+
+    def _browse_user_photo_path(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select User Photo",
+            str(Path.home()),
+            "Images (*.png *.jpg *.jpeg *.svg *.webp *.bmp);;All Files (*)"
+        )
+        if file_path:
+            self.bar_user_photo_path_edit.setText(file_path)
+            self._set_bar_user_photo_path()
 
     # Dock settings handlers
     def _set_dock_auto_hide(self, enabled: bool) -> None:

@@ -23,6 +23,8 @@ DEFAULT_BAR_SETTINGS = {
     "monitor_name": "",
     "service_icon_order": [],
     "polybar_widgets": [],
+    "show_user_photo": False,
+    "user_photo_path": "",
 }
 
 

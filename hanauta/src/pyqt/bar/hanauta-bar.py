@@ -69,6 +69,7 @@ from PyQt6.QtGui import (
     QIcon,
     QImage,
     QPainter,
+    QPainterPath,
     QPalette,
     QPixmap,
     QRegion,
@@ -552,6 +553,8 @@ DEFAULT_BAR_SETTINGS = {
     "monitor_mode": MONITOR_MODE_PRIMARY,
     "monitor_name": "",
     "service_icon_order": [],
+    "show_user_photo": False,
+    "user_photo_path": "",
 }
 
 
@@ -3240,6 +3243,24 @@ class CyberBar(QWidget):
         self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(10)
 
+        self.user_photo_chip = QFrame()
+        self.user_photo_chip.setObjectName("userPhotoChip")
+        self.user_photo_layout = QHBoxLayout(self.user_photo_chip)
+        self.user_photo_layout.setContentsMargins(8, 4, 8, 4)
+        self.user_photo_layout.setSpacing(0)
+        self.user_photo_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.user_photo_button = QPushButton()
+        self.user_photo_button.setObjectName("userPhotoButton")
+        self.user_photo_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.user_photo_button.setFixedSize(28, 28)
+        self.user_photo_button.setIconSize(QSize(28, 28))
+        self.user_photo_button.setFlat(True)
+        self.user_photo_button.clicked.connect(lambda: (self._play_click_sound(), self._open_user_menu()))
+        self.user_photo_layout.addWidget(self.user_photo_button)
+        self.user_photo_wrap = self._wrap_movable(self.user_photo_chip)
+        self.left_layout.addWidget(self.user_photo_wrap)
+        self.user_photo_wrap.setVisible(False)
+
         self.launcher_chip = QFrame()
         self.launcher_chip.setObjectName("launcherChip")
         self.launcher_layout = QHBoxLayout(self.launcher_chip)
@@ -4263,6 +4284,55 @@ class CyberBar(QWidget):
         layout.setContentsMargins(0, max(0, offset), 0, max(0, -offset))
         wrapper.updateGeometry()
 
+    def _apply_user_photo_settings(self) -> None:
+        if not hasattr(self, "user_photo_wrap"):
+            return
+        show_photo = bool(self.bar_settings.get("show_user_photo", False))
+        photo_path_str = str(self.bar_settings.get("user_photo_path", "")).strip()
+        self.user_photo_wrap.setVisible(show_photo and bool(photo_path_str))
+        if show_photo and photo_path_str:
+            photo_path = Path(photo_path_str).expanduser()
+            if photo_path.exists():
+                pixmap = QPixmap(str(photo_path))
+                if not pixmap.isNull():
+                    size = 28
+                    scaled = pixmap.scaled(
+                        size,
+                        size,
+                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    # Create circular mask
+                    rounded = QPixmap(size, size)
+                    rounded.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(rounded)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                    path = QPainterPath()
+                    path.addEllipse(0, 0, size, size)
+                    painter.setClipPath(path)
+                    # Center the scaled pixmap
+                    x = (size - scaled.width()) // 2
+                    y = (size - scaled.height()) // 2
+                    painter.drawPixmap(x, y, scaled)
+                    painter.end()
+                    self.user_photo_button.setIcon(QIcon(rounded))
+                    self.user_photo_button.setIconSize(QSize(size, size))
+                    self.user_photo_button.setToolTip("User menu")
+                    return
+        # Fallback: show default avatar icon
+        if show_photo:
+            self.user_photo_button.setIcon(QIcon())
+            self.user_photo_button.setText(self._icon_text("account_circle"))
+            self.user_photo_button.setFont(QFont(self.material_font, 20))
+            self.user_photo_button.setToolTip("User menu")
+
+    def _open_user_menu(self) -> None:
+        if SETTINGS_PAGE.exists():
+            self._toggle_singleton_process(
+                "_settings_process", SETTINGS_PAGE, python_bin=self._python_bin()
+            )
+
     def _install_debug_tooltips(self) -> None:
         self.setToolTip("CyberBar root")
         self.ai_button.setToolTip("AI toggle button")
@@ -4477,6 +4547,7 @@ class CyberBar(QWidget):
         self._apply_vertical_offset(
             self.tray_wrap, self.bar_settings.get("tray_offset", 0)
         )
+        self._apply_user_photo_settings()
         if vertical_mode:
             self.root_layout.setAlignment(
                 self.left_wrap_widget,
