@@ -19,6 +19,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import sqlite3
 import ssl
 import subprocess
@@ -7920,6 +7921,12 @@ def main() -> int:
     palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
     app.setPalette(palette)
+
+    def _sigint_handler(signum, frame):
+        logging.info("SIGINT received, quitting")
+        app.quit()
+
+    signal.signal(signal.SIGINT, _sigint_handler)
 
     bar = CyberBar()
     bar.show()
