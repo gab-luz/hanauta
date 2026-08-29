@@ -984,7 +984,6 @@ class SystemPagesMixin:
 
     def _save_startup_settings(self) -> None:
         startup = self.settings_state.setdefault("startup", {})
-        startup["launch_bar"] = bool(self.startup_bar_switch.isChecked())
         startup["launch_dock"] = bool(self.startup_dock_switch.isChecked())
         startup["restore_wallpaper"] = bool(self.startup_wallpaper_switch.isChecked())
         startup["restore_displays"] = bool(self.startup_displays_switch.isChecked())

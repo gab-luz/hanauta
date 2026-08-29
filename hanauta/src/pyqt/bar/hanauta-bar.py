@@ -541,6 +541,7 @@ DEFAULT_BAR_SETTINGS = {
     "media_offset": 0,
     "status_offset": 0,
     "tray_offset": 0,
+    "user_photo_offset": 0,
     "status_icon_limit": 14,
     "bar_height": 45,
     "chip_radius": 0,
@@ -4531,6 +4532,9 @@ class CyberBar(QWidget):
         )
         self._apply_vertical_offset(
             self.launcher_wrap, self.bar_settings.get("launcher_offset", 0)
+        )
+        self._apply_vertical_offset(
+            self.user_photo_wrap, self.bar_settings.get("user_photo_offset", 0)
         )
         self._apply_vertical_offset(
             self.workspace_wrap, self.bar_settings.get("workspace_offset", 0)

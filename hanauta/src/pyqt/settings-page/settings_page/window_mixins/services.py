@@ -461,27 +461,24 @@ class ServicesMixin:
             return
         self._services_page_building = True
 
-        def _build() -> None:
+        try:
+            services_page = self._build_services_page()
+            index = int(getattr(self, "page_indices", {}).get("services", 14))
+            old_widget = self.page_stack.widget(index)
+            container = self.page_stack
+            container.setUpdatesEnabled(False)
             try:
-                services_page = self._build_services_page()
-                index = int(getattr(self, "page_indices", {}).get("services", 14))
-                old_widget = self.page_stack.widget(index)
-                container = self.page_stack
-                container.setUpdatesEnabled(False)
-                try:
-                    if old_widget is not None:
-                        self.page_stack.removeWidget(old_widget)
-                        old_widget.deleteLater()
-                    self.page_stack.insertWidget(index, services_page)
-                    getattr(self, "page_ready", set()).add("services")
-                    if str(getattr(self, "current_page", "")) == "services":
-                        self.page_stack.setCurrentIndex(index)
-                finally:
-                    container.setUpdatesEnabled(True)
+                if old_widget is not None:
+                    self.page_stack.removeWidget(old_widget)
+                    old_widget.deleteLater()
+                self.page_stack.insertWidget(index, services_page)
+                getattr(self, "page_ready", set()).add("services")
+                if str(getattr(self, "current_page", "")) == "services":
+                    self.page_stack.setCurrentIndex(index)
             finally:
-                self._services_page_building = False
-
-        QTimer.singleShot(0, _build)
+                container.setUpdatesEnabled(True)
+        finally:
+            self._services_page_building = False
 
 
     def _read_services_section_rows_cache(self) -> list[dict[str, object]]:

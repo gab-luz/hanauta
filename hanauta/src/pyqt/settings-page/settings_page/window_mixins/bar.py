@@ -461,22 +461,19 @@ class BarMixin:
             return
         self._bar_page_building = True
 
-        def _build() -> None:
-            try:
-                bar_page = self._build_bar_page()
-                index = int(getattr(self, "page_indices", {}).get("bar", 13))
-                old_widget = self.page_stack.widget(index)
-                if old_widget is not None:
-                    self.page_stack.removeWidget(old_widget)
-                    old_widget.deleteLater()
-                self.page_stack.insertWidget(index, bar_page)
-                getattr(self, "page_ready", set()).add("bar")
-                if str(getattr(self, "current_page", "")) == "bar":
-                    self.page_stack.setCurrentIndex(index)
-            finally:
-                self._bar_page_building = False
-
-        QTimer.singleShot(0, _build)
+        try:
+            bar_page = self._build_bar_page()
+            index = int(getattr(self, "page_indices", {}).get("bar", 13))
+            old_widget = self.page_stack.widget(index)
+            if old_widget is not None:
+                self.page_stack.removeWidget(old_widget)
+                old_widget.deleteLater()
+            self.page_stack.insertWidget(index, bar_page)
+            getattr(self, "page_ready", set()).add("bar")
+            if str(getattr(self, "current_page", "")) == "bar":
+                self.page_stack.setCurrentIndex(index)
+        finally:
+            self._bar_page_building = False
 
 
     def _build_bar_screen_card(self) -> QWidget:
@@ -496,6 +493,33 @@ class BarMixin:
         header.addWidget(title)
         header.addStretch(1)
         layout.addLayout(header)
+
+        # Behavior section
+        behavior_header = QLabel("Behavior")
+        behavior_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        behavior_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(behavior_header)
+
+        self.bar_launch_startup_switch = SwitchButton(
+            bool(self.settings_state.get("startup", {}).get("launch_bar", True))
+        )
+        self.bar_launch_startup_switch.toggledValue.connect(self._set_bar_launch_startup)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("restart_alt"),
+                "Launch at startup",
+                "Automatically start the bar when the session starts.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_launch_startup_switch,
+            )
+        )
+
+        # Layout section
+        layout_header = QLabel("Layout")
+        layout_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        layout_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(layout_header)
 
         self.bar_launcher_offset_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_launcher_offset_slider.setRange(-8, 8)
@@ -567,6 +591,14 @@ class BarMixin:
         )
         self.bar_tray_offset_slider.setFixedWidth(164)
         self.bar_tray_offset_slider.valueChanged.connect(self._set_bar_tray_offset)
+
+        self.bar_user_photo_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bar_user_photo_offset_slider.setRange(-8, 8)
+        self.bar_user_photo_offset_slider.setValue(
+            int(self.settings_state["bar"].get("user_photo_offset", 0))
+        )
+        self.bar_user_photo_offset_slider.setFixedWidth(164)
+        self.bar_user_photo_offset_slider.valueChanged.connect(self._set_bar_user_photo_offset)
 
         self.bar_status_icon_limit_slider = QSlider(Qt.Orientation.Horizontal)
         self.bar_status_icon_limit_slider.setRange(4, 48)
@@ -696,6 +728,12 @@ class BarMixin:
                 self.bar_workspace_offset_slider,
             )
         )
+
+        workspace_header = QLabel("Workspace")
+        workspace_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        workspace_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(workspace_header)
+
         layout.addWidget(
             SettingsRow(
                 material_icon("window"),
@@ -716,6 +754,12 @@ class BarMixin:
                 self.bar_workspace_label_switch,
             )
         )
+
+        datetime_header = QLabel("Date/Time & Media")
+        datetime_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        datetime_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(datetime_header)
+
         layout.addWidget(
             SettingsRow(
                 material_icon("flip"),
@@ -736,6 +780,12 @@ class BarMixin:
                 self.bar_media_offset_slider,
             )
         )
+
+        status_header = QLabel("Status")
+        status_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        status_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(status_header)
+
         layout.addWidget(
             SettingsRow(
                 material_icon("flip"),
@@ -754,6 +804,16 @@ class BarMixin:
                 self.icon_font,
                 self.ui_font,
                 self.bar_tray_offset_slider,
+            )
+        )
+        layout.addWidget(
+            SettingsRow(
+                material_icon("flip"),
+                "User photo offset",
+                "Move the user photo up or down to align with other bar elements.",
+                self.icon_font,
+                self.ui_font,
+                self.bar_user_photo_offset_slider,
             )
         )
         layout.addWidget(
@@ -787,6 +847,12 @@ class BarMixin:
                 self.bar_debug_tooltips_switch,
             )
         )
+
+        appearance_header = QLabel("Appearance")
+        appearance_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        appearance_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(appearance_header)
+
         layout.addWidget(
             SettingsRow(
                 material_icon("widgets"),
@@ -868,6 +934,27 @@ class BarMixin:
             )
         )
 
+        rice_button = QPushButton("Open icon config")
+        rice_button.setObjectName("secondaryButton")
+        rice_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        rice_button.clicked.connect(self._open_bar_icon_config)
+        layout.addWidget(
+            SettingsRow(
+                material_icon("sports_esports"),
+                "Bar icon overrides",
+                "Rice the bar by editing ~/.config/hanauta/bar-icons.json.\n"
+                "Hanauta reloads the file automatically.",
+                self.icon_font,
+                self.ui_font,
+                rice_button,
+            )
+        )
+
+        user_photo_header = QLabel("User Photo")
+        user_photo_header.setFont(QFont(self.ui_font, 10, QFont.Weight.DemiBold))
+        user_photo_header.setStyleSheet("color: rgba(246,235,247,0.85); margin-top: 8px;")
+        layout.addWidget(user_photo_header)
+
         self.bar_show_user_photo_switch = SwitchButton(
             bool(self.settings_state["bar"].get("show_user_photo", False))
         )
@@ -899,7 +986,8 @@ class BarMixin:
         browse_photo_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         browse_photo_btn.setFixedWidth(80)
         browse_photo_btn.clicked.connect(self._browse_user_photo_path)
-        photo_path_row = QHBoxLayout()
+        photo_path_row_widget = QWidget()
+        photo_path_row = QHBoxLayout(photo_path_row_widget)
         photo_path_row.setContentsMargins(0, 0, 0, 0)
         photo_path_row.setSpacing(8)
         photo_path_row.addWidget(self.bar_user_photo_path_edit)
@@ -912,25 +1000,10 @@ class BarMixin:
                 "Select an image file to use as your avatar on the bar.",
                 self.icon_font,
                 self.ui_font,
-                photo_path_row,
+                photo_path_row_widget,
             )
         )
 
-        rice_button = QPushButton("Open icon config")
-        rice_button.setObjectName("secondaryButton")
-        rice_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        rice_button.clicked.connect(self._open_bar_icon_config)
-        layout.addWidget(
-            SettingsRow(
-                material_icon("sports_esports"),
-                "Bar icon overrides",
-                "Rice the bar by editing ~/.config/hanauta/bar-icons.json.\n"
-                "Hanauta reloads the file automatically.",
-                self.icon_font,
-                self.ui_font,
-                rice_button,
-            )
-        )
         layout.addWidget(self._build_bar_service_icons_section())
 
         polybar_header = QHBoxLayout()
@@ -1381,6 +1454,11 @@ class BarMixin:
         self._save_bar_settings()
 
 
+    def _set_bar_user_photo_offset(self, value: int) -> None:
+        self.settings_state.setdefault("bar", {})["user_photo_offset"] = int(value)
+        self._save_bar_settings()
+
+
     def _set_bar_status_icon_limit(self, value: int) -> None:
         self.settings_state.setdefault("bar", {})["status_icon_limit"] = int(value)
         self._save_bar_settings()
@@ -1449,6 +1527,10 @@ class BarMixin:
     def _set_bar_show_user_photo(self, enabled: bool) -> None:
         self.settings_state.setdefault("bar", {})["show_user_photo"] = bool(enabled)
         self._save_bar_settings()
+
+    def _set_bar_launch_startup(self, enabled: bool) -> None:
+        self.settings_state.setdefault("startup", {})["launch_bar"] = bool(enabled)
+        self._save_settings()
 
     def _set_bar_user_photo_path(self) -> None:
         path = self.bar_user_photo_path_edit.text().strip()

@@ -2324,9 +2324,6 @@ class SettingsWindow(
         layout.addLayout(header)
 
         startup_settings = self.settings_state["startup"]
-        self.startup_bar_switch = SwitchButton(
-            bool(startup_settings.get("launch_bar", True))
-        )
         self.startup_dock_switch = SwitchButton(
             bool(startup_settings.get("launch_dock", True))
         )
@@ -2344,16 +2341,6 @@ class SettingsWindow(
         )
         self.startup_watchdog_switch = SwitchButton(
             bool(startup_settings.get("watchdog_enabled", False))
-        )
-        layout.addWidget(
-            SettingsRow(
-                material_icon("crop_square"),
-                "Launch bar",
-                "Remember that the PyQt bar should start with the session.",
-                self.icon_font,
-                self.ui_font,
-                self.startup_bar_switch,
-            )
         )
         layout.addWidget(
             SettingsRow(

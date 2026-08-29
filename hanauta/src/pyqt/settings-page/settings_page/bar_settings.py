@@ -10,6 +10,7 @@ DEFAULT_BAR_SETTINGS = {
     "media_offset": 0,
     "status_offset": 0,
     "tray_offset": 0,
+    "user_photo_offset": 0,
     "status_icon_limit": 14,
     "bar_height": 45,
     "chip_radius": 0,
@@ -81,6 +82,7 @@ def merged_bar_settings(payload: object) -> dict[str, object]:
         "media_offset",
         "status_offset",
         "tray_offset",
+        "user_photo_offset",
     }
     radius_keys = {"chip_radius", "full_bar_radius"}
     for key, default in DEFAULT_BAR_SETTINGS.items():
