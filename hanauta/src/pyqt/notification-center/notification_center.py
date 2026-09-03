@@ -2864,7 +2864,13 @@ class NotificationCenter(QWidget):
     def _poll_quick_settings(self) -> None:
         wifi_on = run_script("network.sh", "status") == "Connected"
         wifi_ssid = run_script("network.sh", "ssid") or "Disconnected"
-        self.quick_buttons["wifi"].set_state(wifi_on, "wifi", wifi_ssid)
+        wifi_signal = 0
+        if wifi_on:
+            try:
+                wifi_signal = int(run_script("network.sh", "signal") or "0")
+            except Exception:
+                wifi_signal = 0
+        self.quick_buttons["wifi"].set_state(wifi_on, "wifi", wifi_ssid, wifi_signal)
 
         bt_on = run_script("bluetooth", "state") == "on"
         self.quick_buttons["bluetooth"].set_state(

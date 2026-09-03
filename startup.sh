@@ -21,6 +21,20 @@ clear_python_cache
 CURSOR_THEME_DEFAULT="sweet-cursors"
 CURSOR_SIZE_DEFAULT="24"
 HANAUTA_SCRIPTS_DIR="$HOME/.config/i3/hanauta/scripts"
+HANAUTA_EXTENSIONS_DIR="$HOME/.config/i3/hanauta/extensions"
+
+load_extension_scripts() {
+  local ext_dir="$HANAUTA_EXTENSIONS_DIR"
+  [ -d "$ext_dir" ] || return 0
+  for ext in "$ext_dir"/*/; do
+    [ -d "$ext" ] || continue
+    local start_script="$ext/startup.sh"
+    if [ -f "$start_script" ] && [ -x "$start_script" ]; then
+      echo "[startup] Loading extension: $(basename "$ext")"
+      bash "$start_script" >>"$LOG" 2>&1 &
+    fi
+  done
+}
 
 apply_saved_locale() {
   local locale_code=""
@@ -298,6 +312,7 @@ PY
       fi
     fi
   fi
+  load_extension_scripts
   pkill -f "$HOME/.config/i3/hanauta/bin/hanauta-service" 2>/dev/null || true
   kill_script_if_running "$REMINDER_DAEMON_SCRIPT"
   kill_script_if_running "$KDECONNECT_DAEMON_SCRIPT"

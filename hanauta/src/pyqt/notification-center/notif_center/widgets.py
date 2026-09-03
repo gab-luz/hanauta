@@ -20,6 +20,7 @@ class QuickSettingButton(QFrame):
         self.active = False
         self._icon_text = icon
         self._subtitle = "Off"
+        self._signal_strength = 0
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setObjectName("quickTile")
 
@@ -52,6 +53,15 @@ class QuickSettingButton(QFrame):
 
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(text_wrap, 1)
+
+        # Signal strength label (top right)
+        self.signal_label = QLabel("")
+        self.signal_label.setObjectName("quickTileSignal")
+        self.signal_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        self.signal_label.setFont(QFont(self.material_font, 9))
+        self.signal_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(self.signal_label, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+
         self._render()
 
     def apply_theme(self, theme, accent: str, on_accent: str) -> None:
@@ -60,11 +70,79 @@ class QuickSettingButton(QFrame):
         self.on_accent = on_accent
         self._render()
 
-    def set_state(self, active: bool, icon: str, subtitle: str) -> None:
+    def set_state(self, active: bool, icon: str, subtitle: str, signal: int = 0) -> None:
         self.active = active
         self._icon_text = icon
         self._subtitle = subtitle
+        self._signal_strength = max(0, min(100, signal))
         self._render()
+
+    def _signal_color(self, theme) -> str:
+        signal = self._signal_strength
+        if signal >= 75:
+            return theme.success if theme else "#4CAF50"
+        elif signal >= 50:
+            return theme.warning if theme else "#FFC107"
+        elif signal >= 25:
+            return "#FF9800"
+        else:
+            return theme.error if theme else "#F44336"
+
+    def _signal_bars(self) -> str:
+        signal = self._signal_strength
+        if signal >= 75:
+            return "▂▄▆█"
+        elif signal >= 50:
+            return "▂▄▆ "
+        elif signal >= 25:
+            return "▂▄  "
+        else:
+            return "▂   "
+
+    def _render(self) -> None:
+        theme = self.theme
+        if theme is not None:
+            icon_color = self.on_accent if self.active else theme.icon
+            title_color = self.on_accent if self.active else theme.text
+            sub_color = rgba(self.on_accent, 0.78) if self.active else theme.text_muted
+            bg = self.accent if self.active else theme.app_running_bg
+            hover = theme.accent_soft if self.active else theme.hover_bg
+        else:
+            icon_color = "#381E72" if self.active else "rgba(255,255,255,0.82)"
+            title_color = "#381E72" if self.active else "#ffffff"
+            sub_color = (
+                "rgba(56,30,114,0.78)" if self.active else "rgba(255,255,255,0.54)"
+            )
+            bg = "#D0BCFF" if self.active else "rgba(255,255,255,0.05)"
+            hover = "#ddcbff" if self.active else "rgba(255,255,255,0.10)"
+        self.setStyleSheet(
+            f"""
+            QFrame#quickTile {{
+                background: {bg};
+                border: none;
+                border-radius: 18px;
+            }}
+            QFrame#quickTile:hover {{
+                background: {hover};
+            }}
+            """
+        )
+        self.icon_label.setText(material_icon(self._icon_text))
+        self.icon_label.setStyleSheet(f"color: {icon_color};")
+        self.title_label.setText(self.title)
+        self.title_label.setStyleSheet(f"color: {title_color}; font-weight: 600;")
+        self.subtitle_label.setStyleSheet(f"color: {sub_color}; font-size: 10px;")
+        self.subtitle_label.setText(self._subtitle)
+
+        # Signal strength label (top right) for WiFi
+        if self.title == "Wi-Fi" and self.active and self._signal_strength > 0:
+            signal_color = self._signal_color(theme)
+            signal_bars = self._signal_bars()
+            self.signal_label.setText(f"{signal_bars} {self._signal_strength}%")
+            self.signal_label.setStyleSheet(f"color: {signal_color}; font-size: 9px; font-weight: 600;")
+        else:
+            self.signal_label.setText("")
+            self.signal_label.setStyleSheet("")
 
     def _render(self) -> None:
         theme = self.theme

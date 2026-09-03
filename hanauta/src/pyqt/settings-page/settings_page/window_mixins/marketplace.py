@@ -958,6 +958,9 @@ class MarketplaceMixin:
             )
         shortcut_actions = self._marketplace_apply_plugin_shortcuts(plugin, plugin_id)
 
+        # Copy extension startup scripts to the global extensions directory
+        self._install_plugin_startup_scripts(plugin_id, target_dir)
+
         requires_privileged = bool(manifest.get("requires_privileged_install", False))
         has_systemd_unit = bool(list((target_dir / "systemd").glob("*.service")))
         if not requires_privileged and not has_systemd_unit:
@@ -2625,6 +2628,22 @@ class MarketplaceMixin:
                 False,
                 status,
             )
+
+
+    def _install_plugin_startup_scripts(self, plugin_id: str, target_dir: Path) -> None:
+        """Copy plugin's startup.sh to global extensions directory if it exists."""
+        extensions_dir = Path.home() / ".config" / "i3" / "hanauta" / "extensions" / plugin_id
+        startup_src = target_dir / "startup.sh"
+        if startup_src.exists():
+            extensions_dir.mkdir(parents=True, exist_ok=True)
+            startup_dst = extensions_dir / "startup.sh"
+            try:
+                import shutil
+                shutil.copy2(startup_src, startup_dst)
+                startup_dst.chmod(0o755)
+                print(f"[marketplace] Installed startup script for {plugin_id} to {startup_dst}")
+            except Exception as exc:
+                print(f"[marketplace] Failed to install startup script for {plugin_id}: {exc}")
 
 
     def _marketplace_open_install_dir(self) -> None:

@@ -89,4 +89,31 @@ case "$1" in
 			nmcli radio wifi on
 		fi
 		;;
+	signal)
+		# Get WiFi signal strength as percentage (0-100)
+		DEVICE=$(/usr/bin/ls /sys/class/ieee80211/*/device/net/ 2>/dev/null | head -1)
+		if [ -z "$DEVICE" ]; then
+			echo "0"
+			exit 0
+		fi
+		SIGNAL=$(nmcli -t -f IN-USE,SIGNAL device wifi list ifname "$DEVICE" 2>/dev/null | grep '^\*' | cut -d: -f2 | head -1)
+		if [ -z "$SIGNAL" ]; then
+			# Fallback: get signal from iw
+			SIGNAL=$(iw dev "$DEVICE" link 2>/dev/null | grep 'signal:' | awk '{print $2}' | sed 's/dBm//')
+			if [ -n "$SIGNAL" ]; then
+				# Convert dBm to percentage (rough approximation)
+				# -30 dBm = 100%, -90 dBm = 0%
+				if [ "$SIGNAL" -ge -30 ]; then
+					SIGNAL=100
+				elif [ "$SIGNAL" -le -90 ]; then
+					SIGNAL=0
+				else
+					SIGNAL=$(( (SIGNAL + 90) * 100 / 60 ))
+				fi
+			else
+				SIGNAL=0
+			fi
+		fi
+		echo "$SIGNAL"
+		;;
 esac
