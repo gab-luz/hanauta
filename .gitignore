@@ -5,6 +5,7 @@ i3.code-workspace
 env/
 .cache-src
 uv.lock
+.kdenlive-mcp
 __pycache__/
 .venv-build
 nuitka-crash-report.xml
