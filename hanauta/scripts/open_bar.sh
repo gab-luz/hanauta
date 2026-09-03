@@ -5,6 +5,16 @@ LAUNCH_LOG="/tmp/hanauta-bar-launcher.log"
 exec >>"$LAUNCH_LOG" 2>&1
 set -x
 
+# Clear Python bytecode cache to ensure code changes are picked up
+clear_python_cache() {
+  local src_root="$HOME/.config/i3/hanauta/src"
+  [ -d "$src_root" ] || return 0
+  find "$src_root" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+  find "$src_root" -type f -name '*.pyc' -delete 2>/dev/null || true
+  find "$src_root" -type f -name '*.pyo' -delete 2>/dev/null || true
+}
+clear_python_cache
+
 {
   printf '[%s] open_bar start\n' "$(date '+%F %T')"
   printf 'DISPLAY=%s\n' "${DISPLAY:-}"
