@@ -3071,10 +3071,12 @@ class NotificationCenter(QWidget):
                 self._request_media_url_duration(self._media_url)
 
         parsed_position_ms: int | None = None
-        try:
-            parsed_position_ms = int(float(position_raw) * 1000)
-        except Exception:
-            parsed_position_ms = None
+        position_raw = (position_raw or "").strip()
+        if position_raw:
+            try:
+                parsed_position_ms = int(float(position_raw) * 1000)
+            except Exception:
+                parsed_position_ms = None
 
         if (
             parsed_position_ms is not None
@@ -3090,11 +3092,14 @@ class NotificationCenter(QWidget):
 
         if parsed_position_ms is not None:
             self._media_position_ms = max(0, parsed_position_ms)
-        elif status_raw == "Playing" and self._media_duration_ms > 0:
-            self._media_position_ms = min(
-                self._media_duration_ms,
-                max(0, self._media_position_ms + int(elapsed_since_sync * 1000)),
-            )
+        elif status_raw in {"Playing", "Paused"}:
+            if self._media_duration_ms > 0:
+                self._media_position_ms = min(
+                    self._media_duration_ms,
+                    max(0, self._media_position_ms + int(elapsed_since_sync * 1000)),
+                )
+            else:
+                self._media_position_ms = max(0, self._media_position_ms + int(elapsed_since_sync * 1000))
         else:
             self._media_position_ms = max(0, self._media_position_ms)
 

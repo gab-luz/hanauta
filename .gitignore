@@ -108,3 +108,4 @@ assets/screenshots/
 .tox/
 .eggs/
 *.egg-info/
+.kdenlive-mcp/
