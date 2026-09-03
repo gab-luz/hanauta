@@ -123,6 +123,19 @@
   - i3 `for_window` rules
   - Qt dock/sticky window setup in `hanauta-bar.py`
 
+## i3 Keybinding Notes
+
+- Use `bindsym $mod+KEY` (keysym) instead of `bindcode MOD+KEYCODE` (keycode) for keybindings.
+  - Keycodes vary across keyboard layouts/hardware (e.g., `l` is keycode 46 on US but may differ).
+  - Keysyms like `l`, `L`, `space`, `Return` are layout-independent.
+- The lock shortcut (`SUPER+L`) must use `bindsym $mod+l` — **never** `bindcode Mod4+46`.
+- The lock command chain:
+  - i3 config: `bindsym $mod+l exec --no-startup-id "$HOME/.config/i3/hanauta/scripts/lock-fast"`
+  - `lock-fast` script calls `hanauta-service --lock-fast` (compiled binary)
+  - Falls back to `scripts/lock` (betterlockscreen wrapper)
+  - `scripts/lock` must exist in the repo at `hanauta/scripts/lock`
+- Print Screen uses `bindsym --release Print` (keysym) for flameshot gui.
+
 ## Verification
 
 - After PyQt code changes, run:
