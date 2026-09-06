@@ -123,6 +123,10 @@ MATERIAL_ICONS = {
     "inventory_2": "\ue3ea",
     "extension": "\ue8e3",
     "check": "\ue5ca",
+    # Fullscreen alert icons (Material Design 3)
+    "cancel": "\ue5c9",
+    "snooze": "\ue046",
+    "alarm": "\ue855",
 }
 
 
