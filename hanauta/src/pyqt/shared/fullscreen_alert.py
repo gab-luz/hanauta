@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QGuiApplication, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from typing import Optional, Callable, Dict, Any
+from dataclasses import dataclass
 
 try:
     from PyQt6.QtCore import QUrl
@@ -35,6 +37,7 @@ HERE = Path(__file__).resolve().parent
 APP_DIR = HERE.parents[2]
 ROOT = HERE.parents[3]
 FONTS_DIR = ROOT / "assets" / "fonts"
+ICONS_DIR = ROOT / "assets" / "icons"
 DEFAULT_ALERT_SOUND = Path("/usr/share/sounds/freedesktop/stereo/complete.ogg")
 
 if str(APP_DIR) not in sys.path:
@@ -46,6 +49,7 @@ from pyqt.shared.runtime import entry_command
 from pyqt.shared.app_logging import init_app_logging
 from pyqt.shared.theme import blend, load_theme_palette, rgba
 from pyqt.shared.plugin_runtime import resolve_plugin_script
+from .fullscreen_alert_icons import get_svg_icon, get_svg_pixmap
 
 
 def _load_reminder_queue_helpers():
@@ -83,6 +87,52 @@ MATERIAL_ICONS = {
 }
 
 
+@dataclass
+class CustomButtonSpec:
+    """Specification for a custom button from an extension."""
+    action_id: str
+    label: str
+    icon_name: str
+    primary: bool = False
+    handler: Optional[Callable[['ReminderAlert', Dict[str, Any]], None]] = None
+    color: Optional[str] = None  # 'primary', 'secondary', 'danger', or hex color
+
+
+class ButtonHandlerRegistry:
+    """Registry for custom button handlers from extensions."""
+    
+    _handlers: Dict[str, CustomButtonSpec] = {}
+    
+    @classmethod
+    def register(cls, spec: CustomButtonSpec) -> None:
+        """Register a custom button handler.
+        
+        Args:
+            spec: The button specification including handler function.
+        """
+        cls._handlers[spec.action_id] = spec
+    
+    @classmethod
+    def unregister(cls, action_id: str) -> bool:
+        """Unregister a handler."""
+        return cls._handlers.pop(action_id, None) is not None
+    
+    @classmethod
+    def get(cls, action_id: str) -> Optional[CustomButtonSpec]:
+        """Get a handler by action ID."""
+        return cls._handlers.get(action_id)
+    
+    @classmethod
+    def get_all(cls) -> Dict[str, CustomButtonSpec]:
+        """Get all registered handlers."""
+        return cls._handlers.copy()
+    
+    @classmethod
+    def clear(cls) -> None:
+        """Clear all handlers (for testing)."""
+        cls._handlers.clear()
+
+
 def load_app_fonts() -> dict[str, str]:
     loaded: dict[str, str] = {}
     font_map = {
@@ -109,14 +159,32 @@ def detect_font(*families: str) -> str:
     return "Sans Serif"
 
 
-def material_icon(name: str) -> str:
-    return MATERIAL_ICONS.get(name, "?")
+def material_icon(name: str) -> QIcon:
+    """Get an icon using SVG icons (fallback to font if available)."""
+    return get_svg_icon(name, 24, "#ffffff")
+
+
+def material_icon_pixmap(name: str, size: int = 24, color: str = "#ffffff") -> QPixmap:
+    """Get an icon pixmap using SVG icons."""
+    return get_svg_pixmap(name, size, color)
 
 
 class ReminderAlert(QWidget):
     pass  # Using callback instead of signal
     
-    def __init__(self, title: str, body: str, severity: str, mode: str = "reminder", on_confirm: Optional[Callable[[str], None]] = None) -> None:
+    def __init__(
+        self,
+        title: str,
+        body: str,
+        severity: str,
+        mode: str = "reminder",
+        on_confirm: Optional[Callable[[str], None]] = None,
+        # Custom action support for extensions
+        custom_actions: Optional[list[Dict[str, Any]]] = None,
+        source_app: Optional[str] = None,
+        source_icon: Optional[str] = None,
+        source_topic: Optional[str] = None,
+    ) -> None:
         super().__init__()
         fonts = load_app_fonts()
         self.ui_font = detect_font("Rubik", fonts.get("ui_sans", ""), "Inter", "Noto Sans", "Sans Serif")
@@ -137,6 +205,12 @@ class ReminderAlert(QWidget):
         self._i3_rules_applied = False
         self._confirm_result: Optional[str] = None  # "yes", "no", "cancel"
         self._on_confirm = on_confirm
+        
+        # Custom action support
+        self.custom_actions = custom_actions or []
+        self.source_app = source_app
+        self.source_icon = source_icon
+        self.source_topic = source_topic
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
@@ -180,12 +254,46 @@ class ReminderAlert(QWidget):
         card_layout.setContentsMargins(32, 32, 32, 32)
         card_layout.setSpacing(18)
 
-        icon_label = QLabel(material_icon("notifications_active"))
+        icon_label = QLabel()
         icon_label.setObjectName("heroIcon")
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setFixedSize(78, 78)
-        icon_label.setFont(QFont(self.icon_font, 38))
+        pixmap = material_icon_pixmap("notifications", 38, self.theme.primary)
+        icon_label.setPixmap(pixmap)
         card_layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Source info section (app icon, name, topic)
+        if self.source_app or self.source_topic:
+            source_wrap = QFrame()
+            source_wrap.setObjectName("sourceInfo")
+            source_layout = QHBoxLayout(source_wrap)
+            source_layout.setContentsMargins(0, 0, 0, 0)
+            source_layout.setSpacing(8)
+
+            if self.source_icon:
+                icon_label = QLabel()
+                icon_label.setObjectName("sourceIcon")
+                icon_label.setFixedSize(24, 24)
+                icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                pixmap = get_svg_pixmap(self.source_icon, 24, self.theme.primary)
+                icon_label.setPixmap(pixmap)
+                source_layout.addWidget(icon_label)
+
+            source_text_layout = QVBoxLayout()
+            source_text_layout.setSpacing(2)
+            if self.source_app:
+                app_label = QLabel(self.source_app)
+                app_label.setObjectName("sourceApp")
+                app_label.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
+                source_text_layout.addWidget(app_label)
+            if self.source_topic:
+                topic_label = QLabel(self.source_topic)
+                topic_label.setObjectName("sourceTopic")
+                topic_label.setFont(QFont(self.ui_font, 9))
+                source_text_layout.addWidget(topic_label)
+            source_layout.addLayout(source_text_layout)
+            source_layout.addStretch(1)
+            card_layout.addWidget(source_wrap)
 
         overline = QLabel("FULLSCREEN REMINDER")
         overline.setObjectName("overline")
@@ -232,44 +340,86 @@ class ReminderAlert(QWidget):
         actions.setContentsMargins(10, 10, 10, 10)
         actions.setSpacing(12)
 
-        if self.mode == "confirm":
-            yes_btn = self._action_button("Yes", material_icon("check"), primary=True)
-            yes_btn.clicked.connect(lambda: self._confirm_done("yes"))
-            actions.addWidget(yes_btn)
+        # Add custom action buttons from notification
+        for action in self.custom_actions:
+            action_id = action.get("action", action.get("id", ""))
+            label = action.get("label", action.get("title", action.get("action", "")))
+            icon_name = action.get("icon", action.get("icon_name", ""))
+            primary = action.get("primary", False)
+            
+            # Try to get handler from registry
+            handler_spec = ButtonHandlerRegistry.get(action_id) if action_id else None
+            
+            # Add custom action buttons from notification
+        for action in self.custom_actions:
+            action_id = action.get("action", action.get("id", ""))
+            label = action.get("label", action.get("title", action.get("action", "")))
+            icon_name = action.get("icon", action.get("icon_name", ""))
+            primary = action.get("primary", False)
+            
+            # Try to get handler from registry
+            handler_spec = ButtonHandlerRegistry.get(action_id) if action_id else None
+            
+            if handler_spec and handler_spec.handler:
+                # Use handler from registry
+                icon_name = handler_spec.icon_name or icon_name
+                primary = handler_spec.primary if handler_spec.primary is not None else primary
+                color = handler_spec.color or (self.theme.primary if primary else self.theme.text_muted)
+                icon = get_svg_icon(icon_name, 20, color)
+                btn = self._action_button(label, icon, primary=primary)
+                btn.clicked.connect(lambda checked=False, h=handler_spec, a=action: self._execute_custom_action(h, a))
+            else:
+                # Use icon from action data or default
+                icon_name = icon_name or "check"
+                color = self.theme.primary if primary else self.theme.text_muted
+                icon = get_svg_icon(icon_name, 20, self.theme.primary if primary else self.theme.text_muted)
+                btn = self._action_button(label, icon, primary=primary)
+                btn.clicked.connect(lambda checked=False, a=action: self._execute_custom_action(None, a))
+            
+            actions.addWidget(btn)
 
-            no_btn = self._action_button("No", material_icon("close"))
-            no_btn.clicked.connect(lambda: self._confirm_done("no"))
-            actions.addWidget(no_btn)
+        # Default buttons (only if no custom actions or in confirm mode)
+        if not self.custom_actions or self.mode == "confirm":
+            if self.mode == "confirm":
+                yes_btn = self._action_button("Yes", get_svg_icon("check", 20, self.theme.primary), primary=True)
+                yes_btn.clicked.connect(lambda: self._confirm_done("yes"))
+                actions.addWidget(yes_btn)
 
-            cancel_btn = self._action_button("Cancel", material_icon("cancel"))
-            cancel_btn.clicked.connect(lambda: self._confirm_done("cancel"))
-            actions.addWidget(cancel_btn)
-        else:
-            dismiss_button = self._action_button("Done", material_icon("check"), primary=True)
-            dismiss_button.clicked.connect(self.close)
-            actions.addWidget(dismiss_button)
+                no_btn = self._action_button("No", get_svg_icon("close", 20, self.theme.text_muted), primary=False)
+                no_btn.clicked.connect(lambda: self._confirm_done("no"))
+                actions.addWidget(no_btn)
 
-            snooze_short = self._action_button("Snooze 5 min", material_icon("snooze"))
-            snooze_short.clicked.connect(lambda: self._snooze(5))
-            actions.addWidget(snooze_short)
+                cancel_btn = self._action_button("Cancel", get_svg_icon("cancel", 20, self.theme.text_muted), primary=False)
+                cancel_btn.clicked.connect(lambda: self._confirm_done("cancel"))
+                actions.addWidget(cancel_btn)
+            else:
+                dismiss_button = self._action_button("Done", get_svg_icon("check", 20, self.theme.primary), primary=True)
+                dismiss_button.clicked.connect(self.close)
+                actions.addWidget(dismiss_button)
 
-            snooze_long = self._action_button("Snooze 15 min", material_icon("alarm"))
-            snooze_long.clicked.connect(lambda: self._snooze(15))
-            actions.addWidget(snooze_long)
+                snooze_short = self._action_button("Snooze 5 min", get_svg_icon("snooze", 20, self.theme.text_muted), primary=False)
+                snooze_short.clicked.connect(lambda: self._snooze(5))
+                actions.addWidget(snooze_short)
+
+                snooze_long = self._action_button("Snooze 15 min", get_svg_icon("alarm", 20, self.theme.primary), primary=False)
+                snooze_long.clicked.connect(lambda: self._snooze(15))
+                actions.addWidget(snooze_long)
 
         card_layout.addWidget(self.actions_wrap)
         root_wrap.addWidget(self.card, 0, Qt.AlignmentFlag.AlignCenter)
         root.addWidget(backdrop)
 
-    def _action_button(self, label: str, icon_text: str, *, primary: bool = False) -> QPushButton:
+    def _action_button(self, label: str, icon: QIcon, *, primary: bool = False) -> QPushButton:
         button = QPushButton()
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setMinimumHeight(48)
         button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
-        # Use icon font for the icon, ui_font for the label
-        button.setFont(QFont(self.icon_font, 11, QFont.Weight.DemiBold))
-        button.setText(f"{icon_text}  {label}")
+        # Use SVG icon
+        button.setIcon(icon)
+        button.setIconSize(QSize(20, 20))
+        button.setFont(QFont(self.ui_font, 11, QFont.Weight.DemiBold))
+        button.setText(f"  {label}")
         
         button.setObjectName("primaryButton" if primary else "secondaryButton")
         return button
@@ -495,6 +645,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--body", default="Time is up.")
     parser.add_argument("--severity", default="discrete")
     parser.add_argument("--mode", default="reminder", choices=["reminder", "confirm"])
+    parser.add_argument("--source-app", default=None)
+    parser.add_argument("--source-icon", default=None)
+    parser.add_argument("--source-topic", default=None)
     return parser.parse_args(argv)
 
 
@@ -504,7 +657,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
     app = QApplication(sys.argv)
     app.setApplicationName("Hanauta Fullscreen Alert")
-    window = ReminderAlert(args.title, args.body, args.severity, args.mode)
+    window = ReminderAlert(
+        args.title,
+        args.body,
+        args.severity,
+        args.mode,
+        source_app=args.source_app,
+        source_icon=args.source_icon,
+        source_topic=args.source_topic,
+    )
     window.show()
     window.raise_()
     window.activateWindow()

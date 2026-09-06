@@ -69,11 +69,18 @@ def run_with_polkit(
         return False
 
 
-def fullscreen_alert_command(title: str, body: str, severity: str = "discrete") -> list[str]:
+def fullscreen_alert_command(
+    title: str,
+    body: str,
+    severity: str = "discrete",
+    source_app: Optional[str] = None,
+    source_icon: Optional[str] = None,
+    source_topic: Optional[str] = None,
+) -> list[str]:
     script_path = Path(REMINDER_ALERT_SCRIPT)
     if not script_path.exists():
         return []
-    return entry_command(
+    cmd = entry_command(
         script_path,
         "--title",
         str(title or "Plugin alert"),
@@ -82,10 +89,24 @@ def fullscreen_alert_command(title: str, body: str, severity: str = "discrete") 
         "--severity",
         str(severity or "discrete"),
     )
+    if source_app:
+        cmd.extend(["--source-app", str(source_app)])
+    if source_icon:
+        cmd.extend(["--source-icon", str(source_icon)])
+    if source_topic:
+        cmd.extend(["--source-topic", str(source_topic)])
+    return cmd
 
 
-def trigger_fullscreen_alert(title: str, body: str, severity: str = "discrete") -> bool:
-    command = fullscreen_alert_command(title, body, severity)
+def trigger_fullscreen_alert(
+    title: str,
+    body: str,
+    severity: str = "discrete",
+    source_app: Optional[str] = None,
+    source_icon: Optional[str] = None,
+    source_topic: Optional[str] = None,
+) -> bool:
+    command = fullscreen_alert_command(title, body, severity, source_app, source_icon, source_topic)
     if not command:
         return False
     try:
