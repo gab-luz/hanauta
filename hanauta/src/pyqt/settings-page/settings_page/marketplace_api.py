@@ -223,22 +223,87 @@ def _git_restore_stash(install_path: Path, plugin_id: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _plugin_dedupe_keys(plugin: dict[str, Any]) -> list[str]:
+    """Return dedupe keys for a plugin: id, repo url, and install path."""
+    keys = []
+    plugin_id = str(plugin.get("id", "")).strip()
+    repo = str(plugin.get("repo", "")).strip().lower().rstrip("/").removesuffix(".git")
+    install_path = str(plugin.get("install_path", "")).strip()
+    if plugin_id:
+        keys.append(f"id:{plugin_id}")
+    if repo:
+        keys.append(f"repo:{repo}")
+    if install_path:
+        keys.append(f"path:{install_path}")
+    return keys
+
+
+def _installed_preference_score(plugin: dict[str, Any], install_dir: str) -> tuple[int, float]:
+    """Score an installed entry for dedupe resolution.
+
+    Prefer the entry whose install_path lives under the marketplace install_dir
+    (the officially managed location), then the most recently updated one.
+    """
+    install_path = str(plugin.get("install_path", "")).strip()
+    in_install_dir = 0
+    if install_dir and install_path:
+        try:
+            if Path(install_path).resolve().is_relative_to(Path(install_dir).expanduser().resolve()):
+                in_install_dir = 1
+        except OSError:
+            in_install_dir = 0
+    updated = plugin.get("updated_at_epoch") or plugin.get("installed_at_epoch") or 0
+    try:
+        updated = float(updated)
+    except (TypeError, ValueError):
+        updated = 0.0
+    return in_install_dir, updated
+
+
 def marketplace_api_installed_plugins(settings: Any) -> list[dict[str, Any]]:
     marketplace = _marketplace_state(settings)
     rows = marketplace.get("installed_plugins", [])
     if not isinstance(rows, list):
         return []
+    install_dir = str(marketplace.get("install_dir", "")).strip()
     normalized: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen: dict[str, int] = {}
+    removed_duplicates = False
     for row in rows:
         plugin = _normalize_plugin_row(row)
         if plugin is None:
+            removed_duplicates = True
             continue
-        plugin_id = plugin["id"]
-        if plugin_id in seen:
+        keys = _plugin_dedupe_keys(plugin)
+        existing_index = next((seen[key] for key in keys if key in seen), None)
+        if existing_index is not None:
+            removed_duplicates = True
+            current = normalized[existing_index]
+            new_score = _installed_preference_score(plugin, install_dir)
+            cur_score = _installed_preference_score(current, install_dir)
+            if new_score > cur_score:
+                # Replace with the better entry; keep original position.
+                _log(
+                    f"Dedupe: keeping '{plugin['id']}' over '{current['id']}' "
+                    f"(repo={plugin.get('repo', '')})"
+                )
+                for key in _plugin_dedupe_keys(current):
+                    seen.pop(key, None)
+                normalized[existing_index] = plugin
+                seen.update({key: existing_index for key in keys})
+            else:
+                _log(
+                    f"Dedupe: keeping '{current['id']}' over '{plugin['id']}' "
+                    f"(repo={plugin.get('repo', '')})"
+                )
+                seen.update({key: existing_index for key in keys})
             continue
-        seen.add(plugin_id)
+        seen.update({key: len(normalized) for key in keys})
         normalized.append(plugin)
+    if removed_duplicates:
+        marketplace["installed_plugins"] = normalized
+        save_settings_state(settings)
+        _log(f"Installed plugins deduplicated. kept={len(normalized)}")
     return normalized
 
 

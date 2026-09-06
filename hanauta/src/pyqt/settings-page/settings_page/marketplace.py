@@ -46,6 +46,46 @@ from settings_page.marketplace_api import (
 )
 
 
+def _run_with_pkexec(script_path: Path, args: list[str], window) -> tuple[bool, str]:
+    """Run a script with pkexec for root privileges."""
+    if not script_path.exists():
+        return False, f"Install script not found: {script_path}"
+
+    if not shutil.which("pkexec"):
+        return False, "pkexec not available (polkit not installed)"
+
+    cmd = ["pkexec", str(script_path), *args]
+
+    try:
+        env = dict(subprocess.os.environ)
+        env["DISPLAY"] = env.get("DISPLAY", ":0")
+        env["XAUTHORITY"] = env.get("XAUTHORITY", "")
+        env["WAYLAND_DISPLAY"] = env.get("WAYLAND_DISPLAY", "")
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+            check=False,
+        )
+
+        output = (result.stdout or "").strip()
+        error = (result.stderr or "").strip()
+
+        if result.returncode != 0:
+            msg = error or output or f"pkexec failed with code {result.returncode}"
+            return False, msg
+
+        return True, output or "Installation completed successfully"
+
+    except subprocess.TimeoutExpired:
+        return False, "Installation timed out (120s)"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _marketplace_sources_from_state(state: dict) -> list[dict]:
     return []
 
@@ -1166,6 +1206,9 @@ class MarketplacePage(QFrame):
 
             save_settings_state(self.settings)
 
+            # Run root install script if present (requires polkit/pkexec)
+            self._run_root_install_script(install_path, plugin_id)
+
             self.installed = marketplace_api_installed_plugins(self.settings)
             self._set_status(f"{plugin_id} installed.")
 
@@ -1247,6 +1290,52 @@ class MarketplacePage(QFrame):
                 f"Installed plugin, but could not write defaults.json:\n{exc}",
             )
 
+    def _run_root_install_script(self, install_path: Path, plugin_id: str) -> None:
+        """Check for and run root install script with pkexec if present."""
+        # Check for common root install script locations
+        possible_scripts = [
+            install_path / "bin" / "install_root_service.sh",
+            install_path / "bin" / "install_root.sh",
+            install_path / "install_root_service.sh",
+            install_path / "install_root.sh",
+            install_path / "scripts" / "install_root_service.sh",
+            install_path / "scripts" / "install_root.sh",
+        ]
+
+        script_path = None
+        for path in possible_scripts:
+            if path.exists():
+                script_path = path
+                break
+
+        if not script_path:
+            return  # No root install script found
+
+        self._set_status(f"{plugin_id}: Running root setup (requires admin)...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+
+        try:
+            ok, message = _run_with_pkexec(script_path, [], self.window)
+            if ok:
+                self._set_status(f"{plugin_id}: Root setup completed.")
+            else:
+                self._set_status(f"{plugin_id}: Root setup failed: {message}")
+                QMessageBox.warning(
+                    self,
+                    "Root Setup Failed",
+                    f"The plugin was installed, but the root setup script failed:\n\n{message}\n\n"
+                    f"You may need to run it manually:\n  pkexec {script_path}"
+                )
+        except Exception as exc:
+            self._set_status(f"{plugin_id}: Root setup error: {exc}")
+            QMessageBox.warning(
+                self,
+                "Root Setup Error",
+                f"Error running root install script: {exc}"
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
+
     def _update_plugin(self, plugin_id: str) -> None:
         plugin_id = str(plugin_id).strip()
         if not plugin_id:
@@ -1272,6 +1361,12 @@ class MarketplacePage(QFrame):
             self._git_status_cache.pop(plugin_id, None)
             if ok:
                 self._recently_updated_ids.add(plugin_id)
+                # Run root install script after successful update if present
+                entry = self._installed_entry(plugin_id)
+                if entry:
+                    install_path = Path(str(entry.get("install_path", "")).strip()).expanduser()
+                    if install_path.exists():
+                        self._run_root_install_script(install_path, plugin_id)
             else:
                 self._recently_updated_ids.discard(plugin_id)
             self._set_status(detail if detail else ("Updated." if ok else "Update failed."))
@@ -1320,6 +1415,30 @@ class MarketplacePage(QFrame):
             else:
                 self.installed = self._installed_from_settings() or previous_installed
             self._git_status_cache.clear()
+
+            # Run root install scripts (pkexec) for successfully updated plugins
+            # so root services are reinstalled, same as the per-plugin button.
+            root_failures: list[str] = []
+            for plugin_id, ok, _detail in results:
+                if not ok:
+                    continue
+                entry = self._installed_entry(plugin_id)
+                if not entry:
+                    continue
+                install_path = Path(str(entry.get("install_path", "")).strip()).expanduser()
+                if not install_path.exists():
+                    continue
+                try:
+                    self._run_root_install_script(install_path, plugin_id)
+                except Exception as exc:
+                    root_failures.append(f"{plugin_id}: {exc}")
+            if root_failures:
+                QMessageBox.warning(
+                    self,
+                    "Root Setup Failed",
+                    "Some plugins updated, but their root setup failed:\n\n"
+                    + "\n".join(root_failures),
+                )
 
             if not results:
                 self._set_status("All installed plugins are already up to date.")
